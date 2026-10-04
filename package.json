@@ -1,0 +1,26 @@
+{
+  "name": "daze",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DAZE / 发呆症 — a real-time visualization observer for AI agents. Pi runs the agent, Daze observes the events, the Stage turns events into something humans can watch.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev -w @daze/server",
+    "dev:web": "npm run dev -w @daze/web",
+    "build": "npm run build -w @daze/web",
+    "start": "npm run start -w @daze/server",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}
