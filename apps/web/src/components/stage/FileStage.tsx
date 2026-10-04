@@ -9,8 +9,11 @@ interface FileStageProps {
   path: string;
   content: string;
   language: string;
+  /** Highlight range, in original file coordinates. */
   startLine?: number;
   endLine?: number;
+  /** Original line number of the first displayed line (1 = whole file). */
+  lineOffset?: number;
   caption?: string;
   badge?: string;
   badgeTone?: "normal" | "warn";
@@ -22,6 +25,7 @@ export function FileStage({
   language,
   startLine,
   endLine,
+  lineOffset = 0,
   caption,
   badge,
   badgeTone = "normal",
@@ -34,11 +38,21 @@ export function FileStage({
     const editor = editorRef.current;
     if (!editor) return;
     if (!collectionRef.current) collectionRef.current = editor.createDecorationsCollection([]);
-    const decoration =
-      startLine && endLine && startLine > 0
+
+    const localStart = startLine !== undefined ? startLine - lineOffset : undefined;
+    const localEnd = endLine !== undefined ? endLine - lineOffset : undefined;
+    const hasRange = localStart !== undefined && localEnd !== undefined && localStart >= 1 && localEnd >= localStart;
+
+    collectionRef.current.set(
+      hasRange
         ? [
             {
-              range: { startLineNumber: startLine, startColumn: 1, endLineNumber: endLine, endColumn: 1 },
+              range: {
+                startLineNumber: localStart,
+                startColumn: 1,
+                endLineNumber: localEnd,
+                endColumn: 1,
+              },
               options: {
                 isWholeLine: true,
                 className: "daze-line-hl",
@@ -46,10 +60,11 @@ export function FileStage({
               },
             },
           ]
-        : [];
-    collectionRef.current.set(decoration);
-    if (startLine) editor.revealLineInCenterIfOutsideViewport(startLine);
-  }, [startLine, endLine]);
+        : [],
+    );
+
+    if (hasRange) editor.revealLineInCenterIfOutsideViewport(localStart);
+  }, [startLine, endLine, lineOffset]);
 
   useEffect(() => {
     applyDecorations();
@@ -68,7 +83,7 @@ export function FileStage({
             </span>
           ) : null}
           {badge ? <span className="text-desk-dim">{formatBytes(content.length)}</span> : null}
-          {startLine && endLine ? (
+          {startLine !== undefined && endLine !== undefined ? (
             <span className="text-desk-amber">
               {startLine}–{endLine}
             </span>
@@ -104,7 +119,15 @@ export function FileStage({
                 if (!model || !selection || selection.isEmpty()) return;
                 const text = model.getValueInRange(selection);
                 if (!text.trim()) return;
-                addContext(selectionContext(path, selection.startLineNumber, selection.endLineNumber, text));
+                // Report line numbers as they appear in the file.
+                addContext(
+                  selectionContext(
+                    path,
+                    selection.startLineNumber + lineOffset,
+                    selection.endLineNumber + lineOffset,
+                    text,
+                  ),
+                );
               },
             });
             editor.addAction({
@@ -121,6 +144,7 @@ export function FileStage({
             minimap: { enabled: false },
             fontSize: 12.5,
             lineNumbersMinChars: 3,
+            lineNumbers: lineOffset > 0 ? (line) => String(line + lineOffset) : "on",
             scrollBeyondLastLine: false,
             renderLineHighlight: "none",
             contextmenu: true,

@@ -4,43 +4,48 @@ import { languageFromPath } from "./language";
 import { useFileStore } from "../stores/fileStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useStageStore } from "../stores/stageStore";
+import type { StageItem } from "../types/stage";
 
-function fileItem(
-  path: string,
-  content: string,
-  language: string,
-  extra: { startLine?: number; endLine?: number; caption?: string; badge?: string; badgeTone?: "normal" | "warn" },
-) {
-  return createStageItem("file", path, { kind: "file", path, content, language, ...extra }, { path });
-}
-
-/** Agent view: show the content the agent has in context. */
+/**
+ * Agent view: only what the agent actually has in context. If it read lines
+ * 10–20 of a file, that slice is all this shows — the slice is numbered as it
+ * appears in the file, so the missing head is obvious.
+ */
 export function openKnownFile(path: string): void {
   const file = useFileStore.getState().files[path];
   if (!file) return;
-  useStageStore.getState().openStage(
-    fileItem(path, file.content, file.language, {
-      startLine: file.lastRead?.startLine,
-      endLine: file.lastRead?.endLine,
-      caption: "Agent-known content",
-    }),
+
+  // A file with version 0 was never written, so its content is a read slice.
+  const slice = file.version === 0 && file.lastRead ? file.lastRead : undefined;
+  const item = createStageItem(
+    "file",
+    path,
+    {
+      kind: "file",
+      path,
+      content: file.content,
+      language: file.language,
+      startLine: slice?.startLine,
+      endLine: slice?.endLine,
+      lineOffset: slice ? Math.max(0, slice.startLine - 1) : 0,
+      caption: slice
+        ? `Agent read lines ${slice.startLine}–${slice.endLine} — the rest of the file is not in its context`
+        : "Agent-known content",
+    },
+    { path },
   );
+
+  useStageStore.getState().openAgentFile(item);
 }
 
 /**
- * User view: show the whole file. Files the agent has touched come from the
- * event stream; anything else is read from disk on demand.
+ * User view: the whole file. Files the agent has touched come from the event
+ * stream; anything else is read from disk on demand.
  */
 export async function openUserFile(path: string): Promise<void> {
   const known = useFileStore.getState().files[path];
   if (known) {
-    useStageStore.getState().openStage(
-      fileItem(path, known.content, known.language, {
-        startLine: known.lastRead?.startLine,
-        endLine: known.lastRead?.endLine,
-        caption: "Agent-known content",
-      }),
-    );
+    useStageStore.getState().openUserFile(fullItem(path, known.content, known.language, "Whole file · user view"));
     return;
   }
 
@@ -49,17 +54,35 @@ export async function openUserFile(path: string): Promise<void> {
 
   try {
     const file = await api.readFile(sessionId, path);
-    useStageStore.getState().openStage(
-      fileItem(path, file.content, languageFromPath(path), { caption: "Read from disk · user view" }),
-    );
+    useStageStore
+      .getState()
+      .openUserFile(fullItem(path, file.content, languageFromPath(path), "Whole file · read from disk"));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    useStageStore.getState().openStage(
-      fileItem(path, `// ${message}`, "plaintext", {
-        badge: "unavailable",
-        badgeTone: "warn",
-        caption: "Could not read this file from disk",
-      }),
+    useStageStore.getState().openUserFile(
+      createStageItem(
+        "file",
+        path,
+        {
+          kind: "file",
+          path,
+          content: `// ${message}`,
+          language: "plaintext",
+          badge: "unavailable",
+          badgeTone: "warn",
+          caption: "Could not read this file from disk",
+        },
+        { path },
+      ),
     );
   }
+}
+
+function fullItem(path: string, content: string, language: string, caption: string): StageItem {
+  return createStageItem(
+    "file",
+    path,
+    { kind: "file", path, content, language, lineOffset: 0, caption },
+    { path },
+  );
 }

@@ -15,6 +15,7 @@ export function StageItemView({ item }: { item: StageItem }) {
           language={payload.language}
           startLine={payload.startLine}
           endLine={payload.endLine}
+          lineOffset={payload.lineOffset}
           caption={payload.caption}
           badge={payload.badge}
           badgeTone={payload.badgeTone}

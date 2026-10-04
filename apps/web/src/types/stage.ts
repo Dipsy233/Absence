@@ -11,8 +11,15 @@ export type StagePayload =
       path: string;
       content: string;
       language: string;
+      /** Range to highlight, in original file coordinates. */
       startLine?: number;
       endLine?: number;
+      /**
+       * Original line number of the first displayed line (1 = the content is the
+       * whole file from the top). A read of lines 10–20 sets this to 10 so the
+       * slice is numbered as it appears in the file.
+       */
+      lineOffset?: number;
       caption?: string;
       badge?: string;
       badgeTone?: "normal" | "warn";

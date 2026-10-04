@@ -107,6 +107,9 @@ export function eventToStageItem(event: DazeEvent): StageItem | undefined {
           language: language ?? languageFromPath(path),
           startLine,
           endLine,
+          // The payload content is the slice that was read, so number it as it
+          // appears in the file (a read of 10–20 shows lines 10–20, not 1–11).
+          lineOffset: Math.max(0, startLine - 1),
           caption: "Agent is reading",
         },
         path,

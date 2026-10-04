@@ -4,6 +4,7 @@ import { useStageStore } from "../../stores/stageStore";
 import { useUiStore } from "../../stores/uiStore";
 import { formatAgo } from "../../lib/format";
 import { createStageItem } from "../../lib/events";
+import { openKnownFile } from "../../lib/openFile";
 import { fileContext } from "../../lib/context";
 import { unifiedDiff } from "../../lib/diff";
 import { CodeView } from "../common/CodeView";
@@ -19,15 +20,7 @@ export function FileDetail({ path }: { path: string }) {
   const content = file?.content ?? "";
   const history = file?.history ?? [];
 
-  const openInStage = () =>
-    openStage(
-      createStageItem(
-        "file",
-        path,
-        { kind: "file", path, content, language: file?.language ?? "plaintext", caption: "Opened from Files" },
-        { path },
-      ),
-    );
+  const openInStage = () => openKnownFile(path);
 
   const openDiffInStage = () => {
     if (history.length < 2) return;

@@ -10,7 +10,7 @@
  */
 import type { DazeEvent } from "@daze/core";
 import { buildHistory, pickRun, runEvents } from "../apps/web/src/lib/history";
-import { eventToStageItem, lastStageAction } from "../apps/web/src/lib/events";
+import { createStageItem, eventToStageItem, lastStageAction } from "../apps/web/src/lib/events";
 import { useStageStore } from "../apps/web/src/stores/stageStore";
 import { buildSnapshots, seek, timelineEnd, timelineStart } from "../apps/web/src/lib/replay";
 
@@ -175,6 +175,57 @@ const run = async () => {
   );
   useStageStore.getState().setMode("live");
   assert("LIVE resumes following", useStageStore.getState().following === true);
+  useStageStore.getState().reset();
+
+  // 8. the two FILE slots are independent, and a partial read stays partial
+  const partialRead: DazeEvent = {
+    id: "evt_partial_read",
+    sessionId: "s",
+    timestamp: Date.now(),
+    type: "file_read",
+    payload: {
+      path: "src/auth.ts",
+      startLine: 10,
+      endLine: 20,
+      content: "line10\nline11\nline12",
+      language: "typescript",
+    },
+  };
+  const agentItem = eventToStageItem(partialRead)!;
+  assert(
+    "a slice item is numbered from its start line",
+    agentItem.payload.kind === "file" && agentItem.payload.lineOffset === 9,
+    `lineOffset=${agentItem.payload.kind === "file" ? agentItem.payload.lineOffset : "n/a"}`,
+  );
+  assert(
+    "a slice item highlights only what was read",
+    agentItem.payload.kind === "file" && agentItem.payload.startLine === 10 && agentItem.payload.endLine === 20,
+  );
+
+  useStageStore.getState().noteItem(agentItem);
+  assert("a live read fills the agent FILE slot", useStageStore.getState().agentFile?.id === agentItem.id);
+  assert("a live read leaves the user FILE slot empty", useStageStore.getState().userFile === undefined);
+
+  const userItem = createStageItem(
+    "file",
+    "src/auth.ts",
+    { kind: "file", path: "src/auth.ts", content: "WHOLE FILE", language: "typescript", lineOffset: 0 },
+    { path: "src/auth.ts" },
+  );
+  useStageStore.getState().openUserFile(userItem);
+  assert("opening from the tree fills the user FILE slot", useStageStore.getState().userFile?.id === userItem.id);
+  assert("opening from the tree keeps the agent FILE slot", useStageStore.getState().agentFile?.id === agentItem.id);
+  assert(
+    "the two slots hold different content",
+    userItem.payload.kind === "file" &&
+      agentItem.payload.kind === "file" &&
+      userItem.payload.content !== agentItem.payload.content,
+  );
+
+  useStageStore.getState().showAgentFile();
+  assert("right FILE shows the agent content", useStageStore.getState().activeItem?.id === agentItem.id);
+  useStageStore.getState().showUserFile();
+  assert("left FILE shows the whole file", useStageStore.getState().activeItem?.id === userItem.id);
   useStageStore.getState().reset();
 
   console.log(`\nsnapshots for run #1: ${snapshots.length}`);
