@@ -3,9 +3,10 @@ import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
 
 /**
- * Two groups, one per perspective:
- *   left  — the user's view (whole file from the project tree, diffs, replay)
- *   right — the agent's view (its terminal, the file it has in context, live)
+ * Three groups (read02 §13):
+ *   left   — the user's view (whole file from the project tree, diffs, replay)
+ *   centre — TABLE: back to the default desk page
+ *   right  — the agent's view (its terminal, the file it has in context, live)
  */
 export function StageToolbar() {
   const mode = useStageStore((s) => s.mode);
@@ -17,6 +18,7 @@ export function StageToolbar() {
   const showUserFile = useStageStore((s) => s.showUserFile);
   const showAgentFile = useStageStore((s) => s.showAgentFile);
   const setMode = useStageStore((s) => s.setMode);
+  const goDesk = useStageStore((s) => s.goDesk);
   const replayReady = useReplayStore((s) => s.events.length > 0);
 
   const buttonClass = (active: boolean, enabled: boolean) =>
@@ -42,7 +44,7 @@ export function StageToolbar() {
   );
 
   return (
-    <div className="flex shrink-0 items-center gap-1 border-b border-desk-line px-2 py-1.5">
+    <div className="relative flex shrink-0 items-center gap-1 border-b border-desk-line px-2 py-1.5">
       {/* user perspective */}
       <button
         type="button"
@@ -63,6 +65,18 @@ export function StageToolbar() {
         REPLAY
       </button>
 
+      {/* centre — the desk, i.e. the default page */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        <button
+          type="button"
+          onClick={goDesk}
+          title="Back to the desk — the default page"
+          className={buttonClass(mode === "desk", true)}
+        >
+          TABLE
+        </button>
+      </div>
+
       <div className="ml-auto flex items-center gap-1">
         {/* agent perspective */}
         {itemButton("terminal", "TERMINAL")}
@@ -78,11 +92,7 @@ export function StageToolbar() {
         >
           FILE
         </button>
-        <button
-          type="button"
-          onClick={() => setMode("live")}
-          className={buttonClass(mode === "live", true)}
-        >
+        <button type="button" onClick={() => setMode("live")} className={buttonClass(mode === "live", true)}>
           LIVE
         </button>
       </div>

@@ -22,6 +22,10 @@ export function Stage() {
   if (mode === "replay") {
     key = `replay:${replayItem?.id ?? "none"}`;
     body = replayItem ? <StageItemView item={replayItem} /> : <EmptyStage text="Press ▶ to replay this run." />;
+  } else if (mode === "desk") {
+    // TABLE: the default page, regardless of what is pinned.
+    key = "desk";
+    body = <DeskStage plan={plan} status={status} />;
   } else if (item) {
     key = item.id;
     body = <StageItemView item={item} />;

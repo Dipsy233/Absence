@@ -72,9 +72,9 @@ versions in Files → History.
 ┌──────────────────────────────────────────────────────────────┐
 │                         SESSION BAR                          │
 ├──────────────┬───────────────────────────────┬───────────────┤
-│    FILES     │  [FILE DIFF REPLAY]           │     AGENT     │
-│  (user view) │           │ [TERMINAL FILE    │    (avatar)   │
-│              │           │  LIVE]            │               │
+│    FILES     │  [FILE DIFF REPLAY]  TABLE    │     AGENT     │
+│  (user view) │        [TERMINAL FILE LIVE]   │    (avatar)   │
+│              │                               │               │
 ├──────────────┤───────────────────────────────├───────────────┤
 │   HISTORY    │                               │ AGENT FOLDER  │
 │   (runs)     │            STAGE              │ (agent view)  │
@@ -99,8 +99,9 @@ versions in Files → History.
   is a view-only revert).
 - **Activity** (left) — the selected run's actions, oldest first. Click a row to
   put it on the Stage; its header has a **▶ replay** button that replays that run.
-- **Stage** (center) — file, diff, terminal, desk or replay, with the mode
-  switcher split into the two perspectives above.
+- **Stage** (center) — file, diff, terminal, desk or replay. The mode switcher
+  has three groups: the user's (FILE / DIFF / REPLAY), **TABLE** in the middle
+  for the default desk page, and the agent's (TERMINAL / FILE / LIVE).
 - **Agent** (right) — the avatar, driven purely by the event stream.
 - **Agent Folder** (right) — the agent's view of the project: the files in its
   context, newest first, each expandable into the versions it has held. Click a
@@ -322,7 +323,7 @@ npx tsx scripts/check-history.ts             # needs the server running
 panel: reads with line ranges, a runnable `npm test`, a `TODO.md` checklist (the
 plan shows on the desk), and `notes.txt` for the delete-vs-truncate case.
 
-`check-history.ts` runs **50 checks** against a live mock session: run grouping,
+`check-history.ts` runs **52 checks** against a live mock session: run grouping,
 per-run activity scoping, deterministic stage item ids, snapshot seek, the Stage
 returning to its default page, search→terminal mapping, the two independent FILE
 slots, read accumulation and gap markers, per-version recording, and the created

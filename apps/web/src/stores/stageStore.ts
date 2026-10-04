@@ -41,6 +41,8 @@ interface StageStore {
   showAgentFile: () => void;
   setMode: (mode: StageMode) => void;
   goLive: () => void;
+  /** Back to the default desk page. */
+  goDesk: () => void;
   reset: () => void;
 }
 
@@ -97,6 +99,8 @@ export const useStageStore = create<StageStore>((set, get) => ({
   setMode: (mode) => set(mode === "live" ? { mode, following: true } : { mode, following: false }),
 
   goLive: () => set({ mode: "live", following: true }),
+
+  goDesk: () => set({ mode: "desk", following: false }),
 
   reset: () =>
     set({

@@ -188,6 +188,14 @@ const run = async () => {
   );
   useStageStore.getState().setMode("live");
   assert("LIVE resumes following", useStageStore.getState().following === true);
+  useStageStore.getState().goDesk();
+  assert(
+    "TABLE shows the default page and stops following",
+    useStageStore.getState().mode === "desk" && !useStageStore.getState().following,
+    `mode=${useStageStore.getState().mode} following=${useStageStore.getState().following}`,
+  );
+  useStageStore.getState().setMode("live");
+  assert("LIVE takes over again after TABLE", useStageStore.getState().following === true);
   useStageStore.getState().reset();
 
   // 8. the two FILE slots are independent, and a partial read stays partial
