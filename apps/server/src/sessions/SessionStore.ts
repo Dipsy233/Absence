@@ -191,7 +191,8 @@ export class DazeSession {
         break;
 
       case "message":
-        // The agent is composing or streaming a reply.
+        // Emitting text means whatever the Stage shows is finished: this is the
+        // signal that exits reading/searching/editing/running.
         this.setStatus("thinking");
         if (event.payload.role === "assistant") {
           this.applyAssistantMessage(event.payload);
@@ -209,25 +210,34 @@ export class DazeSession {
         this.setStatus(statusForTool(event.payload.toolName));
         break;
 
-      // The tool is done, so the agent is back to thinking about its result.
-      // The file_*/command/search events are only the visual of a tool that has
-      // already ended, so they deliberately do not touch the status.
-      case "tool_end":
-        this.setStatus("thinking");
-        break;
-
+      // These describe what is currently on the Stage, so they hold the status
+      // until the agent moves on. `tool_end` deliberately does NOT reset it:
+      // executing a tool takes milliseconds while generating the next step takes
+      // seconds, so resetting there would make searching/reading invisible.
+      // The status exits when the agent starts emitting text (see "message").
       case "file_read":
+        this.setStatus("reading");
         this.upsertFile(event.payload.path, event.payload.content, {
           lastRead: { startLine: event.payload.startLine, endLine: event.payload.endLine },
         });
         break;
 
       case "file_write":
+        this.setStatus("editing");
         this.upsertFile(event.payload.path, event.payload.content, { bump: true });
         break;
 
       case "file_edit":
+        this.setStatus("editing");
         this.upsertFile(event.payload.path, event.payload.after, { bump: true });
+        break;
+
+      case "command":
+        this.setStatus("running");
+        break;
+
+      case "search":
+        this.setStatus("searching");
         break;
 
       case "file_change":
