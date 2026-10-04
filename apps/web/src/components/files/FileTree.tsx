@@ -19,7 +19,8 @@ export function FileTree() {
   const projectPath = useSessionStore((s) => s.session?.projectPath) ?? "";
   const currentAction = useSessionStore((s) => s.currentAction);
   const following = useStageStore((s) => s.following);
-  const activeItemPath = useStageStore((s) => s.activeItem?.source?.path);
+  const activeId = useStageStore((s) => s.activeItem?.id);
+  const userFile = useStageStore((s) => s.userFile);
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
   const openStage = useStageStore((s) => s.openStage);
   const openMenu = useUiStore((s) => s.openMenu);
@@ -29,7 +30,13 @@ export function FileTree() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const livePath = eventPath(currentAction);
-  const activePath = following ? livePath : activeItemPath;
+  // The left tree is the user's view. Highlight the agent's live action while
+  // following, or the file *this* slot opened — never an agent-slot file.
+  const activePath = following
+    ? livePath
+    : userFile !== undefined && activeId === userFile.id
+      ? userFile.source?.path
+      : undefined;
   const activeAbs = activePath ? `${projectPath.replace(/\/$/, "")}/${activePath}` : undefined;
 
   useEffect(() => {

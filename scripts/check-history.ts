@@ -8,16 +8,28 @@
  * ids (a random id used to freeze the replay Stage), snapshot seek determinism,
  * and that seeking anywhere in a run still shows an action.
  */
+import fs from "node:fs/promises";
 import type { DazeEvent } from "@daze/core";
 import { buildHistory, pickRun, runEvents } from "../apps/web/src/lib/history";
 import { createStageItem, eventToStageItem, lastStageAction } from "../apps/web/src/lib/events";
+import { openUserFile } from "../apps/web/src/lib/openFile";
 import { useStageStore } from "../apps/web/src/stores/stageStore";
+import { useSessionStore } from "../apps/web/src/stores/sessionStore";
 import { buildSnapshots, seek, timelineEnd, timelineStart } from "../apps/web/src/lib/replay";
 
 const base = "http://127.0.0.1:8787";
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function collect(prompts: string[]): Promise<DazeEvent[]> {
+// The web app's api module uses relative URLs, which only resolve in a browser.
+// Point them at the server so the real code paths can run here.
+const nativeFetch = globalThis.fetch;
+globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+  const url =
+    typeof input === "string" && input.startsWith("/") ? base + input : input;
+  return nativeFetch(url as string, init);
+}) as typeof fetch;
+
+async function collect(prompts: string[]): Promise<{ events: DazeEvent[]; snapshot: any }> {
   for (let i = 0; i < 40; i++) {
     try {
       if ((await fetch(base + "/api/projects")).ok) break;
@@ -57,7 +69,7 @@ async function collect(prompts: string[]): Promise<DazeEvent[]> {
     await wait(400);
   }
   ws.close();
-  return events;
+  return { events, snapshot: snap };
 }
 
 const assert = (label: string, ok: boolean, detail = "") => {
@@ -66,7 +78,7 @@ const assert = (label: string, ok: boolean, detail = "") => {
 };
 
 const run = async () => {
-  const events = await collect(["first task: tidy up", "second task: look around"]);
+  const { events, snapshot } = await collect(["first task: tidy up", "second task: look around"]);
   console.log(`collected ${events.length} events\n`);
 
   // 1. history runs
@@ -226,6 +238,22 @@ const run = async () => {
   assert("right FILE shows the agent content", useStageStore.getState().activeItem?.id === agentItem.id);
   useStageStore.getState().showUserFile();
   assert("left FILE shows the whole file", useStageStore.getState().activeItem?.id === userItem.id);
+  useStageStore.getState().reset();
+
+  // 9. the user view reads the whole file from disk, never the agent's slice
+  useSessionStore.setState({ session: snapshot.session });
+  useStageStore.getState().noteItem(agentItem); // agent read only lines 10–20
+  await openUserFile("src/auth.ts");
+  const userView = useStageStore.getState().userFile;
+  const truth = await fs.readFile("E:/0down/daze-demo/src/auth.ts", "utf8");
+  assert(
+    "left tree opens the whole file, not the read slice",
+    userView?.payload.kind === "file" && userView.payload.content === truth,
+    userView?.payload.kind === "file"
+      ? `${userView.payload.content.length} chars shown vs ${truth.length} in the file`
+      : "no file item",
+  );
+  assert("the user view leaves the agent slot alone", useStageStore.getState().agentFile?.id === agentItem.id);
   useStageStore.getState().reset();
 
   console.log(`\nsnapshots for run #1: ${snapshots.length}`);
