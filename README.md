@@ -118,6 +118,54 @@ separate `session_state` websocket message so the event type stays clean.
 | `DELETE` | `/api/sessions/:id` | Dispose the session |
 | `WS` | `/ws/sessions/:id` | `{type:"snapshot"}` then `{type:"event"}` / `{type:"session_state"}` |
 
+## Local model (OpenAI-compatible server)
+
+DAZE only talks to Pi, and Pi talks to any OpenAI-compatible endpoint — so a local
+model works with no code changes. Example: Qwen3-4B served by the `server_qwen.py`
+script in `E:\0down\ml\qwen3-4B` (supports streaming + tool calling).
+
+1. Start the model server:
+
+   ```bat
+   E:\0down\ml\qwen3-4B\serve_qwen.bat --port 8000
+   ```
+
+2. Register it with Pi in `~/.pi/agent/models.json`:
+
+   ```json
+   {
+     "providers": {
+       "qwen-local": {
+         "baseUrl": "http://127.0.0.1:8000/v1",
+         "api": "openai-completions",
+         "apiKey": "local",
+         "models": [
+           {
+             "id": "qwen3-4b",
+             "name": "Qwen3 4B (local)",
+             "input": ["text"],
+             "contextWindow": 40960,
+             "maxTokens": 4096,
+             "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+             "compat": { "supportsDeveloperRole": false, "maxTokensField": "max_tokens" }
+           }
+         ]
+       }
+     }
+   }
+   ```
+
+3. (Optional) make it the default in `~/.pi/agent/settings.json`:
+
+   ```json
+   { "defaultProvider": "qwen-local", "defaultModel": "qwen3-4b" }
+   ```
+
+4. Verify with `pi --list-models`, then start DAZE and open a project.
+
+`DAZE_PI_TOOLS` controls which Pi tools the agent gets. A small model may need a
+reduced set, e.g. `DAZE_PI_TOOLS=read,bash,edit,write`.
+
 ## Notes
 
 - Sessions are in-memory only (v0.1); refresh loses them.
