@@ -146,6 +146,24 @@ export class MockAdapter extends BaseAdapter {
 
     if (bail()) return this.finish("aborted");
 
+    // 5) create a brand new file, so History shows a created-file count.
+    const newPath = "notes/agent-summary.md";
+    const newContent = [
+      "# Agent summary",
+      "",
+      `Read: ${picks.join(", ") || "nothing"}`,
+      "",
+      "Written by the mock runtime.",
+    ].join("\n");
+    const writeId = "mock_write_new";
+    emit("tool_start", { toolCallId: writeId, toolName: "write", args: { path: newPath } });
+    await sleep(220);
+    emit("file_write", { path: newPath, content: newContent });
+    this.tokensUsed += Math.min(newContent.length / 4, 800);
+    await sleep(600);
+    emit("tool_end", { toolCallId: writeId, toolName: "write", isError: false });
+    await sleep(400);
+
     // Final assistant message, streamed.
     emit("thinking", { content: "Writing up what I found…", streaming: true });
     await sleep(300);

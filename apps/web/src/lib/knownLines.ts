@@ -40,3 +40,33 @@ export function renderKnownLines(known: Record<number, string>): { text: string;
 export function describeRanges(ranges: LineRange[]): string {
   return ranges.map((r) => (r.start === r.end ? `${r.start}` : `${r.start}–${r.end}`)).join(", ");
 }
+
+/** A display-ready partial version built from accumulated reads. */
+export interface KnownState {
+  content: string;
+  lineOffset: number;
+  startLine?: number;
+  endLine?: number;
+  caption: string;
+}
+
+/** Turn accumulated read lines into something the Stage can render directly. */
+export function renderKnownState(known: Record<number, string>): KnownState {
+  const ranges = contiguousRanges(Object.keys(known).map(Number));
+  if (ranges.length === 0) {
+    return { content: "", lineOffset: 0, caption: "Nothing read yet" };
+  }
+
+  const first = ranges[0]!.start;
+  const last = ranges[ranges.length - 1]!.end;
+  const contiguous = ranges.length === 1;
+  return {
+    content: renderKnownLines(known).text,
+    lineOffset: first - 1,
+    startLine: contiguous ? first : undefined,
+    endLine: contiguous ? last : undefined,
+    caption: contiguous
+      ? `Agent has lines ${first}–${last} of this file`
+      : `Agent has lines ${describeRanges(ranges)} — the gaps are not in its context`,
+  };
+}

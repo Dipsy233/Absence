@@ -13,7 +13,9 @@ export function FileHistory({ path }: { path: string }) {
   const setFilesView = useUiStore((s) => s.setFilesView);
   const openStage = useStageStore((s) => s.openStage);
 
-  const history = file?.history ?? [];
+  // v0 is an accumulated read, not a file state, so diffs only consider the
+  // whole-file versions a write/edit produced.
+  const history = (file?.history ?? []).filter((v) => v.complete);
   const [toVersion, setToVersion] = useState<number | undefined>(history.at(-1)?.version);
 
   const toIndex = history.findIndex((version) => version.version === toVersion);

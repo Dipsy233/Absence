@@ -308,6 +308,127 @@ const run = async () => {
   useStageStore.getState().reset();
   useFileStore.getState().reset();
 
+  // 11. every version of a file is recorded separately
+  useFileStore.getState().reset();
+  useFileStore.getState().ingest(readEvent(1, 2, "one\ntwo"));
+  useFileStore.getState().ingest(readEvent(3, 5, "three\nfour\nfive"));
+  const stamp = (n: number) => Date.now() + n;
+  useFileStore.getState().ingest({
+    id: "evt_w1",
+    sessionId: "s",
+    timestamp: stamp(1),
+    type: "file_write",
+    payload: { path: "src/ten.ts", content: "ONE\nTWO\nTHREE\nFOUR\nFIVE" },
+  });
+  useFileStore.getState().ingest({
+    id: "evt_e1",
+    sessionId: "s",
+    timestamp: stamp(2),
+    type: "file_edit",
+    payload: { path: "src/ten.ts", before: "x", after: "ONE\nTWO\nTHREE\nFOUR\nFIVE\nSIX", diff: "" },
+  });
+
+  const record = useFileStore.getState().files["src/ten.ts"]!;
+  assert(
+    "a file records one version per state",
+    record.history.map((v) => v.version).join(",") === "0,1,2",
+    record.history.map((v) => `v${v.version}:${v.source}`).join(" "),
+  );
+  assert("v0 keeps exactly what was read", record.history[0]!.content === "one\ntwo\nthree\nfour\nfive");
+  assert("v0 is marked partial", record.history[0]!.complete === false);
+  assert(
+    "v1 is the written file",
+    record.history[1]!.source === "write" && record.history[1]!.content === "ONE\nTWO\nTHREE\nFOUR\nFIVE",
+  );
+  assert(
+    "v2 is the edited file",
+    record.history[2]!.source === "edit" && record.history[2]!.content.endsWith("SIX"),
+  );
+  assert(
+    "the newest version mirrors the file",
+    record.version === 2 && record.content === record.history[2]!.content,
+  );
+
+  openKnownFile("src/ten.ts", 0);
+  const v0Item = useStageStore.getState().agentFile!;
+  assert(
+    "an older version can be opened",
+    v0Item.payload.kind === "file" &&
+      v0Item.payload.version === 0 &&
+      v0Item.payload.content === "one\ntwo\nthree\nfour\nfive",
+    v0Item.payload.kind === "file" ? `v${v0Item.payload.version}` : "wrong payload",
+  );
+  assert(
+    "an older version says so",
+    v0Item.payload.kind === "file" && (v0Item.payload.caption ?? "").includes("earlier version"),
+    v0Item.payload.kind === "file" ? v0Item.payload.caption : "",
+  );
+  openKnownFile("src/ten.ts");
+  const newestItem = useStageStore.getState().agentFile!;
+  assert(
+    "the default is the newest version",
+    newestItem.payload.kind === "file" && newestItem.payload.version === 2,
+  );
+
+  useFileStore.getState().ingest(readEvent(1, 1, "ONE"));
+  assert(
+    "a read after a write does not roll the file back",
+    useFileStore.getState().files["src/ten.ts"]!.content.endsWith("SIX"),
+  );
+
+  // 12. C counts the files created during a run
+  const userMessage = (n: number, content: string): DazeEvent => ({
+    id: `evt_u${n}`,
+    sessionId: "s",
+    timestamp: stamp(10 + n),
+    type: "message",
+    payload: { role: "user", content },
+  });
+  const agentEnd = (n: number): DazeEvent => ({
+    id: `evt_end${n}`,
+    sessionId: "s",
+    timestamp: stamp(20 + n),
+    type: "agent_end",
+    payload: { reason: "completed" },
+  });
+  const write = (n: number, path: string): DazeEvent => ({
+    id: `evt_wr${n}`,
+    sessionId: "s",
+    timestamp: stamp(30 + n),
+    type: "file_write",
+    payload: { path, content: "x" },
+  });
+  const readOf = (n: number, path: string): DazeEvent => ({
+    id: `evt_rd${n}`,
+    sessionId: "s",
+    timestamp: stamp(40 + n),
+    type: "file_read",
+    payload: { path, startLine: 1, endLine: 1, content: "x" },
+  });
+
+  const synthetic = buildHistory([
+    userMessage(1, "first"),
+    readOf(1, "existing.ts"),
+    write(1, "existing.ts"), // read first → not a creation
+    write(2, "brand-new.ts"), // never seen → created
+    agentEnd(1),
+    userMessage(2, "second"),
+    write(3, "another-new.ts"),
+    agentEnd(2),
+  ]);
+  assert(
+    "C counts files created in the run",
+    synthetic[0]!.counts.created === 1 && synthetic[1]!.counts.created === 1,
+    `run1=${synthetic[0]!.counts.created} run2=${synthetic[1]!.counts.created}`,
+  );
+  assert(
+    "writing a file it had only read is not a creation",
+    synthetic[0]!.counts.created === 1,
+  );
+
+  useStageStore.getState().reset();
+  useFileStore.getState().reset();
+
   console.log(`\nsnapshots for run #1: ${snapshots.length}`);
   process.exit(process.exitCode ?? 0);
 };

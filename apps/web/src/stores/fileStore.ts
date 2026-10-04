@@ -1,20 +1,32 @@
 import { create } from "zustand";
 import type { DazeEvent, FileTreeNode, SessionSnapshot } from "@daze/core";
-import type { FileView } from "../types/file";
+import type { FileVersion, FileView } from "../types/file";
 import { languageFromPath } from "../lib/language";
-import { renderKnownLines } from "../lib/knownLines";
+import { renderKnownState } from "../lib/knownLines";
 
-function makeView(path: string, content = "", version = 0): FileView {
+function emptyView(path: string): FileView {
   return {
     path,
-    content,
     language: languageFromPath(path),
-    version,
     status: "idle",
     history: [],
-    complete: version > 0,
     knownLines: {},
+    content: "",
+    version: -1,
+    complete: false,
   };
+}
+
+/** Add or replace a version and mirror it as the current state. */
+function putVersion(view: FileView, entry: FileVersion): FileView {
+  const history = [...view.history.filter((v) => v.version !== entry.version), entry].sort(
+    (a, b) => a.version - b.version,
+  );
+  return { ...view, history, content: entry.content, version: entry.version, complete: entry.complete };
+}
+
+function latest(view: FileView): FileVersion | undefined {
+  return view.history[view.history.length - 1];
 }
 
 /** Mutates `views` in place, always assigning fresh FileView objects. */
@@ -22,26 +34,36 @@ function applyEvent(views: Record<string, FileView>, event: DazeEvent): void {
   switch (event.type) {
     case "file_read": {
       const { path, content, startLine, endLine } = event.payload;
-      const existing = views[path] ?? makeView(path);
+      const view = views[path] ?? emptyView(path);
 
-      if (existing.complete) {
-        // A write/edit already gave us the whole file; the read adds nothing.
-        views[path] = { ...existing, path, lastRead: { startLine, endLine }, status: "reading" };
+      if (view.complete) {
+        // We already hold the whole file; the read adds nothing.
+        views[path] = { ...view, path, lastRead: { startLine, endLine }, status: "reading" };
         break;
       }
 
-      // Reads accumulate: the agent's context is the union of every range it
-      // has read, not just the most recent one.
-      const knownLines = { ...existing.knownLines };
+      // Reads accumulate into v0: the agent's context is the union of every
+      // range it has read, not just the most recent one.
+      const knownLines = { ...view.knownLines };
       content.split("\n").forEach((line, index) => {
         knownLines[startLine + index] = line;
       });
+      const state = renderKnownState(knownLines);
 
       views[path] = {
-        ...existing,
+        ...putVersion(view, {
+          version: 0,
+          timestamp: event.timestamp,
+          source: "read",
+          content: state.content,
+          complete: false,
+          lineOffset: state.lineOffset,
+          startLine: state.startLine,
+          endLine: state.endLine,
+          caption: state.caption,
+        }),
         path,
         knownLines,
-        content: renderKnownLines(knownLines).text,
         lastRead: { startLine, endLine },
         status: "reading",
       };
@@ -51,21 +73,22 @@ function applyEvent(views: Record<string, FileView>, event: DazeEvent): void {
     case "file_edit": {
       const { path } = event.payload;
       const content = event.type === "file_edit" ? event.payload.after : event.payload.content;
-      const existing = views[path];
-      const version = (existing?.version ?? 0) + 1;
+      const view = views[path] ?? emptyView(path);
+      const nextNumber = (latest(view)?.version ?? -1) + 1;
+
       views[path] = {
-        ...(existing ?? makeView(path)),
+        ...putVersion(view, {
+          version: nextNumber,
+          timestamp: event.timestamp,
+          source: event.type === "file_edit" ? "edit" : "write",
+          content,
+          complete: true,
+          lineOffset: 0,
+        }),
         path,
-        content,
-        version,
         status: "modified",
         lastModifiedAt: event.timestamp,
-        complete: true,
         knownLines: {},
-        history: [
-          ...(existing?.history ?? []),
-          { version, timestamp: event.timestamp, content, source: event.type === "file_edit" ? "edit" : "write" },
-        ],
       };
       break;
     }
@@ -100,17 +123,25 @@ export const useFileStore = create<FileStore>((set, get) => ({
   },
 
   hydrate: (snapshot) => {
-    // Rebuild from the event timeline so knowledge survives a reconnect.
+    // Rebuild from the event timeline so recorded versions survive a reconnect.
     const files: Record<string, FileView> = {};
     for (const event of snapshot.events) applyEvent(files, event);
+
     for (const f of snapshot.files) {
-      if (!files[f.path]) {
-        files[f.path] = {
-          ...makeView(f.path, f.content, f.version),
-          lastRead: f.lastRead,
-          lastModifiedAt: f.lastModified,
-        };
-      }
+      if (files[f.path]) continue;
+      const view = emptyView(f.path);
+      files[f.path] = {
+        ...putVersion(view, {
+          version: Math.max(0, f.version),
+          timestamp: f.lastModified ?? 0,
+          source: "write",
+          content: f.content,
+          complete: f.version > 0,
+          lineOffset: 0,
+        }),
+        lastRead: f.lastRead,
+        lastModifiedAt: f.lastModified,
+      };
     }
     set({ tree: snapshot.tree, files });
   },

@@ -18,7 +18,8 @@ export function FileDetail({ path }: { path: string }) {
   const addContext = useChatStore((s) => s.addContext);
 
   const content = file?.content ?? "";
-  const history = file?.history ?? [];
+  // Only whole-file versions can be diffed; v0 is an accumulated read.
+  const history = (file?.history ?? []).filter((v) => v.complete);
 
   const openInStage = () => openKnownFile(path);
 
@@ -88,8 +89,7 @@ export function FileDetail({ path }: { path: string }) {
               .map((version) => (
                 <li key={version.version}>
                   v{version.version} · {version.source} · {formatAgo(version.timestamp)}
-                </li>
-              ))}
+                </li>              ))}
           </ul>
         </div>
       ) : null}

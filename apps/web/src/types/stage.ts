@@ -20,6 +20,8 @@ export type StagePayload =
        * slice is numbered as it appears in the file.
        */
       lineOffset?: number;
+      /** Which recorded version of the file this is (see FileVersion). */
+      version?: number;
       caption?: string;
       badge?: string;
       badgeTone?: "normal" | "warn";

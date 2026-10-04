@@ -35,13 +35,36 @@ The whole UI is split by *whose view* you are looking at:
 | The FILE button | the `userFile` slot | the `agentFile` slot |
 
 The two slots are independent. If the agent read lines 10–20 of a file, the
-Agent Table lists it and its FILE button shows just those lines — and after two
+Agent Folder lists it and its FILE button shows just those lines — and after two
 reads of 1–2 and 3–5 it shows 1–5, never a gap silently bridged (unread lines in
 between become explicit `⋯ (line 6 — not in the agent's context)` markers so the
 numbering still matches the real file).
 
 The left tree can do this because a *user* is allowed to read their own project;
 the right side never pretends to know more than the agent does.
+
+### File versions
+
+Each file the agent touches records **one version per state**, oldest first:
+
+```
+v0  read   lines 1–5        ← the union of everything it has read so far
+v1  write  whole file
+v2  edit   whole file
+```
+
+Versions are *recorded*, not derived. The text is captured at the moment the
+agent saw it — the `read` slice comes from the tool result the model actually
+received, a `write` from the argument it sent, an `edit` from applying its own
+edits to the file it held. Later changes on disk (by the agent or anything else)
+can never rewrite an earlier version, because nothing points back at the source
+file.
+
+That matters because an LLM's context really does keep the earlier versions, and
+it makes the Agent Folder useful for looking back: expand a file and click any
+version to put that exact state on the Stage. A read after a write does not roll
+the file back, and v0 (partial, from reads) is never diffed against full-file
+versions in Files → History.
 
 ## Layout
 
@@ -53,7 +76,7 @@ the right side never pretends to know more than the agent does.
 │  (user view) │           │ [TERMINAL FILE    │    (avatar)   │
 │              │           │  LIVE]            │               │
 ├──────────────┤───────────────────────────────├───────────────┤
-│   HISTORY    │                               │  AGENT TABLE  │
+│   HISTORY    │                               │ AGENT FOLDER  │
 │   (runs)     │            STAGE              │ (agent view)  │
 ├──────────────┤                               ├───────────────┤
 │   ACTIVITY   │                               │               │
@@ -67,17 +90,21 @@ the right side never pretends to know more than the agent does.
 - **Files** (left) — tree → detail → history. The tree marks files the agent has
   touched (`●`) and highlights the file currently on the Stage. Right-click for
   *Inspect / Open in Stage / View History / View Diff / Add to Chat / Explain this*.
-- **History** (left) — one row per **run**: prompt to completion or interruption.
-  Shows time, status (`running`/`done`/`stopped`/`error`), duration, the prompt,
-  and action counts. Selecting a run filters the Activity panel.
+- **History** (left) — one row per **run**: prompt to completion or interruption,
+  oldest first with the newest at the bottom. Shows time, status
+  (`running`/`done`/`stopped`/`error`), duration, the prompt, and action counts
+  `R` read · `S` search · `E` edit · `C` created · `$` command. Selecting a run
+  filters the Activity panel; the **⟲** button rolls the view back to the state
+  at the end of that run (see Replay — DAZE never writes to the project, so this
+  is a view-only revert).
 - **Activity** (left) — the selected run's actions, oldest first. Click a row to
   put it on the Stage; its header has a **▶ replay** button that replays that run.
 - **Stage** (center) — file, diff, terminal, desk or replay, with the mode
   switcher split into the two perspectives above.
 - **Agent** (right) — the avatar, driven purely by the event stream.
-- **Agent Table** (right) — the agent's view of the project: the files in its
-  context, newest first (`v3 · edited · 12s ago`, size). Click to expand that
-  content onto the Stage.
+- **Agent Folder** (right) — the agent's view of the project: the files in its
+  context, newest first, each expandable into the versions it has held. Click a
+  file for its newest content, or a version for that exact state.
 - **Chat** (right) — talk to the agent, with explicit attached context.
 
 ## Agent status
@@ -110,6 +137,14 @@ Replay is reconstructed, not recorded: **events + state snapshots**, never video
 - seek takes the nearest snapshot and applies the remaining events
 - controls (play / pause / step / seek / 0.25×–10×) live inside the Stage, below
   the animated area so dragging the scrubber is never interrupted
+
+Opening a run two ways:
+
+- **▶ replay** in the Activity header — replay it from the beginning
+- **⟲** in the History row — roll back to the state at the **end** of the run
+
+Both are view-only. DAZE is an observer, so "rollback" means restoring what you
+are looking at, never rewriting the project.
 
 ## Architecture
 
@@ -287,10 +322,11 @@ npx tsx scripts/check-history.ts             # needs the server running
 panel: reads with line ranges, a runnable `npm test`, a `TODO.md` checklist (the
 plan shows on the desk), and `notes.txt` for the delete-vs-truncate case.
 
-`check-history.ts` runs **38 checks** against a live mock session: run grouping,
+`check-history.ts` runs **50 checks** against a live mock session: run grouping,
 per-run activity scoping, deterministic stage item ids, snapshot seek, the Stage
 returning to its default page, search→terminal mapping, the two independent FILE
-slots, read accumulation and gap markers.
+slots, read accumulation and gap markers, per-version recording, and the created
+file count.
 
 ## Notes & limitations
 

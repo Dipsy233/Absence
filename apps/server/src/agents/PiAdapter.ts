@@ -22,7 +22,10 @@ export class PiAdapter extends BaseAdapter {
   private unsubscribe?: () => void;
   private model = "pi";
   private toolArgs = new Map<string, unknown>();
-  private fileCache = new Map<string, string>();
+  /** Lines the agent has received, keyed by their line number in the file. */
+  private fileLines = new Map<string, Map<number, string>>();
+  /** Paths whose whole content we hold (a write/edit). */
+  private wholeFiles = new Set<string>();
   private assistantAcc = "";
   private thinkingAcc = "";
   private aborted = false;
@@ -200,26 +203,28 @@ export class PiAdapter extends BaseAdapter {
       switch (toolName) {
         case "read": {
           const abs = this.abs(args.path);
-          const content = (await readFileSafe(abs)) ?? textOfResult(result);
-          const lines = content.split("\n");
-          const offset = toNumber(args.offset, 1);
-          const startLine = Math.max(1, offset);
-          const limit = args.limit !== undefined ? toNumber(args.limit, lines.length) : undefined;
-          const endLine = Math.min(lines.length, limit ? startLine + limit - 1 : lines.length);
-          this.fileCache.set(abs, content);
+          // Capture exactly what the agent received rather than re-reading the
+          // file: the tool result is the plain slice (no line numbers), and it
+          // cannot drift if something else touches the file first.
+          const content = stripReadNote(textOfResult(result));
+          const startLine = Math.max(1, toNumber(args.offset, 1));
+          const lineCount = content.length === 0 ? 0 : content.split("\n").length;
+          const endLine = startLine + Math.max(0, lineCount - 1);
+          this.mergeSlice(abs, startLine, content);
           this.emitDaze("file_read", {
             path: this.display(args.path),
             startLine,
             endLine,
-            content: lines.slice(startLine - 1, endLine).join("\n"),
+            content,
             language: languageFromPath(abs),
           });
           break;
         }
         case "write": {
           const abs = this.abs(args.path);
-          const content = (await readFileSafe(abs)) ?? String(args.content ?? "");
-          this.fileCache.set(abs, content);
+          // The argument is exactly what the agent wrote.
+          const content = String(args.content ?? "");
+          this.rememberWholeFile(abs, content);
           this.emitDaze("file_write", {
             path: this.display(args.path),
             content,
@@ -228,10 +233,15 @@ export class PiAdapter extends BaseAdapter {
         }
         case "edit": {
           const abs = this.abs(args.path);
-          const before = this.fileCache.get(abs) ?? "";
-          const after = (await readFileSafe(abs)) ?? "";
+          const known = this.knownText(abs);
+          const edits = Array.isArray(args.edits) ? (args.edits as Array<{ oldText?: string; newText?: string }>) : [];
+          // Reconstruct the result from the agent's own edit when we hold the
+          // whole file (a full write/edit); otherwise the file must be read.
+          const reconstructed = known !== undefined && this.wholeFiles.has(abs) ? applyEdits(known, edits) : undefined;
+          const after = reconstructed ?? (await readFileSafe(abs)) ?? known ?? "";
+          const before = known ?? "";
           const details = (result as { details?: { diff?: string } } | undefined)?.details;
-          this.fileCache.set(abs, after);
+          this.rememberWholeFile(abs, after);
           this.emitDaze("file_edit", {
             path: this.display(args.path),
             before,
@@ -283,8 +293,34 @@ export class PiAdapter extends BaseAdapter {
     }
   }
 
-  private abs(p: unknown): string {
-    const value = String(p ?? "");
+  /** Merge a read slice into what we know about a file. */
+  private mergeSlice(abs: string, startLine: number, content: string): void {
+    if (content.length === 0) return;
+    const lines = this.fileLines.get(abs) ?? new Map<number, string>();
+    content.split("\n").forEach((line, index) => lines.set(startLine + index, line));
+    this.fileLines.set(abs, lines);
+  }
+
+  private rememberWholeFile(abs: string, content: string): void {
+    const lines = new Map<number, string>();
+    content.split("\n").forEach((line, index) => lines.set(index + 1, line));
+    this.fileLines.set(abs, lines);
+    this.wholeFiles.add(abs);
+  }
+
+  /** The file text as the agent knows it, or undefined if nothing was read. */
+  private knownText(abs: string): string | undefined {
+    const lines = this.fileLines.get(abs);
+    if (!lines || lines.size === 0) return undefined;
+    const numbers = [...lines.keys()].sort((a, b) => a - b);
+    const first = numbers[0]!;
+    const last = numbers[numbers.length - 1]!;
+    const out: string[] = [];
+    for (let n = first; n <= last; n++) out.push(lines.get(n) ?? "");
+    return out.join("\n");
+  }
+
+  private abs(p: unknown): string {    const value = String(p ?? "");
     return path.isAbsolute(value) ? value : path.join(this.cwd, value);
   }
 
@@ -299,6 +335,31 @@ export class PiAdapter extends BaseAdapter {
 function toNumber(value: unknown, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/** The read tool appends a "[Showing lines a-b of n…]" footer to its output. */
+function stripReadNote(text: string): string {
+  return text.replace(/\n\n\[(?:Showing lines|Line \d+ is)[^\]]*\]\s*$/, "");
+}
+
+/**
+ * Apply the agent's own edits to the text it holds. Edits are matched against
+ * the original text and must not overlap, so applying them in any order works.
+ * Returns undefined when nothing matched (a stale or partial base).
+ */
+function applyEdits(
+  before: string,
+  edits: Array<{ oldText?: string; newText?: string }>,
+): string | undefined {
+  let text = before;
+  let matched = false;
+  for (const edit of edits) {
+    const oldText = edit.oldText ?? "";
+    if (oldText.length === 0 || !text.includes(oldText)) continue;
+    text = text.replace(oldText, edit.newText ?? "");
+    matched = true;
+  }
+  return matched ? text : undefined;
 }
 
 function errorMessage(error: unknown): string {

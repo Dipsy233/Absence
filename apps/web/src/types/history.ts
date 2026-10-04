@@ -23,6 +23,8 @@ export interface RunCounts {
   search: number;
   edit: number;
   run: number;
+  /** Files created during this run. */
+  created: number;
 }
 
 export type { DazeEvent };

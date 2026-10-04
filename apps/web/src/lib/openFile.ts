@@ -1,56 +1,51 @@
 import * as api from "./api";
 import { createStageItem } from "./events";
 import { languageFromPath } from "./language";
-import { contiguousRanges, describeRanges } from "./knownLines";
 import { useFileStore } from "../stores/fileStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useStageStore } from "../stores/stageStore";
-import type { FileView } from "../types/file";
+import type { FileVersion, FileView } from "../types/file";
 import type { StageItem } from "../types/stage";
 
-/**
- * Payload for the agent's view of a file: exactly what is in its context.
- * Reads accumulate, so two reads of 1–2 and 3–5 yield lines 1–5; lines it never
- * read are shown as explicit markers so the numbering stays true to the file.
- */
-function knownPayload(file: FileView): Extract<StageItem["payload"], { kind: "file" }> {
-  const base = { kind: "file" as const, path: file.path, content: file.content, language: file.language };
+type FilePayload = Extract<StageItem["payload"], { kind: "file" }>;
 
-  if (file.complete) {
-    return { ...base, lineOffset: 0, caption: "Agent-known content · whole file" };
-  }
-
-  const ranges = contiguousRanges(Object.keys(file.knownLines).map(Number));
-  if (ranges.length === 0) {
-    return { ...base, lineOffset: 0, caption: "Agent-known content" };
-  }
-
-  const first = ranges[0]!.start;
-  const last = ranges[ranges.length - 1]!.end;
-  const contiguous = ranges.length === 1;
+function payloadFor(file: FileView, entry: FileVersion, latestVersion: number): FilePayload {
+  const parts = [`v${entry.version}`, entry.source];
+  if (!entry.complete && entry.caption) parts.push(entry.caption);
+  if (entry.version !== latestVersion) parts.push("earlier version");
   return {
-    ...base,
-    startLine: contiguous ? first : undefined,
-    endLine: contiguous ? last : undefined,
-    lineOffset: first - 1,
-    caption: contiguous
-      ? `Agent has lines ${first}–${last} of this file`
-      : `Agent has lines ${describeRanges(ranges)} — the gaps are not in its context`,
+    kind: "file",
+    path: file.path,
+    content: entry.content,
+    language: file.language,
+    startLine: entry.startLine,
+    endLine: entry.endLine,
+    lineOffset: entry.lineOffset,
+    version: entry.version,
+    caption: parts.join(" · "),
   };
 }
 
-/** Agent view: only what the agent actually has in context. */
-export function openKnownFile(path: string): void {
+/**
+ * Agent view: a recorded version of the file — only what the agent had in
+ * context. Defaults to the newest version.
+ */
+export function openKnownFile(path: string, version?: number): void {
   const file = useFileStore.getState().files[path];
-  if (!file) return;
+  if (!file || file.history.length === 0) return;
+
+  const latestVersion = file.history[file.history.length - 1]!.version;
+  const entry = version !== undefined ? file.history.find((v) => v.version === version) : file.history.at(-1);
+  if (!entry) return;
+
   useStageStore
     .getState()
-    .openAgentFile(createStageItem("file", path, knownPayload(file), { path }));
+    .openAgentFile(createStageItem("file", path, payloadFor(file, entry, latestVersion), { path }));
 }
 
 /**
- * User view: the whole file, always read from disk. The event stream only ever
- * holds what the agent read, so using it here would show a slice as the file.
+ * User view: the whole file, always read from disk. The recorded versions only
+ * hold what the agent saw, so using them here would show a slice as the file.
  */
 export async function openUserFile(path: string): Promise<void> {
   const sessionId = useSessionStore.getState().session?.id;
@@ -80,19 +75,20 @@ export async function openUserFile(path: string): Promise<void> {
     }
   }
 
-  // The disk refused (binary, too large, …). Show what the agent knows instead,
-  // clearly marked as partial so it is not mistaken for the whole file.
+  // The disk refused (binary, too large, …). Show the newest recorded version
+  // instead, clearly marked as partial so it is not mistaken for the file.
   const known = useFileStore.getState().files[path];
-  if (known) {
+  const entry = known?.history.at(-1);
+  if (known && entry) {
     useStageStore.getState().openUserFile(
       createStageItem(
         "file",
         path,
         {
-          ...knownPayload(known),
-          badge: "partial",
-          badgeTone: "warn",
-          caption: `Whole file unavailable (${failure}) — showing the agent-known content`,
+          ...payloadFor(known, entry, entry.version),
+          badge: entry.complete ? undefined : "partial",
+          badgeTone: entry.complete ? undefined : "warn",
+          caption: `Whole file unavailable (${failure}) — showing the agent-known content (v${entry.version})`,
         },
         { path },
       ),
