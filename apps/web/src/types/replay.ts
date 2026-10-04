@@ -10,6 +10,9 @@ export interface ReplaySnapshot {
   timestamp: number;
   files: FileMap;
   agentStatus: AgentStatus;
+  /** What the Stage was showing at this point. Without it, a seek that lands on
+   *  a snapshot with no later action would show an empty Stage. */
+  currentAction?: DazeEvent;
 }
 
 /** The state the Stage renders while in replay mode. */

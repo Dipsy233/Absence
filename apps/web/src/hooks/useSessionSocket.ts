@@ -3,7 +3,6 @@ import type { DazeEvent, SessionRuntimeState, SessionSnapshot } from "@daze/core
 import { useSessionStore } from "../stores/sessionStore";
 import { useFileStore } from "../stores/fileStore";
 import { useChatStore } from "../stores/chatStore";
-import { useReplayStore } from "../stores/replayStore";
 import { useStageStore } from "../stores/stageStore";
 import { useUiStore } from "../stores/uiStore";
 
@@ -51,13 +50,11 @@ export function useSessionSocket(sessionId: string | undefined): void {
             useSessionStore.getState().hydrate(message.state);
             useFileStore.getState().hydrate(message.state);
             useChatStore.getState().hydrate(message.state);
-            useReplayStore.getState().hydrate(message.state.events);
             break;
           case "event":
             useSessionStore.getState().ingestEvent(message.event);
             useFileStore.getState().ingest(message.event);
             useChatStore.getState().ingest(message.event);
-            useReplayStore.getState().ingest(message.event);
             break;
           case "session_state":
             useSessionStore.getState().applyRuntimeState(message.state);

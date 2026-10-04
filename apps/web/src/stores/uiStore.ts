@@ -17,19 +17,24 @@ export type FilesView =
 interface UiStore {
   menu?: { x: number; y: number; items: MenuItem[] };
   filesView: FilesView;
+  /** History run selected in the left rail; drives the Activity filter. */
+  selectedRunId?: string;
 
   openMenu: (x: number, y: number, items: MenuItem[]) => void;
   closeMenu: () => void;
   setFilesView: (view: FilesView) => void;
+  selectRun: (id?: string) => void;
   reset: () => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
   menu: undefined,
   filesView: { kind: "tree" },
+  selectedRunId: undefined,
 
   openMenu: (x, y, items) => set({ menu: { x, y, items } }),
   closeMenu: () => set({ menu: undefined }),
   setFilesView: (filesView) => set({ filesView }),
-  reset: () => set({ menu: undefined, filesView: { kind: "tree" } }),
+  selectRun: (selectedRunId) => set({ selectedRunId }),
+  reset: () => set({ menu: undefined, filesView: { kind: "tree" }, selectedRunId: undefined }),
 }));

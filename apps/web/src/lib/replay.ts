@@ -41,6 +41,7 @@ export function buildSnapshots(events: DazeEvent[]): ReplaySnapshot[] {
 
   const files: FileMap = {};
   let status: AgentStatus = "idle";
+  let currentAction: DazeEvent | undefined;
   let nextByTime = (first?.timestamp ?? 0) + SNAPSHOT_INTERVAL_MS;
 
   for (let i = 0; i < events.length; i++) {
@@ -48,11 +49,18 @@ export function buildSnapshots(events: DazeEvent[]): ReplaySnapshot[] {
     applyEventToFiles(files, event);
     const derived = statusFromEvent(event);
     if (derived) status = derived;
+    if (STAGE_EVENT_TYPES.has(event.type)) currentAction = event;
 
     const byCount = (i + 1) % SNAPSHOT_EVERY === 0;
     const byTime = event.timestamp >= nextByTime;
     if (byCount || byTime) {
-      snapshots.push({ index: i + 1, timestamp: event.timestamp, files: { ...files }, agentStatus: status });
+      snapshots.push({
+        index: i + 1,
+        timestamp: event.timestamp,
+        files: { ...files },
+        agentStatus: status,
+        currentAction,
+      });
       if (byTime) nextByTime = event.timestamp + SNAPSHOT_INTERVAL_MS;
     }
   }
@@ -72,7 +80,7 @@ export function seek(events: DazeEvent[], snapshots: ReplaySnapshot[], t: number
 
   const files: FileMap = { ...snapshot.files };
   let status: AgentStatus = snapshot.agentStatus;
-  let currentAction: DazeEvent | undefined;
+  let currentAction: DazeEvent | undefined = snapshot.currentAction;
   let appliedIndex = snapshot.index;
 
   for (let i = snapshot.index; i < events.length; i++) {

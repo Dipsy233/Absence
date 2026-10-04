@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DazeEvent, SessionSnapshot } from "@daze/core";
+import type { DazeEvent } from "@daze/core";
 import type { ReplaySpeed, ReplaySnapshot, ReplayStatus, ReplayView } from "../types/replay";
 import {
   buildSnapshots,
@@ -22,16 +22,17 @@ function clearTimer(): void {
 }
 
 interface ReplayStore {
+  /** The events of the run currently being replayed. */
   events: DazeEvent[];
+  label?: string;
   snapshots: ReplaySnapshot[];
-  snapshotsDirty: boolean;
   status: ReplayStatus;
   speed: ReplaySpeed;
   currentTime: number;
   view?: ReplayView;
 
-  hydrate: (events: DazeEvent[]) => void;
-  ingest: (event: DazeEvent) => void;
+  /** Load a run to replay. `startAtEnd` keeps the view at live instead. */
+  load: (events: DazeEvent[], options?: { startAtEnd?: boolean; label?: string }) => void;
   play: () => void;
   pause: () => void;
   stop: () => void;
@@ -40,81 +41,57 @@ interface ReplayStore {
   seekRatio: (ratio: number) => void;
   stepForward: () => void;
   stepBackward: () => void;
-  reset: () => void;
+  clear: () => void;
 }
 
 export const useReplayStore = create<ReplayStore>((set, get) => {
-  function ensureSnapshots(): ReplaySnapshot[] {
-    const state = get();
-    if (state.snapshotsDirty) {
-      const snapshots = buildSnapshots(state.events);
-      set({ snapshots, snapshotsDirty: false });
-      return snapshots;
-    }
-    return state.snapshots;
-  }
-
-  function compute(timestamp: number, snapshots: ReplaySnapshot[]): ReplayView {
-    return seek(get().events, snapshots, timestamp);
-  }
-
-  return {
-    events: [],
-    snapshots: [],
-    snapshotsDirty: true,
-    status: "idle",
-    speed: 1,
+  const empty = {
+    events: [] as DazeEvent[],
+    label: undefined,
+    snapshots: [] as ReplaySnapshot[],
+    status: "idle" as ReplayStatus,
+    speed: 1 as ReplaySpeed,
     currentTime: 0,
     view: undefined,
+  };
 
-    hydrate: (events) => {
+  return {
+    ...empty,
+
+    load: (events, options) => {
       clearTimer();
       const snapshots = buildSnapshots(events);
-      const end = timelineEnd(events);
+      const at = options?.startAtEnd ? timelineEnd(events) : timelineStart(events);
       set({
         events,
+        label: options?.label,
         snapshots,
-        snapshotsDirty: false,
-        status: "idle",
-        currentTime: end,
-        view: seek(events, snapshots, end),
+        status: options?.startAtEnd ? "idle" : "paused",
+        currentTime: at,
+        view: seek(events, snapshots, at),
       });
-    },
-
-    ingest: (event) => {
-      const events = [...get().events, event];
-      set({ events, snapshotsDirty: true });
-      // While sitting at the live head, keep following; otherwise leave the
-      // user's scrub position alone.
-      if (get().status === "idle") {
-        const snapshots = get().snapshots; // may be stale; the seek below tolerates it
-        set({ currentTime: event.timestamp, view: seek(events, snapshots, event.timestamp) });
-      }
     },
 
     play: () => {
       const state = get();
       if (state.events.length === 0) return;
-      const snapshots = ensureSnapshots();
       const start = timelineStart(state.events);
       const end = timelineEnd(state.events);
       const from = state.currentTime >= end ? start : state.currentTime;
 
-      set({ status: "playing", currentTime: from, view: compute(from, snapshots) });
+      set({ status: "playing", currentTime: from, view: seek(state.events, state.snapshots, from) });
       clearTimer();
       timer = setInterval(() => {
         const s = get();
         if (s.status !== "playing") return;
-        const events = s.events;
-        const snaps = s.snapshotsDirty ? ensureSnapshots() : s.snapshots;
-        const limit = timelineEnd(events);
+        const limit = timelineEnd(s.events);
         const next = s.currentTime + TICK_MS * s.speed;
         if (next >= limit) {
           clearTimer();
-          set({ currentTime: limit, status: "paused", view: compute(limit, snaps) });
+          set({ currentTime: limit, status: "paused", view: seek(s.events, s.snapshots, limit) });
           return;
         }
-        set({ currentTime: next, view: compute(next, snaps) });
+        set({ currentTime: next, view: seek(s.events, s.snapshots, next) });
       }, TICK_MS);
     },
 
@@ -125,22 +102,18 @@ export const useReplayStore = create<ReplayStore>((set, get) => {
 
     stop: () => {
       clearTimer();
-      const { events } = get();
+      const { events, snapshots } = get();
       const end = timelineEnd(events);
-      const snapshots = ensureSnapshots();
-      set({ status: "idle", currentTime: end, view: compute(end, snapshots) });
+      set({ status: "paused", currentTime: end, view: seek(events, snapshots, end) });
     },
 
     setSpeed: (speed) => set({ speed }),
 
     seekTimestamp: (timestamp) => {
-      const { events } = get();
+      const { events, snapshots } = get();
       if (events.length === 0) return;
-      const start = timelineStart(events);
-      const end = timelineEnd(events);
-      const clamped = Math.min(Math.max(timestamp, start), end);
-      const snapshots = ensureSnapshots();
-      set({ currentTime: clamped, view: compute(clamped, snapshots) });
+      const clamped = Math.min(Math.max(timestamp, timelineStart(events)), timelineEnd(events));
+      set({ currentTime: clamped, view: seek(events, snapshots, clamped) });
     },
 
     seekRatio: (ratio) => {
@@ -153,27 +126,17 @@ export const useReplayStore = create<ReplayStore>((set, get) => {
 
     stepForward: () => {
       const { events, currentTime } = get();
-      const next = nextEventTimestamp(events, currentTime);
-      get().seekTimestamp(next ?? timelineEnd(events));
+      get().seekTimestamp(nextEventTimestamp(events, currentTime) ?? timelineEnd(events));
     },
 
     stepBackward: () => {
       const { events, currentTime } = get();
-      const prev = prevEventTimestamp(events, currentTime);
-      get().seekTimestamp(prev ?? timelineStart(events));
+      get().seekTimestamp(prevEventTimestamp(events, currentTime) ?? timelineStart(events));
     },
 
-    reset: () => {
+    clear: () => {
       clearTimer();
-      set({
-        events: [],
-        snapshots: [],
-        snapshotsDirty: true,
-        status: "idle",
-        speed: 1,
-        currentTime: 0,
-        view: undefined,
-      });
+      set({ ...empty });
     },
   };
 });

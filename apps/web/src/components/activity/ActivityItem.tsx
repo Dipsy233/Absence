@@ -16,25 +16,37 @@ const TONE_CLASS: Record<ActivityRow["tone"], string> = {
   warn: "text-desk-ember",
 };
 
-/** One clickable row; clicking opens the matching Stage content (read02 §19). */
+/**
+ * One clickable row. Outside replay it opens the matching Stage content
+ * (read02 §19); inside replay it scrubs the Stage to that event.
+ */
 export function ActivityItem({ row }: { row: ActivityRow }) {
   const openStage = useStageStore((s) => s.openStage);
+  const mode = useStageStore((s) => s.mode);
   const openMenu = useUiStore((s) => s.openMenu);
   const addContext = useChatStore((s) => s.addContext);
   const seek = useReplayStore((s) => s.seekTimestamp);
 
+  const inReplay = mode === "replay";
   const canOpen = row.stageItem !== undefined;
+  const clickable = inReplay || canOpen;
+
+  const activate = () => {
+    if (inReplay) {
+      seek(row.event.timestamp);
+      return;
+    }
+    if (row.stageItem) openStage(row.stageItem);
+  };
 
   const handleContextMenu = (event: MouseEvent) => {
     event.preventDefault();
     openMenu(event.clientX, event.clientY, [
       {
-        label: "Open in Stage",
-        disabled: !canOpen,
-        onSelect: () => row.stageItem && openStage(row.stageItem),
+        label: inReplay ? "Scrub to this event" : "Open in Stage",
+        disabled: !clickable,
+        onSelect: activate,
       },
-      { label: "Replay to this event", onSelect: () => seek(row.event.timestamp) },
-      { label: "", onSelect: () => {}, separator: true },
       { label: "Add event to Chat", onSelect: () => addContext(eventContext(row.event)) },
     ]);
   };
@@ -43,13 +55,13 @@ export function ActivityItem({ row }: { row: ActivityRow }) {
     <li>
       <button
         type="button"
-        disabled={!canOpen}
-        onClick={() => row.stageItem && openStage(row.stageItem)}
+        disabled={!clickable}
+        onClick={activate}
         onContextMenu={handleContextMenu}
-        title={canOpen ? "Open in Stage" : undefined}
+        title={inReplay ? "Scrub to this event" : canOpen ? "Open in Stage" : undefined}
         className={[
           "block w-full rounded px-1.5 py-1 text-left font-mono text-[11px] leading-tight",
-          canOpen ? "hover:bg-desk-panel2" : "cursor-default",
+          clickable ? "hover:bg-desk-panel2" : "cursor-default",
         ].join(" ")}
       >
         <span className="flex items-baseline gap-2">

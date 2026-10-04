@@ -10,7 +10,7 @@ export function resetAllStores(): void {
   useSessionStore.getState().reset();
   useFileStore.getState().reset();
   useChatStore.getState().reset();
-  useReplayStore.getState().reset();
+  useReplayStore.getState().clear();
   useStageStore.getState().reset();
   useUiStore.getState().reset();
 }

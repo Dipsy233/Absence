@@ -62,8 +62,16 @@ function baseItem(
   payload: StageItem["payload"],
   path?: string,
 ): StageItem {
+  // The id is derived from the event so the item is stable across renders.
+  // A random id here would churn the Stage's animation key every frame and
+  // make replay appear frozen.
   return {
-    ...createStageItem(type, title, payload, { eventId: event.id, path }),
+    id: event.id,
+    type,
+    title,
+    source: { eventId: event.id, path },
+    payload,
+    createdAt: event.timestamp,
     event,
   };
 }

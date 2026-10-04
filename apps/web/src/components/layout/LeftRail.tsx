@@ -1,14 +1,14 @@
 import { ActivityPanel } from "../activity/ActivityPanel";
 import { FilePanel } from "../files/FilePanel";
-import { ReplayPanel } from "../replay/ReplayPanel";
+import { HistoryPanel } from "../history/HistoryPanel";
 
-/** Left rail: Files, Activity, Replay (read02 §4.1). */
+/** Left rail: Files, History, Activity (bottom shows the selected run's actions). */
 export function LeftRail() {
   return (
     <div className="flex min-h-0 flex-col gap-2">
       <FilePanel />
+      <HistoryPanel />
       <ActivityPanel />
-      <ReplayPanel />
     </div>
   );
 }
