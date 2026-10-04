@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { DazeEvent } from "@daze/core";
 import { useDazeStore } from "../../stores/useDazeStore";
 import { Panel } from "../Panel";
@@ -116,10 +117,24 @@ const TONE_CLASS: Record<Row["tone"], string> = {
 
 export function Activity() {
   const activity = useDazeStore((s) => s.activity);
-  const rows = activity.slice().reverse().map(toRow);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  // Chronological order: oldest at the top, newest at the bottom.
+  const rows = activity.map(toRow);
+
+  // Keep the newest event in view.
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [activity]);
 
   return (
-    <Panel title="Activity" aside={`${activity.length}`} className="min-h-0 flex-1">
+    <Panel
+      title="Activity"
+      aside={`${activity.length}`}
+      className="min-h-0 flex-1"
+      bodyRef={bodyRef}
+    >
       {rows.length === 0 ? (
         <p className="text-xs text-desk-dim">Nothing yet. Send the agent a task.</p>
       ) : (
