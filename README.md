@@ -72,6 +72,22 @@ npm start
 Then: enter a project path (or pick one from the list), choose a runtime, and hit
 **Open**. Send the agent a task in the Chat panel and watch the Stage.
 
+### One-click launcher (Windows)
+
+Double-click **`start-daze.bat`** to start the local model server, start the DAZE
+server, and open the UI in the browser.
+
+```bat
+start-daze.bat            :: start everything
+start-daze.bat rebuild    :: force a web rebuild first
+start-daze.bat check      :: dry run - report what is up, start nothing
+```
+
+It is idempotent: anything already listening is left alone, and if the local model
+cannot be started it falls back to the mock runtime automatically. Override paths
+and ports with `DAZE_MODEL_DIR`, `DAZE_MODEL_PORT`, `DAZE_PORT`, `DAZE_AGENT`.
+Close the two spawned windows to stop everything.
+
 ## Configuration
 
 | Env var | Default | Meaning |
