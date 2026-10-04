@@ -327,7 +327,7 @@ export function statusFromEvent(event: DazeEvent): AgentStatus | undefined {
     case "agent_start":
       return "thinking";
     case "agent_end":
-      return "completed";
+      return "listening";
     case "thinking":
       return "thinking";
     case "message":

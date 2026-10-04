@@ -66,7 +66,7 @@ export class DazeSession {
       projectName: path.basename(projectPath) || projectPath,
       startedAt: Date.now(),
       agentRuntime: kind,
-      status: "idle",
+      status: "listening",
     };
     this.adapter = createAdapter(kind, { tools: config.piTools });
   }
@@ -183,7 +183,7 @@ export class DazeSession {
         break;
 
       case "agent_end":
-        this.setStatus("completed");
+        this.setStatus("listening");
         // The run is over: the Stage returns to its default page.
         this.currentAction = undefined;
         break;

@@ -1,4 +1,4 @@
-import type { AgentStatus, Plan } from "@daze/core";
+import { isAgentBusy, type AgentStatus, type Plan } from "@daze/core";
 
 interface DeskStageProps {
   plan?: Plan;
@@ -10,7 +10,7 @@ interface DeskStageProps {
  * the full 2D desk lands in v0.3 — but the plan is a real object on it.
  */
 export function DeskStage({ plan, status }: DeskStageProps) {
-  const caption = status === "completed" ? "The agent has finished." : "The agent is sitting quietly.";
+  const caption = isAgentBusy(status) ? "The agent is working…" : "The agent is listening.";
 
   return (
     <div className="flex h-full min-h-0 flex-col items-center justify-center gap-6 text-desk-dim">

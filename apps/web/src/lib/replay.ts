@@ -35,12 +35,12 @@ export function applyEventToFiles(files: FileMap, event: DazeEvent): void {
 export function buildSnapshots(events: DazeEvent[]): ReplaySnapshot[] {
   const first = events[0];
   const snapshots: ReplaySnapshot[] = [
-    { index: 0, timestamp: first?.timestamp ?? 0, files: {}, agentStatus: "idle" },
+    { index: 0, timestamp: first?.timestamp ?? 0, files: {}, agentStatus: "listening" },
   ];
   if (events.length === 0) return snapshots;
 
   const files: FileMap = {};
-  let status: AgentStatus = "idle";
+  let status: AgentStatus = "listening";
   let currentAction: DazeEvent | undefined;
   let nextByTime = (first?.timestamp ?? 0) + SNAPSHOT_INTERVAL_MS;
 

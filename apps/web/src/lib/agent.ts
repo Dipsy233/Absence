@@ -22,35 +22,11 @@ export function moodFor(status: AgentStatus): AgentMood {
       return "tired";
     case "error":
       return "confused";
-    case "completed":
-      return "happy";
     default:
       return "calm";
   }
 }
 
-/** The states shown in the Agent panel legend (read02 §31). */
-export const AGENT_STATUSES: AgentStatus[] = [
-  "thinking",
-  "speaking",
-  "reading",
-  "searching",
-  "editing",
-  "running",
-  "waiting",
-  "error",
-  "completed",
-];
-
 export function statusLabel(status: AgentStatus): string {
-  switch (status) {
-    case "idle":
-      return "idle";
-    case "completed":
-      return "done";
-    case "error":
-      return "confused";
-    default:
-      return status;
-  }
+  return status === "error" ? "confused" : status;
 }

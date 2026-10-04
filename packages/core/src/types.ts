@@ -5,7 +5,7 @@ import type { DazeEvent } from "./events";
 
 /** The agent's coarse state — drives the Avatar and status text. */
 export type AgentStatus =
-  | "idle"
+  | "listening"
   | "thinking"
   | "speaking"
   | "reading"
@@ -13,8 +13,7 @@ export type AgentStatus =
   | "editing"
   | "running"
   | "waiting"
-  | "error"
-  | "completed";
+  | "error";
 
 /** True while the agent is actively working (i.e. not settled). */
 export function isAgentBusy(status: AgentStatus): boolean {

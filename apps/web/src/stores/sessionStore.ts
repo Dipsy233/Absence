@@ -36,7 +36,7 @@ interface SessionStore {
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
   session: undefined,
-  agent: { status: "idle" },
+  agent: { status: "listening" },
   events: [],
   currentAction: undefined,
   context: undefined,
@@ -65,7 +65,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   reset: () =>
     set({
       session: undefined,
-      agent: { status: "idle" },
+      agent: { status: "listening" },
       events: [],
       currentAction: undefined,
       context: undefined,

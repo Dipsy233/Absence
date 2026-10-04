@@ -1,4 +1,4 @@
-import type { AgentStatus } from "@daze/core";
+import { isAgentBusy, type AgentStatus } from "@daze/core";
 import { statusLabel, type AgentVisualState } from "../../lib/agent";
 
 interface Pose {
@@ -115,11 +115,7 @@ export function Avatar({ visual }: { visual: AgentVisualState }) {
         <span
           className={[
             "h-1.5 w-1.5 rounded-full",
-            status === "error"
-              ? "bg-desk-ember"
-              : status === "idle" || status === "completed"
-                ? "bg-desk-dim"
-                : "bg-desk-teal",
+            status === "error" ? "bg-desk-ember" : isAgentBusy(status) ? "bg-desk-teal" : "bg-desk-dim",
           ].join(" ")}
         />
         <span className="font-mono text-xs uppercase tracking-[0.2em] text-desk-dim">
