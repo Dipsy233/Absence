@@ -9,10 +9,6 @@ function modeForItem(item: StageItem): StageMode {
       return "diff";
     case "terminal":
       return "terminal";
-    case "search":
-      return "search";
-    case "plan":
-      return "desk";
     default:
       return "desk";
   }
@@ -23,20 +19,20 @@ interface StageStore {
   /** True while the Stage follows the live agent action. */
   following: boolean;
   activeItem?: StageItem;
-  /** Navigation stack (read02 §40) so opening detail never loses your place. */
-  navStack: StageItem[];
-  navIndex: number;
+  /**
+   * The most recent item of each kind. The mode buttons read from this, and it
+   * is fed by both live actions and explicit opens — otherwise a mode button
+   * would stay disabled until you happened to open something by hand.
+   */
+  lastByType: Partial<Record<StageItemType, StageItem>>;
 
+  /** Record an item without changing what is on screen (live actions). */
+  noteItem: (item: StageItem) => void;
+  /** Pin an item and show it. */
   openStage: (item: StageItem) => void;
-  replaceStage: (item: StageItem) => void;
-  closeStage: () => void;
-  setMode: (mode: StageMode) => void;
-  /** Show the most recent item of a kind without pushing onto the stack. */
   showType: (type: StageItemType) => void;
-  hasItemOfType: (type: StageItemType) => boolean;
+  setMode: (mode: StageMode) => void;
   goLive: () => void;
-  goBack: () => void;
-  goForward: () => void;
   reset: () => void;
 }
 
@@ -44,83 +40,34 @@ const EMPTY = {
   mode: "live" as StageMode,
   following: true,
   activeItem: undefined,
-  navStack: [] as StageItem[],
-  navIndex: -1,
+  lastByType: {} as Partial<Record<StageItemType, StageItem>>,
 };
 
 export const useStageStore = create<StageStore>((set, get) => ({
-  ...EMPTY,
+  mode: EMPTY.mode,
+  following: EMPTY.following,
+  activeItem: undefined,
+  lastByType: {},
 
-  openStage: (item) => {
-    const { navStack, navIndex } = get();
-    const stack = [...navStack.slice(0, navIndex + 1), item];
+  noteItem: (item) => set({ lastByType: { ...get().lastByType, [item.type]: item } }),
+
+  openStage: (item) =>
     set({
-      navStack: stack,
-      navIndex: stack.length - 1,
+      lastByType: { ...get().lastByType, [item.type]: item },
       activeItem: item,
       mode: modeForItem(item),
       following: false,
-    });
-  },
-
-  /** Swap the current entry without growing the stack (e.g. picking another version). */
-  replaceStage: (item) => {
-    const { navStack, navIndex } = get();
-    const stack = [...navStack];
-    if (navIndex >= 0) stack[navIndex] = item;
-    else stack.push(item);
-    set({
-      navStack: stack,
-      navIndex: stack.length - 1,
-      activeItem: item,
-      mode: modeForItem(item),
-      following: false,
-    });
-  },
-
-  closeStage: () => set({ following: true, mode: "live" }),
-
-  setMode: (mode) => {
-    if (mode === "live") set({ mode, following: true });
-    else set({ mode, following: false });
-  },
+    }),
 
   showType: (type) => {
-    const { navStack, navIndex } = get();
-    for (let i = navIndex; i >= 0; i--) {
-      const item = navStack[i]!;
-      if (item.type === type) {
-        set({ activeItem: item, mode: modeForItem(item), following: false });
-        return;
-      }
-    }
+    const item = get().lastByType[type];
+    if (!item) return;
+    set({ activeItem: item, mode: modeForItem(item), following: false });
   },
 
-  hasItemOfType: (type) => {
-    const { navStack, navIndex } = get();
-    for (let i = navIndex; i >= 0; i--) {
-      if (navStack[i]!.type === type) return true;
-    }
-    return false;
-  },
+  setMode: (mode) => set(mode === "live" ? { mode, following: true } : { mode, following: false }),
 
   goLive: () => set({ mode: "live", following: true }),
 
-  goBack: () => {
-    const { navStack, navIndex } = get();
-    if (navIndex <= 0) return;
-    const next = navIndex - 1;
-    const item = navStack[next]!;
-    set({ navIndex: next, activeItem: item, mode: modeForItem(item), following: false });
-  },
-
-  goForward: () => {
-    const { navStack, navIndex } = get();
-    if (navIndex >= navStack.length - 1) return;
-    const next = navIndex + 1;
-    const item = navStack[next]!;
-    set({ navIndex: next, activeItem: item, mode: modeForItem(item), following: false });
-  },
-
-  reset: () => set({ ...EMPTY, navStack: [] }),
+  reset: () => set({ mode: EMPTY.mode, following: EMPTY.following, activeItem: undefined, lastByType: {} }),
 }));

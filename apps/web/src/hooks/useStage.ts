@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { StageItem, StageMode } from "../types/stage";
 import { useSessionStore } from "../stores/sessionStore";
 import { useStageStore } from "../stores/stageStore";
@@ -29,6 +29,13 @@ export function useStageView(): StageView {
   const mode = useStageStore((s) => s.mode);
   const following = useStageStore((s) => s.following);
   const activeItem = useStageStore((s) => s.activeItem);
+  const noteItem = useStageStore((s) => s.noteItem);
   const liveItem = useLiveItem();
+
+  // Keep the mode buttons aware of what the agent has actually produced.
+  useEffect(() => {
+    if (liveItem) noteItem(liveItem);
+  }, [liveItem, noteItem]);
+
   return { mode, following, item: following ? liveItem : activeItem, liveItem };
 }

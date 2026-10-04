@@ -10,6 +10,7 @@ import { createStageItem, eventPath } from "../../lib/events";
 import { fileContext } from "../../lib/context";
 import { unifiedDiff } from "../../lib/diff";
 import { languageFromPath } from "../../lib/language";
+import { openUserFile } from "../../lib/openFile";
 
 /** Level 1: the project tree (read02 §7). */
 export function FileTree() {
@@ -61,19 +62,8 @@ export function FileTree() {
     const history = view?.history ?? [];
 
     openMenu(event.clientX, event.clientY, [
-      { label: "Open", onSelect: () => setFilesView({ kind: "detail", path: rel }) },
-      {
-        label: "Open in Stage",
-        onSelect: () =>
-          openStage(
-            createStageItem(
-              "file",
-              rel,
-              { kind: "file", path: rel, content, language: languageFromPath(rel), caption: "Opened from Files" },
-              { path: rel },
-            ),
-          ),
-      },
+      { label: "Inspect", onSelect: () => setFilesView({ kind: "detail", path: rel }) },
+      { label: "Open in Stage", onSelect: () => void openUserFile(rel) },
       { label: "View History", disabled: history.length === 0, onSelect: () => setFilesView({ kind: "history", path: rel }) },
       {
         label: "View Diff",
@@ -123,7 +113,7 @@ export function FileTree() {
           files={files}
           activePath={activePath}
           onToggle={toggle}
-          onOpen={(rel) => setFilesView({ kind: "detail", path: rel })}
+          onOpenStage={openUserFile}
           onContextMenu={handleFileMenu}
         />
       ))}
@@ -139,12 +129,12 @@ interface TreeRowProps {
   files: Record<string, { status: string; lastModifiedAt?: number }>;
   activePath?: string;
   onToggle: (path: string) => void;
-  onOpen: (rel: string) => void;
+  onOpenStage: (rel: string) => void;
   onContextMenu: (event: MouseEvent, rel: string) => void;
 }
 
 function TreeRow(props: TreeRowProps) {
-  const { node, depth, expanded, projectPath, files, activePath, onToggle, onOpen, onContextMenu } = props;
+  const { node, depth, expanded, projectPath, files, activePath, onToggle, onOpenStage, onContextMenu } = props;
   const pad = { paddingLeft: `${depth * 12 + 4}px` };
 
   if (node.type === "directory") {
@@ -180,9 +170,9 @@ function TreeRow(props: TreeRowProps) {
       <button
         type="button"
         style={pad}
-        onClick={() => onOpen(rel)}
+        onClick={() => onOpenStage(rel)}
         onContextMenu={(event) => onContextMenu(event, rel)}
-        title={view ? `${rel} · ${formatAgo(view.lastModifiedAt)}` : rel}
+        title={view ? `${rel} · ${formatAgo(view.lastModifiedAt)}` : `${rel} · open in Stage`}
         className={[
           "flex w-full items-center gap-1 rounded py-0.5 text-left",
           isActive ? "bg-desk-amber/15 text-desk-amber" : "text-desk-ink/80 hover:bg-desk-panel2 hover:text-desk-ink",

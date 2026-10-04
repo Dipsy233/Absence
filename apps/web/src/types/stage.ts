@@ -1,9 +1,9 @@
 import type { DazeEvent, FileTreeNode, Plan } from "@daze/core";
 
-/** Stage modes (read02 §11). `live` follows the agent; the rest are pinned views. */
-export type StageMode = "live" | "desk" | "file" | "diff" | "terminal" | "search" | "replay";
+/** Stage modes. `live` follows the agent; the rest are pinned views. */
+export type StageMode = "live" | "desk" | "file" | "diff" | "terminal" | "replay";
 
-export type StageItemType = "file" | "diff" | "terminal" | "search" | "plan";
+export type StageItemType = "file" | "diff" | "terminal";
 
 export type StagePayload =
   | {
@@ -26,9 +26,7 @@ export type StagePayload =
       language: string;
       emptied?: boolean;
     }
-  | { kind: "terminal"; command: string; stdout: string; stderr: string; exitCode: number }
-  | { kind: "search"; tool: string; query: string; scope?: string; matches: number; output: string }
-  | { kind: "plan"; plan?: Plan };
+  | { kind: "terminal"; command: string; stdout: string; stderr: string; exitCode: number };
 
 /** One thing placed on the Stage (read02 §12). */
 export interface StageItem {
@@ -69,4 +67,4 @@ export interface ActivityRow {
   stageItem?: StageItem;
 }
 
-export type { FileTreeNode };
+export type { FileTreeNode, Plan };

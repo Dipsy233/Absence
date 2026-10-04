@@ -1,13 +1,10 @@
-import type { AgentStatus } from "@daze/core";
 import type { StageItem } from "../../types/stage";
 import { FileStage } from "./FileStage";
 import { DiffStage } from "./DiffStage";
 import { TerminalStage } from "./TerminalStage";
-import { SearchStage } from "./SearchStage";
-import { DeskStage } from "./DeskStage";
 
 /** Renders whichever Stage item is active (read02 §11–17). */
-export function StageItemView({ item, status }: { item: StageItem; status: AgentStatus }) {
+export function StageItemView({ item }: { item: StageItem }) {
   const payload = item.payload;
   switch (payload.kind) {
     case "file":
@@ -44,19 +41,6 @@ export function StageItemView({ item, status }: { item: StageItem; status: Agent
           event={item.event}
         />
       );
-    case "search":
-      return (
-        <SearchStage
-          tool={payload.tool}
-          query={payload.query}
-          scope={payload.scope}
-          matches={payload.matches}
-          output={payload.output}
-          event={item.event}
-        />
-      );
-    case "plan":
-      return <DeskStage plan={payload.plan} status={status} />;
     default:
       return null;
   }

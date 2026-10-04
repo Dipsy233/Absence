@@ -3,7 +3,6 @@ import { isAgentBusy } from "@daze/core";
 import { useReplayItem, useStageView } from "../../hooks/useStage";
 import { useStageStore } from "../../stores/stageStore";
 import { useSessionStore } from "../../stores/sessionStore";
-import { useReplayStore } from "../../stores/replayStore";
 import { StageItemView } from "../stage/StageItemView";
 import { DeskStage } from "../stage/DeskStage";
 import { StageToolbar } from "../stage/StageToolbar";
@@ -16,21 +15,16 @@ export function Stage() {
   const mode = useStageStore((s) => s.mode);
   const status = useSessionStore((s) => s.agent.status);
   const plan = useSessionStore((s) => s.plan);
-  const replayStatus = useReplayStore((s) => s.view?.agentStatus);
 
   let body: React.ReactNode;
   let key: string;
 
   if (mode === "replay") {
     key = `replay:${replayItem?.id ?? "none"}`;
-    body = replayItem ? (
-      <StageItemView item={replayItem} status={replayStatus ?? status} />
-    ) : (
-      <EmptyStage text="Press ▶ to replay this run." />
-    );
+    body = replayItem ? <StageItemView item={replayItem} /> : <EmptyStage text="Press ▶ to replay this run." />;
   } else if (item) {
     key = item.id;
-    body = <StageItemView item={item} status={status} />;
+    body = <StageItemView item={item} />;
   } else {
     key = "desk";
     body = <DeskStage plan={plan} status={status} />;

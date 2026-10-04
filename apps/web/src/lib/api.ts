@@ -40,3 +40,16 @@ export async function sendPrompt(id: string, prompt: string): Promise<void> {
 export async function abortSession(id: string): Promise<void> {
   await json(await fetch(`/api/sessions/${id}/abort`, { method: "POST" }));
 }
+
+export interface FileContent {
+  path: string;
+  content: string;
+  size: number;
+}
+
+/** Read a project file from disk (the user's view of the project). */
+export async function readFile(sessionId: string, path: string): Promise<FileContent> {
+  return json<FileContent>(
+    await fetch(`/api/sessions/${sessionId}/file?path=${encodeURIComponent(path)}`),
+  );
+}

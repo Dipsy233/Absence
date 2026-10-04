@@ -11,6 +11,7 @@
 import type { DazeEvent } from "@daze/core";
 import { buildHistory, pickRun, runEvents } from "../apps/web/src/lib/history";
 import { eventToStageItem, lastStageAction } from "../apps/web/src/lib/events";
+import { useStageStore } from "../apps/web/src/stores/stageStore";
 import { buildSnapshots, seek, timelineEnd, timelineStart } from "../apps/web/src/lib/replay";
 
 const base = "http://127.0.0.1:8787";
@@ -152,6 +153,30 @@ const run = async () => {
   // 5. file state is reconstructed
   const mid = at(1);
   assert("run reconstruction produced files", Object.keys(mid.files).length > 0, Object.keys(mid.files).join(", "));
+  // 7. mode buttons follow what the agent has produced (not only manual opens)
+  const command = events.find((e) => e.type === "command");
+  const search = events.find((e) => e.type === "search");
+  assert("a command maps to a terminal item", eventToStageItem(command!)?.type === "terminal");
+  assert("search renders through the terminal view", eventToStageItem(search!)?.type === "terminal");
+
+  const stage = useStageStore.getState();
+  stage.reset();
+  assert("no mode is available before anything happens", stage.lastByType.terminal === undefined);
+  const terminalItem = eventToStageItem(command!)!;
+  useStageStore.getState().noteItem(terminalItem);
+  assert(
+    "a live action makes its mode available",
+    useStageStore.getState().lastByType.terminal?.id === terminalItem.id,
+  );
+  useStageStore.getState().showType("terminal");
+  assert(
+    "showType pins that item",
+    useStageStore.getState().activeItem?.id === terminalItem.id && !useStageStore.getState().following,
+  );
+  useStageStore.getState().setMode("live");
+  assert("LIVE resumes following", useStageStore.getState().following === true);
+  useStageStore.getState().reset();
+
   console.log(`\nsnapshots for run #1: ${snapshots.length}`);
   process.exit(process.exitCode ?? 0);
 };

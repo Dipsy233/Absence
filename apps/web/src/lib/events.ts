@@ -163,8 +163,17 @@ export function eventToStageItem(event: DazeEvent): StageItem | undefined {
       });
     }
     case "search": {
+      // Search renders through the terminal view (one output surface for "the
+      // agent ran something and here is what came back").
       const { tool, query, scope, matches, output } = event.payload;
-      return baseItem(event, "search", query, { kind: "search", tool, query, scope, matches, output });
+      const command = `${tool} ${query}${scope ? ` ${scope}` : ""}`;
+      return baseItem(event, "terminal", command, {
+        kind: "terminal",
+        command,
+        stdout: `${output}\n\n${matches} match${matches === 1 ? "" : "es"}`,
+        stderr: "",
+        exitCode: 0,
+      });
     }
     default:
       return undefined;
