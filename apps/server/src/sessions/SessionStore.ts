@@ -191,6 +191,8 @@ export class DazeSession {
         break;
 
       case "message":
+        // The agent is composing or streaming a reply.
+        this.setStatus("thinking");
         if (event.payload.role === "assistant") {
           this.applyAssistantMessage(event.payload);
         } else if (event.payload.role === "user") {
@@ -207,29 +209,25 @@ export class DazeSession {
         this.setStatus(statusForTool(event.payload.toolName));
         break;
 
+      // The tool is done, so the agent is back to thinking about its result.
+      // The file_*/command/search events are only the visual of a tool that has
+      // already ended, so they deliberately do not touch the status.
+      case "tool_end":
+        this.setStatus("thinking");
+        break;
+
       case "file_read":
-        this.setStatus("reading");
         this.upsertFile(event.payload.path, event.payload.content, {
           lastRead: { startLine: event.payload.startLine, endLine: event.payload.endLine },
         });
         break;
 
       case "file_write":
-        this.setStatus("editing");
         this.upsertFile(event.payload.path, event.payload.content, { bump: true });
         break;
 
       case "file_edit":
-        this.setStatus("editing");
         this.upsertFile(event.payload.path, event.payload.after, { bump: true });
-        break;
-
-      case "command":
-        this.setStatus("running");
-        break;
-
-      case "search":
-        this.setStatus("searching");
         break;
 
       case "file_change":

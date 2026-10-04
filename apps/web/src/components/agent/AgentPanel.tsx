@@ -10,7 +10,9 @@ export function AgentPanel() {
   const model = useSessionStore((s) => s.agent.model);
   const currentAction = useSessionStore((s) => s.currentAction);
 
-  const action = describeAction(currentAction);
+  // While the agent is composing, the last visual action is already stale, so
+  // show that it is thinking instead of a finished tool.
+  const action = status === "thinking" ? "Thinking…" : describeAction(currentAction);
   const visual: AgentVisualState = { status, action, mood: moodFor(status) };
 
   return (

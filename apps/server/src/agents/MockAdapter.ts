@@ -75,6 +75,8 @@ export class MockAdapter extends BaseAdapter {
       this.tokensUsed += Math.min(shown.length / 4, 3000);
       await sleep(620);
       emit("tool_end", { toolCallId, toolName: "read", isError: false });
+      // A real agent spends a moment reading the result before the next tool.
+      await sleep(400);
     }
 
     if (bail()) return this.finish("aborted");
@@ -94,6 +96,7 @@ export class MockAdapter extends BaseAdapter {
     this.tokensUsed += 400;
     await sleep(600);
     emit("tool_end", { toolCallId: grepId, toolName: "grep", isError: false });
+    await sleep(400);
 
     if (bail()) return this.finish("aborted");
 
@@ -110,6 +113,7 @@ export class MockAdapter extends BaseAdapter {
     });
     await sleep(700);
     emit("tool_end", { toolCallId: bashId, toolName: "bash", isError: false });
+    await sleep(400);
 
     if (bail()) return this.finish("aborted");
 
@@ -134,6 +138,7 @@ export class MockAdapter extends BaseAdapter {
           });
           await sleep(800);
           emit("tool_end", { toolCallId: editId, toolName: "edit", isError: false });
+          await sleep(400);
           current = next;
         }
       }

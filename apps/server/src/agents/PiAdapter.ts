@@ -136,7 +136,11 @@ export class PiAdapter extends BaseAdapter {
           const text = textOfContent(message.content);
           this.assistantAcc = "";
           this.thinkingAcc = "";
-          emit("message", { role: "assistant", content: text, streaming: false });
+          // A tool-only turn (e.g. a bare find/grep) carries no text. Emitting it
+          // would append an empty bubble to the chat.
+          if (text.trim().length > 0) {
+            emit("message", { role: "assistant", content: text, streaming: false });
+          }
         }
         break;
       }

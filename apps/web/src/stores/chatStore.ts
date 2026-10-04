@@ -19,24 +19,32 @@ function applyChatEvent(chat: ChatMessage[], event: DazeEvent): ChatMessage[] | 
   }
 
   if (payload.role === "assistant") {
+    const content = payload.content ?? "";
     const streamingIndex = lastStreamingIndex(chat);
+
+    // A tool-only turn carries no text; never render an empty bubble for it.
+    if (content.length === 0) {
+      if (streamingIndex < 0) return null;
+      const next = [...chat];
+      next[streamingIndex] = { ...next[streamingIndex]!, streaming: false };
+      return next;
+    }
+
     if (payload.streaming) {
       if (streamingIndex >= 0) {
         const next = [...chat];
-        next[streamingIndex] = { ...next[streamingIndex]!, content: payload.content, streaming: true };
+        next[streamingIndex] = { ...next[streamingIndex]!, content, streaming: true };
         return next;
       }
-      return [
-        ...chat,
-        { id: event.id, role: "assistant", content: payload.content, timestamp: event.timestamp, streaming: true },
-      ];
+      return [...chat, { id: event.id, role: "assistant", content, timestamp: event.timestamp, streaming: true }];
     }
+
     if (streamingIndex >= 0) {
       const next = [...chat];
-      next[streamingIndex] = { ...next[streamingIndex]!, content: payload.content, streaming: false };
+      next[streamingIndex] = { ...next[streamingIndex]!, content, streaming: false };
       return next;
     }
-    return [...chat, { id: event.id, role: "assistant", content: payload.content, timestamp: event.timestamp }];
+    return [...chat, { id: event.id, role: "assistant", content, timestamp: event.timestamp }];
   }
 
   return null;
