@@ -1,28 +1,56 @@
 import * as api from "./api";
 import { createStageItem } from "./events";
 import { languageFromPath } from "./language";
+import { contiguousRanges, describeRanges } from "./knownLines";
 import { useFileStore } from "../stores/fileStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useStageStore } from "../stores/stageStore";
+import type { FileView } from "../types/file";
 import type { StageItem } from "../types/stage";
 
 /**
- * Agent view: only what the agent actually has in context. If it read lines
- * 10–20 of a file, that slice is all this shows — numbered as it appears in the
- * file, so the missing head is obvious.
+ * Payload for the agent's view of a file: exactly what is in its context.
+ * Reads accumulate, so two reads of 1–2 and 3–5 yield lines 1–5; lines it never
+ * read are shown as explicit markers so the numbering stays true to the file.
  */
+function knownPayload(file: FileView): Extract<StageItem["payload"], { kind: "file" }> {
+  const base = { kind: "file" as const, path: file.path, content: file.content, language: file.language };
+
+  if (file.complete) {
+    return { ...base, lineOffset: 0, caption: "Agent-known content · whole file" };
+  }
+
+  const ranges = contiguousRanges(Object.keys(file.knownLines).map(Number));
+  if (ranges.length === 0) {
+    return { ...base, lineOffset: 0, caption: "Agent-known content" };
+  }
+
+  const first = ranges[0]!.start;
+  const last = ranges[ranges.length - 1]!.end;
+  const contiguous = ranges.length === 1;
+  return {
+    ...base,
+    startLine: contiguous ? first : undefined,
+    endLine: contiguous ? last : undefined,
+    lineOffset: first - 1,
+    caption: contiguous
+      ? `Agent has lines ${first}–${last} of this file`
+      : `Agent has lines ${describeRanges(ranges)} — the gaps are not in its context`,
+  };
+}
+
+/** Agent view: only what the agent actually has in context. */
 export function openKnownFile(path: string): void {
   const file = useFileStore.getState().files[path];
   if (!file) return;
-
-  const item = createStageItem("file", path, { kind: "file", path, ...knownContent(file) }, { path });
-  useStageStore.getState().openAgentFile(item);
+  useStageStore
+    .getState()
+    .openAgentFile(createStageItem("file", path, knownPayload(file), { path }));
 }
 
 /**
  * User view: the whole file, always read from disk. The event stream only ever
- * holds what the agent read, so using it here would show a read slice as if it
- * were the file.
+ * holds what the agent read, so using it here would show a slice as the file.
  */
 export async function openUserFile(path: string): Promise<void> {
   const sessionId = useSessionStore.getState().session?.id;
@@ -31,16 +59,21 @@ export async function openUserFile(path: string): Promise<void> {
   if (sessionId) {
     try {
       const file = await api.readFile(sessionId, path);
-      useStageStore
-        .getState()
-        .openUserFile(
-          createStageItem(
-            "file",
+      useStageStore.getState().openUserFile(
+        createStageItem(
+          "file",
+          path,
+          {
+            kind: "file",
             path,
-            { kind: "file", path, content: file.content, language: languageFromPath(path), lineOffset: 0, caption: "Whole file · read from disk" },
-            { path },
-          ),
-        );
+            content: file.content,
+            language: languageFromPath(path),
+            lineOffset: 0,
+            caption: "Whole file · read from disk",
+          },
+          { path },
+        ),
+      );
       return;
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
@@ -56,9 +89,7 @@ export async function openUserFile(path: string): Promise<void> {
         "file",
         path,
         {
-          kind: "file",
-          path,
-          ...knownContent(known),
+          ...knownPayload(known),
           badge: "partial",
           badgeTone: "warn",
           caption: `Whole file unavailable (${failure}) — showing the agent-known content`,
@@ -86,19 +117,4 @@ export async function openUserFile(path: string): Promise<void> {
       { path },
     ),
   );
-}
-
-function knownContent(file: { content: string; language: string; version: number; lastRead?: { startLine: number; endLine: number } }) {
-  // A file with version 0 was never written, so its content is a read slice.
-  const slice = file.version === 0 && file.lastRead ? file.lastRead : undefined;
-  return {
-    content: file.content,
-    language: file.language,
-    startLine: slice?.startLine,
-    endLine: slice?.endLine,
-    lineOffset: slice ? Math.max(0, slice.startLine - 1) : 0,
-    caption: slice
-      ? `Agent read lines ${slice.startLine}–${slice.endLine} — the rest of the file is not in its context`
-      : "Agent-known content",
-  } satisfies Partial<Extract<StageItem["payload"], { kind: "file" }>>;
 }

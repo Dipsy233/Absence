@@ -12,9 +12,10 @@ import fs from "node:fs/promises";
 import type { DazeEvent } from "@daze/core";
 import { buildHistory, pickRun, runEvents } from "../apps/web/src/lib/history";
 import { createStageItem, eventToStageItem, lastStageAction } from "../apps/web/src/lib/events";
-import { openUserFile } from "../apps/web/src/lib/openFile";
+import { openKnownFile, openUserFile } from "../apps/web/src/lib/openFile";
 import { useStageStore } from "../apps/web/src/stores/stageStore";
 import { useSessionStore } from "../apps/web/src/stores/sessionStore";
+import { useFileStore } from "../apps/web/src/stores/fileStore";
 import { buildSnapshots, seek, timelineEnd, timelineStart } from "../apps/web/src/lib/replay";
 
 const base = "http://127.0.0.1:8787";
@@ -255,6 +256,57 @@ const run = async () => {
   );
   assert("the user view leaves the agent slot alone", useStageStore.getState().agentFile?.id === agentItem.id);
   useStageStore.getState().reset();
+
+  // 10. reads accumulate: the agent's context is the union of every read range
+  useFileStore.getState().reset();
+  const readEvent = (startLine: number, endLine: number, content: string): DazeEvent => ({
+    id: `evt_read_${startLine}_${endLine}`,
+    sessionId: "s",
+    timestamp: Date.now(),
+    type: "file_read",
+    payload: { path: "src/ten.ts", startLine, endLine, content },
+  });
+
+  useFileStore.getState().ingest(readEvent(1, 2, "one\ntwo"));
+  useFileStore.getState().ingest(readEvent(3, 5, "three\nfour\nfive"));
+  const accumulated = useFileStore.getState().files["src/ten.ts"]!;
+  assert(
+    "two adjacent reads accumulate",
+    accumulated.content === "one\ntwo\nthree\nfour\nfive",
+    JSON.stringify(accumulated.content),
+  );
+
+  openKnownFile("src/ten.ts");
+  const accumulatedView = useStageStore.getState().agentFile!;
+  assert(
+    "the agent view spans every read (1–5)",
+    accumulatedView.payload.kind === "file" &&
+      accumulatedView.payload.lineOffset === 0 &&
+      accumulatedView.payload.startLine === 1 &&
+      accumulatedView.payload.endLine === 5,
+    accumulatedView.payload.kind === "file"
+      ? `offset=${accumulatedView.payload.lineOffset} range=${accumulatedView.payload.startLine}–${accumulatedView.payload.endLine}`
+      : "wrong payload",
+  );
+
+  useFileStore.getState().ingest(readEvent(8, 8, "eight"));
+  openKnownFile("src/ten.ts");
+  const gapView = useStageStore.getState().agentFile!;
+  assert(
+    "an unread line in between is marked, not silently bridged",
+    gapView.payload.kind === "file" && gapView.payload.content.includes("not in the agent's context"),
+    gapView.payload.kind === "file" ? JSON.stringify(gapView.payload.content) : "wrong payload",
+  );
+  assert(
+    "a gap drops the single-range highlight",
+    gapView.payload.kind === "file" && gapView.payload.startLine === undefined,
+  );
+  assert(
+    "the gap view still reports where the knowledge starts",
+    gapView.payload.kind === "file" && gapView.payload.lineOffset === 0,
+  );
+  useStageStore.getState().reset();
+  useFileStore.getState().reset();
 
   console.log(`\nsnapshots for run #1: ${snapshots.length}`);
   process.exit(process.exitCode ?? 0);
