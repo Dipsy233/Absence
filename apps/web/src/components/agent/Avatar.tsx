@@ -15,6 +15,8 @@ function poseFor(status: AgentStatus): Pose {
   switch (status) {
     case "thinking":
       return { headRotate: -10, headY: 2, armRotate: 0, breathe: "daze-breathe 2.4s ease-in-out infinite", dots: true, question: false };
+    case "speaking":
+      return { headRotate: 0, headY: 0, armRotate: -6, breathe: "daze-breathe 2.2s ease-in-out infinite", dots: true, question: false };
     case "reading":
       return { headRotate: 10, headY: 3, armRotate: -14, breathe: "daze-breathe 3s ease-in-out infinite", prop: "paper", dots: false, question: false };
     case "searching":

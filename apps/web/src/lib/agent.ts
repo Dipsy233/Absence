@@ -15,6 +15,7 @@ export function moodFor(status: AgentStatus): AgentMood {
     case "thinking":
     case "reading":
     case "searching":
+    case "speaking":
       return "focused";
     case "editing":
     case "running":
@@ -33,6 +34,7 @@ export function moodFor(status: AgentStatus): AgentMood {
 /** The states shown in the Agent panel legend (read02 §31). */
 export const AGENT_STATUSES: AgentStatus[] = [
   "thinking",
+  "speaking",
   "reading",
   "searching",
   "editing",

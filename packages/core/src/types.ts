@@ -7,6 +7,7 @@ import type { DazeEvent } from "./events";
 export type AgentStatus =
   | "idle"
   | "thinking"
+  | "speaking"
   | "reading"
   | "searching"
   | "editing"
@@ -19,6 +20,7 @@ export type AgentStatus =
 export function isAgentBusy(status: AgentStatus): boolean {
   return (
     status === "thinking" ||
+    status === "speaking" ||
     status === "reading" ||
     status === "searching" ||
     status === "editing" ||

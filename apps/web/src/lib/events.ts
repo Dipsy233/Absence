@@ -336,6 +336,8 @@ export function statusFromEvent(event: DazeEvent): AgentStatus | undefined {
       return "completed";
     case "thinking":
       return "thinking";
+    case "message":
+      return "speaking";
     case "tool_start":
       return statusForTool(event.payload.toolName);
     case "file_read":

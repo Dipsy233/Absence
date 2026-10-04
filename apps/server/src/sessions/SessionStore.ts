@@ -191,9 +191,9 @@ export class DazeSession {
         break;
 
       case "message":
-        // Emitting text means whatever the Stage shows is finished: this is the
-        // signal that exits reading/searching/editing/running.
-        this.setStatus("thinking");
+        // Emitting text to the user exits whatever the Stage was showing and
+        // puts the agent into "speaking" until the run ends.
+        this.setStatus("speaking");
         if (event.payload.role === "assistant") {
           this.applyAssistantMessage(event.payload);
         } else if (event.payload.role === "user") {
