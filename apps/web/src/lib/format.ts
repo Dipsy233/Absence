@@ -24,6 +24,24 @@ export function formatBytes(count: number): string {
   return `${(count / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** mm:ss for replay offsets (read02 §21). */
+export function formatOffset(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** "12s ago" style relative time. */
+export function formatAgo(timestamp: number | undefined, now = Date.now()): string {
+  if (!timestamp) return "never";
+  const seconds = Math.max(0, Math.round((now - timestamp) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  return `${Math.round(minutes / 60)}h ago`;
+}
+
 export function formatContext(used: number | null | undefined, total: number | null | undefined): string {
   if (used === null || used === undefined || !total) return "—";
   return `${formatTokens(used)} / ${formatTokens(total)}`;
@@ -34,4 +52,11 @@ export function absoluteProjectPath(projectPath: string, eventPath: string): str
   const normalizedProject = projectPath.replace(/\\/g, "/").replace(/\/$/, "");
   if (/^([a-zA-Z]:|\/)/.test(eventPath)) return eventPath.replace(/\\/g, "/");
   return `${normalizedProject}/${eventPath.replace(/\\/g, "/")}`;
+}
+
+/** Reverse of absoluteProjectPath: absolute posix path → project-relative. */
+export function relativeTo(projectPath: string, absolute: string): string {
+  const root = projectPath.replace(/\\/g, "/").replace(/\/$/, "");
+  const path = absolute.replace(/\\/g, "/");
+  return path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
 }

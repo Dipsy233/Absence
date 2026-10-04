@@ -31,6 +31,7 @@ const STAGE_TYPES = new Set<DazeEvent["type"]>([
   "file_write",
   "file_edit",
   "command",
+  "search",
   "agent_start",
   "agent_end",
 ]);
@@ -182,7 +183,7 @@ export class DazeSession {
         break;
 
       case "agent_end":
-        this.setStatus("idle");
+        this.setStatus("completed");
         break;
 
       case "thinking":
@@ -225,6 +226,10 @@ export class DazeSession {
 
       case "command":
         this.setStatus("running");
+        break;
+
+      case "search":
+        this.setStatus("searching");
         break;
 
       case "file_change":
@@ -336,10 +341,11 @@ export class DazeSession {
 function statusForTool(toolName: string): AgentStatus {
   switch (toolName) {
     case "read":
+      return "reading";
     case "grep":
     case "find":
     case "ls":
-      return "reading";
+      return "searching";
     case "edit":
     case "write":
       return "editing";

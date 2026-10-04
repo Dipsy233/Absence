@@ -1,6 +1,11 @@
 import { useEffect } from "react";
 import type { DazeEvent, SessionRuntimeState, SessionSnapshot } from "@daze/core";
-import { useDazeStore } from "../stores/useDazeStore";
+import { useSessionStore } from "../stores/sessionStore";
+import { useFileStore } from "../stores/fileStore";
+import { useChatStore } from "../stores/chatStore";
+import { useReplayStore } from "../stores/replayStore";
+import { useStageStore } from "../stores/stageStore";
+import { useUiStore } from "../stores/uiStore";
 
 type ServerMessage =
   | { type: "snapshot"; state: SessionSnapshot }
@@ -9,17 +14,16 @@ type ServerMessage =
   | { type: "error"; message: string };
 
 /**
- * Opens the websocket for a session and pipes messages into the store.
- * Reconnects with backoff if the connection drops.
+ * Opens the session websocket and fans each message out to the stores
+ * (read02 §42). Reconnects with backoff.
  */
 export function useSessionSocket(sessionId: string | undefined): void {
-  const ingestSnapshot = useDazeStore((s) => s.ingestSnapshot);
-  const ingestEvent = useDazeStore((s) => s.ingestEvent);
-  const ingestRuntimeState = useDazeStore((s) => s.ingestRuntimeState);
-  const setConnected = useDazeStore((s) => s.setConnected);
-
   useEffect(() => {
     if (!sessionId) return;
+
+    useStageStore.getState().reset();
+    useUiStore.getState().reset();
+
     let socket: WebSocket | undefined;
     let disposed = false;
     let attempt = 0;
@@ -32,25 +36,32 @@ export function useSessionSocket(sessionId: string | undefined): void {
       socket.onopen = () => {
         if (disposed) return;
         attempt = 0;
-        setConnected(true);
+        useSessionStore.getState().setConnected(true);
       };
 
-      socket.onmessage = (event) => {
+      socket.onmessage = (raw) => {
         let message: ServerMessage;
         try {
-          message = JSON.parse(event.data as string) as ServerMessage;
+          message = JSON.parse(raw.data as string) as ServerMessage;
         } catch {
           return;
         }
         switch (message.type) {
           case "snapshot":
-            ingestSnapshot(message.state);
+            useSessionStore.getState().hydrate(message.state);
+            useFileStore.getState().hydrate(message.state);
+            useChatStore.getState().hydrate(message.state);
+            useReplayStore.getState().hydrate(message.state.events);
             break;
           case "event":
-            ingestEvent(message.event);
+            useSessionStore.getState().ingestEvent(message.event);
+            useFileStore.getState().ingest(message.event);
+            useChatStore.getState().ingest(message.event);
+            useReplayStore.getState().ingest(message.event);
             break;
           case "session_state":
-            ingestRuntimeState(message.state);
+            useSessionStore.getState().applyRuntimeState(message.state);
+            useFileStore.getState().setTree(message.state.tree);
             break;
           case "error":
             break;
@@ -59,15 +70,13 @@ export function useSessionSocket(sessionId: string | undefined): void {
 
       socket.onclose = () => {
         if (disposed) return;
-        setConnected(false);
+        useSessionStore.getState().setConnected(false);
         const delay = Math.min(1000 * 2 ** attempt, 8000);
         attempt += 1;
         retryTimer = setTimeout(connect, delay);
       };
 
-      socket.onerror = () => {
-        socket?.close();
-      };
+      socket.onerror = () => socket?.close();
     };
 
     connect();
@@ -76,7 +85,7 @@ export function useSessionSocket(sessionId: string | undefined): void {
       disposed = true;
       if (retryTimer) clearTimeout(retryTimer);
       socket?.close();
-      setConnected(false);
+      useSessionStore.getState().setConnected(false);
     };
-  }, [sessionId, ingestSnapshot, ingestEvent, ingestRuntimeState, setConnected]);
+  }, [sessionId]);
 }

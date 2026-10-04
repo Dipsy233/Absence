@@ -79,6 +79,24 @@ export class MockAdapter extends BaseAdapter {
 
     if (bail()) return this.finish("aborted");
 
+    // A search.
+    const grepId = "mock_grep_1";
+    emit("tool_start", { toolCallId: grepId, toolName: "grep", args: { pattern: "function", path: "." } });
+    await sleep(200);
+    const grepHits = allFiles.slice(0, 6);
+    emit("search", {
+      tool: "grep",
+      query: "function",
+      scope: ".",
+      matches: grepHits.length,
+      output: grepHits.map((f) => `${f}:1: export function …`).join("\n") || "(no matches)",
+    });
+    this.tokensUsed += 400;
+    await sleep(600);
+    emit("tool_end", { toolCallId: grepId, toolName: "grep", isError: false });
+
+    if (bail()) return this.finish("aborted");
+
     // A shell command.
     const listing = allFiles.slice(0, 12).map((f) => `  ${f}`).join("\n");
     const bashId = "mock_bash_1";
@@ -95,24 +113,29 @@ export class MockAdapter extends BaseAdapter {
 
     if (bail()) return this.finish("aborted");
 
-    // An edit.
+    // Two edits on the same file, so File History and Replay have versions.
     const target = picks.find((p) => /\.(ts|tsx|js|jsx|py|go|rs|java|rb|php)$/.test(p)) ?? picks[0];
     if (target) {
       const abs = path.join(this.cwd, target);
-      const before = (await readFileSafe(abs)) ?? "";
-      if (before.length > 0 && before.length < 60_000) {
-        const after = injectEdit(before, target);
-        const editId = "mock_edit_1";
-        emit("tool_start", { toolCallId: editId, toolName: "edit", args: { path: target } });
-        await sleep(220);
-        emit("file_edit", {
-          path: target,
-          before,
-          after,
-          diff: unifiedDiff(before, after, target, target),
-        });
-        await sleep(900);
-        emit("tool_end", { toolCallId: editId, toolName: "edit", isError: false });
+      const original = (await readFileSafe(abs)) ?? "";
+      if (original.length > 0 && original.length < 60_000) {
+        let current = original;
+        for (let round = 1; round <= 2; round++) {
+          if (bail()) return this.finish("aborted");
+          const next = injectEdit(current, target, round);
+          const editId = `mock_edit_${round}`;
+          emit("tool_start", { toolCallId: editId, toolName: "edit", args: { path: target } });
+          await sleep(220);
+          emit("file_edit", {
+            path: target,
+            before: current,
+            after: next,
+            diff: unifiedDiff(current, next, target, target),
+          });
+          await sleep(800);
+          emit("tool_end", { toolCallId: editId, toolName: "edit", isError: false });
+          current = next;
+        }
       }
     }
 
@@ -155,9 +178,11 @@ function selectFiles(files: string[], count: number): string[] {
   return [...preferred, ...rest].slice(0, count);
 }
 
-function injectEdit(content: string, filePath: string): string {
+function injectEdit(content: string, filePath: string, round = 1): string {
   const comment =
-    languageFromPath(filePath) === "markdown" ? "<!-- reviewed by daze -->" : "// reviewed by daze";
+    languageFromPath(filePath) === "markdown"
+      ? `<!-- reviewed by daze · pass ${round} -->`
+      : `// reviewed by daze · pass ${round}`;
   const lines = content.split("\n");
   const head = lines[0]?.startsWith("#!") ? 1 : 0;
   lines.splice(head, 0, comment);

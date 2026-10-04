@@ -250,6 +250,27 @@ export class PiAdapter extends BaseAdapter {
           });
           break;
         }
+        case "grep":
+        case "find":
+        case "ls": {
+          const output = textOfResult(result);
+          const matches = output.split("\n").filter((line) => line.trim().length > 0).length;
+          const scope =
+            toolName === "ls"
+              ? this.display(args.path ?? ".")
+              : args.path !== undefined
+                ? this.display(args.path)
+                : undefined;
+          const query = toolName === "ls" ? this.display(args.path ?? ".") : String(args.pattern ?? "");
+          this.emitDaze("search", {
+            tool: toolName,
+            query,
+            scope,
+            matches,
+            output: output.slice(0, 4000),
+          });
+          break;
+        }
         default:
           break;
       }

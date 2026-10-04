@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import type { Project } from "@daze/core";
 import { fetchProjects } from "../../lib/api";
-import { useDazeStore } from "../../stores/useDazeStore";
+import { useSessionStore } from "../../stores/sessionStore";
+import { resetAllStores } from "../../stores/reset";
 
 type AgentChoice = "auto" | "pi" | "mock";
 
 /** The first screen: pick a local project and start watching (read.md §25). */
 export function ProjectPicker() {
-  const startSession = useDazeStore((s) => s.startSession);
+  const startSession = useSessionStore((s) => s.startSession);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [path, setPath] = useState("");
@@ -26,6 +27,7 @@ export function ProjectPicker() {
     setBusy(true);
     setError(undefined);
     try {
+      resetAllStores();
       await startSession(projectPath.trim(), agent === "auto" ? undefined : agent);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

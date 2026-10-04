@@ -81,6 +81,19 @@ export interface CommandPayload {
   exitCode: number;
 }
 
+/** v0.2: a search/listing action (Pi's grep / find / ls tools). */
+export interface SearchPayload {
+  tool: "grep" | "find" | "ls" | string;
+  /** The pattern or target being looked for. */
+  query: string;
+  /** Path scope, when the tool scoped the search. */
+  scope?: string;
+  /** Number of matching lines or files. */
+  matches: number;
+  /** Raw result text, truncated. */
+  output: string;
+}
+
 export interface ErrorPayload {
   message: string;
 }
@@ -101,6 +114,7 @@ export interface DazeEventPayloadMap {
   file_edit: FileEditPayload;
   file_change: FileChangePayload;
   command: CommandPayload;
+  search: SearchPayload;
   error: ErrorPayload;
 }
 
@@ -119,6 +133,7 @@ export const DAZE_EVENT_TYPES = [
   "file_edit",
   "file_change",
   "command",
+  "search",
   "error",
 ] as const satisfies readonly DazeEventType[];
 

@@ -8,10 +8,24 @@ export type AgentStatus =
   | "idle"
   | "thinking"
   | "reading"
+  | "searching"
   | "editing"
   | "running"
   | "waiting"
-  | "error";
+  | "error"
+  | "completed";
+
+/** True while the agent is actively working (i.e. not settled). */
+export function isAgentBusy(status: AgentStatus): boolean {
+  return (
+    status === "thinking" ||
+    status === "reading" ||
+    status === "searching" ||
+    status === "editing" ||
+    status === "running" ||
+    status === "waiting"
+  );
+}
 
 export interface Project {
   path: string;
