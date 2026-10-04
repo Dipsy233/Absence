@@ -7,9 +7,10 @@ interface DiffViewProps {
   after: string;
   diff?: string;
   language: string;
+  emptied?: boolean;
 }
 
-export function DiffView({ path, before, after, diff, language }: DiffViewProps) {
+export function DiffView({ path, before, after, diff, language, emptied = false }: DiffViewProps) {
   const { added, removed } = countChanges(diff ?? "");
   const hasText = before.length > 0 || after.length > 0;
 
@@ -67,7 +68,13 @@ export function DiffView({ path, before, after, diff, language }: DiffViewProps)
         )}
       </div>
       <div className="shrink-0 border-t border-desk-line px-3 py-1.5 text-center text-xs italic text-desk-dim">
-        Agent edited {path}
+        {emptied ? (
+          <span className="text-desk-ember">
+            Agent removed all content — the file still exists on disk.
+          </span>
+        ) : (
+          <>Agent edited {path}</>
+        )}
       </div>
     </motion.div>
   );

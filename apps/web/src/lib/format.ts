@@ -17,6 +17,13 @@ export function formatTokens(value: number | null | undefined): string {
   return String(value);
 }
 
+export function formatBytes(count: number): string {
+  if (!Number.isFinite(count) || count <= 0) return "0 B";
+  if (count < 1024) return `${count} B`;
+  if (count < 1024 * 1024) return `${(count / 1024).toFixed(count < 10 * 1024 ? 1 : 0)} kB`;
+  return `${(count / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function formatContext(used: number | null | undefined, total: number | null | undefined): string {
   if (used === null || used === undefined || !total) return "—";
   return `${formatTokens(used)} / ${formatTokens(total)}`;

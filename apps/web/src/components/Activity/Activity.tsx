@@ -1,7 +1,7 @@
 import type { DazeEvent } from "@daze/core";
 import { useDazeStore } from "../../stores/useDazeStore";
 import { Panel } from "../Panel";
-import { formatClock } from "../../lib/format";
+import { formatBytes, formatClock } from "../../lib/format";
 
 interface Row {
   key: string;
@@ -9,7 +9,18 @@ interface Row {
   action: string;
   primary: string;
   secondary?: string;
-  tone: "read" | "edit" | "run" | "lifecycle" | "error";
+  tone: "read" | "edit" | "run" | "lifecycle" | "error" | "warn";
+}
+
+function countDiff(diff: string): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) added++;
+    else if (line.startsWith("-")) removed++;
+  }
+  return { added, removed };
 }
 
 function toRow(event: DazeEvent): Row {
@@ -21,13 +32,51 @@ function toRow(event: DazeEvent): Row {
         time,
         action: "READ",
         primary: event.payload.path,
-        secondary: `${event.payload.startLine}–${event.payload.endLine}`,
+        secondary: `${event.payload.startLine}–${event.payload.endLine} · ${formatBytes(event.payload.content.length)}`,
         tone: "read",
       };
-    case "file_write":
-      return { key: event.id, time, action: "WRITE", primary: event.payload.path, tone: "edit" };
-    case "file_edit":
-      return { key: event.id, time, action: "EDIT", primary: event.payload.path, tone: "edit" };
+    case "file_write": {
+      const bytes = event.payload.content.length;
+      if (bytes === 0) {
+        return {
+          key: event.id,
+          time,
+          action: "EMPTIED",
+          primary: event.payload.path,
+          secondary: "0 B · file still on disk",
+          tone: "warn",
+        };
+      }
+      return {
+        key: event.id,
+        time,
+        action: "WRITE",
+        primary: event.payload.path,
+        secondary: formatBytes(bytes),
+        tone: "edit",
+      };
+    }
+    case "file_edit": {
+      const { added, removed } = countDiff(event.payload.diff);
+      if (event.payload.after.trim() === "" && event.payload.before.trim() !== "") {
+        return {
+          key: event.id,
+          time,
+          action: "EMPTIED",
+          primary: event.payload.path,
+          secondary: `−${removed} · file still on disk`,
+          tone: "warn",
+        };
+      }
+      return {
+        key: event.id,
+        time,
+        action: "EDIT",
+        primary: event.payload.path,
+        secondary: `+${added} −${removed}`,
+        tone: "edit",
+      };
+    }
     case "file_change":
       return {
         key: event.id,
@@ -62,6 +111,7 @@ const TONE_CLASS: Record<Row["tone"], string> = {
   run: "text-desk-ink",
   lifecycle: "text-desk-dim",
   error: "text-desk-ember",
+  warn: "text-desk-ember",
 };
 
 export function Activity() {

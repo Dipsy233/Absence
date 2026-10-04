@@ -172,3 +172,6 @@ reduced set, e.g. `DAZE_PI_TOOLS=read,bash,edit,write`.
 - DAZE is an observer. It never modifies the project except through the agent.
 - The avatar is a CSS/SVG placeholder driven by `agent.status`; swap it for
   sprites or Live2D later without touching the state machine.
+- Pi has no dedicated delete tool — deleting a file must go through `bash rm`. When
+  an agent instead writes empty content, the file is *truncated, not deleted*; DAZE
+  labels such events **EMPTIED** (with a byte count) so a fake deletion is obvious.

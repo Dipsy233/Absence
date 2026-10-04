@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import Editor from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
+import { formatBytes } from "../../lib/format";
 
 interface FileReadViewProps {
   path: string;
@@ -10,9 +11,19 @@ interface FileReadViewProps {
   endLine?: number;
   caption?: string;
   badge?: string;
+  badgeTone?: "normal" | "warn";
 }
 
-export function FileReadView({ path, content, language, startLine, endLine, caption, badge }: FileReadViewProps) {
+export function FileReadView({
+  path,
+  content,
+  language,
+  startLine,
+  endLine,
+  caption,
+  badge,
+  badgeTone = "normal",
+}: FileReadViewProps) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const collectionRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
 
@@ -47,7 +58,12 @@ export function FileReadView({ path, content, language, startLine, endLine, capt
           {path}
         </span>
         <div className="flex items-center gap-2">
-          {badge ? <span className="chip text-desk-teal">{badge}</span> : null}
+          {badge ? (
+            <span className={["chip", badgeTone === "warn" ? "text-desk-ember" : "text-desk-teal"].join(" ")}>
+              {badge}
+            </span>
+          ) : null}
+          {badge ? <span className="text-desk-dim">{formatBytes(content.length)}</span> : null}
           {startLine && endLine ? (
             <span className="text-desk-amber">
               {startLine}–{endLine}

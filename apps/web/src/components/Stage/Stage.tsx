@@ -31,17 +31,24 @@ export function Stage() {
     );
   } else if (action?.type === "file_write") {
     key = action.id;
+    const emptied = action.payload.content.length === 0;
     content = (
       <FileReadView
         path={action.payload.path}
         content={action.payload.content}
         language={languageFromPath(action.payload.path)}
-        badge="written"
-        caption="Agent wrote this file"
+        badge={emptied ? "EMPTIED" : "written"}
+        badgeTone={emptied ? "warn" : "normal"}
+        caption={
+          emptied
+            ? "Agent wrote an empty file — it still exists on disk. Deleting a file needs the bash tool (rm)."
+            : "Agent wrote this file"
+        }
       />
     );
   } else if (action?.type === "file_edit") {
     key = action.id;
+    const emptied = action.payload.after.trim() === "" && action.payload.before.trim() !== "";
     content = (
       <DiffView
         path={action.payload.path}
@@ -49,6 +56,7 @@ export function Stage() {
         after={action.payload.after}
         diff={action.payload.diff}
         language={languageFromPath(action.payload.path)}
+        emptied={emptied}
       />
     );
   } else if (action?.type === "command") {
