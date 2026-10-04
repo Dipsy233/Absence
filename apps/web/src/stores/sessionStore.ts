@@ -9,7 +9,7 @@ import type {
   SessionSnapshot,
 } from "@daze/core";
 import * as api from "../lib/api";
-import { STAGE_EVENT_TYPES } from "../lib/events";
+import { STAGE_EVENT_TYPES, clearsStage, lastStageAction } from "../lib/events";
 
 const MAX_EVENTS = 2000;
 
@@ -81,7 +81,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       context: snapshot.context,
       plan: snapshot.plan,
       events: snapshot.events,
-      currentAction: lastStageEvent(snapshot.events),
+      currentAction: lastStageAction(snapshot.events),
     }),
 
   applyRuntimeState: (state) =>
@@ -96,17 +96,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const events = [...get().events, event];
     if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
     const patch: Partial<SessionStore> = { events };
-    if (STAGE_EVENT_TYPES.has(event.type)) patch.currentAction = event;
+    if (clearsStage(event)) {
+      // A run ended, or a new one just started: back to the default Stage page.
+      patch.currentAction = undefined;
+    } else if (STAGE_EVENT_TYPES.has(event.type)) {
+      patch.currentAction = event;
+    }
     set(patch);
   },
 
   setConnected: (connected) => set({ connected }),
 }));
-
-function lastStageEvent(events: DazeEvent[]): DazeEvent | undefined {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i]!;
-    if (STAGE_EVENT_TYPES.has(event.type)) return event;
-  }
-  return undefined;
-}

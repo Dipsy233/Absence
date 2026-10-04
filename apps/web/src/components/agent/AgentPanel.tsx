@@ -1,5 +1,4 @@
 import { AGENT_STATUSES, moodFor, statusLabel, type AgentVisualState } from "../../lib/agent";
-import { describeAction } from "../../lib/events";
 import { useSessionStore } from "../../stores/sessionStore";
 import { Avatar } from "./Avatar";
 import { Panel } from "../Panel";
@@ -8,38 +7,23 @@ import { Panel } from "../Panel";
 export function AgentPanel() {
   const status = useSessionStore((s) => s.agent.status);
   const model = useSessionStore((s) => s.agent.model);
-  const currentAction = useSessionStore((s) => s.currentAction);
 
-  // While the agent is composing or talking, the last visual action is already
-  // stale, so name the state itself rather than a finished tool.
-  const action =
-    status === "speaking"
-      ? "Speaking…"
-      : status === "thinking"
-        ? "Thinking…"
-        : describeAction(currentAction);
-  const visual: AgentVisualState = { status, action, mood: moodFor(status) };
+  const visual: AgentVisualState = { status, mood: moodFor(status) };
 
   return (
     <Panel title="Agent" aside={model} className="shrink-0" bodyClassName="p-2">
-      <div className="h-[164px]">
+      <div className="h-[172px]">
         <Avatar visual={visual} />
-      </div>
-
-      <div className="mt-2 border-t border-desk-line pt-2">
-        <div className="label">now</div>
-        <div className="truncate text-xs text-desk-ink" title={action ?? undefined}>
-          {action ?? "—"}
-        </div>
       </div>
 
       <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 border-t border-desk-line pt-2">
         {AGENT_STATUSES.map((candidate) => (
           <li
             key={candidate}
-            className={["text-[10px] uppercase tracking-wide", candidate === status ? "text-desk-amber" : "text-desk-dim"].join(
-              " ",
-            )}
+            className={[
+              "text-[10px] uppercase tracking-wide",
+              candidate === status ? "text-desk-amber" : "text-desk-dim",
+            ].join(" ")}
           >
             {statusLabel(candidate)}
           </li>

@@ -5,8 +5,6 @@ export type AgentMood = "calm" | "focused" | "confused" | "busy" | "tired" | "ha
 
 export interface AgentVisualState {
   status: AgentStatus;
-  /** Short description of the current action, e.g. "Editing auth.ts". */
-  action?: string;
   mood?: AgentMood;
 }
 

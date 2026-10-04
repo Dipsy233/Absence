@@ -10,7 +10,7 @@
  */
 import type { DazeEvent } from "@daze/core";
 import { buildHistory, pickRun, runEvents } from "../apps/web/src/lib/history";
-import { eventToStageItem } from "../apps/web/src/lib/events";
+import { eventToStageItem, lastStageAction } from "../apps/web/src/lib/events";
 import { buildSnapshots, seek, timelineEnd, timelineStart } from "../apps/web/src/lib/replay";
 
 const base = "http://127.0.0.1:8787";
@@ -129,6 +129,24 @@ const run = async () => {
   assert(
     "every seek position has an action once the run has started",
     [0.2, 0.4, 0.6, 0.8, 1].every((f) => at(f).currentAction !== undefined),
+  );
+
+  // 6. the Stage returns to its default page when a run ends
+  assert(
+    "a finished run leaves the Stage on the default page",
+    lastStageAction(firstEvents) === undefined,
+    `got ${lastStageAction(firstEvents)?.type ?? "undefined"}`,
+  );
+  assert(
+    "an in-flight run still shows its last action",
+    lastStageAction(firstEvents.slice(0, -1)) !== undefined,
+    `got ${lastStageAction(firstEvents.slice(0, -1))?.type ?? "undefined"}`,
+  );
+  const justStarted = [events[0]!];
+  assert("a brand new run shows the default page", lastStageAction(justStarted) === undefined);
+  assert(
+    "the whole session (last run finished) shows the default page",
+    lastStageAction(events) === undefined,
   );
 
   // 5. file state is reconstructed

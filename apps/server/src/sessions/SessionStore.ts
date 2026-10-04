@@ -184,6 +184,8 @@ export class DazeSession {
 
       case "agent_end":
         this.setStatus("completed");
+        // The run is over: the Stage returns to its default page.
+        this.currentAction = undefined;
         break;
 
       case "thinking":
@@ -197,6 +199,8 @@ export class DazeSession {
         if (event.payload.role === "assistant") {
           this.applyAssistantMessage(event.payload);
         } else if (event.payload.role === "user") {
+          // A new run starts with nothing on the Stage yet.
+          this.currentAction = undefined;
           this.chat.push({
             id: newId("msg"),
             role: "user",

@@ -25,6 +25,21 @@ export const STAGE_EVENT_TYPES = new Set<DazeEvent["type"]>([
   "search",
 ]);
 
+/** A run ended, or a new one started: the Stage goes back to its default page. */
+export function clearsStage(event: DazeEvent): boolean {
+  return event.type === "agent_end" || (event.type === "message" && event.payload.role === "user");
+}
+
+/** The action the Stage should still be showing, or undefined for the default page. */
+export function lastStageAction(events: DazeEvent[]): DazeEvent | undefined {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!;
+    if (clearsStage(event)) return undefined;
+    if (STAGE_EVENT_TYPES.has(event.type)) return event;
+  }
+  return undefined;
+}
+
 let itemCounter = 0;
 function nextItemId(): string {
   itemCounter = (itemCounter + 1) % 1_000_000;
@@ -282,35 +297,6 @@ export function eventToActivityRow(event: DazeEvent): ActivityRow | undefined {
       return { id, event, time, action: "END", primary: event.payload.reason, tone: "lifecycle" };
     case "error":
       return { id, event, time, action: "ERROR", primary: event.payload.message, tone: "error" };
-    default:
-      return undefined;
-  }
-}
-
-/** Short description of what the agent is doing right now (read02 §31). */
-export function describeAction(event: DazeEvent | undefined): string | undefined {
-  if (!event) return undefined;
-  switch (event.type) {
-    case "file_read":
-      return `Reading ${event.payload.path}`;
-    case "file_write":
-      return `Writing ${event.payload.path}`;
-    case "file_edit":
-      return `Editing ${event.payload.path}`;
-    case "command":
-      return `Running ${event.payload.command}`;
-    case "search":
-      return `Searching ${event.payload.query}`;
-    case "thinking":
-      return "Thinking…";
-    case "message":
-      return event.payload.role === "assistant" ? "Speaking" : undefined;
-    case "agent_start":
-      return "Waking up";
-    case "agent_end":
-      return "Done";
-    case "error":
-      return String(event.payload.message).slice(0, 60);
     default:
       return undefined;
   }
