@@ -284,13 +284,18 @@ Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapte
   and Agent Eggs are both reductions of the same event stream.
 
 ```
-daze/                     npm workspaces: apps/*  packages/*
-  start-daze.bat          one-click launcher (Windows)
+daze/                     npm workspaces: packages/*  apps/server  apps/web
+  start-daze.bat          one-click launcher (Windows, browser)
+  start-daze-app.bat      one-click launcher (Windows, native window)
   start-daze.sh           one-click launcher (Linux / WSL)
   tsconfig.base.json      strict, noUncheckedIndexedAccess
   native/agentwatch/      Windows process observer (Job Object, committed prebuilt)
   native/agentwatch-linux/ Linux process observer (eBPF, committed prebuilt)
   scripts/wsl-pi-config.sh point WSL pi at the Windows host's model services
+
+apps/desktop/             Electron shell (not a workspace; own node_modules)
+  main.cjs                runs the server in-process, opens the window, tray
+  assets/tray.png         tray icon
 
 packages/core/src/        events.ts (DazeEvent + payload map)  types.ts  index.ts
 
@@ -350,9 +355,12 @@ scripts/                  make-demo.mjs  check-history.ts  check-report.ts
 ```bash
 npm install
 
-npm run dev     # dev: web on :5173 (proxies /api and /ws), server on :8848
-npm run build   # build the web app
-npm start       # single origin — server serves the built app on :8848
+npm run dev       # dev: web on :5173 (proxies /api and /ws), server on :8848
+npm run build     # build the web app
+npm start         # single origin — server serves the built app on :8848
+
+npm run desktop:install   # once — Electron shell, in apps/desktop
+npm run desktop           # the same app as a native window (see below)
 ```
 
 Then enter a project path (or pick one), choose a runtime, hit **Open**, and send
@@ -360,6 +368,41 @@ the agent a task in the chat box at the bottom of the Stage. The **History** lis
 under the path box unfolds the saved sessions — DAZE's own archives merged with
 Pi's — newest first; typing a path filters it to that project, and clicking a row
 reopens that conversation.
+
+### Desktop shell (native window)
+
+DAZE can run as a native app instead of a browser tab. `apps/desktop` is an
+Electron shell that runs the **server in its own process** — no spawned child,
+no console window, and `port: 0` so the OS picks a free port and there is
+nothing to configure or collide with. The window then loads the same built web
+app the browser would; the UI is not forked.
+
+```bash
+npm run build           # the shell serves apps/web/dist
+npm run desktop:install # once — installs Electron (its own node_modules)
+npm run desktop         # open the native window
+npm run desktop:dev     # DevTools on; uses the Vite dev server when it is up
+```
+
+On Windows, **`start-daze-app.bat`** does all of it in one click (build →
+install the shell if missing → open the window); `start-daze-app.bat check` is a
+dry run. The browser launcher (`start-daze.bat`) is unchanged and still the
+right choice for the WSL / eBPF workflow.
+
+What the shell adds over the browser: a single window with no address bar or
+tabs, a tray icon, close-to-tray so observation keeps running, and no port.
+Quit for real from the tray menu (or Ctrl+Q); closing the window only hides it.
+
+Two things to know:
+
+- **Electron is installed separately**, into `apps/desktop/node_modules` (it is
+  deliberately *not* a workspace member). It carries its own `tsx` + esbuild so
+  the Windows shell never picks up the Linux-built `esbuild` in the root
+  `node_modules` — the platform split the WSL section below warns about.
+- **The desktop shell and the browser are the same app.** Anything true in the
+  browser (Replay, the Daze Report, Agent Eggs) is true in the window, because
+  it is the same web build talking to the same server over the same `/api` and
+  `/ws`.
 
 ### One-click launcher (Windows)
 

@@ -1,0 +1,16 @@
+{
+  "name": "@daze/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DAZE desktop shell — runs the Daze server in-process and shows the UI in a native window.",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "tsx": "^4.19.2"
+  }
+}

@@ -1,15 +1,43 @@
 import fs from "node:fs";
-import Fastify from "fastify";
+import { pathToFileURL } from "node:url";
+import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
-import { config } from "./config";
+import { config, configure, type DazeConfig } from "./config";
 import { projectRoutes } from "./api/projects";
 import { sessionRoutes } from "./api/sessions";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
 
-async function main(): Promise<void> {
-  const app = Fastify({ logger: { level: process.env.DAZE_LOG_LEVEL ?? "info" } });
+export interface StartServerOptions {
+  /** Port to listen on. `0` lets the OS pick a free one (the desktop shell). */
+  port?: number;
+  host?: string;
+  /** Suppress Fastify's request logging (the desktop shell logs to its own file). */
+  quiet?: boolean;
+  /** Additional config overrides, applied before the server starts listening. */
+  config?: Partial<DazeConfig>;
+}
+
+export interface RunningServer {
+  app: FastifyInstance;
+  /** The port actually bound — resolves the `0`-for-any choice. */
+  port: number;
+  host: string;
+  /** The URL the UI should load. */
+  url: string;
+  close(): Promise<void>;
+}
+
+/**
+ * Build and start the Daze server. Used by both the CLI entry point below and
+ * the Electron desktop shell, which runs the server in-process instead of
+ * spawning a child — so the app has one lifecycle and no stray console window.
+ */
+export async function startServer(options: StartServerOptions = {}): Promise<RunningServer> {
+  if (options.config) configure(options.config);
+
+  const app = Fastify({ logger: options.quiet ? false : { level: process.env.DAZE_LOG_LEVEL ?? "info" } });
 
   // Start the kernel process observer before anything else is spawned. On
   // Windows this puts the server into a Job Object; on Linux it attaches eBPF
@@ -45,12 +73,38 @@ async function main(): Promise<void> {
     });
   }
 
-  await app.listen({ port: config.port, host: config.host });
-  app.log.info(`DAZE server listening on http://${config.host}:${config.port} (agent=${config.defaultAgent})`);
+  const port = options.port ?? config.port;
+  const host = options.host ?? config.host;
+  await app.listen({ port, host });
+
+  // With port 0 the OS chose one; read it back from the listening address.
+  const address = app.server.address();
+  const actualPort = typeof address === "object" && address ? address.port : port;
+  const url = `http://${host}:${actualPort}`;
+
+  app.log.info(`DAZE server listening on ${url} (agent=${config.defaultAgent})`);
   app.log.info(`projects root: ${config.projectsRoot}`);
+
+  return {
+    app,
+    port: actualPort,
+    host,
+    url,
+    close: () => app.close(),
+  };
 }
 
-main().catch((error) => {
-  console.error("DAZE server failed to start:", error);
-  process.exit(1);
-});
+/** CLI entry: `tsx src/index.ts`. The server owns its own process here. */
+async function main(): Promise<void> {
+  await startServer();
+}
+
+// Only run the CLI path when this module is the entry point, so the desktop
+// shell can import `startServer` without the server binding a port twice.
+const entry = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+if (entry === import.meta.url) {
+  main().catch((error) => {
+    console.error("DAZE server failed to start:", error);
+    process.exit(1);
+  });
+}

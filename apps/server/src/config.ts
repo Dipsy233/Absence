@@ -38,3 +38,15 @@ export const config: DazeConfig = {
   piModel: process.env.DAZE_PI_MODEL,
   webDist: process.env.DAZE_WEB_DIST ?? path.join(repoRoot, "apps/web/dist"),
 };
+
+/**
+ * Host override hook. The CLI entry point mutates nothing; an embedding host
+ * (the Electron desktop shell) calls this once before `startServer()` so it can
+ * choose the port — or pass `port: 0` to let the OS pick a free one — without
+ * the server knowing who is hosting it. Everything else reads the same
+ * singleton, so no call site changes.
+ */
+export function configure(patch: Partial<DazeConfig>): DazeConfig {
+  Object.assign(config, patch);
+  return config;
+}

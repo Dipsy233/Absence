@@ -6,7 +6,8 @@
   "description": "DAZE / 发呆症 — a real-time visualization observer for AI agents. Pi runs the agent, Daze observes the events, the Stage turns events into something humans can watch.",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/server",
+    "apps/web"
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
@@ -20,6 +21,9 @@
     "check:agentwatch": "tsx scripts/check-agentwatch.ts",
     "check:ebpf": "tsx scripts/check-ebpf.ts",
     "check:process": "npm run check:eggs && npm run check:classify && npm run check:agentwatch && npm run check:ebpf",
+    "desktop:install": "npm --prefix apps/desktop install",
+    "desktop": "npm --prefix apps/desktop start",
+    "desktop:dev": "npm --prefix apps/desktop run dev",
     "build:agentwatch": "cd native/agentwatch && build.bat"
   },
   "devDependencies": {
