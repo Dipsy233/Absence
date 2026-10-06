@@ -5,6 +5,11 @@ node_modules/
 .env.local
 .vite/
 
+# Playwright CLI debug dumps (timestamped page/console snapshots from a manual
+# session, not test fixtures). The real Playwright config and specs, if any,
+# live elsewhere.
+.playwright-cli/
+
 # All build output lives under the repo-root dist/ (git ignored):
 #   dist/web                    the built UI (apps/web/vite.config.ts)
 #   dist/desktop/build          the server bundle + staged prod node_modules
