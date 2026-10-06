@@ -1,6 +1,6 @@
-import { DiffEditor } from "@monaco-editor/react";
 import { motion } from "framer-motion";
 import { diffContext } from "../../lib/context";
+import { unifiedDiff } from "../../lib/diff";
 import { useChatStore } from "../../stores/chatStore";
 
 interface DiffStageProps {
@@ -8,7 +8,6 @@ interface DiffStageProps {
   before: string;
   after: string;
   diff?: string;
-  language: string;
   emptied?: boolean;
 }
 
@@ -23,10 +22,30 @@ function countChanges(diff: string): { added: number; removed: number } {
   return { added, removed };
 }
 
-export function DiffStage({ path, before, after, diff, language, emptied = false }: DiffStageProps) {
+/** Colour one line of a unified diff. */
+function diffLineClass(line: string): string {
+  if (line.startsWith("@@")) return "text-desk-dim";
+  if (line.startsWith("+++") || line.startsWith("---")) return "text-desk-dim";
+  if (line.startsWith("+")) return "bg-desk-teal/10 text-desk-teal";
+  if (line.startsWith("-")) return "bg-desk-ember/10 text-desk-ember";
+  return "text-desk-ink/70";
+}
+
+/**
+ * A read-only unified diff.
+ *
+ * Deliberately NOT a Monaco diff editor: in Monaco's inline view the deleted
+ * original lines are injected as view zones with their own line-number margin,
+ * which reads as a second gutter plus a ghost of the old file. Rendering the
+ * unified diff text directly is unambiguous.
+ */
+export function DiffStage({ path, before, after, diff, emptied = false }: DiffStageProps) {
   const addContext = useChatStore((s) => s.addContext);
-  const { added, removed } = countChanges(diff ?? "");
-  const hasText = before.length > 0 || after.length > 0;
+  // Prefer the run's own diff (Pi annotates it with line numbers); if it is
+  // missing, generate a standard unified diff from the two versions.
+  const text = (diff ?? "").trim().length > 0 ? (diff as string) : unifiedDiff(before, after, path, path);
+  const { added, removed } = countChanges(text);
+  const lines = text.split("\n");
 
   return (
     <motion.div
@@ -58,36 +77,15 @@ export function DiffStage({ path, before, after, diff, language, emptied = false
           transition={{ duration: 1, ease: "easeInOut" }}
         />
       </div>
-      <div className="min-h-0 flex-1">
-        {hasText ? (
-          <DiffEditor
-            height="100%"
-            language={language}
-            original={before}
-            modified={after}
-            theme="daze"
-            loading={<div className="p-4 font-mono text-xs text-desk-dim">loading diff…</div>}
-            options={{
-              readOnly: true,
-              renderSideBySide: false,
-              minimap: { enabled: false },
-              fontSize: 12.5,
-              scrollBeyondLastLine: false,
-              renderOverviewRuler: false,
-              folding: false,
-              glyphMargin: false,
-              lineNumbersMinChars: 3,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-              padding: { top: 10, bottom: 10 },
-              scrollbar: { verticalScrollbarSize: 9, horizontalScrollbarSize: 9 },
-            }}
-          />
-        ) : (
-          <pre className="h-full overflow-auto whitespace-pre-wrap p-3 font-mono text-xs text-desk-ink/85">
-            {diff || "No diff available."}
-          </pre>
-        )}
+
+      <div className="min-h-0 flex-1 overflow-auto bg-[#0f0d0b]/40 py-2 font-mono text-xs leading-relaxed">
+        {lines.map((line, index) => (
+          <div key={index} className={`whitespace-pre px-3 ${diffLineClass(line)}`}>
+            {line || " "}
+          </div>
+        ))}
       </div>
+
       <div className="shrink-0 border-t border-desk-line px-3 py-1.5 text-center text-xs italic text-desk-dim">
         {emptied ? (
           <span className="text-desk-ember">Agent removed all content — the file still exists on disk.</span>

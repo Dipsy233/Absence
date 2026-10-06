@@ -5,3 +5,9 @@ dist/
 .env
 .env.local
 .vite/
+
+# eBPF build artefacts (native/agentwatch-linux). The binary is committed; the
+# generated header and objects are rebuilt by build.sh.
+native/agentwatch-linux/vmlinux.h
+native/agentwatch-linux/*.bpf.o
+native/agentwatch-linux/*.skel.h

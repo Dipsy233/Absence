@@ -1,5 +1,16 @@
 import { create } from "zustand";
 
+const CHAT_HISTORY_KEY = "daze.chatHistoryOpen";
+
+/** Remembered across visits (and refreshes) so the chat docks the way you left it. */
+function readChatHistoryOpen(): boolean {
+  try {
+    return localStorage.getItem(CHAT_HISTORY_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 export interface MenuItem {
   label: string;
   onSelect: () => void;
@@ -19,11 +30,27 @@ interface UiStore {
   filesView: FilesView;
   /** History run selected in the left rail; drives the Activity filter. */
   selectedRunId?: string;
+  /** Whether the Stage chat's history unfolds on the default page. Remembered. */
+  chatHistoryOpen: boolean;
+  /**
+   * Swapped view: the agent becomes the Stage's default background and the desk
+   * world moves into the top-right panel (renamed TABLE). Toggled by clicking
+   * that panel.
+   */
+  agentOnStage: boolean;
+  /** Whether the Daze Report overlay covers the Stage. Transient view state. */
+  reportOpen: boolean;
+  /** Event highlighted in the Activity panel after following a report link. */
+  focusedEventId?: string;
 
   openMenu: (x: number, y: number, items: MenuItem[]) => void;
   closeMenu: () => void;
   setFilesView: (view: FilesView) => void;
   selectRun: (id?: string) => void;
+  setChatHistoryOpen: (open: boolean) => void;
+  toggleAgentOnStage: () => void;
+  toggleReport: () => void;
+  focusEvent: (id?: string) => void;
   reset: () => void;
 }
 
@@ -31,10 +58,32 @@ export const useUiStore = create<UiStore>((set) => ({
   menu: undefined,
   filesView: { kind: "tree" },
   selectedRunId: undefined,
+  chatHistoryOpen: readChatHistoryOpen(),
+  agentOnStage: false,
+  reportOpen: false,
+  focusedEventId: undefined,
 
   openMenu: (x, y, items) => set({ menu: { x, y, items } }),
   closeMenu: () => set({ menu: undefined }),
   setFilesView: (filesView) => set({ filesView }),
   selectRun: (selectedRunId) => set({ selectedRunId }),
-  reset: () => set({ menu: undefined, filesView: { kind: "tree" }, selectedRunId: undefined }),
+
+  setChatHistoryOpen: (chatHistoryOpen) => {
+    try {
+      localStorage.setItem(CHAT_HISTORY_KEY, chatHistoryOpen ? "1" : "0");
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+    set({ chatHistoryOpen });
+  },
+
+  toggleAgentOnStage: () => set((s) => ({ agentOnStage: !s.agentOnStage })),
+
+  toggleReport: () => set((s) => ({ reportOpen: !s.reportOpen })),
+
+  focusEvent: (focusedEventId) => set({ focusedEventId }),
+
+  // Deliberately keeps chatHistoryOpen: it is a user preference, not session state.
+  reset: () =>
+    set({ menu: undefined, filesView: { kind: "tree" }, selectedRunId: undefined, focusedEventId: undefined }),
 }));

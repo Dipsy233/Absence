@@ -1,11 +1,17 @@
 import path from "node:path";
+import fs from "node:fs/promises";
+import os from "node:os";
+import type { BashOperations } from "@earendil-works/pi-coding-agent";
 import {
+  type CommandOption,
   type ContextState,
   type DazeEvent,
   type DazeEventPayloadMap,
   type DazeEventType,
+  type SessionStatsInfo,
 } from "@daze/core";
-import { BaseAdapter, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
+import { BaseAdapter, type AdapterOptions, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
+import { createDazeShell } from "../process/DazeShell";
 import { readFileSafe, scanCodeFiles } from "../filesystem/FileTree";
 import { unifiedDiff } from "../util/diff";
 import { languageFromPath } from "../util/language";
@@ -18,12 +24,23 @@ const PREFERRED = /(app|index|main|auth|api|server|client|utils|user|login|confi
  * A scripted runtime used for development and demos (read.md Phase 0/1).
  * It reads real files from the project so the Stage shows real content,
  * and paces events the way a real agent would.
+ *
+ * Its shell command is real too: it goes through the same Daze shell the Pi
+ * runtime uses, so the process watcher reports eggs with no credentials needed.
  */
 export class MockAdapter extends BaseAdapter {
   readonly runtime = "mock";
   private model = "mock/agent";
   private aborted = false;
+  private busy = false;
+  private thinkingLevel = "medium";
+  private name?: string;
   private tokensUsed = 0;
+  private shell?: BashOperations;
+
+  constructor(private readonly options: AdapterOptions = { tools: [] }) {
+    super();
+  }
 
   async start(ctx: AgentStartContext): Promise<AgentStartResult> {
     this.sessionId = ctx.sessionId;
@@ -37,8 +54,101 @@ export class MockAdapter extends BaseAdapter {
     return { used: this.tokensUsed, total: 128_000 };
   }
 
+  // --- command surface (stubs so the terminal box works without credentials) --
+
+  async listModels(): Promise<CommandOption[]> {
+    return [
+      { value: "mock/agent", label: "Mock Agent", description: "scripted runtime", active: this.model === "mock/agent" },
+      { value: "mock/fast", label: "Mock Fast", description: "scripted runtime", active: this.model === "mock/fast" },
+    ];
+  }
+
+  async setModel(value: string): Promise<string> {
+    this.model = value;
+    return this.model;
+  }
+
+  getThinking(): { level: string; available: string[] } {
+    return { level: this.thinkingLevel, available: ["off", "low", "medium", "high"] };
+  }
+
+  async setThinking(level: string): Promise<string> {
+    this.thinkingLevel = level;
+    return this.thinkingLevel;
+  }
+
+  getSessionName(): string | undefined {
+    return this.name;
+  }
+
+  setSessionName(name: string): void {
+    this.name = name;
+  }
+
+  getSessionStats(): SessionStatsInfo {
+    const used = Math.round(this.tokensUsed);
+    return {
+      sessionId: this.sessionId,
+      userMessages: 0,
+      assistantMessages: 0,
+      toolCalls: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: used },
+      cost: 0,
+      contextUsed: used,
+      contextTotal: 128_000,
+    };
+  }
+
+  async compact(instructions?: string): Promise<{ tokensBefore?: number; estimatedTokensAfter?: number }> {
+    const before = Math.round(this.tokensUsed);
+    void instructions;
+    return { tokensBefore: before, estimatedTokensAfter: Math.round(before * 0.3) };
+  }
+
+  async exportSession(format: "html" | "jsonl"): Promise<string> {
+    const dir = path.join(os.homedir(), ".daze", "exports");
+    await fs.mkdir(dir, { recursive: true });
+    const file = path.join(dir, `${this.sessionId || "mock"}.${format}`);
+    await fs.writeFile(file, `DAZE mock export (${format}) for session ${this.sessionId}\n`, "utf-8");
+    return file;
+  }
+
+  isBusy(): boolean {
+    return this.busy;
+  }
+
+  /** Daze's shell when a watcher is present, else Pi's plain local shell. */
+  private async shellOperations(): Promise<BashOperations> {
+    if (this.shell) return this.shell;
+    if (this.options.processWatcher) {
+      this.shell = (await createDazeShell(this.options.processWatcher)).bash;
+    } else {
+      const { createLocalBashOperations } = await import("@earendil-works/pi-coding-agent");
+      this.shell = createLocalBashOperations();
+    }
+    return this.shell;
+  }
+
+  /** Run a command for real and collect its output, the way Pi's tool does. */
+  private async runCommand(command: string): Promise<{ stdout: string; exitCode: number }> {
+    const chunks: Buffer[] = [];
+    try {
+      const shell = await this.shellOperations();
+      const { exitCode } = await shell.exec(command, this.cwd, {
+        onData: (data) => chunks.push(data),
+        timeout: 20_000,
+      });
+      return { stdout: Buffer.concat(chunks).toString("utf8"), exitCode: exitCode ?? -1 };
+    } catch (error) {
+      const partial = chunks.length > 0 ? Buffer.concat(chunks).toString("utf8") : "";
+      const message = error instanceof Error ? error.message : String(error);
+      return { stdout: `${partial}${message}`, exitCode: -1 };
+    }
+  }
+
   async prompt(_text: string): Promise<void> {
     this.aborted = false;
+    this.busy = true;
     const emit = <K extends DazeEventType>(type: K, payload: DazeEventPayloadMap[K]) =>
       this.emitDaze(type, payload);
 
@@ -100,19 +210,45 @@ export class MockAdapter extends BaseAdapter {
 
     if (bail()) return this.finish("aborted");
 
-    // A shell command.
+    // A shell command. Really run, through the same shell Pi's bash tool uses,
+    // so the process watcher sees the evidence it would see from Pi.
     const listing = allFiles.slice(0, 12).map((f) => `  ${f}`).join("\n");
+    const shortCommand = "ls -la";
     const bashId = "mock_bash_1";
-    emit("tool_start", { toolCallId: bashId, toolName: "bash", args: { command: "ls -la" } });
-    await sleep(200);
+    emit("tool_start", { toolCallId: bashId, toolName: "bash", args: { command: shortCommand } });
+    const ran = await this.runCommand(shortCommand);
+    // A project with no shell (or a machine without bash) still gets a demo.
+    const usable = ran.stdout.trim().length > 0;
     emit("command", {
-      command: "ls -la",
-      stdout: `total ${allFiles.length}\n${listing}\n`,
+      command: shortCommand,
+      stdout: usable ? ran.stdout : `total ${allFiles.length}\n${listing}\n`,
       stderr: "",
-      exitCode: 0,
+      exitCode: usable ? ran.exitCode : 0,
     });
     await sleep(700);
     emit("tool_end", { toolCallId: bashId, toolName: "bash", isError: false });
+    await sleep(400);
+
+    if (bail()) return this.finish("aborted");
+
+    // Processes, so the Agent Eggs panel has something real to show without Pi
+    // credentials — and both kinds of egg:
+    //   • one left running (it exits on its own after a minute),
+    //   • one that lives and dies *inside* the command, which is only visible
+    //     because Daze samples while the command is still running.
+    // Daze reports what the agent started; it never kills anything.
+    const serverCommand = `(node -e "setTimeout(()=>{},60000)" &); node -e "setTimeout(()=>{},6000)"`;
+    const serverId = "mock_bash_server";
+    emit("tool_start", { toolCallId: serverId, toolName: "bash", args: { command: serverCommand } });
+    const laid = await this.runCommand(serverCommand);
+    emit("command", {
+      command: serverCommand,
+      stdout: laid.stdout.trim().length > 0 ? laid.stdout : "(one process left running, one that exits after 6s)\n",
+      stderr: "",
+      exitCode: laid.exitCode,
+    });
+    await sleep(600);
+    emit("tool_end", { toolCallId: serverId, toolName: "bash", isError: false });
     await sleep(400);
 
     if (bail()) return this.finish("aborted");
@@ -183,15 +319,18 @@ export class MockAdapter extends BaseAdapter {
   }
 
   private finish(reason: string): void {
+    this.busy = false;
     this.emitDaze("agent_end", { reason });
   }
 
   async abort(): Promise<void> {
     this.aborted = true;
+    this.busy = false;
   }
 
   dispose(): void {
     this.aborted = true;
+    this.busy = false;
   }
 }
 

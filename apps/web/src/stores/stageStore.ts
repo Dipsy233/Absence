@@ -9,6 +9,10 @@ function modeForItem(item: StageItem): StageMode {
       return "diff";
     case "terminal":
       return "terminal";
+    case "thought":
+      return "thought";
+    case "process":
+      return "process";
     default:
       return "desk";
   }

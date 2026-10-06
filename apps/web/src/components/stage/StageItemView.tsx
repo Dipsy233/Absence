@@ -2,6 +2,8 @@ import type { StageItem } from "../../types/stage";
 import { FileStage } from "./FileStage";
 import { DiffStage } from "./DiffStage";
 import { TerminalStage } from "./TerminalStage";
+import { ThoughtStage } from "./ThoughtStage";
+import { ProcessStage } from "./ProcessStage";
 
 /** Renders whichever Stage item is active (read02 §11–17). */
 export function StageItemView({ item }: { item: StageItem }) {
@@ -28,7 +30,6 @@ export function StageItemView({ item }: { item: StageItem }) {
           before={payload.before}
           after={payload.after}
           diff={payload.diff}
-          language={payload.language}
           emptied={payload.emptied}
         />
       );
@@ -39,6 +40,23 @@ export function StageItemView({ item }: { item: StageItem }) {
           stdout={payload.stdout}
           stderr={payload.stderr}
           exitCode={payload.exitCode}
+          event={item.event}
+        />
+      );
+    case "thought":
+      return <ThoughtStage text={payload.text} streaming={payload.streaming} event={item.event} />;
+    case "process":
+      return (
+        <ProcessStage
+          pid={payload.pid}
+          ppid={payload.ppid}
+          name={payload.name}
+          commandLine={payload.commandLine}
+          status={payload.status}
+          children={payload.children}
+          command={payload.command}
+          startedAt={payload.startedAt}
+          exitedAt={payload.exitedAt}
           event={item.event}
         />
       );

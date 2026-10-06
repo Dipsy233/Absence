@@ -6,9 +6,26 @@ import { config } from "./config";
 import { projectRoutes } from "./api/projects";
 import { sessionRoutes } from "./api/sessions";
 import { wsRoutes } from "./websocket/ws";
+import { JobMonitor } from "./process/JobMonitor";
 
 async function main(): Promise<void> {
   const app = Fastify({ logger: { level: process.env.DAZE_LOG_LEVEL ?? "info" } });
+
+  // Start the kernel process observer before anything else is spawned. On
+  // Windows this puts the server into a Job Object; on Linux it attaches eBPF
+  // tracepoints. Either way the kernel then reports every process creation and
+  // exit instead of us sampling for them, and the helper's own start does not
+  // appear as a session's work. A failure is not fatal; sessions fall back to
+  // polling and the UI says precision is degraded.
+  try {
+    await JobMonitor.get().start();
+    const via = process.platform === "linux" ? "eBPF tracepoints" : "Job Object events";
+    app.log.info(`process watching: kernel ${via}`);
+  } catch (error) {
+    app.log.warn(
+      `process watching: falling back to polling (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
 
   await app.register(websocket);
   await app.register(projectRoutes);

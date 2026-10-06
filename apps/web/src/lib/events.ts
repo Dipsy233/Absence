@@ -7,17 +7,20 @@ import { languageFromPath } from "./language";
 export const ACTIVITY_TYPES = new Set<DazeEvent["type"]>([
   "agent_start",
   "agent_end",
+  "thinking",
   "file_read",
   "file_write",
   "file_edit",
   "file_change",
   "command",
   "search",
+  "process",
   "error",
 ]);
 
 /** Events that own the Stage. */
 export const STAGE_EVENT_TYPES = new Set<DazeEvent["type"]>([
+  "thinking",
   "file_read",
   "file_write",
   "file_edit",
@@ -25,9 +28,15 @@ export const STAGE_EVENT_TYPES = new Set<DazeEvent["type"]>([
   "search",
 ]);
 
-/** A run ended, or a new one started: the Stage goes back to its default page. */
+/**
+ * A run ended, a new one started, or the agent began speaking: the Stage goes
+ * back to its default page. Text to the user ends whatever action was showing.
+ */
 export function clearsStage(event: DazeEvent): boolean {
-  return event.type === "agent_end" || (event.type === "message" && event.payload.role === "user");
+  if (event.type === "agent_end") return true;
+  // A system message is a Daze notice/command result, not the agent speaking,
+  // so it must leave whatever the Stage is showing alone.
+  return event.type === "message" && event.payload.role !== "system";
 }
 
 /** The action the Stage should still be showing, or undefined for the default page. */
@@ -94,6 +103,22 @@ function baseItem(
 /** Turn an event into something the Stage can render (read02 §12, §43). */
 export function eventToStageItem(event: DazeEvent): StageItem | undefined {
   switch (event.type) {
+    case "thinking": {
+      // Reasoning streams token by token, so one thought arrives as a long run
+      // of events whose content keeps growing. Keying the item on the event
+      // would re-mount the Stage panel on every delta (and on every replay
+      // tick, since currentAction is re-derived); one id per session keeps the
+      // card in place while its text fills in.
+      return {
+        id: `think_${event.sessionId}`,
+        type: "thought",
+        title: "Thinking",
+        source: { eventId: event.id },
+        payload: { kind: "thought", text: event.payload.content, streaming: event.payload.streaming },
+        createdAt: event.timestamp,
+        event,
+      };
+    }
     case "file_read": {
       const { path, content, startLine, endLine, language } = event.payload;
       return baseItem(
@@ -178,12 +203,30 @@ export function eventToStageItem(event: DazeEvent): StageItem | undefined {
         exitCode: 0,
       });
     }
+    case "process": {
+      // An egg gets its own card: it is not an action the agent took, it is
+      // something it left behind (v0.3).
+      const { pid, ppid, name, commandLine, status, children, command, startedAt, exitedAt } = event.payload;
+      return baseItem(event, "process", name, {
+        kind: "process",
+        pid,
+        ppid,
+        name,
+        commandLine,
+        status,
+        children,
+        command,
+        startedAt,
+        exitedAt,
+      });
+    }
     default:
       return undefined;
   }
 }
 
-function countDiff(diff: string): { added: number; removed: number } {
+/** Added/removed line counts of a unified diff (ignores the +++/--- headers). */
+export function countDiff(diff: string): { added: number; removed: number } {
   let added = 0;
   let removed = 0;
   for (const line of diff.split("\n")) {
@@ -194,6 +237,11 @@ function countDiff(diff: string): { added: number; removed: number } {
   return { added, removed };
 }
 
+/** The first non-empty line — enough to name a thought in one row. */
+export function firstLine(text: string): string {
+  return text.split("\n").find((line) => line.trim().length > 0)?.trim() ?? "(thinking…)";
+}
+
 /** A compact, clickable row for the Activity panel. */
 export function eventToActivityRow(event: DazeEvent): ActivityRow | undefined {
   if (!ACTIVITY_TYPES.has(event.type)) return undefined;
@@ -202,6 +250,17 @@ export function eventToActivityRow(event: DazeEvent): ActivityRow | undefined {
   const stageItem = eventToStageItem(event);
 
   switch (event.type) {
+    case "thinking":
+      return {
+        id,
+        event,
+        time,
+        action: "THINK",
+        primary: firstLine(event.payload.content),
+        secondary: event.payload.streaming ? "reasoning…" : "reasoning",
+        tone: "think",
+        stageItem,
+      };
     case "file_read":
       return {
         id,
@@ -296,6 +355,22 @@ export function eventToActivityRow(event: DazeEvent): ActivityRow | undefined {
         tone: "search",
         stageItem,
       };
+    case "process": {
+      const { name, pid, status, children, kind } = event.payload;
+      // Helpers are folded away here too: a run's `cat`, `grep` and `sleep` are
+      // noise next to the daemon it started. The raw events remain in the stream.
+      if (kind === "tool") return undefined;
+      return {
+        id,
+        event,
+        time,
+        action: status === "running" ? "LAID" : "DIED",
+        primary: name,
+        secondary: `pid ${pid}${children > 0 ? ` · +${children}` : ""}`,
+        tone: "process",
+        stageItem,
+      };
+    }
     case "agent_start":
       return {
         id,
@@ -343,7 +418,7 @@ export function statusFromEvent(event: DazeEvent): AgentStatus | undefined {
     case "thinking":
       return "thinking";
     case "message":
-      return "speaking";
+      return event.payload.role === "system" ? undefined : "speaking";
     case "tool_start":
       return statusForTool(event.payload.toolName);
     case "file_read":

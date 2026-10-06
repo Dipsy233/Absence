@@ -11,14 +11,21 @@
 import fs from "node:fs/promises";
 import type { DazeEvent } from "@daze/core";
 import { buildHistory, pickRun, runEvents } from "../apps/web/src/lib/history";
-import { createStageItem, eventToStageItem, lastStageAction } from "../apps/web/src/lib/events";
+import {
+  createStageItem,
+  eventToActivityRow,
+  eventToStageItem,
+  lastStageAction,
+  STAGE_EVENT_TYPES,
+} from "../apps/web/src/lib/events";
 import { openKnownFile, openUserFile } from "../apps/web/src/lib/openFile";
 import { useStageStore } from "../apps/web/src/stores/stageStore";
 import { useSessionStore } from "../apps/web/src/stores/sessionStore";
 import { useFileStore } from "../apps/web/src/stores/fileStore";
 import { buildSnapshots, seek, timelineEnd, timelineStart } from "../apps/web/src/lib/replay";
 
-const base = "http://127.0.0.1:8787";
+const port = process.env.DAZE_PORT ?? process.env.PORT ?? "8848";
+const base = `http://127.0.0.1:${port}`;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // The web app's api module uses relative URLs, which only resolve in a browser.
@@ -47,7 +54,7 @@ async function collect(prompts: string[]): Promise<{ events: DazeEvent[]; snapsh
   ).json();
   const id = snap.session.id;
 
-  const ws = new WebSocket(`ws://127.0.0.1:8787/ws/sessions/${id}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/sessions/${id}`);
   const events: DazeEvent[] = [];
   ws.addEventListener("message", (raw: MessageEvent) => {
     const m = JSON.parse(String(raw.data));
@@ -133,8 +140,7 @@ const run = async () => {
   assert("seek is deterministic", twice[0] === twice[1]);
 
   // 5. seeking past the last action still shows it (snapshots carry the action)
-  const STAGE = ["file_read", "file_write", "file_edit", "command", "search"];
-  const lastAction = [...firstEvents].reverse().find((e) => STAGE.includes(e.type));
+  const lastAction = [...firstEvents].reverse().find((e) => STAGE_EVENT_TYPES.has(e.type));
   assert(
     "seek to the end of the run still shows the last action",
     at(1).currentAction?.id === lastAction?.id,
@@ -151,10 +157,18 @@ const run = async () => {
     lastStageAction(firstEvents) === undefined,
     `got ${lastStageAction(firstEvents)?.type ?? "undefined"}`,
   );
+  // An in-flight run that has not started speaking yet still shows its action.
+  // (Once the agent emits text the Stage deliberately returns to the desk, so the
+  // run is trimmed back to its last Stage event before asking. A `process` event
+  // is not a Stage owner either — see STAGE_EVENT_TYPES.)
+  const beforeSpeaking = [...firstEvents];
+  while (beforeSpeaking.length > 0 && !STAGE_EVENT_TYPES.has(beforeSpeaking[beforeSpeaking.length - 1]!.type)) {
+    beforeSpeaking.pop();
+  }
   assert(
     "an in-flight run still shows its last action",
-    lastStageAction(firstEvents.slice(0, -1)) !== undefined,
-    `got ${lastStageAction(firstEvents.slice(0, -1))?.type ?? "undefined"}`,
+    lastStageAction(beforeSpeaking) !== undefined,
+    `got ${lastStageAction(beforeSpeaking)?.type ?? "undefined"}`,
   );
   const justStarted = [events[0]!];
   assert("a brand new run shows the default page", lastStageAction(justStarted) === undefined);
@@ -171,6 +185,20 @@ const run = async () => {
   const search = events.find((e) => e.type === "search");
   assert("a command maps to a terminal item", eventToStageItem(command!)?.type === "terminal");
   assert("search renders through the terminal view", eventToStageItem(search!)?.type === "terminal");
+
+  // 7b. reasoning is captured: it is an Activity row and it owns the Stage, so
+  //     replay reconstructs it — while one streamed thought stays a single item.
+  const thinking = events.find((e) => e.type === "thinking")!;
+  assert("thinking is captured in Activity", eventToActivityRow(thinking)?.action === "THINK");
+  assert("thinking renders on the Stage", eventToStageItem(thinking)?.type === "thought");
+  const thoughtIds = events.filter((e) => e.type === "thinking").map((e) => eventToStageItem(e)!.id);
+  assert(
+    "a streamed thought keeps one item id",
+    new Set(thoughtIds).size === 1,
+    `${thoughtIds.length} deltas -> ${new Set(thoughtIds).size} id(s)`,
+  );
+  const firstStage = firstEvents.find((e) => STAGE_EVENT_TYPES.has(e.type));
+  assert("a run opens on its reasoning, not an action", firstStage?.type === "thinking", `got ${firstStage?.type}`);
 
   const stage = useStageStore.getState();
   stage.reset();

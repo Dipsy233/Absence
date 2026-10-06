@@ -1,127 +1,382 @@
-import { isAgentBusy, type AgentStatus } from "@daze/core";
-import { statusLabel, type AgentVisualState } from "../../lib/agent";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import type { AgentStatus } from "@daze/core";
+import { type AgentVisualState } from "../../lib/agent";
+import { AgentStatusRow } from "./AgentStatusRow";
+import "./heti.css";
 
-interface Pose {
-  headRotate: number;
-  headY: number;
-  armRotate: number;
-  breathe: string;
-  prop?: "paper" | "keyboard" | "monitor" | "coffee";
-  dots: boolean;
-  question: boolean;
+/* ══════════════════════════════════════════════════════════════════════════
+   Heti — 毛绒鲸鱼套装虚拟形象 ("the agent")
+
+   Ported from the standalone page at E:/dd/jy/agent/index.html, with the part
+   boxes taken from heti.json. The PNG parts live in apps/web/public/heti/ and
+   the stylesheet is generated into heti.css by scripts/gen-heti-css.mjs and
+   scoped under .heti-root, so it cannot leak into the rest of the app.
+
+   Unlike the original page (which has its own toolbar), the pose is driven by
+   the agent's visual state — the same AgentVisualState seam the placeholder
+   used, so nothing above this component changes.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** The nine poses the character is authored with. */
+type HetiState =
+  | "relax"
+  | "think"
+  | "speak"
+  | "wait"
+  | "read"
+  | "type"
+  | "write"
+  | "confuse"
+  | "error";
+
+/** DAZE status → Heti pose (README §Agent status). */
+const STATE_FOR: Record<AgentStatus, HetiState> = {
+  listening: "relax",
+  thinking: "think",
+  speaking: "speak",
+  reading: "read",
+  searching: "read",
+  editing: "write",
+  running: "type",
+  waiting: "wait",
+  error: "error",
+};
+
+/** Which face a pose shows; `cycle` alternates two faces, `blink` winks. */
+const FACE_FOR: Record<HetiState, { face: string; blink?: boolean; cycle?: string[]; ms?: number }> = {
+  relax: { face: "face_nomal", blink: true },
+  think: { face: "face_serious" },
+  speak: { face: "face_silly" },
+  wait: { face: "face_eyesclose" },
+  read: { face: "face_serious" },
+  type: { face: "face_nomal" },
+  write: { face: "face_serious" },
+  confuse: { face: "face_surprised" },
+  error: { face: "face_cry", cycle: ["face_cry", "face_surprised"], ms: 430 },
+};
+
+/** [name, left, top, width, height, z] on the 2048×2048 design canvas.
+    z 110–200 leaves room for the props (175–180) to sit between the body and
+    the hands, which is what makes them look held rather than pasted on. */
+type Box = readonly [string, number, number, number, number, number?];
+
+const PART = {
+  tail: ["tail", 1293, 964, 450, 389, 110],
+  head: ["head", 651, 863, 746, 623, 120],
+  ahoge: ["ahoge", 813, 509, 423, 262, 140],
+  body: ["body", 402, 406, 1244, 1235, 150],
+  foot_right: ["foot_right", 727, 1475, 175, 133, 160],
+  foot_left: ["foot_left", 1159, 1478, 176, 134, 170],
+  hand_right: ["hand_right", 517, 1180, 183, 162, 190],
+  hand_left: ["hand_left", 1370, 1180, 183, 162, 200],
+} as const satisfies Record<string, Box>;
+
+/** Seven interchangeable faces share one slot (face_eyesclose is aligned by eye). */
+const FACES: Box[] = [
+  ["face_nomal", 736, 1089, 577, 376],
+  ["face_eyesclose", 756, 1098, 549, 376],
+  ["face_silly", 762, 1092, 533, 378],
+  ["face_wink", 749, 1095, 573, 385],
+  ["face_surprised", 738, 1096, 579, 369],
+  ["face_serious", 757, 1101, 549, 376],
+  ["face_cry", 744, 1091, 553, 386],
+];
+
+const HAIR: Box = ["hair", 689, 769, 708, 648];
+
+/** Keyboard rows: per-key flex weights (plain 1, Enter 1.7, Shift 1.5, Space 5). */
+const KB_ROWS: { indent: number; keys: number[] }[] = [
+  { indent: 0, keys: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+  { indent: 26, keys: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+  { indent: 46, keys: [1.7, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+  { indent: 16, keys: [1.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5, 1, 1, 1.5] },
+];
+
+function Part({ box, cls }: { box: Box; cls?: string }) {
+  const [name, left, top, width, height, z] = box;
+  return (
+    <div className={`part ${cls ?? "p-" + name}`} style={{ left, top, width, height, zIndex: z }}>
+      <img src={`/heti/${name}.png`} alt={name} draggable={false} />
+    </div>
+  );
 }
 
-function poseFor(status: AgentStatus): Pose {
-  switch (status) {
-    case "thinking":
-      return { headRotate: -10, headY: 2, armRotate: 0, breathe: "daze-breathe 2.4s ease-in-out infinite", dots: true, question: false };
-    case "speaking":
-      return { headRotate: 0, headY: 0, armRotate: -6, breathe: "daze-breathe 2.2s ease-in-out infinite", dots: true, question: false };
-    case "reading":
-      return { headRotate: 10, headY: 3, armRotate: -14, breathe: "daze-breathe 3s ease-in-out infinite", prop: "paper", dots: false, question: false };
-    case "searching":
-      return { headRotate: 6, headY: 2, armRotate: -10, breathe: "daze-breathe 2.8s ease-in-out infinite", prop: "paper", dots: false, question: false };
-    case "editing":
-      return { headRotate: 6, headY: 3, armRotate: -24, breathe: "daze-breathe 2.6s ease-in-out infinite", prop: "keyboard", dots: false, question: false };
-    case "running":
-      return { headRotate: 0, headY: 1, armRotate: -8, breathe: "daze-breathe 3.2s ease-in-out infinite", prop: "monitor", dots: false, question: false };
-    case "waiting":
-      return { headRotate: 14, headY: 6, armRotate: 0, breathe: "daze-breathe 3.6s ease-in-out infinite", prop: "coffee", dots: false, question: false };
-    case "error":
-      return { headRotate: -18, headY: 0, armRotate: 0, breathe: "none", dots: false, question: true };
-    default:
-      return { headRotate: 0, headY: 0, armRotate: 0, breathe: "daze-breathe 3s ease-in-out infinite", prop: "coffee", dots: false, question: false };
-  }
+function PropPaper() {
+  return (
+    <div className="fx-item prop-paper">
+      <span className="ln l1" />
+      <span className="ln l2" />
+      <span className="ln l3" />
+      <span className="ln l4" />
+      <span className="ln l5" />
+      <span className="inkwrap">
+        <svg viewBox="0 0 250 100">
+          <path d="M6 82 C 28 20, 52 20, 70 82 S 110 20, 128 82 S 168 20, 186 82 S 226 32, 244 60" />
+        </svg>
+      </span>
+    </div>
+  );
+}
+
+function PropPen() {
+  return (
+    <div className="fx-item prop-pen">
+      <span className="pen-rot">
+        <svg viewBox="0 0 244 72">
+          <polygon points="2,36 34,20 34,52" fill="#efd2ac" />
+          <polygon points="2,36 13,29 13,43" fill="#3d4b5c" />
+          <rect x="34" y="20" width="152" height="32" rx="5" fill="#f5c765" />
+          <rect x="34" y="20" width="152" height="10" rx="5" fill="#ffdd93" />
+          <rect x="34" y="44" width="152" height="8" rx="4" fill="#dfa93f" />
+          <rect x="186" y="16" width="18" height="40" rx="5" fill="#b8c6d6" />
+          <rect x="204" y="19" width="36" height="34" rx="12" fill="#f4a3ac" />
+        </svg>
+      </span>
+    </div>
+  );
+}
+
+function PropCup() {
+  return (
+    <div className="fx-item prop-cup">
+      <svg viewBox="0 0 170 190">
+        <defs>
+          <linearGradient id="heti-cupShade" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="55%" stopColor="#f7fbff" />
+            <stop offset="100%" stopColor="#dae7f5" />
+          </linearGradient>
+        </defs>
+        {/* handle */}
+        <path
+          d="M128 66 C 162 66, 162 116, 128 116"
+          fill="none"
+          stroke="#c3d6e9"
+          strokeWidth="19"
+          strokeLinecap="round"
+        />
+        <path
+          d="M128 66 C 162 66, 162 116, 128 116"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="13"
+          strokeLinecap="round"
+        />
+        {/* body */}
+        <path
+          d="M20 40 H128 L119 158 A16 16 0 0 1 103 174 H45 A16 16 0 0 1 29 158 Z"
+          fill="url(#heti-cupShade)"
+          stroke="#c3d6e9"
+          strokeWidth="3"
+        />
+        <path d="M40 52 L33 152 A11 11 0 0 0 44 163 H50 L57 52 Z" fill="#ffffff" opacity=".9" />
+        {/* rim + coffee */}
+        <ellipse cx="74" cy="40" rx="54" ry="15" fill="#ffffff" stroke="#c3d6e9" strokeWidth="3" />
+        <ellipse cx="74" cy="41" rx="44" ry="11" fill="#7a4a2e" />
+        <ellipse cx="74" cy="41" rx="44" ry="11" fill="none" stroke="#b98a63" strokeWidth="2" opacity=".65" />
+      </svg>
+      <span className="steam">
+        <i />
+        <i />
+        <i />
+      </span>
+    </div>
+  );
+}
+
+function PropKeyboard() {
+  return (
+    <div className="fx-item prop-kb">
+      <div className="kb-rows">
+        {KB_ROWS.map((row, r) => (
+          <div className="kb-row" key={r} style={{ paddingLeft: row.indent }}>
+            {row.keys.map((flex, c) => (
+              <i key={c} style={{ flex, "--c": c, "--r": r } as CSSProperties} />
+            ))}
+          </div>
+        ))}
+      </div>
+      <span className="kb-sweep" />
+    </div>
+  );
+}
+
+function Fx() {
+  return (
+    <div className="fx">
+      <div className="fx-item fx-relax">
+        <span>♪</span>
+        <span>♫</span>
+        <span>♪</span>
+      </div>
+
+      <div className="fx-item fx-think">
+        <div className="loader">
+          <svg viewBox="0 0 72 72">
+            <circle className="track" cx="36" cy="36" r="26" />
+            <circle className="arc" cx="36" cy="36" r="26" />
+          </svg>
+        </div>
+        <span className="t1" />
+        <span className="t2" />
+      </div>
+
+      <div className="fx-item fx-speak">
+        <div className="cloud">
+          <i />
+          <i />
+          <i />
+        </div>
+        <span className="t1" />
+        <span className="t2" />
+      </div>
+
+      <div className="fx-item fx-wait">
+        <span>Z</span>
+        <span>Z</span>
+        <span>Z</span>
+      </div>
+
+      <div className="fx-item fx-read">
+        <span className="glow" />
+      </div>
+
+      <div className="fx-item fx-type">
+        <span className="spark d1" />
+        <span className="spark d2" />
+        <span className="spark d3" />
+        <span className="spark d4" />
+      </div>
+
+      <div className="fx-item fx-confuse">
+        <span>?</span>
+      </div>
+
+      <div className="fx-item fx-error">
+        <div className="flash" />
+        <span className="bang b1">!</span>
+        <span className="bang b2">!</span>
+      </div>
+    </div>
+  );
+}
+
+/** Blink / expression cycling, mirroring the original page's setState. */
+function useFace(state: HetiState): string {
+  const [face, setFace] = useState(FACE_FOR[state].face);
+
+  useEffect(() => {
+    const cfg = FACE_FOR[state];
+    setFace(cfg.face);
+
+    let cycle: ReturnType<typeof setInterval> | undefined;
+    let wink: ReturnType<typeof setTimeout> | undefined;
+    let restore: ReturnType<typeof setTimeout> | undefined;
+
+    if (cfg.cycle) {
+      const list = cfg.cycle;
+      let i = 0;
+      cycle = setInterval(() => {
+        i = (i + 1) % list.length;
+        setFace(list[i] ?? cfg.face);
+      }, cfg.ms);
+    } else if (cfg.blink) {
+      const schedule = () => {
+        wink = setTimeout(
+          () => {
+            setFace("face_eyesclose");
+            restore = setTimeout(() => setFace(cfg.face), 125);
+            schedule();
+          },
+          3400 + Math.random() * 3600,
+        );
+      };
+      schedule();
+    }
+
+    return () => {
+      clearInterval(cycle);
+      clearTimeout(wink);
+      clearTimeout(restore);
+    };
+  }, [state]);
+
+  return face;
+}
+
+/** Scale the 2048px canvas to fit the container, like the original page's fit(). */
+function useFit() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0.2);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      const s = Math.min((el.clientWidth - 24) / 1420, (el.clientHeight - 24) / 1330, 1.25);
+      setScale(Math.max(s, 0.02));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return { ref, scale };
 }
 
 /**
- * A CSS/SVG placeholder character driven by the agent's visual state
- * (read02 §31–33). v0.3 can swap the artwork for Live2D without changing
- * the state machine.
+ * The agent's avatar: the Heti character, posed entirely by the event stream.
+ * Drop-in replacement for the old CSS/SVG placeholder — same `visual` prop.
  */
 export function Avatar({ visual }: { visual: AgentVisualState }) {
   const status = visual.status;
-  const pose = poseFor(status);
   const mood = visual.mood ?? "calm";
+  const state = STATE_FOR[status];
+  const face = useFace(state);
+  const { ref, scale } = useFit();
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3" data-mood={mood}>
-      <svg viewBox="0 0 200 150" className="w-[85%] max-w-[280px]" role="img" aria-label={`Agent ${status}`}>
-        {/* desk */}
-        <rect x="18" y="118" width="164" height="5" rx="2" fill="#2e2822" />
-        <rect x="30" y="123" width="6" height="22" fill="#241f1a" />
-        <rect x="164" y="123" width="6" height="22" fill="#241f1a" />
+    <div className="heti-root flex h-full flex-col" data-mood={mood} data-state={state}>
+      <div ref={ref} className="viewport min-h-0 flex-1" role="img" aria-label={`Agent ${status}`}>
+        <div className={`stage s-${state}`} style={{ "--s": scale } as CSSProperties}>
+          <div className="shadow" />
 
-        {/* props */}
-        {pose.prop === "monitor" ? (
-          <g>
-            <rect x="118" y="62" width="56" height="40" rx="3" fill="#211d19" stroke="#2e2822" />
-            <rect x="123" y="67" width="46" height="30" rx="2" fill="#0f0d0b" />
-            <rect x="138" y="102" width="16" height="6" fill="#2e2822" />
-            <rect x="146" y="96" width="2" height="8" fill="#2e2822" />
-          </g>
-        ) : null}
-        {pose.prop === "keyboard" ? (
-          <rect x="108" y="104" width="66" height="10" rx="3" fill="#211d19" stroke="#2e2822" />
-        ) : null}
-        {pose.prop === "paper" ? (
-          <g>
-            <rect x="112" y="96" width="46" height="22" rx="2" fill="#efe7db" opacity="0.9" />
-            <line x1="118" y1="103" x2="152" y2="103" stroke="#9a8f80" strokeWidth="1.5" />
-            <line x1="118" y1="108" x2="146" y2="108" stroke="#9a8f80" strokeWidth="1.5" />
-          </g>
-        ) : null}
-        {pose.prop === "coffee" ? (
-          <g>
-            <rect x="146" y="98" width="16" height="18" rx="2" fill="#c56b3f" />
-            <path d="M162 103 q8 3 0 8" fill="none" stroke="#c56b3f" strokeWidth="2.5" />
-          </g>
-        ) : null}
+          <div className="char-sway">
+            <div className="char-float">
+              <div className="char-squash">
+                {/* props: z 175–180 sits between the body (150) and the hands (190/200) */}
+                <PropPaper />
+                <PropPen />
+                <PropCup />
+                <PropKeyboard />
 
-        <g style={{ animation: pose.breathe, transformOrigin: "88px 110px" }}>
-          <path d="M64 118 q0 -34 24 -34 q24 0 24 34 z" fill="#3a332c" />
-          <g style={{ transform: `rotate(${pose.armRotate}deg)`, transformOrigin: "104px 96px" }}>
-            <rect x="100" y="92" width="10" height="26" rx="5" fill="#4a4139" />
-          </g>
+                <Part box={PART.tail} />
+                <Part box={PART.head} />
 
-          <g
-            style={{
-              transform: `translateY(${pose.headY}px) rotate(${pose.headRotate}deg)`,
-              transformOrigin: "88px 62px",
-              transition: "transform 500ms ease",
-            }}
-          >
-            <circle cx="88" cy="62" r="17" fill="#e0a458" />
-            <circle cx="82" cy="60" r="2.4" fill="#141210" />
-            <circle cx="95" cy="60" r="2.4" fill="#141210" />
-            {pose.question ? (
-              <text x="110" y="46" fill="#c56b3f" fontSize="18" fontWeight="bold">
-                ?
-              </text>
-            ) : null}
-          </g>
-        </g>
+                {/* faces + hair + ahoge share one group so they can look / turn together */}
+                <div className="g-face">
+                  {FACES.map((f) => (
+                    <Part key={f[0]} box={f} cls={"p-face" + (face === f[0] ? " on" : "")} />
+                  ))}
+                  <Part box={HAIR} />
+                  <Part box={PART.ahoge} />
+                </div>
 
-        {pose.dots ? (
-          <g fill="#9a8f80">
-            <circle cx="112" cy="46" r="2.5" style={{ animation: "daze-blink 1.6s infinite" }} />
-            <circle cx="122" cy="46" r="2.5" style={{ animation: "daze-blink 1.6s infinite 0.2s" }} />
-            <circle cx="132" cy="46" r="2.5" style={{ animation: "daze-blink 1.6s infinite 0.4s" }} />
-          </g>
-        ) : null}
-      </svg>
+                <Part box={PART.body} />
+                <Part box={PART.foot_right} />
+                <Part box={PART.foot_left} />
+                <Part box={PART.hand_right} />
+                <Part box={PART.hand_left} />
+              </div>
+            </div>
+          </div>
 
-      <div className="flex items-center gap-2">
-        <span
-          className={[
-            "h-1.5 w-1.5 rounded-full",
-            status === "error" ? "bg-desk-ember" : isAgentBusy(status) ? "bg-desk-teal" : "bg-desk-dim",
-          ].join(" ")}
-        />
-        <span className="font-mono text-xs uppercase tracking-[0.2em] text-desk-dim">
-          {statusLabel(status)}
-        </span>
+          <Fx />
+        </div>
       </div>
+
+      <AgentStatusRow status={status} />
     </div>
   );
 }

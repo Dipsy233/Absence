@@ -1,9 +1,9 @@
-import type { DazeEvent, FileTreeNode, Plan } from "@daze/core";
+import type { DazeEvent, FileTreeNode } from "@daze/core";
 
 /** Stage modes. `live` follows the agent; the rest are pinned views. */
-export type StageMode = "live" | "desk" | "file" | "diff" | "terminal" | "replay";
+export type StageMode = "live" | "desk" | "file" | "diff" | "terminal" | "replay" | "thought" | "process";
 
-export type StageItemType = "file" | "diff" | "terminal";
+export type StageItemType = "file" | "diff" | "terminal" | "thought" | "process";
 
 export type StagePayload =
   | {
@@ -35,7 +35,23 @@ export type StagePayload =
       language: string;
       emptied?: boolean;
     }
-  | { kind: "terminal"; command: string; stdout: string; stderr: string; exitCode: number };
+  | { kind: "terminal"; command: string; stdout: string; stderr: string; exitCode: number }
+  /** The agent's own reasoning, streamed as it arrives. */
+  | { kind: "thought"; text: string; streaming?: boolean }
+  /** An OS process the agent laid (an "egg"). */
+  | {
+      kind: "process";
+      pid: number;
+      ppid: number;
+      name: string;
+      commandLine: string;
+      status: "running" | "exited";
+      children: number;
+      command?: string;
+      /** mtime of the state we are showing, used for the "alive for" line. */
+      startedAt: number;
+      exitedAt?: number;
+    };
 
 /** One thing placed on the Stage (read02 §12). */
 export interface StageItem {
@@ -57,7 +73,7 @@ export interface DeskState {
 
 export interface DeskItem {
   id: string;
-  type: "file" | "terminal" | "paper" | "plan" | "cursor";
+  type: "file" | "terminal" | "paper" | "cursor";
   position: { x: number; y: number };
   rotation?: number;
   sourceId?: string;
@@ -71,9 +87,9 @@ export interface ActivityRow {
   action: string;
   primary: string;
   secondary?: string;
-  tone: "read" | "search" | "edit" | "run" | "lifecycle" | "error" | "warn";
+  tone: "read" | "search" | "edit" | "run" | "lifecycle" | "think" | "process" | "error" | "warn";
   /** The Stage item this row opens, if any (read02 §19). */
   stageItem?: StageItem;
 }
 
-export type { FileTreeNode, Plan };
+export type { FileTreeNode };

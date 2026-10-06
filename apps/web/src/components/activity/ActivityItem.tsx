@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { useEffect, useRef, type MouseEvent } from "react";
 import type { ActivityRow } from "../../types/stage";
 import { eventContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
@@ -12,6 +12,8 @@ const TONE_CLASS: Record<ActivityRow["tone"], string> = {
   edit: "text-desk-amber",
   run: "text-desk-ink",
   lifecycle: "text-desk-dim",
+  think: "text-desk-dim",
+  process: "text-desk-ink",
   error: "text-desk-ember",
   warn: "text-desk-ember",
 };
@@ -24,12 +26,20 @@ export function ActivityItem({ row }: { row: ActivityRow }) {
   const openStage = useStageStore((s) => s.openStage);
   const mode = useStageStore((s) => s.mode);
   const openMenu = useUiStore((s) => s.openMenu);
+  const focusedEventId = useUiStore((s) => s.focusedEventId);
   const addContext = useChatStore((s) => s.addContext);
   const seek = useReplayStore((s) => s.seekTimestamp);
+  const ref = useRef<HTMLButtonElement>(null);
 
   const inReplay = mode === "replay";
   const canOpen = row.stageItem !== undefined;
   const clickable = inReplay || canOpen;
+  const focused = row.id === focusedEventId;
+
+  // Followed from a report link: bring the row into view.
+  useEffect(() => {
+    if (focused) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [focused]);
 
   const activate = () => {
     if (inReplay) {
@@ -55,6 +65,7 @@ export function ActivityItem({ row }: { row: ActivityRow }) {
     <li>
       <button
         type="button"
+        ref={ref}
         disabled={!clickable}
         onClick={activate}
         onContextMenu={handleContextMenu}
@@ -62,6 +73,7 @@ export function ActivityItem({ row }: { row: ActivityRow }) {
         className={[
           "block w-full rounded px-1.5 py-1 text-left font-mono text-[11px] leading-tight",
           clickable ? "hover:bg-desk-panel2" : "cursor-default",
+          focused ? "bg-desk-panel2 ring-1 ring-desk-amber/50" : "",
         ].join(" ")}
       >
         <span className="flex items-baseline gap-2">

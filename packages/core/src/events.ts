@@ -4,9 +4,11 @@
  * The core UI must never know about Pi. Everything is expressed as a
  * "DazeEvent": a description of "what just happened".
  *
- * Note: this union is the read.md §8 list plus one small, documented
- * extension — `file_change` — used to surface raw filesystem watcher
- * activity (Phase 5). The payload shape stays flat and simple.
+ * Note: this union is the read.md §8 list plus three small, documented
+ * extensions — `search` (Pi's grep/find/ls, so searching is visible),
+ * `file_change` (raw filesystem watcher activity, Phase 5) and `process`
+ * (an OS process the agent laid via the shell, v0.3). The payload shape
+ * stays flat and simple.
  */
 
 export interface AgentStartPayload {
@@ -94,6 +96,31 @@ export interface SearchPayload {
   output: string;
 }
 
+/** v0.3: an OS process the agent laid — a shell command's surviving child. */
+export interface ProcessPayload {
+  pid: number;
+  ppid: number;
+  /** Executable name, e.g. "node", "npm", "esbuild". */
+  name: string;
+  commandLine: string;
+  status: "running" | "exited";
+  /** When Daze first saw it alive — within a second of the real start. */
+  startedAt: number;
+  exitedAt?: number;
+  /** Descendants rolled into this egg (Daze reports the roots only). */
+  children: number;
+  /** The shell command that laid it. */
+  command?: string;
+  /**
+   * `primary` is a process worth tracking on its own (a daemon, server, script,
+   * build root); `tool` is a short-lived helper such as `cat`, `grep` or `sleep`.
+   * The UI folds tools into a count instead of listing each one.
+   */
+  kind?: "primary" | "tool";
+  /** Why it was classified that way, for a tooltip. */
+  kindReason?: string;
+}
+
 export interface ErrorPayload {
   message: string;
 }
@@ -115,6 +142,7 @@ export interface DazeEventPayloadMap {
   file_change: FileChangePayload;
   command: CommandPayload;
   search: SearchPayload;
+  process: ProcessPayload;
   error: ErrorPayload;
 }
 
@@ -134,6 +162,7 @@ export const DAZE_EVENT_TYPES = [
   "file_change",
   "command",
   "search",
+  "process",
   "error",
 ] as const satisfies readonly DazeEventType[];
 

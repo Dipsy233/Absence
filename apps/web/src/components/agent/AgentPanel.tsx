@@ -1,20 +1,65 @@
 import { moodFor, type AgentVisualState } from "../../lib/agent";
+import { useLiveWorldFocus } from "../../hooks/useStage";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useUiStore } from "../../stores/uiStore";
 import { Avatar } from "./Avatar";
+import { AgentStatusRow } from "./AgentStatusRow";
 import { Panel } from "../Panel";
+import { StageWorld } from "../stage/StageWorld";
 
-/** Agent status driven purely by the event stream (read02 §31–32). */
+/**
+ * Agent status driven purely by the event stream (read02 §31–32).
+ *
+ * Clicking the panel swaps the two: the agent becomes the Stage's default
+ * background and the desk world moves in here as TABLE (and back).
+ */
 export function AgentPanel() {
   const status = useSessionStore((s) => s.agent.status);
   const model = useSessionStore((s) => s.agent.model);
+  const agentOnStage = useUiStore((s) => s.agentOnStage);
+  const toggleAgentOnStage = useUiStore((s) => s.toggleAgentOnStage);
 
   const visual: AgentVisualState = { status, mood: moodFor(status) };
 
+  if (agentOnStage) {
+    return (
+      <Panel
+        title="TABLE"
+        className="shrink-0 cursor-pointer"
+        bodyClassName="p-2"
+        onClick={toggleAgentOnStage}
+      >
+        <div className="flex h-[184px] flex-col">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <PanelWorld />
+          </div>
+          <AgentStatusRow status={status} />
+        </div>
+      </Panel>
+    );
+  }
+
   return (
-    <Panel title="Agent" aside={model} className="shrink-0" bodyClassName="p-2">
+    <Panel
+      title="Agent"
+      aside={model}
+      className="shrink-0 cursor-pointer"
+      bodyClassName="p-2"
+      onClick={toggleAgentOnStage}
+    >
       <div className="h-[184px]">
         <Avatar visual={visual} />
       </div>
     </Panel>
   );
+}
+
+/**
+ * The desk world while it lives in the panel. Unlike the Stage, the panel is
+ * not part of replay or pinned views: it only follows the agent's live action
+ * (reading / editing / terminal / thinking).
+ */
+function PanelWorld() {
+  const focus = useLiveWorldFocus();
+  return <StageWorld focus={focus} />;
 }

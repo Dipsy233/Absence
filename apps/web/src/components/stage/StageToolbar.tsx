@@ -1,11 +1,12 @@
 import type { StageItemType } from "../../types/stage";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
+import { useUiStore } from "../../stores/uiStore";
 
 /**
  * Three groups (read02 §13):
  *   left   — the user's view (whole file from the project tree, diffs, replay)
- *   centre — TABLE: back to the default desk page
+ *   centre — back to the default page (TABLE, or AGENT once the agent/desk swap is on)
  *   right  — the agent's view (its terminal, the file it has in context, live)
  */
 export function StageToolbar() {
@@ -19,6 +20,7 @@ export function StageToolbar() {
   const showAgentFile = useStageStore((s) => s.showAgentFile);
   const setMode = useStageStore((s) => s.setMode);
   const goDesk = useStageStore((s) => s.goDesk);
+  const agentOnStage = useUiStore((s) => s.agentOnStage);
   const replayReady = useReplayStore((s) => s.events.length > 0);
 
   const buttonClass = (active: boolean, enabled: boolean) =>
@@ -65,15 +67,15 @@ export function StageToolbar() {
         REPLAY
       </button>
 
-      {/* centre — the desk, i.e. the default page */}
+      {/* centre — the default page (the agent, once swapped in) */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         <button
           type="button"
           onClick={goDesk}
-          title="Back to the desk — the default page"
+          title={agentOnStage ? "Back to the agent — the default page" : "Back to the desk — the default page"}
           className={buttonClass(mode === "desk", true)}
         >
-          TABLE
+          {agentOnStage ? "AGENT" : "TABLE"}
         </button>
       </div>
 

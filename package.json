@@ -14,7 +14,13 @@
     "dev:web": "npm run dev -w @daze/web",
     "build": "npm run build -w @daze/web",
     "start": "npm run start -w @daze/server",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "check:eggs": "tsx scripts/check-eggs.ts",
+    "check:classify": "tsx scripts/check-classify.ts",
+    "check:agentwatch": "tsx scripts/check-agentwatch.ts",
+    "check:ebpf": "tsx scripts/check-ebpf.ts",
+    "check:process": "npm run check:eggs && npm run check:classify && npm run check:agentwatch && npm run check:ebpf",
+    "build:agentwatch": "cd native/agentwatch && build.bat"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

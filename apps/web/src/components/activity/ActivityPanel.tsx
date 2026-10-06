@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { ActivityRow } from "../../types/stage";
-import { buildHistory, pickRun, runEvents } from "../../lib/history";
+import { memoBuildHistory, pickRun, runEvents } from "../../lib/history";
 import { eventToActivityRow } from "../../lib/events";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useStageStore } from "../../stores/stageStore";
@@ -13,11 +13,12 @@ import { ActivityItem } from "./ActivityItem";
 export function ActivityPanel() {
   const events = useSessionStore((s) => s.events);
   const selectedRunId = useUiStore((s) => s.selectedRunId);
+  const selectRun = useUiStore((s) => s.selectRun);
   const mode = useStageStore((s) => s.mode);
   const setMode = useStageStore((s) => s.setMode);
   const load = useReplayStore((s) => s.load);
 
-  const runs = useMemo(() => buildHistory(events), [events]);
+  const runs = useMemo(() => memoBuildHistory(events), [events]);
   const run = pickRun(runs, selectedRunId);
   const shown = useMemo(() => (run ? runEvents(events, run) : events), [events, run]);
   const rows = useMemo(
@@ -27,6 +28,9 @@ export function ActivityPanel() {
 
   const enterReplay = () => {
     if (!run || rows.length === 0) return;
+    // Pin the selection to the run being replayed so the report summarises the
+    // same run instead of falling back to the newest one.
+    selectRun(run.id);
     load(runEvents(events, run), { label: `#${run.index} · ${run.prompt}` });
     setMode("replay");
   };

@@ -27,7 +27,7 @@ function envAgent(): AgentKind {
 const repoRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 
 export const config: DazeConfig = {
-  port: Number(process.env.PORT ?? 8787),
+  port: Number(process.env.PORT ?? 8848),
   host: process.env.HOST ?? "127.0.0.1",
   projectsRoot: process.env.DAZE_PROJECTS_ROOT ?? path.join(os.homedir(), "projects"),
   defaultAgent: envAgent(),

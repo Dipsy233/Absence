@@ -44,6 +44,40 @@ export interface Session {
   status: AgentStatus;
   /** True when we fell back to the mock runtime because Pi was unavailable. */
   degraded?: boolean;
+  /**
+   * How the OS processes the agent lays are being observed. "exact" means the
+   * kernel reports each creation and exit (Windows Job Object); "sampled" means
+   * Daze polls, which can miss short-lived processes. Absent when monitoring is
+   * not in use at all.
+   */
+  processPrecision?: "exact" | "sampled";
+}
+
+/**
+ * One row in the persisted session history (GET /api/sessions/history).
+ *
+ * A row can come from two places and they are merged: DAZE's own events archive
+ * (so the Stage, Activity and file history come back) and Pi's session file (so
+ * the model's conversation is resumed). Either may be absent.
+ */
+export interface SessionHistoryEntry {
+  /** Stable key for the row. */
+  id: string;
+  /** DAZE's archive id — resume restores events, files and chat. */
+  dazeSessionId?: string;
+  /** Pi's session file — resume reconnects the model's conversation. */
+  piSessionFile?: string;
+  piSessionId?: string;
+  projectPath: string;
+  projectName: string;
+  name?: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+  firstPrompt?: string;
+  runtime: "pi" | "mock" | string;
+  /** True when DAZE has an events archive on disk for this session. */
+  archived: boolean;
 }
 
 /** Content Daze remembers about a file the agent has touched (read.md §26). */
@@ -53,18 +87,6 @@ export interface FileState {
   version: number;
   lastRead?: { startLine: number; endLine: number };
   lastModified?: number;
-}
-
-export interface PlanItem {
-  text: string;
-  done: boolean;
-}
-
-/** Plan is display-only. Daze never becomes the planner (read.md §30). */
-export interface Plan {
-  title?: string;
-  items: PlanItem[];
-  source?: string;
 }
 
 export interface ChatMessage {
@@ -87,6 +109,38 @@ export interface ContextState {
   total: number | null;
 }
 
+/**
+ * One selectable choice a chat command offers (the terminal-style palette).
+ * Deliberately plain strings — the UI never learns about Pi's `Model` type.
+ */
+export interface CommandOption {
+  /** The value to send back when the option is chosen. */
+  value: string;
+  label: string;
+  description?: string;
+  /** True for the currently active option (the active model, the current level). */
+  active?: boolean;
+}
+
+/** Runtime-agnostic session statistics, surfaced by the `/session` command. */
+export interface SessionStatsInfo {
+  sessionId: string;
+  sessionFile?: string;
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+  tokens: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+  cost: number;
+  contextUsed?: number;
+  contextTotal?: number;
+}
+
 /** The frontend's view of a session (read.md §12). */
 export interface DazeState {
   session: Session;
@@ -97,7 +151,6 @@ export interface DazeState {
   currentAction?: DazeEvent;
   files: FileState[];
   activity: DazeEvent[];
-  plan?: Plan;
   chat: ChatMessage[];
   context?: ContextState;
   tree?: FileTreeNode;
@@ -111,7 +164,6 @@ export interface SessionRuntimeState {
     model?: string;
   };
   context?: ContextState;
-  plan?: Plan;
   tree?: FileTreeNode;
 }
 

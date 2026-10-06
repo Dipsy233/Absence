@@ -1,14 +1,19 @@
 import path from "node:path";
-import { type ContextState, type DazeEventPayloadMap, type DazeEventType } from "@daze/core";
-import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { BaseAdapter, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
+import fs from "node:fs/promises";
+import os from "node:os";
+import {
+  type CommandOption,
+  type ContextState,
+  type DazeEventPayloadMap,
+  type DazeEventType,
+  type SessionStatsInfo,
+} from "@daze/core";
+import type { AgentSession, AgentSessionEvent, CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
+import { BaseAdapter, type AdapterOptions, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
+import { createDazeShell } from "../process/DazeShell";
 import { readFileSafe } from "../filesystem/FileTree";
 import { languageFromPath } from "../util/language";
 import { toPosix } from "../util/paths";
-
-export interface PiAdapterOptions {
-  tools: string[];
-}
 
 /**
  * Wraps the Pi SDK (read.md §6). Pi is the worker; Daze only observes.
@@ -21,6 +26,8 @@ export class PiAdapter extends BaseAdapter {
   private session?: AgentSession;
   private unsubscribe?: () => void;
   private model = "pi";
+  private piSessionFile?: string;
+  private piSessionId?: string;
   private toolArgs = new Map<string, unknown>();
   /** Lines the agent has received, keyed by their line number in the file. */
   private fileLines = new Map<string, Map<number, string>>();
@@ -30,7 +37,7 @@ export class PiAdapter extends BaseAdapter {
   private thinkingAcc = "";
   private aborted = false;
 
-  constructor(private readonly options: PiAdapterOptions) {
+  constructor(private readonly options: AdapterOptions) {
     super();
   }
 
@@ -39,15 +46,44 @@ export class PiAdapter extends BaseAdapter {
     this.cwd = ctx.cwd;
 
     // Loaded lazily so the mock runtime never pays Pi's import cost.
-    const { createAgentSession, SessionManager } = await import("@earendil-works/pi-coding-agent");
+    const {
+      createAgentSession,
+      SessionManager,
+      createBashToolDefinition,
+      createPowerShellToolDefinition,
+    } = await import("@earendil-works/pi-coding-agent");
+
+    // Pi persists a conversation to ~/.pi/agent/sessions/<cwd>/ by default. A
+    // resumed session reopens that file; a fresh one creates it. (DAZE used to
+    // force SessionManager.inMemory here, which is why history never survived.)
+    const manager = ctx.sessionFile
+      ? SessionManager.open(ctx.sessionFile, undefined, ctx.cwd)
+      : SessionManager.create(ctx.cwd);
+
+    // Take over the shell: a custom tool registered under the same name shadows
+    // Pi's built-in one (Pi's registry keys by name), so the allowlist in
+    // DAZE_PI_TOOLS is untouched. Pi still executes the command — Daze just owns
+    // the boundary, which is what lets it see the processes the agent lays.
+    const shell = this.options.processWatcher ? await createDazeShell(this.options.processWatcher) : undefined;
+    // The cast is Pi's own typing wart: a tool definition is typed with the
+    // schema it was built for, while the registry wants the widened form.
+    const customTools = shell
+      ? ([
+          createBashToolDefinition(ctx.cwd, { operations: shell.bash }),
+          createPowerShellToolDefinition(ctx.cwd, { operations: shell.powershell }),
+        ] as unknown as NonNullable<CreateAgentSessionOptions["customTools"]>)
+      : undefined;
 
     const { session } = await createAgentSession({
       cwd: ctx.cwd,
       tools: this.options.tools,
-      sessionManager: SessionManager.inMemory(ctx.cwd),
+      sessionManager: manager,
+      customTools,
     });
 
     this.session = session;
+    this.piSessionFile = manager.getSessionFile();
+    this.piSessionId = manager.getSessionId();
     const model = session.model;
     // Without a configured model/credential Pi hands back a placeholder. Rather
     // than fail on every prompt, let the caller degrade to the mock runtime.
@@ -65,6 +101,122 @@ export class PiAdapter extends BaseAdapter {
     const usage = this.session?.getContextUsage();
     if (!usage) return undefined;
     return { used: usage.tokens, total: usage.contextWindow };
+  }
+
+  getSessionFile(): string | undefined {
+    return this.piSessionFile;
+  }
+
+  getRuntimeSessionId(): string | undefined {
+    return this.piSessionId;
+  }
+
+  // --- command surface (read02 terminal box) ---------------------------------
+
+  async listModels(): Promise<CommandOption[]> {
+    const session = this.session;
+    if (!session) return [];
+    const runtime = session.modelRuntime;
+    let models = runtime.getModels();
+    try {
+      // Prefer models we actually have credentials for, so setModel cannot throw.
+      const available = await runtime.getAvailable();
+      if (available.length > 0) models = available;
+    } catch {
+      // no credentials yet — fall back to every configured model
+    }
+    return models.map((model) => {
+      const value = `${model.provider}/${model.id}`;
+      return {
+        value,
+        label: model.name || model.id,
+        description: model.provider,
+        active: value === this.model,
+      };
+    });
+  }
+
+  async setModel(value: string): Promise<string> {
+    const session = this.session;
+    if (!session) throw new Error("Pi session not started");
+    // Resolve the option value back to a Model object rather than splitting the
+    // joined string apart: a provider or model id may itself contain a slash.
+    const runtime = session.modelRuntime;
+    const matches = (model: { provider: string; id: string }) => `${model.provider}/${model.id}` === value;
+    const model = runtime.getModels().find(matches) ?? (await runtime.getAvailable()).find(matches);
+    if (!model) throw new Error(`unknown model: ${value}`);
+    await session.setModel(model, { persist: false });
+    // Keep the string we report on `agent_start` in sync (otherwise the next
+    // prompt re-emits the stale model and overwrites session.model).
+    this.model = `${model.provider}/${model.id}`;
+    return this.model;
+  }
+
+  getThinking(): { level: string; available: string[] } {
+    const session = this.session;
+    if (!session) return { level: "off", available: ["off"] };
+    const level = String(session.thinkingLevel);
+    const available = session.supportsThinking() ? session.getAvailableThinkingLevels().map(String) : ["off"];
+    return { level, available };
+  }
+
+  async setThinking(level: string): Promise<string> {
+    const session = this.session;
+    if (!session) throw new Error("Pi session not started");
+    // ThinkingLevel is not re-exported from the package root; derive it locally.
+    session.setThinkingLevel(level as Parameters<AgentSession["setThinkingLevel"]>[0]);
+    return String(session.thinkingLevel);
+  }
+
+  getSessionName(): string | undefined {
+    return this.session?.sessionName;
+  }
+
+  setSessionName(name: string): void {
+    this.session?.setSessionName(name);
+  }
+
+  getSessionStats(): SessionStatsInfo {
+    const session = this.session;
+    if (!session) throw new Error("Pi session not started");
+    const stats = session.getSessionStats();
+    const usage = stats.contextUsage;
+    return {
+      sessionId: stats.sessionId,
+      sessionFile: stats.sessionFile,
+      userMessages: stats.userMessages,
+      assistantMessages: stats.assistantMessages,
+      toolCalls: stats.toolCalls,
+      tokens: { ...stats.tokens },
+      cost: stats.cost,
+      contextUsed: usage?.tokens ?? undefined,
+      contextTotal: usage?.contextWindow,
+    };
+  }
+
+  async compact(instructions?: string): Promise<{ tokensBefore?: number; estimatedTokensAfter?: number }> {
+    const session = this.session;
+    if (!session) throw new Error("Pi session not started");
+    const result = await session.compact(instructions);
+    return { tokensBefore: result.tokensBefore, estimatedTokensAfter: result.estimatedTokensAfter };
+  }
+
+  async exportSession(format: "html" | "jsonl"): Promise<string> {
+    const session = this.session;
+    if (!session) throw new Error("Pi session not started");
+    // Always an explicit path under ~/.daze: exportToJsonl() defaults to cwd,
+    // which would drop the file into the project and fire file_change events.
+    const dir = path.join(os.homedir(), ".daze", "exports");
+    await fs.mkdir(dir, { recursive: true });
+    const base = this.piSessionId ?? this.sessionId ?? "session";
+    if (format === "jsonl") {
+      return session.exportToJsonl(path.join(dir, `${base}.jsonl`));
+    }
+    return session.exportToHtml(path.join(dir, `${base}.html`));
+  }
+
+  isBusy(): boolean {
+    return this.session?.isStreaming ?? false;
   }
 
   async prompt(text: string): Promise<void> {

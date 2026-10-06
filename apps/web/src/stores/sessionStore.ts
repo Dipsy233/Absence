@@ -3,8 +3,8 @@ import type {
   AgentStatus,
   ContextState,
   DazeEvent,
-  Plan,
   Session,
+  SessionHistoryEntry,
   SessionRuntimeState,
   SessionSnapshot,
 } from "@daze/core";
@@ -20,12 +20,15 @@ interface SessionStore {
   /** The most recent event that owns the Stage (read02 §14). */
   currentAction?: DazeEvent;
   context?: ContextState;
-  plan?: Plan;
   connected: boolean;
   error?: string;
 
   startSession: (projectPath: string, agent?: "pi" | "mock") => Promise<void>;
+  /** Reopen a persisted session from the history list. */
+  resumeSession: (entry: SessionHistoryEntry) => Promise<void>;
   sendPrompt: (text: string) => Promise<void>;
+  /** Run a terminal-box command (its output streams back as a system message). */
+  runCommand: (name: string, args: string) => Promise<void>;
   abort: () => Promise<void>;
   reset: () => void;
   hydrate: (snapshot: SessionSnapshot) => void;
@@ -40,7 +43,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   events: [],
   currentAction: undefined,
   context: undefined,
-  plan: undefined,
   connected: false,
   error: undefined,
 
@@ -50,10 +52,34 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     get().hydrate(snapshot);
   },
 
+  resumeSession: async (entry) => {
+    set({ error: undefined });
+    const resume =
+      entry.dazeSessionId || entry.piSessionFile
+        ? {
+            dazeSessionId: entry.dazeSessionId,
+            piSessionFile: entry.piSessionFile,
+            piSessionId: entry.piSessionId,
+          }
+        : undefined;
+    const snapshot = await api.createSession(
+      entry.projectPath,
+      entry.runtime === "mock" ? "mock" : undefined,
+      resume,
+    );
+    get().hydrate(snapshot);
+  },
+
   sendPrompt: async (text) => {
     const id = get().session?.id;
     if (!id || !text.trim()) return;
     await api.sendPrompt(id, text);
+  },
+
+  runCommand: async (name, args) => {
+    const id = get().session?.id;
+    if (!id) return;
+    await api.runCommand(id, name, args);
   },
 
   abort: async () => {
@@ -69,7 +95,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       events: [],
       currentAction: undefined,
       context: undefined,
-      plan: undefined,
       connected: false,
       error: undefined,
     }),
@@ -79,7 +104,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       session: snapshot.session,
       agent: snapshot.agent,
       context: snapshot.context,
-      plan: snapshot.plan,
       events: snapshot.events,
       currentAction: lastStageAction(snapshot.events),
     }),
@@ -89,7 +113,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       session: state.session,
       agent: state.agent,
       context: state.context,
-      plan: state.plan,
     }),
 
   ingestEvent: (event) => {

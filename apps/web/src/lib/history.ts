@@ -118,3 +118,19 @@ export function pickRun(runs: HistoryRun[], selectedId: string | undefined): His
   }
   return runs[runs.length - 1];
 }
+
+/**
+ * `buildHistory` memoised on the event-array identity. The store replaces the
+ * array on every event, so entries never go stale, and History / Activity / the
+ * report all share one computation instead of each re-grouping the stream.
+ */
+const historyCache = new WeakMap<DazeEvent[], HistoryRun[]>();
+
+export function memoBuildHistory(events: DazeEvent[]): HistoryRun[] {
+  let runs = historyCache.get(events);
+  if (!runs) {
+    runs = buildHistory(events);
+    historyCache.set(events, runs);
+  }
+  return runs;
+}

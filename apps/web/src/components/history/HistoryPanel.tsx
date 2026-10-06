@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { HistoryRun } from "../../types/history";
-import { buildHistory, runEvents } from "../../lib/history";
+import { memoBuildHistory, runEvents } from "../../lib/history";
 import { formatClock, formatOffset } from "../../lib/format";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useReplayStore } from "../../stores/replayStore";
@@ -34,7 +34,7 @@ export function HistoryPanel() {
   const setMode = useStageStore((s) => s.setMode);
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  const runs = useMemo(() => buildHistory(events), [events]);
+  const runs = useMemo(() => memoBuildHistory(events), [events]);
 
   useEffect(() => {
     const element = bodyRef.current;

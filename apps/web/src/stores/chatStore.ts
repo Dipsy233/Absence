@@ -18,6 +18,12 @@ function applyChatEvent(chat: ChatMessage[], event: DazeEvent): ChatMessage[] | 
     return [...chat, { id: event.id, role: "user", content: payload.content, timestamp: event.timestamp }];
   }
 
+  // A system notice (a command result, "model switched to …") is appended as-is
+  // and never touches the streaming assistant bubble.
+  if (payload.role === "system") {
+    return [...chat, { id: event.id, role: "system", content: payload.content, timestamp: event.timestamp }];
+  }
+
   if (payload.role === "assistant") {
     const content = payload.content ?? "";
     const streamingIndex = lastStreamingIndex(chat);
