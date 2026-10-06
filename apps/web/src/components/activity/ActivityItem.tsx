@@ -25,6 +25,7 @@ const TONE_CLASS: Record<ActivityRow["tone"], string> = {
 export function ActivityItem({ row }: { row: ActivityRow }) {
   const openStage = useStageStore((s) => s.openStage);
   const mode = useStageStore((s) => s.mode);
+  const activeItemId = useStageStore((s) => s.activeItem?.id);
   const openMenu = useUiStore((s) => s.openMenu);
   const focusedEventId = useUiStore((s) => s.focusedEventId);
   const addContext = useChatStore((s) => s.addContext);
@@ -35,6 +36,11 @@ export function ActivityItem({ row }: { row: ActivityRow }) {
   const canOpen = row.stageItem !== undefined;
   const clickable = inReplay || canOpen;
   const focused = row.id === focusedEventId;
+  // "Selected" is not its own state: a row is selected when it is what the
+  // Stage is currently showing. That stays true no matter how the Stage got
+  // there — a click here, an agent action, a keyboard shortcut — so the hint
+  // never lies. In replay the current row is the one the replay cursor is on.
+  const selected = !inReplay && row.stageItem !== undefined && row.stageItem.id === activeItemId;
 
   // Followed from a report link: bring the row into view.
   useEffect(() => {
@@ -70,9 +76,18 @@ export function ActivityItem({ row }: { row: ActivityRow }) {
         onClick={activate}
         onContextMenu={handleContextMenu}
         title={inReplay ? "Scrub to this event" : canOpen ? "Open in Stage" : undefined}
+        aria-current={selected ? "true" : undefined}
         className={[
-          "block w-full rounded px-1.5 py-1 text-left font-mono text-[11px] leading-tight",
+          // The left border is always 2px wide so selecting a row never shifts
+          // its content sideways; only the colour changes (and the two colour
+          // classes are mutually exclusive, or Tailwind's rule order would let
+          // `transparent` win over the accent).
+          "block w-full rounded border-l-2 px-1.5 py-1 text-left font-mono text-[11px] leading-tight",
           clickable ? "hover:bg-desk-panel2" : "cursor-default",
+          // A selected row is what the Stage is showing: an amber left bar and
+          // a filled background, legible even when the row already has a hover
+          // tint.
+          selected ? "border-l-desk-amber bg-desk-panel2" : "border-l-transparent",
           focused ? "bg-desk-panel2 ring-1 ring-desk-amber/50" : "",
         ].join(" ")}
       >

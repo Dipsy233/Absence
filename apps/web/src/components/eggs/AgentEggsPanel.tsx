@@ -31,6 +31,7 @@ const FILTERS: EggFilter[] = ["running", "dead", "all"];
 export function AgentEggsPanel() {
   const events = useSessionStore((s) => s.events);
   const openStage = useStageStore((s) => s.openStage);
+  const activeItemId = useStageStore((s) => s.activeItem?.id);
   const [filter, setFilter] = useState<EggFilter>("running");
 
   const eggs = useMemo(() => primaryEggs(buildEggs(events)), [events]);
@@ -79,38 +80,50 @@ export function AgentEggsPanel() {
         </p>
       ) : (
         <ul className="space-y-1">
-          {shown.map((egg) => (
-            <li key={egg.pid}>
-              <button
-                type="button"
-                onClick={() => open(egg)}
-                title={`Open pid ${egg.pid} on the Stage`}
-                className="block w-full rounded px-1.5 py-1 text-left font-mono text-[11px] leading-tight hover:bg-desk-panel2"
-              >
-                <span className="flex items-baseline gap-1.5">
-                  <span
-                    className={[
-                      "h-1.5 w-1.5 shrink-0 self-center rounded-full",
-                      egg.status === "running" ? "bg-desk-teal" : "bg-desk-dim",
-                    ].join(" ")}
-                  />
-                  <span className="truncate text-desk-ink/90" title={egg.name}>
-                    {egg.name}
+          {shown.map((egg) => {
+            // Match on the pid-stable card id (see eventToStageItem): the egg's
+            // latest event changes as it updates, but the card's id does not, so
+            // the highlight survives a running → exited transition.
+            const selected = `process_${egg.pid}` === activeItemId;
+            return (
+              <li key={egg.pid}>
+                <button
+                  type="button"
+                  onClick={() => open(egg)}
+                  title={`Open pid ${egg.pid} on the Stage`}
+                  aria-current={selected ? "true" : undefined}
+                  className={[
+                    "block w-full rounded border-l-2 px-1.5 py-1 text-left font-mono text-[11px] leading-tight",
+                    selected
+                      ? "border-l-desk-amber bg-desk-panel2"
+                      : "border-l-transparent hover:bg-desk-panel2",
+                  ].join(" ")}
+                >
+                  <span className="flex items-baseline gap-1.5">
+                    <span
+                      className={[
+                        "h-1.5 w-1.5 shrink-0 self-center rounded-full",
+                        egg.status === "running" ? "bg-desk-teal" : "bg-desk-dim",
+                      ].join(" ")}
+                    />
+                    <span className="truncate text-desk-ink/90" title={egg.name}>
+                      {egg.name}
+                    </span>
+                    <span className="ml-auto shrink-0 text-desk-dim">pid {egg.pid}</span>
                   </span>
-                  <span className="ml-auto shrink-0 text-desk-dim">pid {egg.pid}</span>
-                </span>
-                <span className="block truncate pl-3 text-desk-dim" title={egg.commandLine}>
-                  {egg.commandLine || egg.command || ""}
-                </span>
-                <span className="block pl-3 text-[10px] text-desk-dim/80">
-                  {egg.status === "running" ? "running for" : "lived"}{" "}
-                  {formatOffset((egg.exitedAt ?? Date.now()) - egg.startedAt)}
-                  {egg.children > 0 ? ` · +${egg.children} child${egg.children === 1 ? "" : "ren"}` : ""}
-                  {egg.kindReason ? ` · ${egg.kindReason}` : ""}
-                </span>
-              </button>
-            </li>
-          ))}
+                  <span className="block truncate pl-3 text-desk-dim" title={egg.commandLine}>
+                    {egg.commandLine || egg.command || ""}
+                  </span>
+                  <span className="block pl-3 text-[10px] text-desk-dim/80">
+                    {egg.status === "running" ? "running for" : "lived"}{" "}
+                    {formatOffset((egg.exitedAt ?? Date.now()) - egg.startedAt)}
+                    {egg.children > 0 ? ` · +${egg.children} child${egg.children === 1 ? "" : "ren"}` : ""}
+                    {egg.kindReason ? ` · ${egg.kindReason}` : ""}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
 

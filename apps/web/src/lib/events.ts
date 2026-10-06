@@ -207,18 +207,31 @@ export function eventToStageItem(event: DazeEvent): StageItem | undefined {
       // An egg gets its own card: it is not an action the agent took, it is
       // something it left behind (v0.3).
       const { pid, ppid, name, commandLine, status, children, command, startedAt, exitedAt } = event.payload;
-      return baseItem(event, "process", name, {
-        kind: "process",
-        pid,
-        ppid,
-        name,
-        commandLine,
-        status,
-        children,
-        command,
-        startedAt,
-        exitedAt,
-      });
+      // An egg is updated in place — it is laid once and then re-reported as it
+      // runs and finally exits. Keying the card on the event would re-mount it
+      // (and re-run the Stage animation) on every update, and would drop the
+      // Agent Eggs panel's selection highlight at the same moment. The pid is
+      // the egg's stable identity, so the card is keyed on that instead.
+      return {
+        id: `process_${pid}`,
+        type: "process",
+        title: name,
+        source: { eventId: event.id },
+        payload: {
+          kind: "process",
+          pid,
+          ppid,
+          name,
+          commandLine,
+          status,
+          children,
+          command,
+          startedAt,
+          exitedAt,
+        },
+        createdAt: event.timestamp,
+        event,
+      };
     }
     default:
       return undefined;
