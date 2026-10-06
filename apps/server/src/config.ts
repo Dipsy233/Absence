@@ -36,7 +36,10 @@ export const config: DazeConfig = {
     .map((t) => t.trim())
     .filter(Boolean),
   piModel: process.env.DAZE_PI_MODEL,
-  webDist: process.env.DAZE_WEB_DIST ?? path.join(repoRoot, "apps/web/dist"),
+  // Built UI lives at the repo root under dist/web (see apps/web/vite.config.ts
+  // and the desktop staging script). Override with DAZE_WEB_DIST if hosting
+  // elsewhere.
+  webDist: process.env.DAZE_WEB_DIST ?? path.join(repoRoot, "dist/web"),
 };
 
 /**

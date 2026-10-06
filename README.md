@@ -285,17 +285,30 @@ Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapte
 
 ```
 daze/                     npm workspaces: packages/*  apps/server  apps/web
-  start-daze.bat          one-click launcher (Windows, browser)
-  start-daze-app.bat      one-click launcher (Windows, native window)
-  start-daze.sh           one-click launcher (Linux / WSL)
+  dist/                   ALL build output (git ignored), one place:
+    web/                    the built UI (apps/web → vite outDir)
+    desktop/build/          server bundle + staged production node_modules
+    desktop/release/        packaged app (portable folder / installer)
   tsconfig.base.json      strict, noUncheckedIndexedAccess
   native/agentwatch/      Windows process observer (Job Object, committed prebuilt)
   native/agentwatch-linux/ Linux process observer (eBPF, committed prebuilt)
-  scripts/wsl-pi-config.sh point WSL pi at the Windows host's model services
+  start-daze.bat          shortcuts that forward to the launchers below
+  start-daze-app.bat      (thin, one line each — the real logic lives with
+  start-daze.sh           the code it launches, not at the root)
+  scripts/
+    browser/start-daze.bat  browser launcher (Windows)
+    browser/start-daze.sh   browser launcher (Linux / WSL)
+    checks/               check-*.ts acceptance scripts
+    wsl-pi-config.sh      point WSL pi at the Windows host's model services
 
 apps/desktop/             Electron shell (not a workspace; own node_modules)
   main.cjs                runs the server in-process, opens the window, tray
+  start-daze-app.bat      desktop launcher (Windows)
   assets/tray.png         tray icon
+  scripts/                desktop-only build tooling:
+    bundle-server.mjs       compile the server + core to one CJS file
+    stage-desktop.mjs       bundle + install prod deps for packaging
+    make-icons.mjs          draw icon.png / icon.ico / tray.png
 
 packages/core/src/        events.ts (DazeEvent + payload map)  types.ts  index.ts
 
@@ -338,9 +351,10 @@ apps/web/src/
 apps/web/public/heti/     the avatar's PNG parts (16: body, head, hair, ahoge,
                           tail, hands, feet, 7 faces)
 
-scripts/                  make-demo.mjs  check-history.ts  check-report.ts
-                          check-eggs.ts  check-classify.ts  check-agentwatch.ts
-                          check-ebpf.ts  wsl-pi-config.sh
+scripts/                  make-demo.mjs  wsl-pi-config.sh
+  browser/                start-daze.bat  start-daze.sh (browser launchers)
+  checks/                 check-history.ts  check-report.ts  check-eggs.ts
+                          check-classify.ts  check-agentwatch.ts  check-ebpf.ts
                           gen-heti-css.mjs (regenerates heti.css)
 ```
 
@@ -378,23 +392,33 @@ nothing to configure or collide with. The window then loads the same built web
 app the browser would; the UI is not forked.
 
 ```bash
-npm run build           # the shell serves apps/web/dist
+npm run build           # the shell serves dist/web
 npm run desktop:install # once — installs Electron (its own node_modules)
 npm run desktop         # open the native window
 npm run desktop:dev     # DevTools on; uses the Vite dev server when it is up
 ```
 
-On Windows, **`start-daze-app.bat`** does all of it in one click (build →
-install the shell if missing → open the window); `start-daze-app.bat check` is a
-dry run. The browser launcher (`start-daze.bat`) is unchanged and still the
-right choice for the WSL / eBPF workflow.
+On Windows, **`start-daze-app.bat`** at the repo root does all of it in one
+click (build → install the shell if missing → open the window); adding `check`
+is a dry run. It is a one-line forward to
+`apps/desktop/start-daze-app.bat`, where the desktop launcher actually lives.
+The browser launcher is unchanged and still the right choice for the WSL / eBPF
+workflow.
 
 What the shell adds over the browser: a single window with no address bar or
 tabs, a tray icon, close-to-tray so observation keeps running, and no port.
 Quit for real from the tray menu (or Ctrl+Q); closing the window only hides it.
 
-Two things to know:
+Three things to know:
 
+- **Electron must bundle Node ≥ 22.19.** Electron ships its own Node, and the
+  owned runtime is what runs the in-process server and Pi — not the `node` on
+  `PATH`. Pi's package declares `engines.node >= 22.19` and imports `globSync`
+  from `node:fs`, which only exists from Node 22. On an older Electron the shell
+  loads, then silently falls back to the mock runtime with `Pi runtime
+  unavailable`. As of writing, Electron **37.x bundles Node 22.21.1** (Electron
+  33 bundles Node 20.18, which is too old). If you bump Electron, check the
+  bundled Node in the release notes, not just the version number.
 - **Electron is installed separately**, into `apps/desktop/node_modules` (it is
   deliberately *not* a workspace member). It carries its own `tsx` + esbuild so
   the Windows shell never picks up the Linux-built `esbuild` in the root
@@ -404,15 +428,60 @@ Two things to know:
   it is the same web build talking to the same server over the same `/api` and
   `/ws`.
 
+The window also reflects what the agent is doing: its title becomes
+`DAZE — <project> (<status>)` while a run is in progress and settles back to
+`DAZE — idle` when it ends. When a run finishes and the window is not focused,
+a native notification says so. The tray tooltip shows how many sessions are
+running.
+
+### Packaging a distributable app
+
+`apps/desktop/start-daze-app.bat` runs the shell from the checkout, which needs
+a repo, a `node_modules` and `tsx` on disk. To turn DAZE into something you can
+hand to someone else — an installer with no repo and no Node — use the packaging
+scripts:
+
+```bash
+npm run desktop:dist   # build the web app, stage the server, produce an installer
+npm run desktop:pack   # same, but an unpacked folder (faster, no installer)
+```
+
+On Windows this writes an NSIS installer to `dist/desktop/release/`; on Linux
+an AppImage, on macOS a DMG. Three generated pieces are worth knowing about
+(all under `apps/desktop/scripts/`, because they are desktop-only):
+
+- **`bundle-server.mjs`** compiles DAZE's own server (and `@daze/core`)
+  into `dist/desktop/build/server.cjs`. A shipped app has no `tsx`, so the
+  TypeScript can no longer be loaded at runtime. Third-party packages stay
+  *external* and are resolved from a pruned `node_modules` instead — notably
+  `@earendil-works/pi-coding-agent`, which ships a `.wasm` asset and loads
+  parts of itself dynamically, so bundling it would break it.
+- **`stage-desktop.mjs`** runs that bundle and installs the server's
+  production dependencies (`npm install --omit=dev`) into
+  `dist/desktop/build/node_modules`. It installs fresh rather than filtering the
+  root `node_modules`, which mixes platforms when the checkout is used from both
+  WSL and Windows. The result is what electron-builder copies to
+  `resources/node_modules`.
+- **`make-icons.mjs`** draws `icon.png` / `icon.ico` / `tray.png` into
+  `apps/desktop/assets/` — no image library, no committed binary. The generated
+  icons are committed anyway so a fresh clone can build without this step.
+
+The packaged app finds its pieces under `process.resourcesPath` instead of the
+repo root (see `main.cjs`): `apps/server-bundle.cjs`, `dist/web`,
+`node_modules`, and the native helpers under `native/`. The native observer path
+is set explicitly via `DAZE_AGENTWATCH` / `DAZE_AGENTWATCH_LINUX`, because the
+server's own path heuristic assumes a checkout layout.
+
 ### One-click launcher (Windows)
 
-Double-click **`start-daze.bat`** to build the web app, start the DAZE server, and
-open the UI. The web app is rebuilt every time: the server only serves
-`apps/web/dist`, so a stale build is what you would otherwise see no matter what
-changed in `src`.
+Double-click **`start-daze.bat`** at the repo root to build the web app, start
+the DAZE server, and open the UI. It forwards to
+`scripts/browser/start-daze.bat`, where the browser launcher actually lives.
+The web app is rebuilt every time: the server only serves `dist/web`, so a
+stale build is what you would otherwise see no matter what changed in `src`.
 
 ```bat
-start-daze.bat            :: build and start
+start-daze.bat            :: build and start (forwards to scripts\browser\)
 start-daze.bat check      :: dry run — report what would happen, start nothing
 ```
 
@@ -421,13 +490,14 @@ Idempotent: a DAZE server already listening is left alone. Override with
 
 ### One-click launcher (Linux / WSL)
 
-**`start-daze.sh`** does the same on Linux and in WSL: it builds the eBPF
-observer if it is missing, configures the pi inside WSL, rebuilds the web app,
-starts the server, and opens the UI. On WSL the Windows browser is opened through
-`wslview` when it is installed.
+**`start-daze.sh`** at the repo root does the same on Linux and in WSL: it
+forwards to `scripts/browser/start-daze.sh`, which builds the eBPF observer if
+it is missing, configures the pi inside WSL, rebuilds the web app, starts the
+server, and opens the UI. On WSL the Windows browser is opened through `wslview`
+when it is installed.
 
 ```sh
-./start-daze.sh            # build and start
+./start-daze.sh            # build and start (forwards to scripts/browser/)
 ./start-daze.sh check      # dry run — report what would happen, start nothing
 ```
 
@@ -455,10 +525,10 @@ Git Bash, no MSYS pid split. Two things are needed for that to work:
    ```
 
    `scripts/wsl-pi-config.sh` copies `models.json` from the Windows pi config and
-   rewrites every `127.0.0.1` / `localhost` host to that gateway. `start-daze.sh`
-   runs it on every launch, because the address changes when WSL restarts. To
-   point at a different source, set `DAZE_WIN_PI_DIR` to the Windows
-   `.pi/agent` directory.
+   rewrites every `127.0.0.1` / `localhost` host to that gateway.
+   `scripts/browser/start-daze.sh` runs it on every launch, because the address
+   changes when WSL restarts. To point at a different source, set
+   `DAZE_WIN_PI_DIR` to the Windows `.pi/agent` directory.
 
 With both in place, `pi --list-models` inside WSL shows the same providers the
 Windows pi does, and a session's bash tool runs as a Linux process that the eBPF
@@ -616,12 +686,12 @@ exercising the UI.
 
 ```bash
 node scripts/make-demo.mjs [dir] [--force]   # scaffold a demo project
-npx tsx scripts/check-history.ts             # needs the server running
-npx tsx scripts/check-report.ts              # Daze Report engine (no server needed)
-npx tsx scripts/check-eggs.ts                # process detection (no server, nothing spawned)
-npx tsx scripts/check-classify.ts            # command intent + primary/tool split
-npx tsx scripts/check-agentwatch.ts          # kernel process observer (Windows)
-npx tsx scripts/check-ebpf.ts                # kernel process observer (Linux)
+npx tsx scripts/checks/check-history.ts      # needs the server running
+npx tsx scripts/checks/check-report.ts       # Daze Report engine (no server needed)
+npx tsx scripts/checks/check-eggs.ts         # process detection (no server, nothing spawned)
+npx tsx scripts/checks/check-classify.ts     # command intent + primary/tool split
+npx tsx scripts/checks/check-agentwatch.ts   # kernel process observer (Windows)
+npx tsx scripts/checks/check-ebpf.ts         # kernel process observer (Linux)
 node scripts/gen-heti-css.mjs                # regenerate the avatar's stylesheet
 ```
 

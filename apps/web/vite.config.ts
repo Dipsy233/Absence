@@ -19,7 +19,10 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "dist",
+    // Everything buildable lands under the repo-root `dist/`, so the outputs
+    // of every form (web, desktop) live in one predictable place instead of
+    // being scattered next to each app. Relative to this file: apps/web → root.
+    outDir: "../../dist/web",
     emptyOutDir: true,
   },
 });

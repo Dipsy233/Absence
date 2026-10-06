@@ -4,13 +4,75 @@
   "private": true,
   "type": "module",
   "description": "DAZE desktop shell — runs the Daze server in-process and shows the UI in a native window.",
+  "author": "DAZE",
+  "license": "MIT",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev"
+    "dev": "electron . --dev",
+    "bundle": "node scripts/bundle-server.mjs",
+    "stage": "node scripts/stage-desktop.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "pack": "npm run stage && electron-builder --dir",
+    "dist": "npm run stage && electron-builder"
   },
   "devDependencies": {
-    "electron": "^33.2.1",
+    "electron": "^37.10.3",
+    "electron-builder": "^26.15.3",
     "tsx": "^4.19.2"
+  },
+  "build": {
+    "appId": "com.daze.observer",
+    "productName": "DAZE",
+    "directories": {
+      "output": "../../dist/desktop/release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.cjs",
+      "assets/**/*",
+      "!scripts/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../../dist/desktop/build/server.cjs",
+        "to": "apps/server-bundle.cjs"
+      },
+      {
+        "from": "../../dist/desktop/build/node_modules",
+        "to": "node_modules",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../../dist/web",
+        "to": "dist/web",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../../native/agentwatch/agentwatch.exe",
+        "to": "native/agentwatch/agentwatch.exe"
+      },
+      {
+        "from": "../../native/agentwatch-linux/agentwatch-linux",
+        "to": "native/agentwatch-linux/agentwatch-linux"
+      }
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "assets/icon.png",
+      "category": "Development"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.developer-tools"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

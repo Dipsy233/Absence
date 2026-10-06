@@ -6,14 +6,21 @@
 // CJS loader lets a CommonJS Electron main process require it directly.
 //
 // The window loads the same built web app the browser would — no UI fork.
-const { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage } = require("electron");
+const { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, Notification } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
-const REPO_ROOT = path.resolve(__dirname, "..", "..");
 // `--dev` is explicit: it opens DevTools and skips request logging. A plain
 // `electron .` run is the normal app — no DevTools stealing focus.
 const IS_DEV = process.argv.includes("--dev");
+
+// A packaged app ships its resources beside the executable (`resources/`), a
+// checkout has them at the repo root. Resolve once and never think about it
+// again: both `server/` and `web/dist` live under the same root in either case
+// (see `build.extraResources` in package.json).
+const RESOURCES_ROOT = app.isPackaged
+  ? process.resourcesPath
+  : path.resolve(__dirname, "..", "..");
 
 // Single instance: a second launch focuses the existing window instead of
 // fighting over the state directory.
@@ -31,31 +38,141 @@ let tray = null;
 let quitting = false;
 /** The URL the window should load — dev server or embedded server, decided once. */
 let windowUrl = null;
+/** Unsubscribe hooks for the in-process status listeners (dev only cleanup). */
+let teardownStatus = null;
+
+/** Append a line to the desktop log so a packaged app is debuggable. */
+function logLine(message) {
+  const line = `[${new Date().toISOString()}] ${message}\n`;
+  if (IS_DEV) process.stdout.write(line);
+  try {
+    fs.appendFileSync(path.join(app.getPath("userData"), "desktop.log"), line);
+  } catch {
+    // Logging must never take the app down.
+  }
+}
+
+/**
+ * Load the DAZE server module — the compiled bundle when packaged, the
+ * TypeScript sources via tsx in a checkout. Both cases return the same object
+ * shape (`{ startServer, sessionStore }`) so callers never branch.
+ */
+function loadServerModule() {
+  const bundleEntry = path.join(RESOURCES_ROOT, "apps", "server-bundle.cjs");
+  if (app.isPackaged && fs.existsSync(bundleEntry)) {
+    return require(bundleEntry);
+  }
+  // tsx's CJS API registers a require hook so we can import the TypeScript
+  // server. `register` installs the loader for the whole process (needed
+  // because the server then imports more TS modules of its own).
+  const tsx = require("tsx/cjs/api");
+  tsx.register();
+  return tsx.require(path.join(RESOURCES_ROOT, "apps", "server", "src", "desktop-entry.ts"), __filename);
+}
+
+/** Subscribe to the in-process session store: window title, tray, notifications. */
+function watchSessions() {
+  let store;
+  let isAgentBusy;
+  try {
+    const mod = loadServerModule();
+    store = mod.sessionStore;
+    isAgentBusy = mod.isAgentBusy;
+  } catch (error) {
+    logLine(`session watch unavailable: ${error && error.message}`);
+    return;
+  }
+
+  /** @type {Map<string, { name: string, status: string, unsub: () => void }>} */
+  const tracked = new Map();
+
+  const refresh = () => {
+    const running = [...tracked.values()].filter((s) => isAgentBusy(s.status));
+    const title =
+      running.length === 0
+        ? `DAZE${tracked.size > 0 ? " — idle" : ""}`
+        : `DAZE — ${running[0].name} (${running[0].status})`;
+    if (win) win.setTitle(title);
+    if (tray) tray.setToolTip(running.length > 0 ? `DAZE — ${running.length} running` : "DAZE — observing");
+  };
+
+  const attach = (session) => {
+    if (tracked.has(session.id)) return;
+    const entry = {
+      name: session.session.projectName || "project",
+      status: session.session.status,
+      unsub: () => {},
+    };
+    entry.unsub = session.stateBus.subscribe((state) => {
+      const previous = entry.status;
+      entry.status = state.agent ? state.agent.status : entry.status;
+      refresh();
+      // A run finishing (busy → idle) is worth a native notification, but only
+      // if the user is not already looking at the window.
+      const finished = isAgentBusy(previous) && !isAgentBusy(entry.status);
+      if (finished && win && !win.isFocused() && Notification.isSupported()) {
+        new Notification({
+          title: "DAZE — run finished",
+          body: `${entry.name} is idle again.`,
+        }).show();
+      }
+    });
+    tracked.set(session.id, entry);
+    refresh();
+  };
+
+  // Track sessions created from now on. `create()` is async, so poll the store
+  // cheaply — it is a plain in-memory Map.
+  const scan = setInterval(() => {
+    for (const session of store.list()) attach(session);
+  }, 500);
+  scan.unref?.();
+
+  teardownStatus = () => {
+    clearInterval(scan);
+    for (const entry of tracked.values()) entry.unsub();
+    tracked.clear();
+  };
+  refresh();
+}
 
 async function startEmbeddedServer() {
-  // Both paths come from the repo checkout. The server source is TypeScript and
-  // the web app is the built `dist` (or the Vite dev server under `--dev`).
-  const serverEntry = path.join(REPO_ROOT, "apps", "server", "src", "index.ts");
-  const webDist = path.join(REPO_ROOT, "apps", "web", "dist");
+  // A packaged app ships:
+  //   resources/apps/server-bundle.cjs   our compiled server (no tsx needed)
+  //   resources/dist/web                 the built UI
+  //   resources/node_modules             only the server's runtime deps
+  //   resources/native/agentwatch*       the process-observer helpers
+  // A checkout has the same server as TypeScript plus a full node_modules,
+  // which tsx loads directly. Resolve the two modes here, once.
+  const webDist = path.join(RESOURCES_ROOT, "dist", "web");
+  const bundleEntry = path.join(RESOURCES_ROOT, "apps", "server-bundle.cjs");
+  const serverEntry = path.join(RESOURCES_ROOT, "apps", "server", "src", "index.ts");
 
-  if (!fs.existsSync(serverEntry)) {
-    throw new Error(`server entry not found: ${serverEntry}`);
-  }
   if (!fs.existsSync(webDist)) {
     // The in-process server still serves /api and /ws without it, but the
     // window would be blank — say so plainly instead of showing nothing.
     throw new Error(`web build not found: ${webDist}\nRun \`npm run build\` first.`);
   }
 
-  // tsx's CJS API registers a require hook so we can import the TypeScript
-  // server. `require` here is tsx's scoped require; `register` installs the
-  // loader for the whole process (needed because the server then imports more
-  // TS modules of its own).
-  const tsx = require("tsx/cjs/api");
-  tsx.register();
-  const mod = tsx.require(serverEntry, __filename);
-  const { startServer } = mod;
+  let mod;
+  if (app.isPackaged && fs.existsSync(bundleEntry)) {
+    // Point the native observer at the shipped helper before the server's
+    // path heuristic (which assumes a checkout layout) can guess wrong.
+    const nativeRoot = path.join(RESOURCES_ROOT, "native");
+    const winHelper = path.join(nativeRoot, "agentwatch", "agentwatch.exe");
+    const linuxHelper = path.join(nativeRoot, "agentwatch-linux", "agentwatch-linux");
+    if (fs.existsSync(winHelper) && !process.env.DAZE_AGENTWATCH) {
+      process.env.DAZE_AGENTWATCH = winHelper;
+    }
+    if (fs.existsSync(linuxHelper) && !process.env.DAZE_AGENTWATCH_LINUX) {
+      process.env.DAZE_AGENTWATCH_LINUX = linuxHelper;
+    }
+  } else if (!fs.existsSync(serverEntry)) {
+    throw new Error(`server entry not found: ${serverEntry}`);
+  }
 
+  mod = loadServerModule();
+  const { startServer } = mod;
   return startServer({
     port: 0, // let the OS pick a free port — no conflicts, no config
     quiet: !IS_DEV,
@@ -63,11 +180,22 @@ async function startEmbeddedServer() {
   });
 }
 
-/** True when a Vite dev server is already listening on the proxy port. */
+/**
+ * True when *a DAZE* Vite dev server is listening on the proxy port.
+ *
+ * A bare `HEAD /` would happily connect to any Vite project that happens to
+ * own 5173. Instead we ask the embedded server's own `/api/projects` — which
+ * Vite proxies — and only accept the answer if it is a JSON array, the shape
+ * only DAZE's route returns. A foreign Vite answers that path with its SPA
+ * fallback HTML, so `res.ok` is true but the body is not an array, and we
+ * correctly fall back to the built assets.
+ */
 async function viteDevServerIsUp() {
   try {
-    await fetch("http://127.0.0.1:5173/", { method: "HEAD" });
-    return true;
+    const res = await fetch("http://127.0.0.1:5173/api/projects", { method: "GET" });
+    if (!res.ok) return false;
+    const body = await res.json();
+    return Array.isArray(body);
   } catch {
     return false;
   }
@@ -173,20 +301,23 @@ app.whenReady().then(async () => {
   try {
     server = await startEmbeddedServer();
   } catch (error) {
-    dialog.showErrorBox(
-      "DAZE failed to start",
-      error instanceof Error ? error.stack || error.message : String(error),
-    );
+    const detail = error instanceof Error ? error.stack || error.message : String(error);
+    logLine(`failed to start: ${detail}`);
+    dialog.showErrorBox("DAZE failed to start", detail);
     app.quit();
     return;
   }
+
+  logLine(`server listening on ${server.url}`);
 
   // Under --dev, prefer the Vite dev server for hot reload; the embedded
   // server still owns /api and /ws, and Vite proxies both to it. Fall back to
   // the built assets when Vite is not running.
   windowUrl = IS_DEV && (await viteDevServerIsUp()) ? "http://127.0.0.1:5173" : server.url;
+  logLine(`window url: ${windowUrl}`);
   createWindow(windowUrl);
   createTray();
+  watchSessions();
 
   app.on("activate", () => {
     if (!win && windowUrl) createWindow(windowUrl);
@@ -205,6 +336,7 @@ app.on("before-quit", () => {
 app.on("will-quit", (event) => {
   if (!server) return;
   event.preventDefault();
+  if (teardownStatus) teardownStatus();
   const s = server;
   server = null;
   s.close().finally(() => app.quit());
