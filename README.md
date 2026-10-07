@@ -1,5 +1,7 @@
 # DAZE / 发呆症
 
+English | [中文](README.zh-CN.md)
+
 > AI moves fast. Humans watch.
 
 DAZE is a real-time visualization observer for AI agents. It does not try to make
