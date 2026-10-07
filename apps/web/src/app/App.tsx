@@ -24,7 +24,7 @@ export default function App() {
   return (
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-2 p-2">
       <SessionBar />
-      <div className="grid min-h-0 grid-cols-[300px_minmax(0,1fr)_336px] gap-2">
+      <div className="grid min-h-0 grid-cols-[320px_minmax(0,1fr)_320px] gap-2">
         <LeftRail />
         <Stage />
         <RightRail />
