@@ -18,9 +18,11 @@ import { ReportOverlay } from "../stage/ReportOverlay";
 /**
  * The Stage: where events become something you can look at (read02 §11).
  *
- * The desk world (StageWorld) is the Stage's *default page* and is always drawn
- * as the background. FILE / DIFF / TERMINAL / LIVE ride on top of it as a
- * slightly translucent sheet, so the desk stays visible underneath.
+ * The desk world (StageWorld) is the Stage's *default page* and is normally
+ * drawn as the background, with FILE / DIFF / TERMINAL / LIVE riding on top of
+ * it as a slightly translucent sheet. DAZE mode (the toggle in the session bar)
+ * flips that: the desk — or the agent, when swapped — floats *in front of* the
+ * content as a translucent ghost, and the page underneath becomes the sheet.
  */
 export function Stage() {
   const { item } = useStageView();
@@ -29,6 +31,7 @@ export function Stage() {
   const liveStatus = useSessionStore((s) => s.agent.status);
   const replayStatus = useReplayStore((s) => s.view?.agentStatus);
   const agentOnStage = useUiStore((s) => s.agentOnStage);
+  const dazeMode = useUiStore((s) => s.dazeMode);
 
   // While replaying, the Stage shows the reconstructed state of the run — the
   // agent's status is part of that, so the avatar must not keep following the
@@ -57,23 +60,30 @@ export function Stage() {
     content = <DeskStage status={status} />;
   }
 
+  // DAZE mode only means something while a content page is up; on the default
+  // desk page the world is already in front of nothing.
+  const ghost = dazeMode && sheet;
+
   return (
     <section className="panel min-h-0 flex-1">
       <StageToolbar />
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="relative min-h-0 flex-1 overflow-hidden">
-          {/* The default page background: the desk world, or — when swapped —
-              the agent. Every other view is a translucent sheet on top. */}
-          {agentOnStage ? (
-            <div className="absolute inset-0 z-0 isolate overflow-hidden">
-              <Avatar visual={visual} />
-            </div>
-          ) : (
-            <StageWorld focus={focus} />
-          )}
+          {/* The world (desk or agent): the background by default; in DAZE mode a
+              translucent, click-through ghost in front of the content sheet. It
+              stays below the chat (z-20) and the report (z-30/z-40). */}
+          <div
+            className={
+              ghost
+                ? "pointer-events-none absolute inset-0 z-10 isolate overflow-hidden opacity-60 transition-opacity duration-300"
+                : "absolute inset-0 z-0 isolate overflow-hidden"
+            }
+          >
+            {agentOnStage ? <Avatar visual={visual} /> : <StageWorld focus={focus} />}
+          </div>
 
-          <div className={sheet ? SHEET : "absolute inset-0"}>
+          <div className={sheet ? sheetClass(ghost) : "absolute inset-0"}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={key}
@@ -111,9 +121,13 @@ export function Stage() {
 /**
  * The translucent sheet FILE / DIFF / TERMINAL / LIVE sit on. The frame itself
  * does not fade, so live content crossfading inside never reveals the world.
+ * In DAZE mode the ghost carries the translucency instead, so the page under it
+ * is drawn opaque and stays readable through the 60% ghost above it.
  */
 const SHEET =
-  "daze-overlay absolute inset-x-2 top-2 bottom-14 overflow-hidden rounded-lg border border-desk-line/70 bg-desk-panel/85 shadow-[0_18px_50px_rgba(0,0,0,.45)] backdrop-blur-[3px]";
+  "daze-overlay absolute inset-x-2 top-2 bottom-14 overflow-hidden rounded-lg border border-desk-line/70 shadow-[0_18px_50px_rgba(0,0,0,.45)]";
+const sheetClass = (ghost: boolean) =>
+  ghost ? `${SHEET} bg-desk-panel` : `${SHEET} bg-desk-panel/85 backdrop-blur-[3px]`;
 
 function EmptyStage({ text }: { text: string }) {
   return (

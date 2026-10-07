@@ -119,6 +119,9 @@ versions in Files → History.
   TERMINAL / LIVE ride on top of it as a slightly translucent sheet. The mode
   switcher has three groups: the user's (FILE / DIFF / REPLAY), **TABLE** in the
   middle for the default desk page, and the agent's (TERMINAL / FILE / LIVE).
+  The **DAZE** button in the middle of the session bar flips that layering:
+  while it is on, the desk — or the agent, when swapped — floats *in front of*
+  the content page as a translucent, click-through ghost.
   Chat is docked at the bottom of the Stage. It floats over the Stage rather
   than taking layout space, so the middle never shrinks: one input row always,
   with the history unfolding upward as a translucent layer at most 30% of the
