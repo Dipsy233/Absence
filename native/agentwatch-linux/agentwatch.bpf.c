@@ -153,10 +153,17 @@ int handle_execve(struct trace_event_raw_sys_enter *ctx)
 SEC("tracepoint/sched/sched_process_exit")
 int handle_exit(struct trace_event_raw_sched_process_template *ctx)
 {
+	/* The tracepoint fires once per *thread* that exits, and a multithreaded
+	 * process walks it with its whole thread group (node's ~7 threads read as
+	 * seven deaths of one pid). Only the thread group leader's exit is the
+	 * process's exit: its tid equals its tgid. */
+	__u64 id = bpf_get_current_pid_tgid();
+	if ((__u32)id != (id >> 32))
+		return 0;
 	struct event *e = reserve(EVENT_EXIT);
 	if (!e)
 		return 0;
-	e->pid = bpf_get_current_pid_tgid() >> 32;
+	e->pid = id >> 32;
 	set_comm(e);
 	bpf_ringbuf_submit(e, 0);
 	return 0;
