@@ -32,6 +32,11 @@ export function AgentEggsPanel() {
   const events = useSessionStore((s) => s.events);
   const openStage = useStageStore((s) => s.openStage);
   const activeItemId = useStageStore((s) => s.activeItem?.id);
+  // Eggs describe what is running *now*, so this panel deliberately ignores
+  // replay: it always folds the live session's events. The highlight follows the
+  // active Stage item, which in replay would be a stale card the Stage is not
+  // actually showing — so it is suppressed there rather than lying.
+  const inReplay = useStageStore((s) => s.mode === "replay");
   const [filter, setFilter] = useState<EggFilter>("running");
 
   const eggs = useMemo(() => primaryEggs(buildEggs(events)), [events]);
@@ -84,7 +89,7 @@ export function AgentEggsPanel() {
             // Match on the pid-stable card id (see eventToStageItem): the egg's
             // latest event changes as it updates, but the card's id does not, so
             // the highlight survives a running → exited transition.
-            const selected = `process_${egg.pid}` === activeItemId;
+            const selected = !inReplay && `process_${egg.pid}` === activeItemId;
             return (
               <li key={egg.pid}>
                 <button

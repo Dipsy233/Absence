@@ -17,6 +17,7 @@ export function ActivityPanel() {
   const mode = useStageStore((s) => s.mode);
   const setMode = useStageStore((s) => s.setMode);
   const load = useReplayStore((s) => s.load);
+  const replayTime = useReplayStore((s) => s.currentTime);
 
   const runs = useMemo(() => memoBuildHistory(events), [events]);
   const run = pickRun(runs, selectedRunId);
@@ -25,6 +26,21 @@ export function ActivityPanel() {
     () => shown.map(eventToActivityRow).filter((row): row is ActivityRow => row !== undefined),
     [shown],
   );
+
+  // In replay the "current" row is the last one the cursor has passed: the
+  // Stage is showing that event's content, so it is the row the panel should
+  // mark. Computed here rather than in the row, because only the panel knows
+  // which of the rows is last. `rows` is chronological, so the first row past
+  // the cursor ends the scan.
+  const replayRowId = useMemo(() => {
+    if (mode !== "replay") return undefined;
+    let current: string | undefined;
+    for (const row of rows) {
+      if (row.event.timestamp <= replayTime) current = row.id;
+      else break;
+    }
+    return current;
+  }, [mode, rows, replayTime]);
 
   const enterReplay = () => {
     if (!run || rows.length === 0) return;
@@ -75,7 +91,7 @@ export function ActivityPanel() {
       ) : (
         <ul className="space-y-0.5">
           {rows.map((row) => (
-            <ActivityItem key={row.id} row={row} />
+            <ActivityItem key={row.id} row={row} replayCurrent={row.id === replayRowId} />
           ))}
         </ul>
       )}

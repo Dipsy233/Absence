@@ -22,7 +22,7 @@ const TONE_CLASS: Record<ActivityRow["tone"], string> = {
  * One clickable row. Outside replay it opens the matching Stage content
  * (read02 §19); inside replay it scrubs the Stage to that event.
  */
-export function ActivityItem({ row }: { row: ActivityRow }) {
+export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayCurrent?: boolean }) {
   const openStage = useStageStore((s) => s.openStage);
   const mode = useStageStore((s) => s.mode);
   const activeItemId = useStageStore((s) => s.activeItem?.id);
@@ -36,11 +36,15 @@ export function ActivityItem({ row }: { row: ActivityRow }) {
   const canOpen = row.stageItem !== undefined;
   const clickable = inReplay || canOpen;
   const focused = row.id === focusedEventId;
-  // "Selected" is not its own state: a row is selected when it is what the
-  // Stage is currently showing. That stays true no matter how the Stage got
-  // there — a click here, an agent action, a keyboard shortcut — so the hint
-  // never lies. In replay the current row is the one the replay cursor is on.
-  const selected = !inReplay && row.stageItem !== undefined && row.stageItem.id === activeItemId;
+  // "Selected" is not its own state: it means "this row is what the Stage is
+  // showing". Live, that is the row whose Stage item is the active one — true
+  // however the Stage got there, so the hint cannot drift. In replay the Stage
+  // is showing whatever the cursor has reached, which the panel resolves to one
+  // row (`replayCurrent`); marking the active item would be wrong there, because
+  // replay pins its own view instead of opening Stage items.
+  const selected = inReplay
+    ? replayCurrent === true
+    : row.stageItem !== undefined && row.stageItem.id === activeItemId;
 
   // Followed from a report link: bring the row into view.
   useEffect(() => {
