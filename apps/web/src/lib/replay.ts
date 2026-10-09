@@ -1,6 +1,6 @@
 import type { AgentStatus, DazeEvent } from "@daze/core";
 import type { FileMap, ReplaySnapshot, ReplayView } from "../types/replay";
-import { STAGE_EVENT_TYPES, statusFromEvent } from "./events";
+import { STAGE_EVENT_TYPES, isInstantSearch, statusFromEvent } from "./events";
 
 const SNAPSHOT_EVERY = 25;
 const SNAPSHOT_INTERVAL_MS = 5000;
@@ -49,7 +49,7 @@ export function buildSnapshots(events: DazeEvent[]): ReplaySnapshot[] {
     applyEventToFiles(files, event);
     const derived = statusFromEvent(event);
     if (derived) status = derived;
-    if (STAGE_EVENT_TYPES.has(event.type)) currentAction = event;
+    if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) currentAction = event;
 
     const byCount = (i + 1) % SNAPSHOT_EVERY === 0;
     const byTime = event.timestamp >= nextByTime;
@@ -89,7 +89,7 @@ export function seek(events: DazeEvent[], snapshots: ReplaySnapshot[], t: number
     applyEventToFiles(files, event);
     const derived = statusFromEvent(event);
     if (derived) status = derived;
-    if (STAGE_EVENT_TYPES.has(event.type)) currentAction = event;
+    if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) currentAction = event;
     appliedIndex = i + 1;
   }
 

@@ -14,16 +14,22 @@ export default {
         ],
       },
       colors: {
+        // The desk palette lives in CSS custom properties (see src/lib/theme.ts)
+        // so themes can swap it at runtime. Vars are "R G B" channel triples;
+        // <alpha-value> keeps opacity modifiers (bg-desk-panel/85) working.
         desk: {
-          bg: "#141210",
-          panel: "#1b1815",
-          panel2: "#211d19",
-          line: "#2e2822",
-          ink: "#efe7db",
-          dim: "#9a8f80",
-          amber: "#e0a458",
-          ember: "#c56b3f",
-          teal: "#5fa8a0",
+          bg: "rgb(var(--desk-bg) / <alpha-value>)",
+          panel: "rgb(var(--desk-panel) / <alpha-value>)",
+          panel2: "rgb(var(--desk-panel2) / <alpha-value>)",
+          deep: "rgb(var(--desk-deep) / <alpha-value>)",
+          line: "rgb(var(--desk-line) / <alpha-value>)",
+          ink: "rgb(var(--desk-ink) / <alpha-value>)",
+          dim: "rgb(var(--desk-dim) / <alpha-value>)",
+          amber: "rgb(var(--desk-accent) / <alpha-value>)",
+          ember: "rgb(var(--desk-ember) / <alpha-value>)",
+          teal: "rgb(var(--desk-teal) / <alpha-value>)",
+          wood: "rgb(var(--desk-wood) / <alpha-value>)",
+          woodLit: "rgb(var(--desk-wood-lit) / <alpha-value>)",
         },
       },
     },

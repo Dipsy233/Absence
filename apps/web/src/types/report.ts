@@ -19,7 +19,32 @@ export type AttentionReason =
   | "agent_stopped"
   | "no_progress"
   | "external_change"
-  | "process_left_running";
+  | "process_left_running"
+  | "outside_change"
+  | "file_version_loop"
+  | "command_retry_loop";
+
+/**
+ * A loop the observer saw: the agent repeating itself without effect. Detected
+ * purely from the event stream — no LLM, no command parsing.
+ */
+export interface LoopFact {
+  kind: "file_version_loop" | "command_retry_loop";
+  /** For file_version_loop: the path whose versions oscillated. */
+  path?: string;
+  /** For command_retry_loop: the command text that kept failing. */
+  command?: string;
+  /** How many times the loop closed (versions reverted, failures repeated). */
+  count: number;
+  evidence: string[];
+}
+
+/** A watcher change outside the project root — the agent has no business there. */
+export interface OutsideChangeFact {
+  path: string;
+  count: number;
+  evidence: string[];
+}
 
 export interface Attention {
   level: AttentionLevel;
@@ -178,6 +203,12 @@ export interface RunFacts {
   currentPhase: PhaseType;
   recoveries: Recovery[];
 
+  /** Repeated self-defeating activity: reverted file versions, retried failures. */
+  loops: LoopFact[];
+
+  /** Watcher changes outside the project root (folded per path). */
+  outsideChanges: OutsideChangeFact[];
+
   /** The run as an ordered world line — the Activity order, with effects. */
   timeline: TimelineNode[];
 
@@ -251,6 +282,9 @@ export interface RunReport {
   /** How many of them were still running when the run ended. */
   processesRunning: number;
   recoveries: Recovery[];
+  /** Watcher changes outside the project root. */
+  outsideChanges: OutsideChangeFact[];
+  loops: LoopFact[];
   attention: Attention;
   /** The run as an ordered world line — the Activity order, with effects. */
   timeline: TimelineNode[];

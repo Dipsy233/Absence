@@ -8,8 +8,8 @@
  * signals — the command's own subjects, where the code came from, whether it
  * survived its command — and treat the name list as the prior it is.
  */
-import { parseCommandIntent } from "../apps/server/src/process/CommandIntent";
-import { classifyProcess, type ClassifyInput } from "../apps/server/src/process/classify";
+import { parseCommandIntent } from "../../apps/server/src/process/CommandIntent";
+import { classifyProcess, type ClassifyInput } from "../../apps/server/src/process/classify";
 
 let failures = 0;
 let checks = 0;
@@ -144,6 +144,13 @@ function input(over: Partial<ClassifyInput> & { name: string }): ClassifyInput {
     input({ name: "fd.exe", exePath: "C:\\Users\\x\\.pi\\agent\\bin\\fd.exe", ageMs: 13 }),
   );
   check("an ephemeral process from an unknown directory is a tool", fd.kind === "tool", fd.reason);
+
+  // `find` is in the tool prior — the same list the search-event filter defers
+  // to, so a process named find and a find search share one vocabulary.
+  const findProc = classifyProcess(
+    input({ name: "find.exe", exePath: "C:\\tools\\find.exe", ageMs: 60 }),
+  );
+  check("find in the tool prior is a tool", findProc.kind === "tool", findProc.reason);
 
   // But a named subject is never demoted to a helper, however brief it is.
   const namedBrief = classifyProcess(

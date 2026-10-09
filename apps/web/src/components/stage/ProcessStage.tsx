@@ -40,7 +40,7 @@ export function ProcessStage({
   const alive = status === "running";
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#0f0d0b]/50">
+    <div className="flex h-full min-h-0 flex-col bg-desk-deep/50">
       <div className="flex shrink-0 items-center gap-2 border-b border-desk-line px-3 py-2 font-mono text-xs">
         <span className={["chip", alive ? "text-desk-teal" : "text-desk-dim"].join(" ")}>{status}</span>
         <span className="truncate text-desk-ink" title={name}>

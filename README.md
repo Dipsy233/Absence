@@ -81,6 +81,31 @@ version to put that exact state on the Stage. A read after a write does not roll
 the file back, and v0 (partial, from reads) is never diffed against full-file
 versions in Files → History.
 
+The same version history is what powers **loop detection** in the Daze Report:
+when a newer version's text is byte-identical to a state the agent already held
+— v0's read snapshot, or an earlier full version, the `v2 ≡ v0` shape — the run
+has a *file version loop*: the agent most likely edited the file and then undid
+its own edit. The report says so under Human attention ("File versions
+oscillated — the agent may have undone its own edit"). Its sibling is the
+*command retry loop*: the same command failing twice or more in one run
+("The same command failed repeatedly"). Both are read off the event stream with
+no LLM and no command parsing — pure text comparison and failure counting —
+and both raise human attention to *medium*, because self-defeating activity
+deserves a glance even when every individual step "succeeded". A partial (gapped)
+v0 is never used as a loop baseline, for the same reason it is never diffed in
+Files → History.
+
+Two more facts feed Human attention, at opposite ends of the scale:
+
+- **Outside changes** (`low`) — Daze also watches the project's *parent*
+  directory (shallow, and never the home directory or a drive root), so an edit
+  the agent made outside the workspace is not silently missed. A change outside
+  the project is reported under its own **Outside the project** heading in the
+  report, marked `OUTSIDE` on the Timeline, and raises attention to *low*.
+- **An egg left running** (`high`) — a process the agent laid that is still
+  alive after the conversation has ended is the loudest everyday signal:
+  something unwatched is still running, and it now speaks at high.
+
 ## Layout
 
 ```
@@ -101,7 +126,9 @@ versions in Files → History.
 ```
 
 - **Session bar** — session id, project, model, context usage, live/offline, and
-  a *change* button to pick another project.
+  a *change* button to pick another project. Next to it a color-theme cycler
+  (`amber → blue → green`) re-skins the whole UI — panels, the desk world,
+  Monaco — from one set of CSS variables; the choice is remembered.
 - **Files** (left) — tree → detail → history. The tree marks files the agent has
   touched (`●`) and highlights the file currently on the Stage. Right-click for
   *Inspect / Open in Stage / View History / View Diff / Add to Chat / Explain this*.
@@ -115,7 +142,13 @@ versions in Files → History.
 - **Activity** (left) — the selected run's actions, oldest first. Click a row to
   put it on the Stage; its header has a **▶ replay** button that replays that run.
   Reasoning is captured too: a `thinking` event is a **THINK** row, so the
-  agent's own words sit next to the actions they led to.
+  agent's own words sit next to the actions they led to. `find` / `ls` calls
+  that returned in under the eggs classifier's `EPHEMERAL_MS` (300 ms — the
+  same "lived only a blink" standard that folds short-lived processes into
+  helper counts) are plumbing, not actions: they stay in the raw stream (the
+  report still counts them) but get no Activity row and never take the Stage;
+  a search that took longer, or any `grep`, is a row as before. A search
+  without a recorded duration is never assumed instant.
 - **Stage** (center) — file, diff, terminal, thinking, desk or replay. The desk world is
   the default page and is always drawn as the background; FILE / DIFF /
   TERMINAL / LIVE ride on top of it as a slightly translucent sheet. The mode
@@ -215,7 +248,15 @@ command parsing — and answers two questions:
   run — what the agent learned), **Changes** (files created/modified/observed/
   deleted, with `+A / −D`), and **Executions** (the commands it ran, with exit
   status), plus recoveries, an outcome, human attention with reasons, and the
-  agent's own reply for the run.
+  agent's own reply for the run. Human attention also watches for the agent
+  defeating itself: a **file version loop** (a newer version byte-identical to
+  v0 or an earlier version — the `v2 ≡ v0` shape, an edit that was undone) and
+  a **command retry loop** (the same command failed twice or more in one run).
+  Both are pure reductions — text comparison and failure counting — and raise
+  the attention level to medium. At the other ends of the scale: a change
+  **outside the project** (the parent directory is watched, shallow) is a low
+  attention fact with its own report heading, and an egg **still running**
+  after the run ends is high.
 
 It follows the run selected in History (newest by default). The engine is`apps/web/src/lib/report.ts`: a run's `DazeEvent`s are reduced to `RunFacts`,
 then a Live or Run report is rendered **from those facts only**. It never
@@ -411,7 +452,10 @@ The browser launcher is unchanged and still the right choice for the WSL / eBPF
 workflow.
 
 What the shell adds over the browser: a single window with no address bar or
-tabs, a tray icon, close-to-tray so observation keeps running, and no port.
+tabs, no native title bar — the window opens `frame: false` and the page
+renders its own minimize / maximize / close (`WindowControls`, driving the real
+window over a small preload IPC bridge), with the session bar as the drag
+region — a tray icon, close-to-tray so observation keeps running, and no port.
 Quit for real from the tray menu (or Ctrl+Q); closing the window only hides it.
 
 Three things to know:
@@ -437,7 +481,12 @@ The window also reflects what the agent is doing: its title becomes
 `DAZE — <project> (<status>)` while a run is in progress and settles back to
 `DAZE — idle` when it ends. When a run finishes and the window is not focused,
 a native notification says so. The tray tooltip shows how many sessions are
-running.
+running. In the browser (and the window), Daze also speaks: two chimes,
+synthesised with the WebAudio API and silent until the page has been
+interacted with. The **run-complete chime** sounds when a run finishes with
+activity (not an abort); the **attention chime** sounds when the live Human
+attention level crosses into or out of medium/high — urgent (three notes) at
+high, softer (two) at medium.
 
 ### Packaging a distributable app
 
@@ -722,7 +771,13 @@ double-counted as observed changes, `created` is relative to earlier runs,
 phases resolve to `verifying` after a recovery, and the Timeline lists one node
 per activity in event order with its effect (a streamed thought stays one node,
 an unfinished shell tool reads as a running process, and an egg laid during the
-run becomes a `LAID` node — with a still-running egg raising human attention).
+run becomes a `LAID` node — with a still-running egg raising attention to
+high). It also pins the loop rules: a write that restores the read state is a
+`file_version_loop` at medium attention, a gapped read state is never a loop
+baseline, a twice-failed command is a `command_retry_loop` that names the
+command, one failure is not a loop, a change outside the project is an
+`outside_change` fact at low attention marked `OUTSIDE` on the Timeline, and a
+still-running egg (high) outranks an outside change (low).
 
 `check-eggs.ts` is the pure harness for process detection (no server, nothing
 spawned): the command window decides what is a candidate, the ancestor chain

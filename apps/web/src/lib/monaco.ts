@@ -1,4 +1,5 @@
 import * as monaco from "monaco-editor";
+import type { DeskPalette } from "./theme";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
@@ -17,21 +18,31 @@ import { loader } from "@monaco-editor/react";
   },
 };
 
-// A warm, low-contrast theme that matches the desk.
-monaco.editor.defineTheme("daze", {
-  base: "vs-dark",
-  inherit: true,
-  rules: [],
-  colors: {
-    "editor.background": "#1b1815",
-    "editorGutter.background": "#1b1815",
-    "editorLineNumber.foreground": "#4a4139",
-    "editorLineNumber.activeForeground": "#e0a458",
-    "editor.lineHighlightBackground": "#211d19",
-    "diffEditor.insertedTextBackground": "#2f5d4a55",
-    "diffEditor.removedTextBackground": "#6b3a3555",
-  },
-});
+// A low-contrast theme that follows the desk's palette. Not defined at module
+// load — main.tsx applies the stored theme, which defines "daze" before any
+// editor mounts. Switching color themes re-defines and re-selects it.
+function dazeTheme(p: DeskPalette): monaco.editor.IStandaloneThemeData {
+  return {
+    base: "vs-dark",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editor.background": p.panel,
+      "editorGutter.background": p.panel,
+      "editorLineNumber.foreground": p.woodLit,
+      "editorLineNumber.activeForeground": p.accent,
+      "editor.lineHighlightBackground": p.panel2,
+      "diffEditor.insertedTextBackground": "#2f5d4a55",
+      "diffEditor.removedTextBackground": "#6b3a3555",
+    },
+  };
+}
+
+/** Re-define the "daze" theme from a palette and refresh open editors. */
+export function applyMonacoTheme(p: DeskPalette): void {
+  monaco.editor.defineTheme("daze", dazeTheme(p));
+  monaco.editor.setTheme("daze");
+}
 
 loader.config({ monaco });
 

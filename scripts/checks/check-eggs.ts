@@ -9,9 +9,9 @@
  * its own shells, and the orphan it refuses to guess about.
  */
 import { createEvent, type DazeEvent } from "@daze/core";
-import { attributeProcesses, candidatePids } from "../apps/server/src/process/ProcessWatcher";
-import type { ProcessTable } from "../apps/server/src/process/ProcessTable";
-import { buildEggs, countEggs, filterEggs } from "../apps/web/src/lib/eggs";
+import { attributeProcesses, candidatePids } from "../../apps/server/src/process/ProcessWatcher";
+import type { ProcessTable } from "../../apps/server/src/process/ProcessTable";
+import { buildEggs, countEggs, filterEggs } from "../../apps/web/src/lib/eggs";
 
 let failures = 0;
 let checks = 0;

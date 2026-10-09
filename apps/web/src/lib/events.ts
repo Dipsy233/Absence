@@ -1,5 +1,6 @@
 import type { AgentStatus, DazeEvent } from "@daze/core";
 import type { ActivityRow, StageItem } from "../types/stage";
+import { EPHEMERAL_MS } from "@daze/server/src/process/classify";
 import { formatBytes, formatClock } from "./format";
 import { languageFromPath } from "./language";
 
@@ -44,7 +45,7 @@ export function lastStageAction(events: DazeEvent[]): DazeEvent | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!;
     if (clearsStage(event)) return undefined;
-    if (STAGE_EVENT_TYPES.has(event.type)) return event;
+    if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) return event;
   }
   return undefined;
 }
@@ -101,7 +102,25 @@ function baseItem(
 }
 
 /** Turn an event into something the Stage can render (read02 §12, §43). */
+/**
+ * An instant search is plumbing, not an action worth a row: a `find` that
+ * returned in a blink told the agent where a file is, which the file tree and
+ * the report's counts already say. The threshold is the eggs classifier's own
+ * `EPHEMERAL_MS` — one standard for "lived only a blink" across Daze, applied
+ * here to a search event's measured duration instead of a process's lifetime.
+ * Below it the search stays in the raw stream (counts, report) but is filtered
+ * out of Activity and the Stage.
+ */
+export function isInstantSearch(event: DazeEvent): boolean {
+  if (event.type !== "search") return false;
+  const { tool, durationMs } = event.payload;
+  if (tool !== "find" && tool !== "ls") return false;
+  // No duration recorded (older archives): keep the row rather than guess.
+  return durationMs !== undefined && durationMs < EPHEMERAL_MS;
+}
+
 export function eventToStageItem(event: DazeEvent): StageItem | undefined {
+  if (isInstantSearch(event)) return undefined;
   switch (event.type) {
     case "thinking": {
       // Reasoning streams token by token, so one thought arrives as a long run
@@ -258,6 +277,7 @@ export function firstLine(text: string): string {
 /** A compact, clickable row for the Activity panel. */
 export function eventToActivityRow(event: DazeEvent): ActivityRow | undefined {
   if (!ACTIVITY_TYPES.has(event.type)) return undefined;
+  if (isInstantSearch(event)) return undefined;
   const id = event.id;
   const time = formatClock(event.timestamp);
   const stageItem = eventToStageItem(event);

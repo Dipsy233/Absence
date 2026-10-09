@@ -74,6 +74,13 @@ export interface FileEditPayload {
 export interface FileChangePayload {
   path: string;
   kind: "created" | "modified" | "deleted";
+  /**
+   * The change happened outside the project root. The watcher only covers the
+   * project, so these are rare — but a small model sometimes edits a file it
+   * should not (another project, a temp directory), and that is exactly what a
+   * human wants to hear about.
+   */
+  outside?: boolean;
 }
 
 export interface CommandPayload {
@@ -94,6 +101,8 @@ export interface SearchPayload {
   matches: number;
   /** Raw result text, truncated. */
   output: string;
+  /** How long the tool took, when the adapter knows (a tool-call window). */
+  durationMs?: number;
 }
 
 /** v0.3: an OS process the agent laid — a shell command's surviving child. */

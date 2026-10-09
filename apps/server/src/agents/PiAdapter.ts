@@ -29,6 +29,8 @@ export class PiAdapter extends BaseAdapter {
   private piSessionFile?: string;
   private piSessionId?: string;
   private toolArgs = new Map<string, unknown>();
+  /** When each tool call started, so search events can carry their duration. */
+  private toolStartedAt = new Map<string, number>();
   /** Lines the agent has received, keyed by their line number in the file. */
   private fileLines = new Map<string, Map<number, string>>();
   /** Paths whose whole content we hold (a write/edit). */
@@ -302,6 +304,7 @@ export class PiAdapter extends BaseAdapter {
 
       case "tool_execution_start":
         this.toolArgs.set(event.toolCallId, event.args);
+        this.toolStartedAt.set(event.toolCallId, Date.now());
         emit("tool_start", {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
@@ -325,7 +328,9 @@ export class PiAdapter extends BaseAdapter {
         });
         const args = this.toolArgs.get(event.toolCallId);
         this.toolArgs.delete(event.toolCallId);
-        void this.mapToolResult(event.toolName, args, event.result, event.isError);
+        const startedAt = this.toolStartedAt.get(event.toolCallId);
+        this.toolStartedAt.delete(event.toolCallId);
+        void this.mapToolResult(event.toolName, args, event.result, event.isError, startedAt);
         break;
       }
 
@@ -348,6 +353,7 @@ export class PiAdapter extends BaseAdapter {
     rawArgs: unknown,
     result: unknown,
     isError: boolean,
+    startedAt?: number,
   ): Promise<void> {
     if (isError) return;
     const args = (rawArgs ?? {}) as Record<string, unknown>;
@@ -393,7 +399,10 @@ export class PiAdapter extends BaseAdapter {
           const after = reconstructed ?? (await readFileSafe(abs)) ?? known ?? "";
           const before = known ?? "";
           const details = (result as { details?: { diff?: string } } | undefined)?.details;
-          this.rememberWholeFile(abs, after);
+          // Only remember a version we actually saw: an empty read (path
+          // unresolved, binary, gone) must not overwrite the file we hold with
+          // an empty whole-file version.
+          if (after.length > 0 || known === undefined) this.rememberWholeFile(abs, after);
           this.emitDaze("file_edit", {
             path: this.display(args.path),
             before,
@@ -434,6 +443,7 @@ export class PiAdapter extends BaseAdapter {
             scope,
             matches,
             output: output.slice(0, 4000),
+            durationMs: startedAt !== undefined ? Date.now() - startedAt : undefined,
           });
           break;
         }
@@ -472,7 +482,12 @@ export class PiAdapter extends BaseAdapter {
     return out.join("\n");
   }
 
-  private abs(p: unknown): string {    const value = String(p ?? "");
+  private abs(p: unknown): string {
+    // A small model sometimes echoes the UI's `@file` reference style and passes
+    // the tool a path like `@src/api.ts`. Pi's own tools tolerate it; Daze must
+    // too, or the read/edit content is read from a file that does not exist and
+    // every recorded version comes out empty. Strip the prefix before joining.
+    const value = String(p ?? "").replace(/^@/, "");
     return path.isAbsolute(value) ? value : path.join(this.cwd, value);
   }
 

@@ -11,7 +11,8 @@
 /** Names that are usually tools rather than subjects or daemons. */
 export const TOOL_PRIOR = new Set([
   "ls", "ls.exe", "dir", "cat", "cat.exe", "type.exe", "head", "head.exe",
-  "tail", "tail.exe", "grep", "grep.exe", "findstr.exe", "sed", "sed.exe",
+  "tail", "tail.exe", "grep", "grep.exe", "find", "find.exe", "fd", "fd.exe",
+  "findstr.exe", "sed", "sed.exe",
   "awk", "awk.exe", "sort", "sort.exe", "uniq", "uniq.exe", "wc", "wc.exe",
   "cut", "cut.exe", "tr", "tr.exe", "sleep", "sleep.exe", "date", "date.exe",
   "echo", "true", "false", "test", "test.exe", "pwd", "pwd.exe", "env",

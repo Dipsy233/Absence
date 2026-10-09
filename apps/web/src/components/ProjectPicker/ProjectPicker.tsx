@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Project, SessionHistoryEntry } from "@daze/core";
 import { fetchProjects, fetchSessionHistory } from "../../lib/api";
+import { WindowControls } from "../common/WindowControls";
 import { useSessionStore } from "../../stores/sessionStore";
 import { resetAllStores } from "../../stores/reset";
 
@@ -81,7 +82,14 @@ export function ProjectPicker() {
   };
 
   return (
-    <div className="flex h-full items-center justify-center p-6">
+    <div className="relative flex h-full items-center justify-center p-6">
+      {/* Frameless desktop shell: a slim drag strip across the top carries the
+          window controls; a plain browser tab renders neither. */}
+      {window.dazeDesktop ? (
+        <div className="daze-drag absolute inset-x-0 top-0 z-10 flex h-8 items-stretch justify-end">
+          <WindowControls />
+        </div>
+      ) : null}
       <div className="w-full max-w-lg rounded-xl border border-desk-line bg-desk-panel p-6">
         <div className="flex items-baseline gap-3">
           <h1 className="font-mono text-3xl tracking-tight text-desk-ink">DAZE</h1>

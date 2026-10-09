@@ -9,7 +9,7 @@ import type {
   SessionSnapshot,
 } from "@daze/core";
 import * as api from "../lib/api";
-import { STAGE_EVENT_TYPES, clearsStage, lastStageAction } from "../lib/events";
+import { STAGE_EVENT_TYPES, clearsStage, isInstantSearch, lastStageAction } from "../lib/events";
 
 const MAX_EVENTS = 2000;
 
@@ -122,7 +122,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (clearsStage(event)) {
       // A run ended, or a new one just started: back to the default Stage page.
       patch.currentAction = undefined;
-    } else if (STAGE_EVENT_TYPES.has(event.type)) {
+    } else if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) {
       patch.currentAction = event;
     }
     set(patch);

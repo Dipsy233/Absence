@@ -18,6 +18,7 @@ import {
   lastStageAction,
   STAGE_EVENT_TYPES,
 } from "../apps/web/src/lib/events";
+import { EPHEMERAL_MS } from "../apps/server/src/process/classify";
 import { openKnownFile, openUserFile } from "../apps/web/src/lib/openFile";
 import { useStageStore } from "../apps/web/src/stores/stageStore";
 import { useSessionStore } from "../apps/web/src/stores/sessionStore";
@@ -464,6 +465,30 @@ const run = async () => {
 
   useStageStore.getState().reset();
   useFileStore.getState().reset();
+
+  // Pure checks: an instant `find` is plumbing — no Activity row, no Stage.
+  // The raw event stays in the stream (counts, the report), only the views
+  // filter it. A search without a recorded duration is never assumed instant.
+  const mk = (payload: Record<string, unknown>): DazeEvent =>
+    ({
+      id: `evt_check_${Math.random().toString(36).slice(2, 8)}`,
+      sessionId: "sess_check",
+      timestamp: Date.now(),
+      type: "search",
+      payload,
+    }) as DazeEvent;
+  const instant = mk({ tool: "find", query: "*.ts", matches: 3, output: "", durationMs: 30 });
+  const slow = mk({ tool: "find", query: "*.ts", matches: 300, output: "", durationMs: 2_000 });
+  const grep = mk({ tool: "grep", query: "token", matches: 1, output: "", durationMs: 30 });
+  const legacy = mk({ tool: "find", query: "*.ts", matches: 3, output: "" });
+  assert("an instant find is not an Activity row", eventToActivityRow(instant) === undefined);
+  assert("an instant find owns no Stage", eventToStageItem(instant) === undefined);
+  assert("a slow find is still a row", eventToActivityRow(slow)?.action === "SEARCH");
+  assert("a slow find still owns the Stage", eventToStageItem(slow)?.type === "terminal");
+  assert("a fast grep is not filtered (only find/ls are)", eventToActivityRow(grep)?.action === "SEARCH");
+  assert("a find without a duration is kept", eventToActivityRow(legacy)?.action === "SEARCH");
+  // One standard across Daze: the search threshold IS the eggs classifier's.
+  assert("the search threshold is the eggs EPHEMERAL_MS", EPHEMERAL_MS === 300);
 
   console.log(`\nsnapshots for run #1: ${snapshots.length}`);
   process.exit(process.exitCode ?? 0);

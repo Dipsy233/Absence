@@ -7,8 +7,8 @@
  * `created` is relative to earlier runs, and recovery must consume failures.
  */
 import { createEvent, type DazeEvent } from "@daze/core";
-import { buildRunFacts, renderLive, renderRun } from "../apps/web/src/lib/report";
-import type { HistoryRun } from "../apps/web/src/types/history";
+import { buildRunFacts, renderLive, renderRun } from "../../apps/web/src/lib/report";
+import type { HistoryRun } from "../../apps/web/src/types/history";
 
 let failures = 0;
 let checks = 0;
@@ -249,7 +249,9 @@ function runOf(events: DazeEvent[], fromIndex: number, status: HistoryRun["statu
     "a process left running asks for attention",
     facts.attention.reasons.includes("process_left_running"),
   );
-  check("but only at low level", facts.attention.level === "low", `got ${facts.attention.level}`);
+  // An egg still alive after the conversation has ended is the loudest
+  // everyday signal, so it now speaks at high, not low.
+  check("and at high level", facts.attention.level === "high", `got ${facts.attention.level}`);
 }
 
 // K. an egg that exits is one egg with two moments, and no attention cry.
@@ -289,6 +291,111 @@ function runOf(events: DazeEvent[], fromIndex: number, status: HistoryRun["statu
   check(
     "a dead egg is not an attention reason",
     !facts.attention.reasons.includes("process_left_running"),
+  );
+}
+
+// L. a file version loop: the agent writes v0's state back (v2 ≡ v0).
+{
+  const events = [
+    stamp(ev("file_read", { path: "a.ts", startLine: 1, endLine: 2, content: "x\ny" })),
+    stamp(ev("file_write", { path: "a.ts", content: "x\nCHANGED\ny" })),
+    stamp(ev("file_write", { path: "a.ts", content: "x\ny" })),
+  ];
+  const facts = buildRunFacts(events, runOf(events, 0));
+  check(
+    "a write that restores the read state is a version loop",
+    facts.loops.some((loop) => loop.kind === "file_version_loop" && loop.path === "a.ts"),
+    JSON.stringify(facts.loops),
+  );
+  check("a version loop asks for attention", facts.attention.reasons.includes("file_version_loop"));
+  check("at medium level", facts.attention.level === "medium", `got ${facts.attention.level}`);
+
+  // A partial (gapped) v0 must never be compared against a full version.
+  const gapped = [
+    stamp(ev("file_read", { path: "b.ts", startLine: 1, endLine: 1, content: "x" })),
+    stamp(ev("file_read", { path: "b.ts", startLine: 3, endLine: 3, content: "x" })),
+    stamp(ev("file_write", { path: "b.ts", content: "x\nx" })),
+  ];
+  const gappedFacts = buildRunFacts(gapped, runOf(gapped, 0));
+  check(
+    "a gapped read state is never a loop baseline",
+    !gappedFacts.loops.some((loop) => loop.kind === "file_version_loop"),
+  );
+}
+
+// M. a command retry loop: the same command fails twice in one run.
+{
+  const events = [
+    bashStart("b1", "npm test"),
+    bashEnd("b1"),
+    cmd("b1", "npm test", 1),
+    stamp(ev("file_edit", { path: "a.ts", before: "x", after: "y", diff: "+y\n-x" })),
+    bashStart("b2", "npm test"),
+    bashEnd("b2"),
+    cmd("b2", "npm test", 1),
+  ];
+  const facts = buildRunFacts(events, runOf(events, 0));
+  const retry = facts.loops.find((loop) => loop.kind === "command_retry_loop");
+  check("a twice-failed command is a retry loop", retry !== undefined && retry.count === 2);
+  check("the retry loop names the command", retry?.command === "npm test");
+  check("a retry loop asks for attention", facts.attention.reasons.includes("command_retry_loop"));
+
+  // A single failure is not a loop.
+  const once = [bashStart("b1", "npm test"), bashEnd("b1"), cmd("b1", "npm test", 1)];
+  const onceFacts = buildRunFacts(once, runOf(once, 0));
+  check("one failure is not a retry loop", !onceFacts.loops.some((loop) => loop.kind === "command_retry_loop"));
+}
+
+// N. a watcher change outside the project is a low attention fact.
+{
+  const events = [
+    stamp(ev("file_edit", { path: "a.ts", before: "x", after: "y", diff: "+y\n-x" })),
+    stamp(ev("file_change", { path: "E:/elsewhere/notes.md", kind: "modified", outside: true })),
+  ];
+  const facts = buildRunFacts(events, runOf(events, 0));
+  const report = renderRun(facts);
+  check(
+    "an outside change is a fact of the run",
+    facts.outsideChanges.length === 1 && facts.outsideChanges[0]?.path === "E:/elsewhere/notes.md",
+  );
+  check("the report exposes it", report.outsideChanges.length === 1);
+  check("outside change is an attention reason", facts.attention.reasons.includes("outside_change"));
+  check("but only at low level", facts.attention.level === "low", `got ${facts.attention.level}`);
+  check(
+    "the timeline marks it OUTSIDE",
+    facts.timeline.some((n) => n.kind === "observe" && n.action === "OUTSIDE"),
+    facts.timeline.map((n) => n.action).join(","),
+  );
+}
+
+// O. a still-running egg outranks everything: high attention.
+{
+  const events = [
+    bashStart("b1", "npm run dev"),
+    bashEnd("b1"),
+    cmd("b1", "npm run dev", 0),
+    stamp(
+      ev("process", {
+        pid: 5001,
+        ppid: 1000,
+        name: "node",
+        commandLine: "node server.js",
+        status: "running",
+        startedAt: 1_000,
+        children: 0,
+        command: "npm run dev",
+      }),
+    ),
+    stamp(ev("agent_end", { reason: "completed" })),
+    stamp(ev("file_change", { path: "E:/elsewhere/x.log", kind: "modified", outside: true })),
+  ];
+  const facts = buildRunFacts(events, runOf(events, 0));
+  check(
+    "high (egg) beats low (outside change)",
+    facts.attention.level === "high" &&
+      facts.attention.reasons.includes("process_left_running") &&
+      facts.attention.reasons.includes("outside_change"),
+    `got ${facts.attention.level} ${facts.attention.reasons.join(",")}`,
   );
 }
 

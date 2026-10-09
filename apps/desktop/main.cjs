@@ -6,7 +6,7 @@
 // CJS loader lets a CommonJS Electron main process require it directly.
 //
 // The window loads the same built web app the browser would — no UI fork.
-const { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, Notification } = require("electron");
+const { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, Notification, ipcMain } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
@@ -210,17 +210,33 @@ function createWindow(url) {
     backgroundColor: "#0b0d12",
     title: "DAZE",
     autoHideMenuBar: true,
+    // Frameless: the native title bar is gone and the web UI renders its own
+    // min/max/close (see apps/web/src/components/common/WindowControls.tsx).
+    // The top bars are -webkit-app-region: drag; the window controls go over
+    // IPC through preload.cjs.
+    frame: false,
     show: false,
     webPreferences: {
       // The UI is a plain web app talking over HTTP/WS to the in-process
-      // server. It needs no Node access in the renderer.
+      // server. It needs no Node access in the renderer; the preload only
+      // bridges the three window-control IPC calls.
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, "preload.cjs"),
     },
   });
 
   win.once("ready-to-show", () => win && win.show());
+
+  // Keep the renderer's maximize glyph honest (restore vs maximize icon).
+  const pushMaximized = () => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("desktop:maximizedChanged", win.isMaximized());
+    }
+  };
+  win.on("maximize", pushMaximized);
+  win.on("unmaximize", pushMaximized);
 
   // Open external links in the real browser, never inside the app window.
   win.webContents.setWindowOpenHandler(({ url: target }) => {
@@ -289,6 +305,17 @@ function createTray() {
     win.isVisible() ? win.hide() : (win.show(), win.focus());
   });
 }
+
+// Window controls for the frameless window: the renderer asks, the main
+// process owns the real window. Close intentionally goes through win.close()
+// so the hide-to-tray handler below still applies.
+ipcMain.handle("desktop:isMaximized", () => (win ? win.isMaximized() : false));
+ipcMain.on("desktop:minimize", () => win && win.minimize());
+ipcMain.on("desktop:maximizeToggle", () => {
+  if (!win) return;
+  win.isMaximized() ? win.unmaximize() : win.maximize();
+});
+ipcMain.on("desktop:close", () => win && win.close());
 
 app.on("second-instance", () => {
   if (win) {

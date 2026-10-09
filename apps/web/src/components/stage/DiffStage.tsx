@@ -78,7 +78,7 @@ export function DiffStage({ path, before, after, diff, emptied = false }: DiffSt
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto bg-[#0f0d0b]/40 py-2 font-mono text-xs leading-relaxed">
+      <div className="min-h-0 flex-1 overflow-auto bg-desk-deep/40 py-2 font-mono text-xs leading-relaxed">
         {lines.map((line, index) => (
           <div key={index} className={`whitespace-pre px-3 ${diffLineClass(line)}`}>
             {line || " "}

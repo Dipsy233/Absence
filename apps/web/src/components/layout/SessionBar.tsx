@@ -1,10 +1,13 @@
 import { useNow } from "../../hooks/useNow";
 import { formatClock, formatContext } from "../../lib/format";
+import { THEMES, THEME_IDS } from "../../lib/theme";
+import { WindowControls } from "../common/WindowControls";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
 import { resetAllStores } from "../../stores/reset";
 
-/** The session bar across the top (read02 §4). */
+/** The session bar across the top (read02 §4). Inside the desktop shell it
+ * doubles as the frameless window's title bar: drag region + window controls. */
 export function SessionBar() {
   useNow(1000);
   const session = useSessionStore((s) => s.session);
@@ -12,6 +15,9 @@ export function SessionBar() {
   const connected = useSessionStore((s) => s.connected);
   const dazeMode = useUiStore((s) => s.dazeMode);
   const toggleDazeMode = useUiStore((s) => s.toggleDazeMode);
+  const theme = useUiStore((s) => s.theme);
+  const cycleTheme = useUiStore((s) => s.cycleTheme);
+  const desktop = Boolean(window.dazeDesktop);
 
   if (!session) return null;
 
@@ -20,7 +26,12 @@ export function SessionBar() {
   const percent = used !== null && total ? Math.min(100, Math.round((used / total) * 100)) : 0;
 
   return (
-    <header className="relative flex shrink-0 items-center gap-3 overflow-hidden rounded-lg border border-desk-line bg-desk-panel px-3 py-2">
+    <header
+      className={[
+        "relative flex shrink-0 items-center gap-3 overflow-hidden border border-desk-line bg-desk-panel px-3",
+        desktop ? "daze-drag rounded-none border-t-0 border-r-0 border-l-0 pr-0" : "py-2 rounded-lg",
+      ].join(" ")}
+    >
       <span className="shrink-0 font-mono text-lg leading-none tracking-tight text-desk-ink">DAZE</span>
       <span className="shrink-0 font-mono text-xs text-desk-dim">{formatClock(Date.now())}</span>
 
@@ -72,6 +83,22 @@ export function SessionBar() {
         {connected ? "live" : "offline"}
       </span>
 
+      {/* Color theme cycler: amber → blue → green. The dot shows the current
+          theme's accent. */}
+      <button
+        type="button"
+        onClick={cycleTheme}
+        title={`Color theme: ${theme} (click for ${THEME_IDS[(THEME_IDS.indexOf(theme) + 1) % THEME_IDS.length]})`}
+        className="flex shrink-0 items-center gap-1.5 rounded border border-desk-line px-2 py-0.5 font-mono text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
+      >
+        <span
+          aria-hidden
+          className="h-2 w-2 rounded-full"
+          style={{ background: THEMES[theme].accent }}
+        />
+        {theme}
+      </button>
+
       <button
         type="button"
         onClick={resetAllStores}
@@ -80,6 +107,8 @@ export function SessionBar() {
       >
         change
       </button>
+
+      <WindowControls />
     </header>
   );
 }

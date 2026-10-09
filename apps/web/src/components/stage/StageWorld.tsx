@@ -151,13 +151,16 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
       <div ref={cameraRef} className="daze-world__camera">
         <svg viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid meet">
           <defs>
+            {/* The desk world is themed through CSS vars (src/lib/theme.ts);
+                SVG presentation attributes can't hold var(), so paints go on
+                style below. */}
             <linearGradient id="dazeDeskGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#2a221c" />
-              <stop offset="1" stopColor="#1b1815" />
+              <stop offset="0" style={{ stopColor: "rgb(var(--desk-surface-top))" }} />
+              <stop offset="1" style={{ stopColor: "rgb(var(--desk-panel))" }} />
             </linearGradient>
             <linearGradient id="dazeScreenGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#16201e" />
-              <stop offset="1" stopColor="#0f0d0b" />
+              <stop offset="0" style={{ stopColor: "rgb(var(--desk-screen-top))" }} />
+              <stop offset="1" style={{ stopColor: "rgb(var(--desk-deep))" }} />
             </linearGradient>
             <filter id="dazeSoftGlow">
               <feGaussianBlur stdDeviation="10" />
@@ -173,25 +176,32 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
               height="690"
               rx="18"
               fill="url(#dazeDeskGrad)"
-              stroke="#2e2822"
+              style={{ stroke: "rgb(var(--desk-line))" }}
             />
             <path
               d="M60 170 C300 125 540 185 790 135 S1060 140 1140 185"
               fill="none"
-              stroke="rgba(224,164,88,.06)"
+              style={{ stroke: "rgb(var(--desk-accent) / 0.06)" }}
               strokeWidth={3}
             />
             <path
               d="M90 560 C330 520 560 585 830 540 S1060 530 1120 565"
               fill="none"
-              stroke="rgba(224,164,88,.05)"
+              style={{ stroke: "rgb(var(--desk-accent) / 0.05)" }}
               strokeWidth={2}
             />
           </g>
 
           {/* MONITOR */}
           <g id="monitorGroup" className="object">
-            <rect x="730" y="92" width="330" height="235" rx="12" fill="#211d19" stroke="#2e2822" />
+            <rect
+              x="730"
+              y="92"
+              width="330"
+              height="235"
+              rx="12"
+              style={{ fill: "rgb(var(--desk-panel2))", stroke: "rgb(var(--desk-line))" }}
+            />
             <rect x="748" y="110" width="294" height="198" rx="8" fill="url(#dazeScreenGrad)" />
             <rect
               id="monitorGlow"
@@ -200,20 +210,23 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
               width="294"
               height="198"
               rx="8"
-              fill="#5fa8a0"
+              style={{ fill: "rgb(var(--desk-teal))" }}
               filter="url(#dazeSoftGlow)"
             />
-            <rect id="screenWake" x="748" y="110" width="294" height="198" rx="8" fill="#e0a458" />
-            <text x="766" y="148" fill="#5fa8a0" fontSize={13} fontFamily="monospace">
+            <rect id="screenWake" x="748" y="110" width="294" height="198" rx="8" style={{ fill: "rgb(var(--desk-accent))" }} />
+            <text x="766" y="148" style={{ fill: "rgb(var(--desk-teal))" }} fontSize={13} fontFamily="monospace">
               $ daze-agent
             </text>
             <text id="termLine" ref={termLineRef} x="762" y="205" />
-            <rect id="termCursor" ref={termCursorRef} x="762" y="189" width="10" height="18" rx="2" fill="#e0a458" />
-            <text id="terminalText" x="766" y="245" fill="#9a8f80" fontSize={13} fontFamily="monospace">
+            <rect id="termCursor" ref={termCursorRef} x="762" y="189" width="10" height="18" rx="2" style={{ fill: "rgb(var(--desk-accent))" }} />
+            <text id="terminalText" x="766" y="245" style={{ fill: "rgb(var(--desk-dim))" }} fontSize={13} fontFamily="monospace">
               waiting...
             </text>
-            <rect x="855" y="327" width="80" height="20" rx="6" fill="#2e2822" />
-            <path d="M820 349 H970 L1000 372 H790 Z" fill="#211d19" stroke="#2e2822" />
+            <rect x="855" y="327" width="80" height="20" rx="6" style={{ fill: "rgb(var(--desk-line))" }} />
+            <path
+              d="M820 349 H970 L1000 372 H790 Z"
+              style={{ fill: "rgb(var(--desk-panel2))", stroke: "rgb(var(--desk-line))" }}
+            />
           </g>
 
           {/* PAPER */}
@@ -225,13 +238,13 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
               width="380"
               height="285"
               rx="5"
-              fill="#efe7db"
+              style={{ fill: "rgb(var(--desk-ink))" }}
               transform="rotate(-4 340 362)"
             />
             <g
               id="paperWriting"
               transform="rotate(-4 340 362)"
-              stroke="#9a8f80"
+              style={{ stroke: "rgb(var(--desk-dim))" }}
               strokeWidth={2}
               strokeLinecap="round"
             >
@@ -247,15 +260,29 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
 
           {/* PEN */}
           <g id="pen" className="object" transform="translate(490 470) rotate(32)">
-            <rect x="-9" y="-95" width="18" height="120" rx="8" fill="#3a332c" stroke="#2e2822" />
-            <polygon points="-9,25 9,25 0,48" fill="#e0a458" />
-            <circle cx="0" cy="-72" r="3" fill="#9a8f80" />
+            <rect
+              x="-9"
+              y="-95"
+              width="18"
+              height="120"
+              rx="8"
+              style={{ fill: "rgb(var(--desk-wood))", stroke: "rgb(var(--desk-line))" }}
+            />
+            <polygon points="-9,25 9,25 0,48" style={{ fill: "rgb(var(--desk-accent))" }} />
+            <circle cx="0" cy="-72" r="3" style={{ fill: "rgb(var(--desk-dim))" }} />
           </g>
 
           {/* KEYBOARD */}
           <g id="keyboard" className="object" transform="translate(45,-80)">
-            <rect x="650" y="480" width="400" height="130" rx="12" fill="#211d19" stroke="#2e2822" />
-            <g id="keys" ref={keysGroupRef} fill="#3a332c">
+            <rect
+              x="650"
+              y="480"
+              width="400"
+              height="130"
+              rx="12"
+              style={{ fill: "rgb(var(--desk-panel2))", stroke: "rgb(var(--desk-line))" }}
+            />
+            <g id="keys" ref={keysGroupRef} style={{ fill: "rgb(var(--desk-wood))" }}>
               <rect className="key" x="675" y="505" width="34" height="20" rx="4" />
               <rect className="key" x="716" y="505" width="34" height="20" rx="4" />
               <rect className="key" x="757" y="505" width="34" height="20" rx="4" />
@@ -281,7 +308,7 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
               <rect className="key" x="906" y="565" width="34" height="20" rx="4" />
               <rect className="key" x="947" y="565" width="77" height="20" rx="4" />
             </g>
-            <rect x="780" y="592" width="150" height="8" rx="4" fill="#2e2822" />
+            <rect x="780" y="592" width="150" height="8" rx="4" style={{ fill: "rgb(var(--desk-line))" }} />
           </g>
 
           {/* COFFEE */}
@@ -291,16 +318,16 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
               <path
                 d="M651 356 C697 346 697 392 654 388"
                 fill="none"
-                stroke="#efe7db"
+                style={{ stroke: "rgb(var(--desk-ink))" }}
                 strokeWidth={12}
                 strokeLinecap="round"
               />
-              <rect x="575" y="332" width="70" height="82" rx="12" fill="#efe7db" />
-              <ellipse cx="610" cy="332" rx="35" ry="12" fill="#553a29" />
+              <rect x="575" y="332" width="70" height="82" rx="12" style={{ fill: "rgb(var(--desk-ink))" }} />
+              <ellipse cx="610" cy="332" rx="35" ry="12" style={{ fill: "rgb(var(--desk-coffee))" }} />
               <g id="coffeeLid">
-                <ellipse cx="610" cy="330" rx="39" ry="13" fill="#cfc7b8" />
-                <ellipse cx="610" cy="330" rx="25" ry="7" fill="#bdb3a2" />
-                <rect x="606" y="313" width="8" height="9" rx="3" fill="#9a8f80" />
+                <ellipse cx="610" cy="330" rx="39" ry="13" style={{ fill: "rgb(var(--desk-coffee-lid))" }} />
+                <ellipse cx="610" cy="330" rx="25" ry="7" style={{ fill: "rgb(var(--desk-coffee-lid-dark))" }} />
+                <rect x="606" y="313" width="8" height="9" rx="3" style={{ fill: "rgb(var(--desk-dim))" }} />
               </g>
               <g id="coffeeSteam">
                 <path className="steam s1" d="M596 318 C590 306 602 300 596 288" />

@@ -11,8 +11,8 @@
  */
 import { spawn } from "node:child_process";
 import type { ProcessPayload } from "@daze/core";
-import { JobMonitor } from "../apps/server/src/process/JobMonitor";
-import { ProcessWatcher } from "../apps/server/src/process/ProcessWatcher";
+import { JobMonitor } from "../../apps/server/src/process/JobMonitor";
+import { ProcessWatcher } from "../../apps/server/src/process/ProcessWatcher";
 
 let failures = 0;
 let checks = 0;

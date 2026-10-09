@@ -30,6 +30,7 @@
     },
     "files": [
       "main.cjs",
+      "preload.cjs",
       "assets/**/*",
       "!scripts/**"
     ],

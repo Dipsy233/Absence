@@ -7,6 +7,8 @@ import type {
   CommandFact,
   FileFact,
   LiveReport,
+  LoopFact,
+  OutsideChangeFact,
   Phase,
   PhaseType,
   ProcessFact,
@@ -21,6 +23,7 @@ import type {
   TimelineNode,
 } from "../types/report";
 import { countDiff, eventPath, firstLine } from "./events";
+import { contiguousRanges, renderKnownLines } from "./knownLines";
 
 /**
  * The Daze Report engine (E:\0down\daze-demo\read.md).
@@ -136,6 +139,19 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
   /** The last non-empty assistant message — the agent's reply for the run. */
   let response: string | undefined;
 
+  // Loop detection: what the agent's file versions and repeated commands did.
+  // Known lines mirror the fileStore's read accumulator (the v0 state); the
+  // full contents are the v1..vN states a write/edit produced.
+  const knownLines = new Map<string, Record<number, string>>();
+  /** Full-file contents the agent has held for a path, with the event ids that produced them. */
+  const fullVersions = new Map<string, { content: string; eventId: string }[]>();
+  /** Paths whose newest full version went back to an earlier state (v0 or a prior version). */
+  const revertedPaths = new Map<string, { path: string; count: number; evidence: string[] }>();
+  /** How many times each identical command has failed in this run. */
+  const failedCommands = new Map<string, { count: number; command: string; evidence: string[] }>();
+  /** Watcher changes outside the project root, folded per path. */
+  const outsideChanges = new Map<string, { count: number; evidence: string[] }>();
+
   for (let i = 0; i < slice.length; i++) {
     const event = slice[i]!;
     evidence.push(event.id);
@@ -146,6 +162,12 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
         reads++;
         read.add(path);
         deleted.delete(path);
+        // Track the agent's read context (its v0) for version-loop detection.
+        const lines = knownLines.get(path) ?? {};
+        event.payload.content.split("\n").forEach((line, index) => {
+          lines[startLine + index] = line;
+        });
+        knownLines.set(path, lines);
         const fact = file(path, event.timestamp);
         fact.read = true;
         fact.evidence.push(event.id);
@@ -166,6 +188,7 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
         writes++;
         deleted.delete(path);
         agentChanged.add(path);
+        noteFileVersion(path, content, event.id, knownLines, fullVersions, revertedPaths);
         const isNew = !known.has(path);
         writeCreated.set(event.id, isNew);
         if (isNew) {
@@ -182,12 +205,13 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
         break;
       }
       case "file_edit": {
-        const { path, diff } = event.payload;
+        const { path, after, diff } = event.payload;
         edits++;
         deleted.delete(path);
         agentChanged.add(path);
         modified.add(path);
         known.add(path);
+        noteFileVersion(path, after, event.id, knownLines, fullVersions, revertedPaths);
         const counts = countDiff(diff);
         additions += counts.added;
         deletions += counts.removed;
@@ -206,6 +230,14 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
           eventId: event.id,
           at: event.timestamp,
         });
+        // A change the watcher saw outside the project root: the agent has no
+        // business writing there, so it is a fact on its own.
+        if (event.payload.outside) {
+          const outside = outsideChanges.get(event.payload.path) ?? { count: 0, evidence: [] };
+          outside.count++;
+          outside.evidence.push(event.id);
+          outsideChanges.set(event.payload.path, outside);
+        }
         break;
       case "search":
         searches.push({
@@ -303,6 +335,15 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
               },
         );
         signals.push({ kind: status === "success" ? "cmd-success" : "cmd-fail", eventId: event.id, at: event.timestamp });
+        // A repeated failure is the loop signal: one failure may be bad luck,
+        // the same command failing again and again is the agent stuck.
+        if (status === "failed") {
+          const key = event.payload.command.trim();
+          const seen = failedCommands.get(key) ?? { count: 0, command: key, evidence: [] };
+          seen.count++;
+          seen.evidence.push(event.id);
+          failedCommands.set(key, seen);
+        }
         break;
       }
       case "process": {
@@ -383,6 +424,26 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
   }
 
   const recoveries = findRecoveries(commands, slice);
+
+  // Loops: the agent undoing itself or repeating a failing command.
+  const loops: LoopFact[] = [];
+  for (const reverted of revertedPaths.values()) {
+    if (reverted.count >= 1) {
+      loops.push({ kind: "file_version_loop", path: reverted.path, count: reverted.count, evidence: reverted.evidence });
+    }
+  }
+  for (const failed of failedCommands.values()) {
+    if (failed.count >= 2) {
+      loops.push({
+        kind: "command_retry_loop",
+        command: failed.command,
+        count: failed.count,
+        evidence: failed.evidence,
+      });
+    }
+  }
+  const loopAttention = loopAttentionFor(loops);
+
   const failedIds = commands.filter((command) => command.status === "failed").map((command) => command.eventId);
   const recoveredSet = new Set(recoveries.map((recovery) => recovery.failedCommandId));
   const unresolvedIds = failedIds.filter((id) => !recoveredSet.has(id));
@@ -396,6 +457,11 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
     created.keys().length + modified.keys().length + deleted.keys().length + observed.keys().length === 0;
 
   const outcome = outcomeFor(run, unresolvedIds.length, counts.failed, noChanges);
+  const outsideFacts: OutsideChangeFact[] = [...outsideChanges.entries()].map(([path, seen]) => ({
+    path,
+    count: seen.count,
+    evidence: seen.evidence,
+  }));
   const attention = computeAttention({
     unresolved: unresolvedIds.length,
     failed: counts.failed,
@@ -407,6 +473,8 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
     failedIds,
     errorIds: errorEvidence,
     runningProcessIds: runningAtEnd.map((fact) => fact.evidence[0] ?? ""),
+    loopAttention,
+    outsideChangeIds: outsideFacts.flatMap((fact) => fact.evidence),
   });
 
   return {
@@ -447,6 +515,8 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
     phases,
     currentPhase: phases.length > 0 ? phases[phases.length - 1]!.type : "investigating",
     recoveries,
+    loops,
+    outsideChanges: outsideFacts,
     timeline: buildTimeline(slice, run, commandFacts, agentChanged, writeCreated),
     attention,
     outcome,
@@ -458,6 +528,65 @@ export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
 
 function lineCount(content: string): number {
   return content.length === 0 ? 0 : content.split("\n").length;
+}
+
+/**
+ * Record a full-file version the agent produced (a write, or an edit's after),
+ * and flag a *version loop*: the new state equals a state the agent already
+ * held — the v0 read snapshot, or an earlier full version. That is the v2 ≡ v0
+ * shape: the agent changed the file, then changed it back, or wrote what it
+ * started with. Pure text comparison, no LLM.
+ */
+function noteFileVersion(
+  path: string,
+  content: string,
+  eventId: string,
+  knownLines: Map<string, Record<number, string>>,
+  fullVersions: Map<string, { content: string; eventId: string }[]>,
+  revertedPaths: Map<string, { path: string; count: number; evidence: string[] }>,
+): void {
+  const versions = fullVersions.get(path) ?? [];
+  const known = knownLines.get(path);
+  // A partial read (v0) only counts as "the same" when it is whole-file: the
+  // README rule that v0 is never diffed against full versions applies here too.
+  const contiguousRead =
+    known !== undefined && Object.keys(known).length > 0
+      ? contiguousRanges(Object.keys(known).map(Number)).length === 1
+      : false;
+  const readText = contiguousRead
+    ? renderKnownLines(known!).text
+    : undefined;
+
+  const matchesEarlier =
+    (readText !== undefined && readText === content) ||
+    versions.some((version) => version.content === content);
+
+  if (matchesEarlier) {
+    const entry = revertedPaths.get(path) ?? { path, count: 0, evidence: [] };
+    entry.count++;
+    entry.evidence.push(eventId);
+    revertedPaths.set(path, entry);
+  }
+
+  versions.push({ content, eventId });
+  fullVersions.set(path, versions);
+}
+
+/**
+ * Attention from loops alone, merged into the main verdict. A version loop
+ * means the agent undid its own work; a repeated identical failure means it is
+ * stuck. Either way a human should glance at it — medium when the run is still
+ * the caller's problem to weigh.
+ */
+function loopAttentionFor(loops: LoopFact[]): { level: AttentionLevel; reasons: AttentionReason[]; evidence: string[] } {
+  if (loops.length === 0) return { level: "none", reasons: [], evidence: [] };
+  const reasons: AttentionReason[] = [];
+  const evidence: string[] = [];
+  for (const loop of loops) {
+    reasons.push(loop.kind);
+    evidence.push(...loop.evidence);
+  }
+  return { level: "medium", reasons, evidence };
 }
 
 /**
@@ -542,13 +671,15 @@ function buildTimeline(
       }
 
       case "file_change": {
-        const { path, kind } = event.payload;
-        push(event, "observe", kind === "deleted" ? "REMOVE" : "CHANGE", path, [
-          kind === "deleted"
-            ? "deleted on disk"
-            : agentChanged.has(path)
-              ? "the agent's write landed on disk"
-              : "changed outside the agent",
+        const { path, kind, outside } = event.payload;
+        push(event, "observe", outside ? "OUTSIDE" : kind === "deleted" ? "REMOVE" : "CHANGE", path, [
+          outside
+            ? "changed outside the project"
+            : kind === "deleted"
+              ? "deleted on disk"
+              : agentChanged.has(path)
+                ? "the agent's write landed on disk"
+                : "changed outside the agent",
         ]);
         break;
       }
@@ -700,6 +831,10 @@ function computeAttention(input: {
    * while the agent is working, running things is the whole point.
    */
   runningProcessIds?: string[];
+  /** Loops already computed by the caller (version oscillation, command retries). */
+  loopAttention?: { level: AttentionLevel; reasons: AttentionReason[]; evidence: string[] };
+  /** Evidence for watcher changes outside the project root. */
+  outsideChangeIds?: string[];
 }): Attention {
   const reasons: AttentionReason[] = [];
   let level: AttentionLevel = "none";
@@ -728,9 +863,28 @@ function computeAttention(input: {
 
   const leftRunning = input.runningProcessIds ?? [];
   if (input.ended && leftRunning.length > 0) {
-    if (level === "none") level = "low";
+    // An egg still running after the conversation has ended is the loudest
+    // everyday signal: something the agent laid is still alive and unwatched.
+    level = "high";
     reasons.push("process_left_running");
     evidence = [...evidence, ...leftRunning];
+  }
+
+  // A change outside the project is a floor of low: rare, and never the
+  // agent's business, but usually explainable (a lockfile, a log next door).
+  const outside = input.outsideChangeIds ?? [];
+  if (outside.length > 0) {
+    if (level === "none") level = "low";
+    reasons.push("outside_change");
+    evidence = [...evidence, ...outside];
+  }
+
+  // Loops raise the floor to medium — self-defeating activity is worth a look
+  // even when every individual step "succeeded".
+  if (input.loopAttention && input.loopAttention.reasons.length > 0) {
+    reasons.push(...input.loopAttention.reasons);
+    evidence = [...evidence, ...input.loopAttention.evidence];
+    if (level === "none" || level === "low") level = "medium";
   }
 
   return { level, reasons: [...new Set(reasons)], evidence };
@@ -776,6 +930,7 @@ export function renderLive(facts: RunFacts, options: RenderLiveOptions = {}): Li
   const failedIds = facts.commandFacts.filter((command) => command.status === "failed").map((command) => command.eventId);
   const recoveredSet = new Set(facts.recoveries.map((recovery) => recovery.failedCommandId));
   const unresolvedIds = failedIds.filter((id) => !recoveredSet.has(id));
+  const loopAttention = loopAttentionFor(facts.loops);
 
   return {
     phase: facts.currentPhase,
@@ -792,6 +947,8 @@ export function renderLive(facts: RunFacts, options: RenderLiveOptions = {}): Li
       unresolvedIds,
       failedIds,
       errorIds: facts.errors.evidence,
+      loopAttention,
+      outsideChangeIds: facts.outsideChanges.flatMap((fact) => fact.evidence),
     }),
   };
 }
@@ -850,6 +1007,8 @@ export function renderRun(facts: RunFacts): RunReport {
     processes: Object.values(facts.processes.byPid).sort((a, b) => a.startedAt - b.startedAt),
     processesRunning: facts.processes.runningAtEnd,
     recoveries: facts.recoveries,
+    outsideChanges: facts.outsideChanges,
+    loops: facts.loops,
     attention: facts.attention,
     timeline: facts.timeline,
     response: facts.response,

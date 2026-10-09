@@ -149,7 +149,11 @@ export class DazeSession {
 
     this.tree = await buildTree(this.session.projectPath);
 
-    this.watcher = new FileWatcher(this.session.projectPath, (kind, abs) => this.onFsChange(kind, abs));
+    this.watcher = new FileWatcher(
+      this.session.projectPath,
+      (kind, abs) => this.onFsChange(kind, abs),
+      (kind, abs) => this.onOutsideFsChange(kind, abs),
+    );
     this.watcher.start();
 
     await this.flushMeta();
@@ -543,6 +547,13 @@ export class DazeSession {
     const rel = toPosix(path.relative(this.session.projectPath, absolutePath));
     if (!rel || rel.startsWith("..")) return;
     this.handleEvent(createEvent(this.id, "file_change", { path: rel, kind }));
+  }
+
+  /** A change outside the project — rare, and always worth reporting. */
+  private onOutsideFsChange(kind: "created" | "modified" | "deleted", absolutePath: string): void {
+    this.handleEvent(
+      createEvent(this.id, "file_change", { path: toPosix(absolutePath), kind, outside: true }),
+    );
   }
 
   private setStatus(status: AgentStatus): void {

@@ -170,7 +170,7 @@ function EvidencePane({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -8 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
-      className="flex min-w-0 flex-1 flex-col border-r border-desk-line/70 bg-[#0f0d0b]/40"
+      className="flex min-w-0 flex-1 flex-col border-r border-desk-line/70 bg-desk-deep/40"
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-desk-line/70 px-3 py-1.5">
         <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-desk-amber">Evidence</span>
@@ -386,6 +386,26 @@ function RunReportView({
         )}
       </Section>
 
+      {report.outsideChanges.length > 0 ? (
+        <Section title="Outside the project">
+          <ul className="space-y-0.5">
+            {report.outsideChanges.map((change) => (
+              <li key={change.path} className="font-mono text-[11px] text-desk-ember/90">
+                <button
+                  type="button"
+                  onClick={() => onReveal(change.evidence)}
+                  title="Show in Activity"
+                  className={`${LINK} hover:text-desk-amber`}
+                >
+                  {change.path}
+                  {change.count > 1 ? <span className="ml-2 text-desk-dim">×{change.count}</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+
       <AttentionBlock attention={report.attention} />
 
       <Section title="Response">
@@ -531,6 +551,9 @@ const REASON_TEXT: Record<AttentionReason, string> = {
   no_progress: "No progress detected",
   external_change: "External file change observed",
   process_left_running: "A process the agent started is still running",
+  outside_change: "A file outside the project was changed",
+  file_version_loop: "File versions oscillated — the agent may have undone its own edit",
+  command_retry_loop: "The same command failed repeatedly",
 };
 
 function AttentionBlock({ attention }: { attention: Attention }) {
