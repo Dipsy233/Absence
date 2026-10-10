@@ -6,6 +6,7 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
 import { moodFor, type AgentVisualState } from "../../lib/agent";
+import { statusFromEvent } from "../../lib/events";
 import { StageItemView } from "../stage/StageItemView";
 import { DeskStage } from "../stage/DeskStage";
 import { StageToolbar } from "../stage/StageToolbar";
@@ -36,9 +37,17 @@ export function Stage() {
   // While replaying, the Stage shows the reconstructed state of the run — the
   // agent's status is part of that, so the avatar must not keep following the
   // live agent while the rest of the Stage is rewound (read02 §26–27).
-  const status = mode === "replay" && replayStatus ? replayStatus : liveStatus;
+  // A pinned item (an activity the user opened from the live stream) gets the
+  // same treatment: the avatar re-enacts the action that produced it instead of
+  // idling at whatever the live status happens to be.
+  const status =
+    ((mode === "replay" && replayStatus) ||
+      (mode !== "replay" && mode !== "desk" && item?.event
+        ? statusFromEvent(item.event)
+        : undefined)) ?? liveStatus;
 
   const focus = focusFor(mode, status, replayItem);
+
   const visual: AgentVisualState = { status, mood: moodFor(status) };
 
   let key: string;

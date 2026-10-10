@@ -55,9 +55,10 @@ export function AgentPanel() {
 }
 
 /**
- * The desk world while it lives in the panel. Unlike the Stage, the panel is
- * not part of replay or pinned views: it only follows the agent's live action
- * (reading / editing / terminal / thinking).
+ * The desk world while it lives in the panel. The panel is always the live
+ * window: it only follows the agent's real-time action (reading / editing /
+ * terminal / thinking), never replay or pinned views — those belong to the
+ * Stage. Whatever is on the Stage, the panel keeps showing now.
  */
 function PanelWorld() {
   const focus = useLiveWorldFocus();
