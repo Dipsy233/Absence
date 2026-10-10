@@ -28,9 +28,6 @@ The Stage turns events into something humans can watch.
 - **Agent Folder** — the agent's own view of the project: only the files and
   the exact line ranges it has in context, with a version history per file.
 
-Absence is an **observer**. It never drives the agent, never writes to the
-project, and never kills a process it reports.
-
 ## Screenshots
 
 **Observing a run** — the Stage, the Activity stream, and the agent reading its
