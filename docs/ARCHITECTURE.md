@@ -109,8 +109,9 @@ apps/web/src/
                           TerminalStage  ThoughtStage  ProcessStage
                           StageWorld (the desk)  StageToolbar  ReplayBar
                           StageItemView.tsx  ReportOverlay.tsx (the Absence Report)
-    agent/                Avatar.tsx (the Heti character)  AgentPanel.tsx
-                          AgentFolder.tsx  heti.css (generated)
+    agent/                Avatar.tsx (the WhaleBun character)  AgentPanel.tsx
+                          AgentFolder.tsx  MediaAvatar.tsx (uploaded skins)
+                          whalebun.css (generated)
     eggs/                 AgentEggsPanel.tsx (primaries; tools folded; running /
                           dead / all)
     files/  history/  activity/  chat/  ProjectPicker/  common/  Panel.tsx
@@ -122,14 +123,22 @@ apps/web/src/
   types/                  stage  history  replay  report  chat  file
   index.css
 
-apps/web/public/heti/     the avatar's PNG parts (16: body, head, hair, ahoge,
+apps/web/public/whalebun/     the avatar's PNG parts (16: body, head, hair, ahoge,
                           tail, hands, feet, 7 faces)
+
+apps/server/src/process/
+  egg-filters/            Agent Eggs filter profiles (named JSON files; the
+                          classifier reads the active one; active.json points
+                          at it)  — managed from the Settings dialog
+  avatar-skins/           user-uploaded avatar skins (one folder per skin,
+                          files named <status>.<ext>; active.json) — managed
+                          from the Settings dialog, served at /avatar/<status>
 
 scripts/                  make-demo.mjs  wsl-pi-config.sh
   browser/                start-absence.bat  start-absence.sh (browser launchers)
   checks/                 check-history.ts  check-report.ts  check-eggs.ts
                           check-classify.ts  check-agentwatch.ts  check-ebpf.ts
-                          gen-heti-css.mjs (regenerates heti.css)
+                          gen-whalebun-css.mjs (regenerates whalebun.css)
 ```
 
 ## AbsenceEvent
@@ -177,6 +186,17 @@ Context usage, status, model and the file tree ride a separate
 | `GET` | `/api/sessions/:id/commands/:name/options` | Choice list for a command that needs one (`model`, `thinking`) |
 | `POST` | `/api/sessions/:id/command` | `{ name, args? }` → run a chat command |
 | `DELETE` | `/api/sessions/:id` | Dispose the session |
+| `GET` | `/api/egg-filter` | Agent Eggs filter profiles: the list, the active name and its names |
+| `PUT` | `/api/egg-filter/:name` | `{ names, force? }` → save a profile (overwrite/create) and activate it |
+| `POST` | `/api/egg-filter/:name/activate` | Activate a saved profile |
+| `DELETE` | `/api/egg-filter/:name` | Delete a profile |
+| `GET` | `/api/avatar-skins` | Avatar skins: folders, the active one and its files |
+| `POST` | `/api/avatar-skins/:name` | Create an empty skin folder |
+| `PUT` | `/api/avatar-skins/:name/files?status=&filename=` | Raw file bytes → store as that status's animation (videos re-encoded with ffmpeg) |
+| `DELETE` | `/api/avatar-skins/:name/files/:status` | Clear one status |
+| `DELETE` | `/api/avatar-skins/:name` | Delete a skin folder |
+| `POST` | `/api/avatar-skins/:name/activate` | Activate a skin (empty name = built-in WhaleBun) |
+| `GET` | `/avatar/:status` | The active skin's media for a status (206 Range supported; 404 = no upload) |
 | `WS` | `/ws/sessions/:id` | `{type:"snapshot"}` then `{type:"event"}` / `{type:"session_state"}` |
 
 The file endpoint refuses paths outside the project, refuses non-files, caps size

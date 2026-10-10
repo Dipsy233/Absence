@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { applyTheme, readStoredTheme, storeTheme, THEME_IDS, type ThemeId } from "../lib/theme";
 
 const CHAT_HISTORY_KEY = "absence.chatHistoryOpen";
 
@@ -48,8 +47,6 @@ interface UiStore {
   reportOpen: boolean;
   /** Event highlighted in the Activity panel after following a report link. */
   focusedEventId?: string;
-  /** Color theme (amber / blue / green). Remembered. */
-  theme: ThemeId;
 
   openMenu: (x: number, y: number, items: MenuItem[]) => void;
   closeMenu: () => void;
@@ -60,7 +57,6 @@ interface UiStore {
   toggleAbsenceMode: () => void;
   toggleReport: () => void;
   focusEvent: (id?: string) => void;
-  cycleTheme: () => void;
   reset: () => void;
 }
 
@@ -73,7 +69,6 @@ export const useUiStore = create<UiStore>((set) => ({
   absenceMode: false,
   reportOpen: false,
   focusedEventId: undefined,
-  theme: readStoredTheme(),
 
   openMenu: (x, y, items) => set({ menu: { x, y, items } }),
   closeMenu: () => set({ menu: undefined }),
@@ -96,14 +91,6 @@ export const useUiStore = create<UiStore>((set) => ({
   toggleReport: () => set((s) => ({ reportOpen: !s.reportOpen })),
 
   focusEvent: (focusedEventId) => set({ focusedEventId }),
-
-  cycleTheme: () =>
-    set((s) => {
-      const next = THEME_IDS[(THEME_IDS.indexOf(s.theme) + 1) % THEME_IDS.length] ?? "amber";
-      storeTheme(next);
-      applyTheme(next);
-      return { theme: next };
-    }),
 
   // Deliberately keeps chatHistoryOpen: it is a user preference, not session state.
   reset: () =>

@@ -6,6 +6,8 @@ import websocket from "@fastify/websocket";
 import { config, configure, type AbsenceConfig } from "./config";
 import { projectRoutes } from "./api/projects";
 import { sessionRoutes } from "./api/sessions";
+import { eggFilterRoutes } from "./api/eggFilter";
+import { avatarSkinRoutes } from "./api/avatarSkins";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
 
@@ -39,6 +41,14 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 
   const app = Fastify({ logger: options.quiet ? false : { level: process.env.ABSENCE_LOG_LEVEL ?? "info" } });
 
+  // Raw-body parser for the avatar-skin uploads: the client PUTs bare file
+  // bytes (application/octet-stream), not JSON.
+  app.addContentTypeParser(
+    ["application/octet-stream", "image/png", "image/gif", "image/jpeg", "image/webp", "image/svg+xml", "video/mp4", "video/webm", "video/quicktime"],
+    { parseAs: "buffer", bodyLimit: 64 * 1024 * 1024 },
+    (_request, body, done) => done(null, body),
+  );
+
   // Start the kernel process observer before anything else is spawned. On
   // Windows this puts the server into a Job Object; on Linux it attaches eBPF
   // tracepoints. Either way the kernel then reports every process creation and
@@ -58,6 +68,8 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   await app.register(websocket);
   await app.register(projectRoutes);
   await app.register(sessionRoutes);
+  await app.register(eggFilterRoutes);
+  await app.register(avatarSkinRoutes);
   await app.register(wsRoutes);
 
   // Serve the built web app when it exists (production / single-origin).

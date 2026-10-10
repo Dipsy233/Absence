@@ -1,7 +1,8 @@
 import { useNow } from "../../hooks/useNow";
 import { formatClock, formatContext } from "../../lib/format";
-import { THEMES, THEME_IDS } from "../../lib/theme";
+import { useState } from "react";
 import { WindowControls } from "../common/WindowControls";
+import { SettingsDialog } from "../common/SettingsDialog";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
 import { resetAllStores } from "../../stores/reset";
@@ -10,13 +11,12 @@ import { resetAllStores } from "../../stores/reset";
  * doubles as the frameless window's title bar: drag region + window controls. */
 export function SessionBar() {
   useNow(1000);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const session = useSessionStore((s) => s.session);
   const context = useSessionStore((s) => s.context);
   const connected = useSessionStore((s) => s.connected);
   const absenceMode = useUiStore((s) => s.absenceMode);
   const toggleAbsenceMode = useUiStore((s) => s.toggleAbsenceMode);
-  const theme = useUiStore((s) => s.theme);
-  const cycleTheme = useUiStore((s) => s.cycleTheme);
   const desktop = Boolean(window.absenceDesktop);
 
   if (!session) return null;
@@ -83,20 +83,15 @@ export function SessionBar() {
         {connected ? "live" : "offline"}
       </span>
 
-      {/* Color theme cycler: amber → blue → green. The dot shows the current
-          theme's accent. */}
+      {/* Settings: theme, rail order, egg filters, avatar skin. */}
       <button
         type="button"
-        onClick={cycleTheme}
-        title={`Color theme: ${theme} (click for ${THEME_IDS[(THEME_IDS.indexOf(theme) + 1) % THEME_IDS.length]})`}
+        onClick={() => setSettingsOpen(true)}
+        title="Settings"
         className="flex shrink-0 items-center gap-1.5 rounded border border-desk-line px-2 py-0.5 font-mono text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
       >
-        <span
-          aria-hidden
-          className="h-2 w-2 rounded-full"
-          style={{ background: THEMES[theme].accent }}
-        />
-        {theme}
+        <span aria-hidden className="text-[13px] leading-none">⚙</span>
+        settings
       </button>
 
       <button
@@ -109,6 +104,8 @@ export function SessionBar() {
       </button>
 
       <WindowControls />
+
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </header>
   );
 }

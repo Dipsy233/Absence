@@ -1,18 +1,18 @@
 /**
- * One-off generator: turns the standalone Heti character page
+ * One-off generator: turns the standalone WhaleBun character page
  * (E:/dd/jy/agent/index.html) into a scoped stylesheet for the web app.
  *
  * - extracts the <style> block
  * - drops the toolbar / html / body / hint rules (ABSENCE owns the page chrome)
- * - prefixes every selector with `.heti-root` so nothing leaks globally
+ * - prefixes every selector with `.whalebun-root` so nothing leaks globally
  * - keeps @keyframes verbatim
  *
- * Run: node scripts/gen-heti-css.mjs
+ * Run: node scripts/gen-whalebun-css.mjs
  */
 import fs from "node:fs";
 
 const SRC = "E:/dd/jy/agent/index.html";
-const OUT = "apps/web/src/components/agent/heti.css";
+const OUT = "apps/web/src/components/agent/whalebun.css";
 
 const html = fs.readFileSync(SRC, "utf8");
 const style = html.match(/<style>([\s\S]*?)<\/style>/);
@@ -75,9 +75,9 @@ while (i < css.length) {
     .map((s) => {
       const sel = s.trim();
       if (!sel) return "";
-      if (sel === ":root") return ".heti-root";
-      if (sel.startsWith(".heti-root")) return sel;
-      return `.heti-root ${sel}`;
+      if (sel === ":root") return ".whalebun-root";
+      if (sel.startsWith(".whalebun-root")) return sel;
+      return `.whalebun-root ${sel}`;
     })
     .filter(Boolean)
     .join(",\n");
@@ -86,11 +86,11 @@ while (i < css.length) {
 }
 
 const header = `/* ============================================================
-   Heti — 毛绒鲸鱼套装虚拟形象 (character only)
-   Generated from E:/dd/jy/agent/index.html by scripts/gen-heti-css.mjs.
-   Every selector is scoped under .heti-root; the page background is left
+   WhaleBun — 毛绒鲸鱼套装虚拟形象 (character only)
+   Generated from E:/dd/jy/agent/index.html by scripts/gen-whalebun-css.mjs.
+   Every selector is scoped under .whalebun-root; the page background is left
    transparent so the character sits on ABSENCE's own surface.
-   Assets live in apps/web/public/heti/*.png.
+   Assets live in apps/web/public/whalebun/*.png.
    ============================================================ */\n`;
 
 fs.writeFileSync(OUT, header + out.join("\n\n") + "\n");

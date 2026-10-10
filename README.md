@@ -163,7 +163,7 @@ bridged; unread lines in between become explicit `⋯` markers.
   command, and the selected run's actions — click a row to put it on the Stage,
   or **▶ replay** to replay the run from the beginning. Reasoning is captured
   too: a `thinking` event is a THINK row next to the actions it led to.
-- **Agent** (right) — the Heti avatar, posed purely by the event stream:
+- **Agent** (right) — the WhaleBun (鲸团团) avatar, posed purely by the event stream:
   listening relaxes, thinking thinks, speaking talks, reading reads, editing
   writes, running types, waiting dozes, error panics.
 - **Agent Folder** (right) — the agent's files, newest first, each expandable
@@ -178,8 +178,8 @@ bridged; unread lines in between become explicit `⋯` markers.
   into a count. So `docker compose up -d` shows the containers, not the client;
   `nohup node ticker.mjs` shows `node ticker.mjs`, not `nohup`.
 - **Session bar** — session id, project, model, context usage, live/offline,
-  and a color-theme cycler (`amber → blue → green`) that re-skins the whole UI
-  and is remembered.
+  and a `⚙ settings` button opening a three-pane dialog: avatar skins (left),
+  color theme + panel order (middle), Agent Eggs filter profiles (right).
 
 ## Absence Report
 
@@ -204,6 +204,31 @@ Human attention watches for the agent defeating itself: a **file version loop**
 to *medium*; a change **outside the project** to *low*; an egg **still running**
 after the run ends to *high*. The live attention level also sounds a chime when
 it crosses medium/high, and a run-complete chime sounds when a run finishes.
+
+## Personalization
+
+The `⚙ settings` button in the session bar opens a three-pane dialog:
+
+- **Avatar skin (left)** — replace the built-in WhaleBun character with your own
+  animations, no URLs and no code. Create a skin (a name = a folder under
+  `apps/server/src/process/avatar-skins/`), pick a status
+  (`default` / `listening` / `thinking` / … / `error`), upload an
+  mp4 / gif / png / webp / svg file, and it becomes that status's animation.
+  Statuses without a file fall back to the skin's `default`; the built-in
+  character renders for anything still missing. Uploaded videos are
+  re-encoded with ffmpeg (H.264, faststart, data tracks stripped) so the
+  browser can always play them. `Apply` activates the skin; switching back to
+  WhaleBun restores the built-in character. Updates show up live — no reload.
+- **Settings (middle)** — the color theme (`amber` / `blue` / `green`) and the
+  stacking order of both side rails' panels.
+- **Agent Eggs filter profiles (right)** — a small file manager over named
+  profiles of helper command names; the classifier treats a listed name as a
+  tool (a `force` option extends this to the command's declared subject, e.g.
+  `node` in `node ticker.mjs`). Same name overwrites, a new name creates, and
+  the saved profile is active immediately.
+
+See [docs/AVATAR_SKIN.zh-CN.md](docs/AVATAR_SKIN.zh-CN.md) for the avatar-skin
+details.
 
 ## Configuration
 

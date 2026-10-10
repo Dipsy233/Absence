@@ -14,7 +14,7 @@ npm run check:process                        # the three process harnesses toget
 npm run check:history                        # needs the Absence server running
 npx tsx scripts/checks/check-agentwatch.ts   # kernel process observer (Windows)
 npx tsx scripts/checks/check-ebpf.ts         # kernel process observer (Linux)
-node scripts/gen-heti-css.mjs                # regenerate the avatar's stylesheet
+node scripts/gen-whalebun-css.mjs                # regenerate the avatar's stylesheet
 ```
 
 The CI workflow (`.github/workflows/ci.yml`) runs the typecheck and the offline

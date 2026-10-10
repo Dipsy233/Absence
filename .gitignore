@@ -26,3 +26,7 @@ dist/
 native/agentwatch-linux/vmlinux.h
 native/agentwatch-linux/*.bpf.o
 native/agentwatch-linux/*.skel.h
+
+# user-managed data (created at runtime, seeded by the server)
+apps/server/src/process/avatar-skins/
+apps/server/src/process/egg-filters/

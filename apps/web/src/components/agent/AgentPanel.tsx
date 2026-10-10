@@ -3,6 +3,8 @@ import { useLiveWorldFocus } from "../../hooks/useStage";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
 import { Avatar } from "./Avatar";
+import { MediaAvatar } from "./MediaAvatar";
+import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 import { AgentStatusRow } from "./AgentStatusRow";
 import { Panel } from "../Panel";
 import { StageWorld } from "../stage/StageWorld";
@@ -20,6 +22,16 @@ export function AgentPanel() {
   const toggleAgentOnStage = useUiStore((s) => s.toggleAgentOnStage);
 
   const visual: AgentVisualState = { status, mood: moodFor(status) };
+
+  // Personalized skin wins per status: a status with an uploaded file shows
+  // that media; statuses without one fall back to the built-in WhaleBun.
+  const coverage = useAvatarSkinCoverage();
+  const media = skinMediaFor(coverage, status);
+  const avatar = media ? (
+    <MediaAvatar visual={visual} src={media.src} video={media.video} />
+  ) : (
+    <Avatar visual={visual} />
+  );
 
   if (agentOnStage) {
     return (
@@ -47,9 +59,7 @@ export function AgentPanel() {
       bodyClassName="p-2"
       onClick={toggleAgentOnStage}
     >
-      <div className="h-[184px]">
-        <Avatar visual={visual} />
-      </div>
+      <div className="h-[184px]">{avatar}</div>
     </Panel>
   );
 }

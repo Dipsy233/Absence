@@ -2,15 +2,15 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { AgentStatus } from "@absence/core";
 import { type AgentVisualState } from "../../lib/agent";
 import { AgentStatusRow } from "./AgentStatusRow";
-import "./heti.css";
+import "./whalebun.css";
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Heti — 毛绒鲸鱼套装虚拟形象 ("the agent")
+   WhaleBun — 鲸团团（毛绒鲸鱼套装虚拟形象） ("the agent")
 
    Ported from the standalone page at E:/dd/jy/agent/index.html, with the part
-   boxes taken from heti.json. The PNG parts live in apps/web/public/heti/ and
-   the stylesheet is generated into heti.css by scripts/gen-heti-css.mjs and
-   scoped under .heti-root, so it cannot leak into the rest of the app.
+   boxes taken from whalebun.json. The PNG parts live in apps/web/public/whalebun/ and
+   the stylesheet is generated into whalebun.css by scripts/gen-whalebun-css.mjs and
+   scoped under .whalebun-root, so it cannot leak into the rest of the app.
 
    Unlike the original page (which has its own toolbar), the pose is driven by
    the agent's visual state — the same AgentVisualState seam the placeholder
@@ -18,7 +18,7 @@ import "./heti.css";
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** The nine poses the character is authored with. */
-type HetiState =
+type WhaleBunState =
   | "relax"
   | "think"
   | "speak"
@@ -29,8 +29,8 @@ type HetiState =
   | "confuse"
   | "error";
 
-/** ABSENCE status → Heti pose (README §Agent status). */
-const STATE_FOR: Record<AgentStatus, HetiState> = {
+/** ABSENCE status → WhaleBun pose (README §Agent status). */
+const STATE_FOR: Record<AgentStatus, WhaleBunState> = {
   listening: "relax",
   thinking: "think",
   speaking: "speak",
@@ -43,7 +43,7 @@ const STATE_FOR: Record<AgentStatus, HetiState> = {
 };
 
 /** Which face a pose shows; `cycle` alternates two faces, `blink` winks. */
-const FACE_FOR: Record<HetiState, { face: string; blink?: boolean; cycle?: string[]; ms?: number }> = {
+const FACE_FOR: Record<WhaleBunState, { face: string; blink?: boolean; cycle?: string[]; ms?: number }> = {
   relax: { face: "face_nomal", blink: true },
   think: { face: "face_serious" },
   speak: { face: "face_silly" },
@@ -96,7 +96,7 @@ function Part({ box, cls }: { box: Box; cls?: string }) {
   const [name, left, top, width, height, z] = box;
   return (
     <div className={`part ${cls ?? "p-" + name}`} style={{ left, top, width, height, zIndex: z }}>
-      <img src={`/heti/${name}.png`} alt={name} draggable={false} />
+      <img src={`/whalebun/${name}.png`} alt={name} draggable={false} />
     </div>
   );
 }
@@ -141,7 +141,7 @@ function PropCup() {
     <div className="fx-item prop-cup">
       <svg viewBox="0 0 170 190">
         <defs>
-          <linearGradient id="heti-cupShade" x1="0" y1="0" x2="1" y2="1">
+          <linearGradient id="whalebun-cupShade" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stopColor="#ffffff" />
             <stop offset="55%" stopColor="#f7fbff" />
             <stop offset="100%" stopColor="#dae7f5" />
@@ -165,7 +165,7 @@ function PropCup() {
         {/* body */}
         <path
           d="M20 40 H128 L119 158 A16 16 0 0 1 103 174 H45 A16 16 0 0 1 29 158 Z"
-          fill="url(#heti-cupShade)"
+          fill="url(#whalebun-cupShade)"
           stroke="#c3d6e9"
           strokeWidth="3"
         />
@@ -262,7 +262,7 @@ function Fx() {
 }
 
 /** Blink / expression cycling, mirroring the original page's setState. */
-function useFace(state: HetiState): string {
+function useFace(state: WhaleBunState): string {
   const [face, setFace] = useState(FACE_FOR[state].face);
 
   useEffect(() => {
@@ -326,7 +326,7 @@ function useFit() {
 }
 
 /**
- * The agent's avatar: the Heti character, posed entirely by the event stream.
+ * The agent's avatar: the WhaleBun character, posed entirely by the event stream.
  * Drop-in replacement for the old CSS/SVG placeholder — same `visual` prop.
  */
 export function Avatar({ visual }: { visual: AgentVisualState }) {
@@ -337,7 +337,7 @@ export function Avatar({ visual }: { visual: AgentVisualState }) {
   const { ref, scale } = useFit();
 
   return (
-    <div className="heti-root flex h-full flex-col" data-mood={mood} data-state={state}>
+    <div className="whalebun-root flex h-full flex-col" data-mood={mood} data-state={state}>
       <div ref={ref} className="viewport min-h-0 flex-1" role="img" aria-label={`Agent ${status}`}>
         <div className={`stage s-${state}`} style={{ "--s": scale } as CSSProperties}>
           <div className="shadow" />

@@ -12,7 +12,7 @@ npx tsx scripts/checks/check-eggs.ts         # 进程检测（无 server，不 s
 npx tsx scripts/checks/check-classify.ts     # 命令意图 + primary/tool 切分
 npx tsx scripts/checks/check-agentwatch.ts   # 内核进程观察器（Windows）
 npx tsx scripts/checks/check-ebpf.ts         # 内核进程观察器（Linux）
-node scripts/gen-heti-css.mjs                # 重新生成头像样式表
+node scripts/gen-whalebun-css.mjs                # 重新生成头像样式表
 ```
 
 `npm run check:process` 把三个进程相关的 harness 一起跑。

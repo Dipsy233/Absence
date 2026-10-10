@@ -148,7 +148,7 @@ Windows 的 `models.json` 并把主机改写成默认路由网关；`start-absen
   `S` 搜索 · `E` 改 · `C` 建 · `$` 命令）、选中运行的动作——点一行放上
   Stage，或 **▶ replay** 从头回放。推理也被捕获：一条 `thinking` 事件是一行
   THINK，和它导致的动作并排。
-- **Agent**（右）— Heti 头像，姿势纯由事件流驱动：listening 放松、thinking
+- **Agent**（右）— WhaleBun 头像，姿势纯由事件流驱动：listening 放松、thinking
   思考、speaking 说话、reading 阅读、editing 书写、running 打字、waiting
   打盹、error 慌张。
 - **Agent Folder**（右）— agent 的文件，最新在前，每个可展开成它持有过的
@@ -159,9 +159,11 @@ Windows 的 `models.json` 并把主机改写成默认路由网关；`start-absen
   （`python train.py`）、被后台化/重定向、或从工作区运行的进程是 *primary*；
   短命帮手（`cat`、`grep`、`docker ps`）折成计数。所以 `docker compose up -d`
   显示的是容器而不是客户端；`nohup node ticker.mjs` 显示的是
-  `node ticker.mjs` 而不是 `nohup`。
+  `node ticker.mjs` 而不是 `nohup`。可编辑的**过滤配置文件**（记录帮手命令名
+  的命名文件）在设置弹窗右栏管理——同名覆盖、异名新建，保存立即生效。
 - **Session bar** — 会话 id、项目、模型、上下文用量、live/offline，以及一个
-  配色循环按钮（`amber → blue → green`），整套 UI 换肤且选择被记住。
+  `⚙ settings` 按钮，打开三栏设置弹窗：左是形象皮肤，中是配色 + 面板排序，
+  右是 Agent Eggs 过滤配置文件。
 
 ## Absence Report
 
@@ -181,6 +183,26 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
 ——一次被撤销的修改）和**命令重试环路**（同一条命令失败两次以上）把关注
 抬到 *medium*；**项目外改动**到 *low*；运行结束后**还在跑的蛋**到 *high*。
 实时关注等级跨入/跨出 medium/high 时有一声关注铃，运行结束有完成铃。
+
+## 个性化
+
+顶栏的 `⚙ settings` 按钮打开一个三栏设置弹窗：
+
+- **形象皮肤（左）**——不上传代码、不写 URL，直接用自己的动画替换内置的
+  WhaleBun 角色：创建一个形象（名称 = `apps/server/src/process/avatar-skins/`
+  下的一个文件夹），选一个状态（`default` / `listening` / `thinking` / … /
+  `error`），上传 mp4 / gif / png / webp / svg 文件，它就成为该状态的动画。
+  没上传文件的状态回退到该形象的 `default`；仍缺的显示内置角色。上传的视频
+  会用 ffmpeg 自动转码（H.264、faststart、去除数据轨道），保证浏览器一定能
+  播。`Apply` 启用该形象；切回 WhaleBun 恢复内置角色。更新实时生效，无需刷新。
+- **设置（中）**——配色主题（`amber` / `blue` / `green`）和左右两栏面板的
+  堆叠顺序。
+- **Agent Eggs 过滤配置文件（右）**——一个小型文件管理器，管理记录帮手命令名
+  的命名配置文件；分类器把名单里的名字当作工具（`force` 选项可扩展到命令的
+  声明主体，例如 `node ticker.mjs` 里的 `node`）。同名覆盖、异名新建，保存
+  立即生效。
+
+详见 [docs/AVATAR_SKIN.zh-CN.md](docs/AVATAR_SKIN.zh-CN.md)。
 
 ## 配置
 

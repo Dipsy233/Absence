@@ -97,8 +97,9 @@ apps/web/src/
                           TerminalStage  ThoughtStage  ProcessStage
                           StageWorld（桌子）  StageToolbar  ReplayBar
                           StageItemView.tsx  ReportOverlay.tsx（Absence Report）
-    agent/                Avatar.tsx（Heti 角色）  AgentPanel.tsx
-                          AgentFolder.tsx  heti.css（生成）
+    agent/                Avatar.tsx（WhaleBun 角色）  AgentPanel.tsx
+                          AgentFolder.tsx  MediaAvatar.tsx（上传的皮肤）
+                          whalebun.css（生成）
     eggs/                 AgentEggsPanel.tsx（primary；tool 折叠；running /
                           dead / all）
     files/  history/  activity/  chat/  ProjectPicker/  common/  Panel.tsx
@@ -110,14 +111,21 @@ apps/web/src/
   types/                  stage  history  replay  report  chat  file
   index.css
 
-apps/web/public/heti/     头像的 PNG 部件（16：body, head, hair, ahoge,
+apps/web/public/whalebun/     头像的 PNG 部件（16：body, head, hair, ahoge,
                           tail, hands, feet, 7 张脸）
+
+apps/server/src/process/
+  egg-filters/            Agent Eggs 过滤配置文件（命名的 JSON 文件；分类器读
+                          激活的那份；active.json 指向它）——在设置弹窗管理
+  avatar-skins/           用户上传的形象皮肤（每个形象一个文件夹，文件名
+                          <状态>.<扩展名>；active.json）——在设置弹窗管理，
+                          通过 /avatar/<状态> 提供
 
 scripts/                  make-demo.mjs  wsl-pi-config.sh
   browser/                start-absence.bat  start-absence.sh（浏览器启动器）
   checks/                 check-history.ts  check-report.ts  check-eggs.ts
                           check-classify.ts  check-agentwatch.ts  check-ebpf.ts
-                          gen-heti-css.mjs（重新生成头像样式表）
+                          gen-whalebun-css.mjs（重新生成头像样式表）
 ```
 
 ### 桌面外壳（原生窗口）
@@ -248,6 +256,17 @@ type AbsenceEvent = {
 | `GET` | `/api/sessions/:id/commands/:name/options` | 需要选择的命令的选项列表（`model`、`thinking`） |
 | `POST` | `/api/sessions/:id/command` | `{ name, args? }` → 执行聊天命令 |
 | `DELETE` | `/api/sessions/:id` | 释放会话 |
+| `GET` | `/api/egg-filter` | Agent Eggs 过滤配置文件：列表、激活项及其名单 |
+| `PUT` | `/api/egg-filter/:name` | `{ names, force? }` → 保存配置文件（覆盖/新建）并激活 |
+| `POST` | `/api/egg-filter/:name/activate` | 激活已保存的配置文件 |
+| `DELETE` | `/api/egg-filter/:name` | 删除配置文件 |
+| `GET` | `/api/avatar-skins` | 形象皮肤：文件夹、激活项及其文件 |
+| `POST` | `/api/avatar-skins/:name` | 创建空的形象文件夹 |
+| `PUT` | `/api/avatar-skins/:name/files?status=&filename=` | 原始文件字节 → 存为该状态的动画（视频用 ffmpeg 转码） |
+| `DELETE` | `/api/avatar-skins/:name/files/:status` | 清除一个状态 |
+| `DELETE` | `/api/avatar-skins/:name` | 删除形象文件夹 |
+| `POST` | `/api/avatar-skins/:name/activate` | 激活形象（空名 = 内置 WhaleBun） |
+| `GET` | `/avatar/:status` | 激活形象在某个状态的媒体（支持 206 Range；404 = 未上传） |
 | `WS` | `/ws/sessions/:id` | `{type:"snapshot"}` 然后 `{type:"event"}` / `{type:"session_state"}` |
 
 文件端点拒绝项目外的路径、拒绝非文件、上限 512 KB、拒绝二进制。

@@ -10,6 +10,7 @@ import {
   type Egg,
   type EggFilter,
 } from "../../lib/eggs";
+
 import { useSessionStore } from "../../stores/sessionStore";
 import { useStageStore } from "../../stores/stageStore";
 import { Panel } from "../Panel";
@@ -40,8 +41,14 @@ export function AgentEggsPanel() {
   const [filter, setFilter] = useState<EggFilter>("running");
   const [query, setQuery] = useState("");
 
+  // The deny-list lives on the server (process/egg-filter.json, edited from the
+  // Settings dialog): the classifier marks those names as tools, so they are
+  // already folded into the tool count and never appear in the primary list.
   const eggs = useMemo(() => primaryEggs(buildEggs(events)), [events]);
-  const tools = useMemo(() => summarizeTools(buildEggs(events)), [events]);
+  const tools = useMemo(
+    () => summarizeTools(buildEggs(events)),
+    [events],
+  );
   const counts = countEggs(eggs);
   // The query narrows within the active tab: name, command line, the command
   // that laid it, or the pid — case-insensitive, substring.

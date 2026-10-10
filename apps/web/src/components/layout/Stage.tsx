@@ -13,6 +13,8 @@ import { StageToolbar } from "../stage/StageToolbar";
 import { ReplayBar } from "../stage/ReplayBar";
 import { StageWorld } from "../stage/StageWorld";
 import { Avatar } from "../agent/Avatar";
+import { MediaAvatar } from "../agent/MediaAvatar";
+import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 import { StageChat } from "../chat/StageChat";
 import { ReportOverlay } from "../stage/ReportOverlay";
 
@@ -89,7 +91,7 @@ export function Stage() {
                 : "absolute inset-0 z-0 isolate overflow-hidden"
             }
           >
-            {agentOnStage ? <Avatar visual={visual} /> : <StageWorld focus={focus} />}
+            {agentOnStage ? <AgentAvatar visual={visual} /> : <StageWorld focus={focus} />}
           </div>
 
           <div className={sheet ? sheetClass(ghost) : "absolute inset-0"}>
@@ -137,6 +139,14 @@ const SHEET =
   "absence-overlay absolute inset-x-2 top-2 bottom-14 overflow-hidden rounded-lg border border-desk-line/70 shadow-[0_18px_50px_rgba(0,0,0,.45)]";
 const sheetClass = (ghost: boolean) =>
   ghost ? `${SHEET} bg-desk-panel` : `${SHEET} bg-desk-panel/85 backdrop-blur-[3px]`;
+
+/** The Stage's avatar honours the uploaded skin, same as the Agent panel. */
+function AgentAvatar({ visual }: { visual: AgentVisualState }) {
+  const coverage = useAvatarSkinCoverage();
+  const media = skinMediaFor(coverage, visual.status);
+  if (media) return <MediaAvatar visual={visual} src={media.src} video={media.video} />;
+  return <Avatar visual={visual} />;
+}
 
 function EmptyStage({ text }: { text: string }) {
   return (
