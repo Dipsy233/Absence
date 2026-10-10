@@ -28,6 +28,16 @@ Stage 把事件变成人可以看的东西。
 
 Absence 是**观察者**。它从不驱动 agent、从不写项目、从不杀它报告的任何进程。
 
+## 截图
+
+**观察一次运行** — Stage、Activity 事件流，以及 agent 逐步读遍项目：
+
+![Absence 观察 agent 运行](docs/screenshots/absence-1.png)
+
+**运行结束之后** — Absence Report、Agent Folder、Agent Eggs，头像回到 *listening*：
+
+![Absence 报告视图](docs/screenshots/absence-2.png)
+
 ## 快速开始
 
 环境要求：Node.js **22.19+**（测过 24）和 npm。一个配置好的 Pi（跑一次

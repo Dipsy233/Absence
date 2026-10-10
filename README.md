@@ -31,6 +31,18 @@ The Stage turns events into something humans can watch.
 Absence is an **observer**. It never drives the agent, never writes to the
 project, and never kills a process it reports.
 
+## Screenshots
+
+**Observing a run** — the Stage, the Activity stream, and the agent reading its
+way through the project:
+
+![Absence observing an agent run](docs/screenshots/absence-1.png)
+
+**After a run** — the Absence Report, Agent Folder and Agent Eggs, with the
+avatar settling back to *listening*:
+
+![Absence report view](docs/screenshots/absence-2.png)
+
 ## Quick start
 
 Requirements: Node.js **22.19+** (24 tested) and npm. A configured Pi (run
