@@ -136,9 +136,7 @@ Two more facts feed Human attention, at opposite ends of the scale:
   oldest first with the newest at the bottom. Shows time, status
   (`running`/`done`/`stopped`/`error`), duration, the prompt, and action counts
   `R` read · `S` search · `E` edit · `C` created · `$` command. Selecting a run
-  filters the Activity panel; the **⟲** button rolls the view back to the state
-  at the end of that run (see Replay — DAZE never writes to the project, so this
-  is a view-only revert).
+  filters the Activity panel.
 - **Activity** (left) — the selected run's actions, oldest first. Click a row to
   put it on the Stage; its header has a **▶ replay** button that replays that run.
   Reasoning is captured too: a `thinking` event is a **THINK** row, so the
@@ -224,9 +222,8 @@ Replay is reconstructed, not recorded: **events + state snapshots**, never video
 Opening a run two ways:
 
 - **▶ replay** in the Activity header — replay it from the beginning
-- **⟲** in the History row — roll back to the state at the **end** of the run
 
-Both are view-only. DAZE is an observer, so "rollback" means restoring what you
+This is view-only. DAZE is an observer, so "rollback" means restoring what you
 are looking at, never rewriting the project.
 
 ## Daze Report

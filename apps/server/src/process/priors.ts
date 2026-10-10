@@ -23,6 +23,24 @@ export const TOOL_PRIOR = new Set([
   "hostname", "hostname.exe", "uname", "uname.exe", "id", "id.exe",
   "ps", "ps.exe", "kill", "kill.exe", "pkill", "pkill.exe",
   "tasklist", "tasklist.exe", "pgrep", "pgrep.exe",
+  // Containers & orchestration: query/manage commands are helpers; the workload
+  // itself (the container process) is judged by its own name and shape.
+  "docker", "docker.exe", "docker-compose", "docker-compose.exe",
+  "podman", "podman.exe", "kubectl", "kubectl.exe", "helm", "helm.exe",
+  "ctr", "crictl", "nerdctl", "docker-machine",
+  // Version/help/info queries — always short-lived, never a subject.
+  "git", "git.exe", "svn", "hg", "npm", "npm.cmd", "npx", "npx.cmd",
+  "yarn", "yarn.cmd", "pnpm", "pnpm.cmd", "pip", "pip3", "python", "python3",
+  "node", "cargo", "go", "rustc", "javac", "java",
+  "wget", "wget.exe", "curl", "curl.exe", "ping", "ping.exe",
+  "ssh", "ssh.exe", "scp", "scp.exe", "rsync", "rsync.exe",
+  "tar", "tar.exe", "zip", "zip.exe", "unzip", "unzip.exe", "gzip", "gunzip",
+  "sha256sum", "md5sum", "chmod", "chmod.exe", "chown", "ln", "ln.exe",
+  "less", "more", "vim", "vi", "nano", "diff", "diff.exe", "cmp",
+  "stat", "stat.exe", "file", "readlink", "realpath", "tee", "tee.exe",
+  "xargs", "xargs.exe", "timeout", "timeout.exe", "watch", "watch.exe",
+  "systemctl", "service", "journalctl", "apt", "apt-get", "dpkg", "dnf", "yum",
+  "brew", "choco", "choco.exe", "winget", "winget.exe", "scoop",
 ]);
 
 /**

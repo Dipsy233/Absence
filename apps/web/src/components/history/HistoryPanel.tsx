@@ -31,7 +31,6 @@ export function HistoryPanel() {
   const selectedRunId = useUiStore((s) => s.selectedRunId);
   const selectRun = useUiStore((s) => s.selectRun);
   const load = useReplayStore((s) => s.load);
-  const setMode = useStageStore((s) => s.setMode);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const runs = useMemo(() => memoBuildHistory(events), [events]);
@@ -40,19 +39,6 @@ export function HistoryPanel() {
     const element = bodyRef.current;
     if (element) element.scrollTop = element.scrollHeight;
   }, [runs.length]);
-
-  /**
-   * Roll the *view* back to the end of this run: the Stage shows what the world
-   * looked like when it finished, and can be scrubbed from there. DAZE never
-   * writes to the project, so this is a view-only revert.
-   */
-  const rollback = (run: HistoryRun) => {
-    const slice = runEvents(events, run);
-    if (slice.length === 0) return;
-    selectRun(run.id);
-    load(slice, { startAtEnd: true, label: `#${run.index} · ${run.prompt}` });
-    setMode("replay");
-  };
 
   return (
     <Panel
@@ -102,14 +88,6 @@ export function HistoryPanel() {
                     </div>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => rollback(run)}
-                    title="Show the state at the end of this run (reverts the view, not the files)"
-                    className="mr-1 shrink-0 rounded border border-desk-line px-1.5 py-0.5 text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-                  >
-                    ⟲
-                  </button>
                 </div>
               </li>
             );
