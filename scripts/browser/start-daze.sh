@@ -72,7 +72,7 @@ echo "[2/2] building web app ..."
 if curl -fsS -m 3 -o /dev/null "$DAZE_URL" 2>/dev/null; then
 	echo "[run] DAZE already running on port ${DAZE_PORT}"
 else
-	echo "[run] starting DAZE server ... agent=${DAZE_AGENT}"
+	echo "[run] starting ABSENCE server ... agent=${DAZE_AGENT}"
 	if [ "$DRY" = "1" ]; then
 		echo "      dry run: would run npm start with DAZE_AGENT=${DAZE_AGENT}"
 	else

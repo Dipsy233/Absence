@@ -82,7 +82,7 @@ export function ReportOverlay() {
       <button
         type="button"
         onClick={toggleReport}
-        title={reportOpen ? "Collapse the Daze Report" : "Expand the Daze Report"}
+        title={reportOpen ? "Collapse the Absence Report" : "Expand the Absence Report"}
         className={[
           "absolute left-1/2 top-0 z-40 -translate-x-1/2 rounded-b-md border border-t-0 px-3 py-0.5",
           "font-mono text-[10px] uppercase tracking-[0.15em] backdrop-blur-[2px] transition-colors",
@@ -91,7 +91,7 @@ export function ReportOverlay() {
             : "border-desk-line bg-desk-panel/85 text-desk-dim hover:text-desk-amber",
         ].join(" ")}
       >
-        {reportOpen ? "▲" : "▼"} DAZE REPORT
+        {reportOpen ? "▲" : "▼"} ABSENCE REPORT
       </button>
 
       <AnimatePresence>
@@ -118,7 +118,7 @@ export function ReportOverlay() {
             <div className="min-w-0 flex-1 overflow-auto">
               <div className="mx-auto max-w-2xl px-5 pb-8 pt-8">
                 <div className="mb-4 flex items-center justify-between border-b border-desk-line pb-2">
-                  <span className="font-mono text-sm uppercase tracking-[0.25em] text-desk-amber">Daze Report</span>
+                  <span className="font-mono text-sm uppercase tracking-[0.25em] text-desk-amber">Absence Report</span>
                   <div className="flex items-center gap-3 font-mono text-[10px] text-desk-dim">
                     {run ? <span>run #{run.index}</span> : null}
                     <button

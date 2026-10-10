@@ -34,7 +34,7 @@ const FOCUS_FRAME: Record<WorldFocus, keyof typeof FRAMES> = {
   terminal: "screen",
 };
 
-const TERM_WORD = "----------DAZE----------";
+const TERM_WORD = "---------ABSENCE---------";
 
 export function StageWorld({ focus = "desk" }: StageWorldProps) {
   const rootRef = useRef<HTMLDivElement>(null);

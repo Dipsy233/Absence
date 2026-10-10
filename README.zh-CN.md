@@ -1,15 +1,15 @@
-# DAZE / 发呆症
+# Absence / 发呆症
 
 [English](README.md) | 中文
 
 > AI moves fast. Humans watch.
 
-DAZE 是一个面向 AI agent 的实时可视化观察器。它不试图让 agent 更聪明——
+Absence 是一个面向 AI agent 的实时可视化观察器。它不试图让 agent 更聪明——
 它让人*看见* agent 正在做什么。
 
 ```
 Pi 运行 agent。
-Daze 观察事件。
+Absence 观察事件。
 Stage 把事件变成人可以看的东西。
 ```
 
@@ -17,7 +17,7 @@ Stage 把事件变成人可以看的东西。
   命令都变成人真正能看的东西，以真实速度实时播放。
 - **Replay** — 每次运行都从事件 + 状态快照重建（绝不是录屏），可拖动进度条
   以 0.25×–10× 回放。
-- **Daze Report** — 几秒钟内把一次运行归约成事实：改了什么、跑了什么、什么
+- **Absence Report** — 几秒钟内把一次运行归约成事实：改了什么、跑了什么、什么
   失败了、什么需要你——包括环路（agent 撤销自己的修改、反复重试失败的
   命令）和它留下的还在跑的进程。没有 LLM，不靠猜：只报告观察器亲眼看到的。
 - **Agent Eggs** — agent 启动的每一个进程，由内核事件捕获（Windows 用
@@ -26,12 +26,12 @@ Stage 把事件变成人可以看的东西。
 - **Agent Folder** — agent 自己视角里的项目：只有它上下文里真正有的文件和
   行区间，每个文件带版本历史。
 
-DAZE 是**观察者**。它从不驱动 agent、从不写项目、从不杀它报告的任何进程。
+Absence 是**观察者**。它从不驱动 agent、从不写项目、从不杀它报告的任何进程。
 
 ## 快速开始
 
 环境要求：Node.js **22.19+**（测过 24）和 npm。一个配置好的 Pi（跑一次
-`pi` 并登录）是可选的——没有凭据时 DAZE 退回一段脚本化的 mock 运行时并
+`pi` 并登录）是可选的——没有凭据时 Absence 退回一段脚本化的 mock 运行时并
 明说。
 
 ```bash
@@ -44,7 +44,7 @@ npm start         # 单源——server 在 :8848 上伺服构建好的应用
 
 然后打开 `http://127.0.0.1:8848`，输入或选择项目路径，选运行时，点
 **Open**，在 Stage 底部的聊天框里给 agent 发任务。路径框下面的 **History**
-列表展开保存的会话——DAZE 自己的归档合并 Pi 的，最新在前；点一行重新打开
+列表展开保存的会话——Absence 自己的归档合并 Pi 的，最新在前；点一行重新打开
 那段对话。
 
 ### 一键启动器
@@ -92,7 +92,7 @@ sudo setcap cap_bpf,cap_perfmon+ep native/agentwatch-linux/agentwatch-linux
 
 #### WSL 里的 pi
 
-Daze 把 pi 嵌在自己的进程里，所以 WSL 需要 **Linux 的 pi**（不是
+Absence 把 pi 嵌在自己的进程里，所以 WSL 需要 **Linux 的 pi**（不是
 `/mnt/c/…` 下的 Windows 安装）：
 
 ```sh
@@ -132,7 +132,7 @@ Windows 的 `models.json` 并把主机改写成默认路由网关；`start-daze.
 `⋯` 标记。
 
 - **Stage**（中）— 默认页是一张桌子；FILE / DIFF / TERMINAL / LIVE 视图以
-  半透明叠层骑在上面，REPLAY 带完整的拖动控件（0.25×–10×）。DAZE 按钮翻转
+  半透明叠层骑在上面，REPLAY 带完整的拖动控件（0.25×–10×）。Absence 按钮翻转
   图层：桌子以可点击穿透的 ghost 浮在内容*前面*。聊天停靠在底部——一行
   输入，历史向上展开，可收起。
 - **Files → History → Activity**（左）— 项目树（`●` 标记 agent 碰过的文件，
@@ -155,7 +155,7 @@ Windows 的 `models.json` 并把主机改写成默认路由网关；`start-daze.
 - **Session bar** — 会话 id、项目、模型、上下文用量、live/offline，以及一个
   配色循环按钮（`amber → blue → green`），整套 UI 换肤且选择被记住。
 
-## Daze Report
+## Absence Report
 
 Stage 顶部中央的标签展开一份半透明报告，完全从事件流推导——没有 LLM，不
 解析命令行：
@@ -195,14 +195,14 @@ chat dock 兼作小终端：以 `/` 开头的行是命令，其他都是 prompt�
 
 ### 本地模型
 
-DAZE 只和 Pi 说话，Pi 和任何 OpenAI 兼容端点说话——在
+Absence 只和 Pi 说话，Pi 和任何 OpenAI 兼容端点说话——在
 `~/.pi/agent/models.json` 里注册一个本地 server 就能用，不需要改代码（完整
 例子见 [docs/ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md)）。4B 的模型
 选工具并不可靠；`DAZE_PI_TOOLS` 可以收窄集合，练 UI 用 mock 运行时更合适。
 
 ## 安全提示
 
-DAZE server **没有鉴权**，其 API 可以列出目录并读取配置的项目根下的文件。
+Absence server **没有鉴权**，其 API 可以列出目录并读取配置的项目根下的文件。
 它默认绑定 `127.0.0.1`，对桌面应用和个人机器是安全的。如果你在 Linux
 服务器上运行并从网络访问，请保持在可信网络内，或放在有鉴权的反向代理后面
 ——不要把端口暴露到公网。
@@ -210,13 +210,13 @@ DAZE server **没有鉴权**，其 API 可以列出目录并读取配置的项�
 ## 注记与限制
 
 - 会话**持久化到磁盘**，重启后还在。Pi 把模型的对话放在
-  `~/.pi/agent/sessions/`；Daze 把 `DazeEvent` 流放在 `~/.daze/sessions/`
+  `~/.pi/agent/sessions/`；Absence 把 `DazeEvent` 流放在 `~/.daze/sessions/`
   （用 `DAZE_STATE_DIR` 覆盖）。选择器的 **History** 两种都能重开。因为
   `~` 是平台的家目录，**Windows 和 WSL 保存各自的历史**；把
   `DAZE_STATE_DIR` 指到同一个共享路径可以合并——但绝不要两边同时对同一个
   文件跑。
 - Pi **没有删除工具**——删除必须走 `bash rm`。当 agent 改为写入空内容时，
-  文件是*被截断，不是被删除*，DAZE 会标 **EMPTIED** 加字节数，让假删除一眼
+  文件是*被截断，不是被删除*，Absence 会标 **EMPTIED** 加字节数，让假删除一眼
   可见。
 - 有内核观察器（Job Object / eBPF）时没有采样下限——20 ms 的进程和任何
   进程一样被看见。快照回退有 ~0.5 秒的下限，从命令孤立的进程

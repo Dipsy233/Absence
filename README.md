@@ -1,15 +1,15 @@
-# DAZE / 发呆症
+# Absence / 发呆症
 
 English | [中文](README.zh-CN.md)
 
 > AI moves fast. Humans watch.
 
-DAZE is a real-time visualization observer for AI agents. It does not try to make
+Absence is a real-time visualization observer for AI agents. It does not try to make
 an agent smarter — it lets a human *see* what the agent is doing.
 
 ```
 Pi runs the agent.
-Daze observes the events.
+Absence observes the events.
 The Stage turns events into something humans can watch.
 ```
 
@@ -18,7 +18,7 @@ The Stage turns events into something humans can watch.
   speed, while it happens.
 - **Replay** — every run is reconstructed from events + state snapshots (never
   video), scrubbable at 0.25×–10×.
-- **Daze Report** — a run reduced to facts in seconds: what changed, what ran,
+- **Absence Report** — a run reduced to facts in seconds: what changed, what ran,
   what failed, and what needs your attention — including loops (the agent
   undoing its own edit, retrying a failing command) and processes it left
   running. No LLM, no guessing: only what the observer saw.
@@ -28,13 +28,13 @@ The Stage turns events into something humans can watch.
 - **Agent Folder** — the agent's own view of the project: only the files and
   the exact line ranges it has in context, with a version history per file.
 
-DAZE is an **observer**. It never drives the agent, never writes to the
+Absence is an **observer**. It never drives the agent, never writes to the
 project, and never kills a process it reports.
 
 ## Quick start
 
 Requirements: Node.js **22.19+** (24 tested) and npm. A configured Pi (run
-`pi` once and log in) is optional — without credentials DAZE falls back to a
+`pi` once and log in) is optional — without credentials Absence falls back to a
 scripted mock runtime and says so.
 
 ```bash
@@ -48,7 +48,7 @@ npm start         # single origin — server serves the built app on :8848
 Then open `http://127.0.0.1:8848`, enter or pick a project path, choose a
 runtime, hit **Open**, and send the agent a task in the chat box at the bottom
 of the Stage. The **History** list under the path box unfolds saved sessions —
-DAZE's own archives merged with Pi's — newest first; clicking a row reopens
+Absence's own archives merged with Pi's — newest first; clicking a row reopens
 that conversation.
 
 ### One-click launchers
@@ -100,7 +100,7 @@ processes may be missed.
 
 #### pi inside WSL
 
-Daze embeds pi in its own process, so WSL needs a **Linux pi** (not the Windows
+Absence embeds pi in its own process, so WSL needs a **Linux pi** (not the Windows
 one under `/mnt/c/…`):
 
 ```sh
@@ -145,7 +145,7 @@ bridged; unread lines in between become explicit `⋯` markers.
 
 - **Stage** (center) — the default page is a desk world; FILE / DIFF /
   TERMINAL / LIVE views ride on top as a translucent sheet, and REPLAY takes
-  over with full scrub controls (0.25×–10×). The DAZE button flips the layering:
+  over with full scrub controls (0.25×–10×). The Absence button flips the layering:
   the desk floats *in front of* the content as a click-through ghost. Chat is
   docked at the bottom — one input row, history unfolding upward, collapsible.
 - **Files → History → Activity** (left) — the project tree (● marks files the
@@ -172,7 +172,7 @@ bridged; unread lines in between become explicit `⋯` markers.
   and a color-theme cycler (`amber → blue → green`) that re-skins the whole UI
   and is remembered.
 
-## Daze Report
+## Absence Report
 
 A tab at the top-centre of the Stage expands a translucent report over the
 Stage body, derived entirely from the event stream — no LLM, no command
@@ -204,9 +204,9 @@ it crosses medium/high, and a run-complete chime sounds when a run finishes.
 | `HOST` | `127.0.0.1` | Server host |
 | `DAZE_AGENT` | `pi` | Default runtime: `pi` or `mock` |
 | `DAZE_PROJECTS_ROOT` | `~/projects` | Directory listed in the project picker |
-| `DAZE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | Pi built-in tools to enable. `bash` / `powershell` are served by Daze's own shell, which is what makes processes observable |
+| `DAZE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | Pi built-in tools to enable. `bash` / `powershell` are served by Absence's own shell, which is what makes processes observable |
 | `DAZE_LOG_LEVEL` | `info` | Fastify log level |
-| `DAZE_STATE_DIR` | `~/.daze` | Where Daze archives session history |
+| `DAZE_STATE_DIR` | `~/.daze` | Where Absence archives session history (env-var prefix kept as `DAZE_` for compatibility) |
 | `DAZE_AGENTWATCH` / `DAZE_AGENTWATCH_LINUX` | repo `native/` | Override the native observer binary path |
 
 ### Chat commands
@@ -218,7 +218,7 @@ session-scoped; results are archived with the session and come back on resume.
 
 ### Local model
 
-DAZE talks to Pi, and Pi talks to any OpenAI-compatible endpoint — register a
+Absence talks to Pi, and Pi talks to any OpenAI-compatible endpoint — register a
 local server in `~/.pi/agent/models.json` and it works with no code changes
 (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a worked example). A 4B
 model is not reliable at choosing tools; `DAZE_PI_TOOLS` narrows the set, and
@@ -226,7 +226,7 @@ the mock runtime is better for exercising the UI.
 
 ## Security note
 
-The Daze server has **no authentication** and its API can list directories and
+The Absence server has **no authentication** and its API can list directories and
 read files under the configured projects root. It binds to `127.0.0.1` by
 default, which is safe for the desktop app and for a personal machine. If you
 run it on a Linux server and reach it over the network, keep it on a trusted
@@ -236,14 +236,14 @@ port to the public internet.
 ## Notes & limitations
 
 - Sessions **persist to disk** and survive a restart. Pi keeps the model's
-  conversation under `~/.pi/agent/sessions/`; Daze keeps the `DazeEvent` stream
+  conversation under `~/.pi/agent/sessions/`; Absence keeps the `DazeEvent` stream
   under `~/.daze/sessions/` (override with `DAZE_STATE_DIR`). The picker's
-  **History** reopens either: Daze's archive restores the Stage, Activity,
+  **History** reopens either: Absence's archive restores the Stage, Activity,
   files and chat; Pi's restores the model's context. Windows and WSL keep
   separate histories (`~` differs); point `DAZE_STATE_DIR` at one shared path
   to merge them — but never run both platforms against one file at once.
 - Pi has **no delete tool** — deleting goes through `bash rm`. When an agent
-  instead writes empty content the file is *truncated, not deleted*, and DAZE
+  instead writes empty content the file is *truncated, not deleted*, and Absence
   labels it **EMPTIED** with a byte count so a fake deletion is obvious.
 - With the kernel observer (Job Object / eBPF) there is no sampling floor — a
   20 ms process is seen like any other. The snapshot fallback has a ~0.5 s

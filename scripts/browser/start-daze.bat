@@ -84,14 +84,14 @@ rem --------------------------------------------------------------- server
 call :http_ok "%DAZE_URL%"
 if not errorlevel 1 goto daze_ready
 
-echo [run] starting DAZE server ... agent=%DAZE_AGENT%
+echo [run] starting ABSENCE server ... agent=%DAZE_AGENT%
 if "%DRY%"=="1" (
   echo       dry run: would run npm start with DAZE_AGENT=%DAZE_AGENT%
   goto daze_done
 )
 set "DAZE_AGENT=%DAZE_AGENT%"
 pushd "%REPO%"
-start "DAZE server" cmd /c "npm start"
+start "ABSENCE server" cmd /c "npm start"
 popd
 call :wait_http "%DAZE_URL%" 60 "daze server"
 goto daze_done
@@ -112,7 +112,7 @@ if "%DRY%"=="1" (
   exit /b 0
 )
 
-echo Opening the browser. Close the "DAZE server" window to stop everything.
+echo Opening the browser. Close the "ABSENCE server" window to stop everything.
 start "" "http://localhost:%DAZE_PORT%"
 echo.
 pause >nul

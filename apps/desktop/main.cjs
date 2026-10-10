@@ -1,4 +1,4 @@
-// DAZE desktop shell.
+// ABSENCE desktop shell (project DAZE → renamed Absence).
 //
 // The server runs *in this process* (not a spawned child), so the app has one
 // lifecycle: closing the window can stop the server, and there is never a
@@ -90,10 +90,10 @@ function watchSessions() {
     const running = [...tracked.values()].filter((s) => isAgentBusy(s.status));
     const title =
       running.length === 0
-        ? `DAZE${tracked.size > 0 ? " — idle" : ""}`
-        : `DAZE — ${running[0].name} (${running[0].status})`;
+        ? `ABSENCE${tracked.size > 0 ? " — idle" : ""}`
+        : `ABSENCE — ${running[0].name} (${running[0].status})`;
     if (win) win.setTitle(title);
-    if (tray) tray.setToolTip(running.length > 0 ? `DAZE — ${running.length} running` : "DAZE — observing");
+    if (tray) tray.setToolTip(running.length > 0 ? `ABSENCE — ${running.length} running` : "ABSENCE — observing");
   };
 
   const attach = (session) => {
@@ -112,7 +112,7 @@ function watchSessions() {
       const finished = isAgentBusy(previous) && !isAgentBusy(entry.status);
       if (finished && win && !win.isFocused() && Notification.isSupported()) {
         new Notification({
-          title: "DAZE — run finished",
+          title: "ABSENCE — run finished",
           body: `${entry.name} is idle again.`,
         }).show();
       }
@@ -208,7 +208,7 @@ function createWindow(url) {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: "#0b0d12",
-    title: "DAZE",
+    title: "ABSENCE",
     autoHideMenuBar: true,
     // Frameless: the native title bar is gone and the web UI renders its own
     // min/max/close (see apps/web/src/components/common/WindowControls.tsx).
@@ -270,10 +270,10 @@ function createTray() {
     image = nativeImage.createEmpty();
   }
   tray = new Tray(image);
-  tray.setToolTip("DAZE — observing");
+  tray.setToolTip("ABSENCE — observing");
   const menu = Menu.buildFromTemplate([
     {
-      label: "Show DAZE",
+      label: "Show ABSENCE",
       click: () => {
         if (win) {
           win.show();
@@ -289,7 +289,7 @@ function createTray() {
       click: () => server && shell.openExternal(server.url),
     },
     {
-      label: "Quit DAZE",
+      label: "Quit ABSENCE",
       click: () => {
         quitting = true;
         app.quit();
@@ -330,7 +330,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     const detail = error instanceof Error ? error.stack || error.message : String(error);
     logLine(`failed to start: ${detail}`);
-    dialog.showErrorBox("DAZE failed to start", detail);
+    dialog.showErrorBox("ABSENCE failed to start", detail);
     app.quit();
     return;
   }

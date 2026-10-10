@@ -245,7 +245,7 @@ export function StageChat({ expanded }: { expanded: boolean }) {
                 messages.map((message) => (
                   <div key={message.id}>
                     <div className="label mb-0.5">
-                      {message.role === "user" ? "You" : message.role === "system" ? "DAZE" : "Agent"}
+                      {message.role === "user" ? "You" : message.role === "system" ? "ABSENCE" : "Agent"}
                     </div>
                     <div
                       className={[

@@ -1,9 +1,9 @@
 # 架构
 
-DAZE 内部实现的深入文档。介绍与使用方法见 [README](../README.zh-CN.md)。
+Absence 内部实现的深入文档。介绍与使用方法见 [README](../README.zh-CN.md)。
 
 ```
-Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
+Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
    ▲                                                                     │
    └──────────── DazeEvent stream (file_read / file_edit / command / …) ─┘
 ```
@@ -12,10 +12,10 @@ Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapte
   永远不会知道 Pi 的存在。
 - `apps/server` — Fastify + WebSocket。`PiAdapter` 包装 Pi SDK，把
   `AgentSessionEvent` 映射成 `DazeEvent`；`MockAdapter` 不需要凭据就能回放
-  一段脚本化的运行；`chokidar` 监视项目的带外改动。**Daze 拥有 shell**：
+  一段脚本化的运行；`chokidar` 监视项目的带外改动。**Absence 拥有 shell**：
   `process/DazeShell` 包装 Pi 自己的本地 shell 操作，注册成自定义
   `bash` / `powershell` 工具（自定义工具按名字遮蔽内建的，所以 `DAZE_PI_TOOLS`
-  不受影响）。Pi 照样执行每条命令——Daze 只拥有边界，正是这个边界告诉
+  不受影响）。Pi 照样执行每条命令——Absence 只拥有边界，正是这个边界告诉
   `ProcessWatcher` 一条命令何时运行，并在它头部放一个唯一标记，让 Pi 为这条
   命令生成的 shell（和它外面的启动器）能被精确识别，而不是靠名字或父进程链
   去猜。`ProcessWatcher` 然后观察进程表。在 **Windows** 上它完全不采样：
@@ -26,7 +26,7 @@ Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapte
   buffer 上报同样的事件。活 20 毫秒的进程在两边都看得见——轮询永远看不见。
   在其他平台上，或 helper 启动不了时，观察器退回快照（Windows 上一次 CIM
   查询，其他平台 `ps`）。一个进程是 egg，当它出现在某条命令的窗口内、且祖先
-  链能到 Daze；egg 报告在每棵新子树的根上，任何东西都不会被杀。
+  链能到 Absence；egg 报告在每棵新子树的根上，任何东西都不会被杀。
   Eggs 然后**按行为分类，不按名字**（`process/classify.ts`，配合
   `process/CommandIntent.ts` 解析命令自身的文本）。进程活得比命令久、会自己
   生进程、是命令点名的主体（`./daemon.sh`、`python train.py`）、被命令放到
@@ -40,9 +40,9 @@ Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapte
   进程可以原地 `exec`，所以 `nohup node ticker.mjs` 在同一个 pid 下上报两次
   ——一次是 `nohup`，一次是 `node`。所以 pid 单独不能表示"已处理过"；观察器
   以 **(pid, 命令行)** 对为键，第二个事件按它本来的新进程来判。Pi 保留自己的
-  会话文件（这样对话可以恢复），Daze 把它观察到的 `DazeEvent` 流归档在旁边。
+  会话文件（这样对话可以恢复），Absence 把它观察到的 `DazeEvent` 流归档在旁边。
 - `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion。
-  面板是入口，Stage 是内容的归宿；Daze Report 和 Agent Eggs 都是对同一条事件
+  面板是入口，Stage 是内容的归宿；Absence Report 和 Agent Eggs 都是对同一条事件
   流的归约。
 
 ```
@@ -96,7 +96,7 @@ apps/web/src/
     stage/                内容的去处：DeskStage  FileStage  DiffStage
                           TerminalStage  ThoughtStage  ProcessStage
                           StageWorld（桌子）  StageToolbar  ReplayBar
-                          StageItemView.tsx  ReportOverlay.tsx（Daze Report）
+                          StageItemView.tsx  ReportOverlay.tsx（Absence Report）
     agent/                Avatar.tsx（Heti 角色）  AgentPanel.tsx
                           AgentFolder.tsx  heti.css（生成）
     eggs/                 AgentEggsPanel.tsx（primary；tool 折叠；running /
@@ -105,7 +105,7 @@ apps/web/src/
   stores/                 session  file  stage  replay  chat  ui  reset
   hooks/                  useSessionSocket  useStage  useReplay  useNow
   lib/                    events（事件 → Stage 项 / Activity 行）
-                          report（Daze Report 引擎）   eggs（进程 → eggs）
+                          report（Absence Report 引擎）   eggs（进程 → eggs）
                           replay  history  context  commands  agent  format  …
   types/                  stage  history  replay  report  chat  file
   index.css
@@ -122,7 +122,7 @@ scripts/                  make-demo.mjs  wsl-pi-config.sh
 
 ### 桌面外壳（原生窗口）
 
-DAZE 可以作为原生应用运行而不是浏览器标签页。`apps/desktop` 是一个 Electron
+Absence 可以作为原生应用运行而不是浏览器标签页。`apps/desktop` 是一个 Electron
 外壳，以**独立进程**运行 server——没有 spawn 的子进程，没有控制台窗口，
 `port: 0` 让操作系统挑一个空闲端口，没有要配置的东西也不会冲突。窗口随后
 加载浏览器会加载的同一个构建好的 web 应用；UI 没有被分叉。
@@ -158,21 +158,21 @@ npm run desktop:dev     # DevTools 开；Vite dev server 在时就用它
   workspace 成员）。它带自己的 `tsx` + esbuild，这样 Windows 外壳永远不会捡
   到根 `node_modules` 里 Linux 构建的 esbuild——正是下面 WSL 一节警告的平台
   分裂。
-- **桌面外壳和浏览器是同一个应用。** 浏览器里成立的（Replay、Daze Report、
+- **桌面外壳和浏览器是同一个应用。** 浏览器里成立的（Replay、Absence Report、
   Agent Eggs）在窗口里都成立，因为是同一个 web 构建、通过同样的 `/api` 和
   `/ws` 对话同一个 server。
 
 窗口也反映 agent 在干什么：运行进行中标题变成
-`DAZE — <项目>（<状态>）`，运行结束回落到 `DAZE — idle`。运行结束而窗口没有
+`Absence — <项目>（<状态>）`，运行结束回落到 `Absence — idle`。运行结束而窗口没有
 焦点时，一条原生通知说明这件事。托盘 tooltip 显示有几个会话在跑。浏览器（和
-窗口）里 Daze 还会发声：两声铃，WebAudio API 合成，页面被交互过之前静音。
+窗口）里 Absence 还会发声：两声铃，WebAudio API 合成，页面被交互过之前静音。
 **完成铃**在运行带着活动结束时响（中止不响）；**关注铃**在实时人工关注等级
 跨入或跨出 medium/high 时响——high 是急促的三声，medium 是柔和的两声。
 
 ### 打包可分发的应用
 
 `apps/desktop/start-daze-app.bat` 从 checkout 运行外壳，这需要磁盘上有仓库、
-`node_modules` 和 `tsx`。要把 DAZE 变成能交给别人的东西——一个没有仓库、
+`node_modules` 和 `tsx`。要把 Absence 变成能交给别人的东西——一个没有仓库、
 没有 Node 的安装器——用打包脚本：
 
 ```bash
@@ -238,7 +238,7 @@ type DazeEvent = {
 | 方法 | 路径 | 用途 |
 |---|---|---|
 | `GET` | `/api/projects` | 列出根目录下的项目（`?root=` 覆盖） |
-| `GET` | `/api/sessions/history` | 保存的会话（Daze 归档 + Pi），最新在前；`?path=` 过滤 |
+| `GET` | `/api/sessions/history` | 保存的会话（Absence 归档 + Pi），最新在前；`?path=` 过滤 |
 | `POST` | `/api/sessions` | `{ projectPath, agent?, resume? }` → 创建或重开会话 |
 | `GET` | `/api/sessions/:id` | 会话快照（session、files、chat、events、tree） |
 | `GET` | `/api/sessions/:id/events` | 事件历史 |
@@ -278,9 +278,9 @@ prompt。输入框左侧的 `/` 按钮在上方打开可过滤的面板——↑
 
 ## 本地模型
 
-DAZE 只和 Pi 说话，Pi 和任何 OpenAI 兼容端点说话——所以本地模型不需要改代码、
+Absence 只和 Pi 说话，Pi 和任何 OpenAI 兼容端点说话——所以本地模型不需要改代码、
 不需要单独的启动路径。例：`E:\0down\ml\qwen3-4B` 里 `server_qwen.py` 伺服的
-Qwen3-4B（流式 + 工具调用）。模型 server 手动启动，不由 DAZE 启动。
+Qwen3-4B（流式 + 工具调用）。模型 server 手动启动，不由 Absence 启动。
 
 1. 启动模型 server：
 
@@ -319,7 +319,7 @@ Qwen3-4B（流式 + 工具调用）。模型 server 手动启动，不由 DAZE �
    { "defaultProvider": "qwen-local", "defaultModel": "qwen3-4b" }
    ```
 
-4. 用 `pi --list-models` 验证，然后启动 DAZE。
+4. 用 `pi --list-models` 验证，然后启动 Absence。
 
 4B 的模型选工具并不可靠。`DAZE_PI_TOOLS` 可以收窄集合（如
 `DAZE_PI_TOOLS=read,bash,edit,write`），练 UI 用 mock 运行时更合适。

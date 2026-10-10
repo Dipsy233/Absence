@@ -1,12 +1,12 @@
 # Architecture
 
-Deep-dive documentation for DAZE's internals. For an introduction and usage
+Deep-dive documentation for Absence's internals. For an introduction and usage
 guide, see the [README](../README.md).
 
 ## Architecture
 
 ```
-Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
+Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
    ▲                                                                     │
    └────────────── DazeEvent stream (file_read / file_edit / command / …) ┘
 ```
@@ -15,11 +15,11 @@ Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapte
   the UI knows; it never learns that Pi exists.
 - `apps/server` — Fastify + WebSocket. `PiAdapter` wraps the Pi SDK and maps
   `AgentSessionEvent` → `DazeEvent`; `MockAdapter` replays a scripted run with no
-  credentials; `chokidar` watches the project for out-of-band changes. **Daze owns
+  credentials; `chokidar` watches the project for out-of-band changes. **Absence owns
   the shell**: `process/DazeShell` wraps Pi's own local shell operations and
   registers them as custom `bash` / `powershell` tools (a custom tool shadows the
   built-in one by name, so `DAZE_PI_TOOLS` is untouched). Pi still executes every
-  command — Daze only owns the boundary, which is what tells `ProcessWatcher` when
+  command — Absence only owns the boundary, which is what tells `ProcessWatcher` when
   a command ran, and puts a unique marker at the head of it so the shell Pi
   spawns for that command (and the launcher around it) can be recognised exactly
   rather than guessed from a name or a parent chain.
@@ -32,7 +32,7 @@ Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapte
   process that lives 20 ms is seen like any other on both — polling could never
   see it. On other platforms, or if the helper cannot start, the watcher falls
   back to snapshots (one CIM query on Windows, `ps` elsewhere). A process is an egg
-  when it appeared inside a command's window and its ancestor chain reaches Daze;
+  when it appeared inside a command's window and its ancestor chain reaches Absence;
   eggs are reported at the root of each new subtree, and nothing is ever killed.
   Eggs are then **classified by behaviour, not by name** (`process/classify.ts`,
   with the command's own text parsed by `process/CommandIntent.ts`). A process is
@@ -51,10 +51,10 @@ Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapte
   under one pid — once as `nohup`, once as `node`. A pid alone therefore cannot
   mean "already handled"; the watcher keys on the **(pid, command line)** pair, so
   the second event is judged as the new process it is. Pi keeps
-  its own session file (so a conversation can be resumed) and Daze archives the
+  its own session file (so a conversation can be resumed) and Absence archives the
   `DazeEvent` stream it observed alongside it.
 - `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion. The
-  panels are entry points and the Stage is where content lives; the Daze Report
+  panels are entry points and the Stage is where content lives; the Absence Report
   and Agent Eggs are both reductions of the same event stream.
 
 ```
@@ -108,7 +108,7 @@ apps/web/src/
     stage/                where content goes: DeskStage  FileStage  DiffStage
                           TerminalStage  ThoughtStage  ProcessStage
                           StageWorld (the desk)  StageToolbar  ReplayBar
-                          StageItemView.tsx  ReportOverlay.tsx (the Daze Report)
+                          StageItemView.tsx  ReportOverlay.tsx (the Absence Report)
     agent/                Avatar.tsx (the Heti character)  AgentPanel.tsx
                           AgentFolder.tsx  heti.css (generated)
     eggs/                 AgentEggsPanel.tsx (primaries; tools folded; running /
@@ -117,7 +117,7 @@ apps/web/src/
   stores/                 session  file  stage  replay  chat  ui  reset
   hooks/                  useSessionSocket  useStage  useReplay  useNow
   lib/                    events (event → Stage item / Activity row)
-                          report (the Daze Report engine)   eggs (process → eggs)
+                          report (the Absence Report engine)   eggs (process → eggs)
                           replay  history  context  commands  agent  format  …
   types/                  stage  history  replay  report  chat  file
   index.css
@@ -167,7 +167,7 @@ Context usage, status, model and the file tree ride a separate
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/projects` | List projects under the root (`?root=` to override) |
-| `GET` | `/api/sessions/history` | Saved sessions (Daze archives + Pi), newest first; `?path=` filters |
+| `GET` | `/api/sessions/history` | Saved sessions (Absence archives + Pi), newest first; `?path=` filters |
 | `POST` | `/api/sessions` | `{ projectPath, agent?, resume? }` → create or reopen a session |
 | `GET` | `/api/sessions/:id` | Session snapshot (session, files, chat, events, tree) |
 | `GET` | `/api/sessions/:id/events` | Event history |
@@ -226,7 +226,7 @@ What the Electron shell adds over the browser, and what packaging produces:
   the Windows shell never picks up the Linux-built `esbuild` in the root
   `node_modules`.
 - **The desktop shell and the browser are the same app.** Anything true in the
-  browser (Replay, the Daze Report, Agent Eggs) is true in the window, because
+  browser (Replay, the Absence Report, Agent Eggs) is true in the window, because
   it is the same web build talking to the same server over the same `/api` and
   `/ws`.
 
@@ -258,9 +258,9 @@ server's own path heuristic assumes a checkout layout.
 
 ## Local model
 
-DAZE only talks to Pi, and Pi talks to any OpenAI-compatible endpoint — so a local
+Absence only talks to Pi, and Pi talks to any OpenAI-compatible endpoint — so a local
 model works with no code changes and no separate launcher path. Example: Qwen3-4B
-served by `server_qwen.py`. The model server is started by hand, not by DAZE.
+served by `server_qwen.py`. The model server is started by hand, not by Absence.
 
 1. Start the model server.
 2. Register it with Pi in `~/.pi/agent/models.json`:
@@ -294,7 +294,7 @@ served by `server_qwen.py`. The model server is started by hand, not by DAZE.
    { "defaultProvider": "qwen-local", "defaultModel": "qwen3-4b" }
    ```
 
-4. Verify with `pi --list-models`, then start DAZE.
+4. Verify with `pi --list-models`, then start Absence.
 
 A 4B model is not reliable at choosing tools. `DAZE_PI_TOOLS` narrows the set
 (e.g. `DAZE_PI_TOOLS=read,bash,edit,write`), and the mock runtime is better for

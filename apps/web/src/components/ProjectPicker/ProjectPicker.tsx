@@ -92,7 +92,7 @@ export function ProjectPicker() {
       ) : null}
       <div className="w-full max-w-lg rounded-xl border border-desk-line bg-desk-panel p-6">
         <div className="flex items-baseline gap-3">
-          <h1 className="font-mono text-3xl tracking-tight text-desk-ink">DAZE</h1>
+          <h1 className="font-mono text-3xl tracking-tight text-desk-ink">ABSENCE</h1>
           <span className="text-xs text-desk-dim">发呆症</span>
         </div>
         <p className="mt-2 text-sm text-desk-dim">

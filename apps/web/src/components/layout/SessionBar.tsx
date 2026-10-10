@@ -32,7 +32,7 @@ export function SessionBar() {
         desktop ? "daze-drag rounded-none border-t-0 border-r-0 border-l-0 pr-0" : "py-2 rounded-lg",
       ].join(" ")}
     >
-      <span className="shrink-0 font-mono text-lg leading-none tracking-tight text-desk-ink">DAZE</span>
+      <span className="shrink-0 font-mono text-lg leading-none tracking-tight text-desk-ink">ABSENCE</span>
       <span className="shrink-0 font-mono text-xs text-desk-dim">{formatClock(Date.now())}</span>
 
       <span className="chip shrink-0">{session.id}</span>
@@ -41,7 +41,7 @@ export function SessionBar() {
         {session.projectPath}
       </span>
 
-      {/* Dead centre of the bar: the DAZE toggle. Ghosts the desk world over the
+      {/* Dead centre of the bar: the DAZE-mode toggle. Ghosts the desk world over the
           Stage's content page while it is on. */}
       <div className="pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center">
         <button
