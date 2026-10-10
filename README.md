@@ -287,6 +287,8 @@ port to the public internet.
   setup.
 - [docs/TESTING.md](docs/TESTING.md) — the acceptance check scripts and what
   each one pins down.
+- [docs/RELEASE_NOTES_v0.2.0.md](docs/RELEASE_NOTES_v0.2.0.md) — what v0.2.0
+  added: avatar skins, egg-filter profiles, the settings dialog.
 
 ## License
 
