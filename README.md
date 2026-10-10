@@ -225,14 +225,6 @@ command, anything else is a prompt. `/model`, `/thinking`, `/compact`,
 `/name`, `/session`, `/export [html|jsonl]`. Model switching is
 session-scoped; results are archived with the session and come back on resume.
 
-### Local model
-
-Absence talks to Pi, and Pi talks to any OpenAI-compatible endpoint — register a
-local server in `~/.pi/agent/models.json` and it works with no code changes
-(see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a worked example). A 4B
-model is not reliable at choosing tools; `ABSENCE_PI_TOOLS` narrows the set, and
-the mock runtime is better for exercising the UI.
-
 ## Security note
 
 The Absence server has **no authentication** and its API can list directories and
@@ -260,7 +252,7 @@ port to the public internet.
   attributed, and processes started around the shell (WMI, a scheduled task, a
   different pid namespace) are not seen yet.
 - The desk world's `DeskState` / `DeskItem` exist but are not yet driven by
-  events; Live2D for the avatar is a v0.3 item.
+  events.
 
 ## Documentation
 

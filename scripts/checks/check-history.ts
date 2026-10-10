@@ -50,7 +50,7 @@ async function collect(prompts: string[]): Promise<{ events: AbsenceEvent[]; sna
     await fetch(base + "/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectPath: "E:/0down/absence-demo", agent: "mock" }),
+      body: JSON.stringify({ projectPath: process.cwd(), agent: "mock" }),
     })
   ).json();
   const id = snap.session.id;
@@ -283,7 +283,7 @@ const run = async () => {
   useStageStore.getState().noteItem(agentItem); // agent read only lines 10–20
   await openUserFile("src/auth.ts");
   const userView = useStageStore.getState().userFile;
-  const truth = await fs.readFile("E:/0down/absence-demo/src/auth.ts", "utf8");
+  const truth = await fs.readFile("src/auth.ts", "utf8");
   assert(
     "left tree opens the whole file, not the read slice",
     userView?.payload.kind === "file" && userView.payload.content === truth,

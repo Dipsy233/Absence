@@ -6,9 +6,8 @@ title ABSENCE launcher
 rem ===========================================================================
 rem  ABSENCE one-click launcher
 rem
-rem  Builds the web app and starts the ABSENCE server, then opens the UI. There is
-rem  no local model server any more: Pi supplies the model, so ABSENCE needs no
-rem  separate inference process.
+rem  Builds the web app and starts the ABSENCE server, then opens the UI. Pi
+rem  supplies the model.
 rem
 rem  The web app is ALWAYS rebuilt. The frontend is compiled into dist/web at
 rem  the repo root, and the server only serves that directory — so a stale

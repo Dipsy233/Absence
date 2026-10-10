@@ -26,7 +26,7 @@ import { countDiff, eventPath, firstLine } from "./events";
 import { contiguousRanges, renderKnownLines } from "./knownLines";
 
 /**
- * The Absence Report engine (E:\0down\absence-demo\read.md).
+ * The Absence Report engine.
  *
  * Pure, deterministic reduction of a run's AbsenceEvents into facts, then into
  * prose. No LLM, no command parsing — it only reports what the observer saw.

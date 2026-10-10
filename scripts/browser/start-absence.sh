@@ -4,8 +4,8 @@
 #   scripts/browser/start-absence.sh            build and start
 #   scripts/browser/start-absence.sh check      dry run: report what would happen, start nothing
 #
-# Builds the web app and starts the ABSENCE server, then opens the UI. There is no
-# local model server: Pi supplies the model.
+# Builds the web app and starts the ABSENCE server, then opens the UI. Pi
+# supplies the model.
 #
 # The web app is ALWAYS rebuilt. The frontend is compiled into dist/web at the
 # repo root and the server only serves that directory, so a stale dist is what

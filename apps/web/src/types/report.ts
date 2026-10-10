@@ -4,7 +4,7 @@ import type { AgentStatus } from "@absence/core";
  * Absence Report — deterministic facts derived from a run's AbsenceEvents.
  *
  * No LLM, no command parsing: the report compresses the Activity the observer
- * already recorded. See `E:\0down\absence-demo\read.md`.
+ * already recorded.
  *
  * These are web-side view/derivation types (like types/history.ts and
  * types/replay.ts); the server never computes them.

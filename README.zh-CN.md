@@ -201,13 +201,6 @@ chat dock 兼作小终端：以 `/` 开头的行是命令，其他都是 prompt�
 `/thinking`、`/compact`、`/name`、`/session`、`/export [html|jsonl]`。切换
 模型是会话级的；结果随会话归档，恢复时会回来。
 
-### 本地模型
-
-Absence 只和 Pi 说话，Pi 和任何 OpenAI 兼容端点说话——在
-`~/.pi/agent/models.json` 里注册一个本地 server 就能用，不需要改代码（完整
-例子见 [docs/ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md)）。4B 的模型
-选工具并不可靠；`ABSENCE_PI_TOOLS` 可以收窄集合，练 UI 用 mock 运行时更合适。
-
 ## 安全提示
 
 Absence server **没有鉴权**，其 API 可以列出目录并读取配置的项目根下的文件。
@@ -230,14 +223,13 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
   进程一样被看见。快照回退有 ~0.5 秒的下限，从命令孤立的进程
   （命令返回后的 `npm run dev &`）不会被归属，agent *绕过* shell 启动的
   进程（WMI、计划任务、别的 pid namespace）暂时看不见。
-- 桌子世界的 `DeskState` / `DeskItem` 存在但尚未被事件驱动；头像的 Live2D
-  是 v0.3 的事项。
+- 桌子世界的 `DeskState` / `DeskItem` 存在但尚未被事件驱动。
 
 ## 文档
 
 - [docs/ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md) — 事件管道、进程
   观察与分类、仓库目录树、`AbsenceEvent` schema、HTTP/WS API、聊天命令、桌面
-  打包内部机制、本地模型配置。
+  打包内部机制。
 - [docs/TESTING.zh-CN.md](docs/TESTING.zh-CN.md) — 验收检查脚本及各自钉住的
   规则。
 
