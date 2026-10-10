@@ -28,10 +28,12 @@ export const TOOL_PRIOR = new Set([
   "docker", "docker.exe", "docker-compose", "docker-compose.exe",
   "podman", "podman.exe", "kubectl", "kubectl.exe", "helm", "helm.exe",
   "ctr", "crictl", "nerdctl", "docker-machine",
-  // Version/help/info queries — always short-lived, never a subject.
-  "git", "git.exe", "svn", "hg", "npm", "npm.cmd", "npx", "npx.cmd",
-  "yarn", "yarn.cmd", "pnpm", "pnpm.cmd", "pip", "pip3", "python", "python3",
-  "node", "cargo", "go", "rustc", "javac", "java",
+  // Version-control and archive/network/system helpers — always short-lived
+  // queries, never the subject of a command. (Language toolchain entry points
+  // such as npm/python/go are deliberately NOT here: `npm run dev` treats npm
+  // as the command's subject, and the workloads they run are judged by the
+  // structural rules instead.)
+  "git", "git.exe", "svn", "hg",
   "wget", "wget.exe", "curl", "curl.exe", "ping", "ping.exe",
   "ssh", "ssh.exe", "scp", "scp.exe", "rsync", "rsync.exe",
   "tar", "tar.exe", "zip", "zip.exe", "unzip", "unzip.exe", "gzip", "gunzip",

@@ -10,20 +10,20 @@
  */
 import fs from "node:fs/promises";
 import type { DazeEvent } from "@daze/core";
-import { buildHistory, pickRun, runEvents } from "../apps/web/src/lib/history";
+import { buildHistory, pickRun, runEvents } from "../../apps/web/src/lib/history";
 import {
   createStageItem,
   eventToActivityRow,
   eventToStageItem,
   lastStageAction,
   STAGE_EVENT_TYPES,
-} from "../apps/web/src/lib/events";
-import { EPHEMERAL_MS } from "../apps/server/src/process/classify";
-import { openKnownFile, openUserFile } from "../apps/web/src/lib/openFile";
-import { useStageStore } from "../apps/web/src/stores/stageStore";
-import { useSessionStore } from "../apps/web/src/stores/sessionStore";
-import { useFileStore } from "../apps/web/src/stores/fileStore";
-import { buildSnapshots, seek, timelineEnd, timelineStart } from "../apps/web/src/lib/replay";
+} from "../../apps/web/src/lib/events";
+import { EPHEMERAL_MS } from "../../apps/server/src/process/classify";
+import { openKnownFile, openUserFile } from "../../apps/web/src/lib/openFile";
+import { useStageStore } from "../../apps/web/src/stores/stageStore";
+import { useSessionStore } from "../../apps/web/src/stores/sessionStore";
+import { useFileStore } from "../../apps/web/src/stores/fileStore";
+import { buildSnapshots, seek, timelineEnd, timelineStart } from "../../apps/web/src/lib/replay";
 
 const port = process.env.DAZE_PORT ?? process.env.PORT ?? "8848";
 const base = `http://127.0.0.1:${port}`;

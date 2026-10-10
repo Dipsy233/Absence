@@ -426,6 +426,15 @@ under the path box unfolds the saved sessions — DAZE's own archives merged wit
 Pi's — newest first; typing a path filters it to that project, and clicking a row
 reopens that conversation.
 
+## Security note
+
+The Daze server has **no authentication** and its API can list directories and
+read files under the configured projects root. It binds to `127.0.0.1` by
+default, which is safe for the desktop app and for a personal machine. If you
+run it on a Linux server and reach it over the network, keep it on a trusted
+network or put it behind an authenticating reverse proxy — do not expose the
+port to the public internet.
+
 ### Desktop shell (native window)
 
 DAZE can run as a native app instead of a browser tab. `apps/desktop` is an
