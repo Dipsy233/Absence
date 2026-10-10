@@ -4,6 +4,12 @@ English | [中文](README.zh-CN.md)
 
 > AI moves fast. Humans watch.
 
+> AI is becoming overwhelmingly capable, and humans are slowly losing track of
+> what it does. We call this condition **Absence**.
+>
+> Absence helps you watch AI work, understand what happened, and eventually
+> surrender to AI domination.
+
 Absence is a real-time visualization observer for AI agents. It does not try to make
 an agent smarter — it lets a human *see* what the agent is doing.
 
