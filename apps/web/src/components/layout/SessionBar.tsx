@@ -55,7 +55,7 @@ export function SessionBar() {
               : "border-desk-line text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber",
           ].join(" ")}
         >
-          DAZE
+          ABSENCE
         </button>
       </div>
 
