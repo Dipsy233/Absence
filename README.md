@@ -40,6 +40,10 @@ avatar settling back to *listening*:
 
 ![Absence report view](docs/screenshots/absence-2.png)
 
+**The Absence Report in detail** — timeline, effects and evidence links:
+
+![Absence Report detail](docs/screenshots/report.png)
+
 ## Quick start
 
 Requirements: Node.js **22.19+** (24 tested) and npm. A configured Pi (run

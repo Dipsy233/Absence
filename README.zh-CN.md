@@ -36,6 +36,10 @@ Stage 把事件变成人可以看的东西。
 
 ![Absence 报告视图](docs/screenshots/absence-2.png)
 
+**Absence Report 细节** — 时间线、效果与证据链接：
+
+![Absence Report 细节](docs/screenshots/report.png)
+
 ## 快速开始
 
 环境要求：Node.js **22.19+**（测过 24）和 npm。一个配置好的 Pi（跑一次
