@@ -38,11 +38,25 @@ export function AgentEggsPanel() {
   // actually showing — so it is suppressed there rather than lying.
   const inReplay = useStageStore((s) => s.mode === "replay");
   const [filter, setFilter] = useState<EggFilter>("running");
+  const [query, setQuery] = useState("");
 
   const eggs = useMemo(() => primaryEggs(buildEggs(events)), [events]);
   const tools = useMemo(() => summarizeTools(buildEggs(events)), [events]);
   const counts = countEggs(eggs);
-  const shown = filterEggs(eggs, filter);
+  // The query narrows within the active tab: name, command line, the command
+  // that laid it, or the pid — case-insensitive, substring.
+  const shown = useMemo(() => {
+    const base = filterEggs(eggs, filter);
+    const q = query.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter(
+      (egg) =>
+        egg.name.toLowerCase().includes(q) ||
+        egg.commandLine.toLowerCase().includes(q) ||
+        (egg.command ?? "").toLowerCase().includes(q) ||
+        String(egg.pid).includes(q),
+    );
+  }, [eggs, filter, query]);
 
   const open = (egg: Egg) => {
     const item = eventToStageItem(egg.event);
@@ -77,11 +91,21 @@ export function AgentEggsPanel() {
         ))}
       </div>
 
+      <input
+        type="text"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="search name, command, pid…"
+        className="mb-2 w-full rounded border border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[11px] text-desk-ink placeholder:text-desk-dim/60 focus:border-desk-amber/60 focus:outline-none"
+      />
+
       {shown.length === 0 ? (
         <p className="text-xs text-desk-dim">
           {eggs.length === 0
             ? "No eggs yet. An egg is a process the agent left running — a dev server, a watcher."
-            : "Nothing here. Try another filter."}
+            : query.trim()
+              ? `No eggs match "${query.trim()}".`
+              : "Nothing here. Try another filter."}
         </p>
       ) : (
         <ul className="space-y-1">
