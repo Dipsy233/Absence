@@ -1,0 +1,325 @@
+# 架构
+
+DAZE 内部实现的深入文档。介绍与使用方法见 [README](../README.zh-CN.md)。
+
+```
+Browser ──WebSocket──▶ Daze Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
+   ▲                                                                     │
+   └──────────── DazeEvent stream (file_read / file_edit / command / …) ─┘
+```
+
+- `packages/core` — 共享的 `DazeEvent` + 领域类型。UI 认识的唯一词汇表；它
+  永远不会知道 Pi 的存在。
+- `apps/server` — Fastify + WebSocket。`PiAdapter` 包装 Pi SDK，把
+  `AgentSessionEvent` 映射成 `DazeEvent`；`MockAdapter` 不需要凭据就能回放
+  一段脚本化的运行；`chokidar` 监视项目的带外改动。**Daze 拥有 shell**：
+  `process/DazeShell` 包装 Pi 自己的本地 shell 操作，注册成自定义
+  `bash` / `powershell` 工具（自定义工具按名字遮蔽内建的，所以 `DAZE_PI_TOOLS`
+  不受影响）。Pi 照样执行每条命令——Daze 只拥有边界，正是这个边界告诉
+  `ProcessWatcher` 一条命令何时运行，并在它头部放一个唯一标记，让 Pi 为这条
+  命令生成的 shell（和它外面的启动器）能被精确识别，而不是靠名字或父进程链
+  去猜。`ProcessWatcher` 然后观察进程表。在 **Windows** 上它完全不采样：
+  `native/agentwatch` 是一个小 helper，把 server 放进一个 **Job Object**，
+  内核随后把每一次创建和退出实时上报。在 **Linux** 上它也不采样：
+  `native/agentwatch-linux` 挂三个 eBPF tracepoint
+  （`sched_process_fork/exec/exit` 外加 `sys_enter_execve` 拿 argv），从 ring
+  buffer 上报同样的事件。活 20 毫秒的进程在两边都看得见——轮询永远看不见。
+  在其他平台上，或 helper 启动不了时，观察器退回快照（Windows 上一次 CIM
+  查询，其他平台 `ps`）。一个进程是 egg，当它出现在某条命令的窗口内、且祖先
+  链能到 Daze；egg 报告在每棵新子树的根上，任何东西都不会被杀。
+  Eggs 然后**按行为分类，不按名字**（`process/classify.ts`，配合
+  `process/CommandIntent.ts` 解析命令自身的文本）。进程活得比命令久、会自己
+  生进程、是命令点名的主体（`./daemon.sh`、`python train.py`）、被命令放到
+  后台或重定向、或从工作区运行时，它是 `primary`。它来自工具目录，或者只是
+  *ephemeral*——几十毫秒内消失且没有孩子——时，它是 `tool`，这在不维护任何
+  目录清单的情况下抓到所有地方的帮手，比如 Pi 自己的 `fd.exe`。透明的启动器
+  （`nohup`、`setsid`、`time`、`env`）被穿透，它启动的孩子才是 egg。
+  `process/priors.ts` 里的名字先验只是平票时的裁决，从来不是判决——活得比
+  命令久的 `cat` 依然是 primary。eggs 面板列出 primary、把 tool 折成计数；
+  Activity 和 Report 应用同样的过滤。有一个平台差异对归属很重要：Linux 上
+  进程可以原地 `exec`，所以 `nohup node ticker.mjs` 在同一个 pid 下上报两次
+  ——一次是 `nohup`，一次是 `node`。所以 pid 单独不能表示"已处理过"；观察器
+  以 **(pid, 命令行)** 对为键，第二个事件按它本来的新进程来判。Pi 保留自己的
+  会话文件（这样对话可以恢复），Daze 把它观察到的 `DazeEvent` 流归档在旁边。
+- `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion。
+  面板是入口，Stage 是内容的归宿；Daze Report 和 Agent Eggs 都是对同一条事件
+  流的归约。
+
+```
+daze/                     npm workspaces: packages/*  apps/server  apps/web
+  dist/                   全部构建产物（git 忽略），一个地方：
+    web/                    构建好的 UI（apps/web → vite outDir）
+    desktop/build/          server bundle + 就位的生产 node_modules
+    desktop/release/        打包出的应用（便携目录 / 安装器）
+  tsconfig.base.json      strict, noUncheckedIndexedAccess
+  native/agentwatch/      Windows 进程观察器（Job Object，预编译随库提交）
+  native/agentwatch-linux/ Linux 进程观察器（eBPF，预编译随库提交）
+  start-daze.bat          以下启动器的转发快捷方式
+  start-daze-app.bat      （每个只有一行——真正的逻辑在被启动的代码那边，
+  start-daze.sh            不在根目录）
+  scripts/
+    browser/start-daze.bat  Windows 浏览器启动器
+    browser/start-daze.sh   Linux / WSL 浏览器启动器
+    checks/               check-*.ts 验收脚本
+    wsl-pi-config.sh      让 WSL 里的 pi 指向 Windows 宿主的模型服务
+
+apps/desktop/             Electron 外壳（不是 workspace；自己的 node_modules）
+  main.cjs                在进程内跑 server，开窗口，托盘
+  start-daze-app.bat      Windows 桌面启动器
+  assets/tray.png         托盘图标
+  scripts/                仅桌面使用的构建工具：
+    bundle-server.mjs       把 server + core 编成一个 CJS 文件
+    stage-desktop.mjs       打包 + 为打包安装生产依赖
+    make-icons.mjs          画 icon.png / icon.ico / tray.png
+
+packages/core/src/        events.ts（DazeEvent + payload map）  types.ts  index.ts
+
+apps/server/src/
+  agents/                 AgentAdapter.ts（运行时无关的边界）
+                          PiAdapter.ts  MockAdapter.ts  createAdapter.ts
+  process/                DazeShell.ts（拥有 shell）  ProcessWatcher.ts（eggs）
+                          ProcessTable.ts（pid / ppid / 命令行 / 启动时间）
+                          observer.ts（平台中立的事件形状）
+                          JobMonitor.ts + JobSidecar.ts（Windows 内核事件）
+                          EbpfObserver.ts（Linux 内核事件）
+                          CommandIntent.ts + classify.ts + priors.ts（primary/tool）
+  sessions/               SessionStore.ts  archive.ts（~/.daze/sessions）
+  filesystem/             FileTree.ts  FileWatcher.ts（chokidar）
+  events/                 EventBus.ts
+  websocket/ws.ts   api/{projects,sessions}.ts   util/{diff,ids,language,paths}.ts
+  config.ts  index.ts
+
+apps/web/src/
+  app/App.tsx
+  components/
+    layout/               外壳：SessionBar  LeftRail  Stage  RightRail
+    stage/                内容的去处：DeskStage  FileStage  DiffStage
+                          TerminalStage  ThoughtStage  ProcessStage
+                          StageWorld（桌子）  StageToolbar  ReplayBar
+                          StageItemView.tsx  ReportOverlay.tsx（Daze Report）
+    agent/                Avatar.tsx（Heti 角色）  AgentPanel.tsx
+                          AgentFolder.tsx  heti.css（生成）
+    eggs/                 AgentEggsPanel.tsx（primary；tool 折叠；running /
+                          dead / all）
+    files/  history/  activity/  chat/  ProjectPicker/  common/  Panel.tsx
+  stores/                 session  file  stage  replay  chat  ui  reset
+  hooks/                  useSessionSocket  useStage  useReplay  useNow
+  lib/                    events（事件 → Stage 项 / Activity 行）
+                          report（Daze Report 引擎）   eggs（进程 → eggs）
+                          replay  history  context  commands  agent  format  …
+  types/                  stage  history  replay  report  chat  file
+  index.css
+
+apps/web/public/heti/     头像的 PNG 部件（16：body, head, hair, ahoge,
+                          tail, hands, feet, 7 张脸）
+
+scripts/                  make-demo.mjs  wsl-pi-config.sh
+  browser/                start-daze.bat  start-daze.sh（浏览器启动器）
+  checks/                 check-history.ts  check-report.ts  check-eggs.ts
+                          check-classify.ts  check-agentwatch.ts  check-ebpf.ts
+                          gen-heti-css.mjs（重新生成头像样式表）
+```
+
+### 桌面外壳（原生窗口）
+
+DAZE 可以作为原生应用运行而不是浏览器标签页。`apps/desktop` 是一个 Electron
+外壳，以**独立进程**运行 server——没有 spawn 的子进程，没有控制台窗口，
+`port: 0` 让操作系统挑一个空闲端口，没有要配置的东西也不会冲突。窗口随后
+加载浏览器会加载的同一个构建好的 web 应用；UI 没有被分叉。
+
+```bash
+npm run build           # 外壳伺服 dist/web
+npm run desktop:install # 一次——安装 Electron（自己的 node_modules）
+npm run desktop         # 打开原生窗口
+npm run desktop:dev     # DevTools 开；Vite dev server 在时就用它
+```
+
+在 Windows 上，仓库根目录的 **`start-daze-app.bat`** 一键完成所有事
+（构建 → 缺外壳就装 → 开窗口）；加 `check` 是干跑。它只有一行，转发到
+`apps/desktop/start-daze-app.bat`，桌面启动器真正住在那里。浏览器启动器
+不变，对 WSL / eBPF 工作流仍然是正确的选择。
+
+外壳比浏览器多出的东西：一个没有地址栏和标签页的单窗口、没有原生标题栏——
+窗口由 `frame: false` 打开，最小化 / 最大化 / 关闭由页面自绘（`WindowControls`，
+经 preload 的 IPC 桥驱动真实窗口），顶栏就是拖拽区域、托盘图标、关到
+托盘让观察继续跑、没有端口。真正退出走托盘菜单（或 Ctrl+Q）；关窗口只是
+隐藏。
+
+三件需要知道的事：
+
+- **Electron 必须捆绑 Node ≥ 22.19。** Electron 带自己的 Node，被拥有的
+  运行时才是跑进程内 server 和 Pi 的东西——不是 `PATH` 上的 `node`。Pi 的包
+  声明 `engines.node >= 22.19`，并从 `node:fs` 导入 `globSync`，这只在
+  Node 22 之后存在。在旧的 Electron 上外壳能加载，然后静默退回 mock 运行时，
+  显示 `Pi runtime unavailable`。截至撰写，Electron **37.x 捆绑 Node
+  22.21.1**（Electron 33 捆绑 Node 20.18，太老）。升级 Electron 时，看发行
+  说明里捆绑的 Node，别只看版本号。
+- **Electron 单独安装**，装进 `apps/desktop/node_modules`（故意*不是*
+  workspace 成员）。它带自己的 `tsx` + esbuild，这样 Windows 外壳永远不会捡
+  到根 `node_modules` 里 Linux 构建的 esbuild——正是下面 WSL 一节警告的平台
+  分裂。
+- **桌面外壳和浏览器是同一个应用。** 浏览器里成立的（Replay、Daze Report、
+  Agent Eggs）在窗口里都成立，因为是同一个 web 构建、通过同样的 `/api` 和
+  `/ws` 对话同一个 server。
+
+窗口也反映 agent 在干什么：运行进行中标题变成
+`DAZE — <项目>（<状态>）`，运行结束回落到 `DAZE — idle`。运行结束而窗口没有
+焦点时，一条原生通知说明这件事。托盘 tooltip 显示有几个会话在跑。浏览器（和
+窗口）里 Daze 还会发声：两声铃，WebAudio API 合成，页面被交互过之前静音。
+**完成铃**在运行带着活动结束时响（中止不响）；**关注铃**在实时人工关注等级
+跨入或跨出 medium/high 时响——high 是急促的三声，medium 是柔和的两声。
+
+### 打包可分发的应用
+
+`apps/desktop/start-daze-app.bat` 从 checkout 运行外壳，这需要磁盘上有仓库、
+`node_modules` 和 `tsx`。要把 DAZE 变成能交给别人的东西——一个没有仓库、
+没有 Node 的安装器——用打包脚本：
+
+```bash
+npm run desktop:dist   # 构建 web、就位 server、产出安装器
+npm run desktop:pack   # 同样，但输出未打包目录（更快，没有安装器）
+```
+
+Windows 上会往 `dist/desktop/release/` 写一个 NSIS 安装器；Linux 是 AppImage，
+macOS 是 DMG。有三件生成的产物值得知道（都在 `apps/desktop/scripts/` 下，
+因为它们只属于桌面）：
+
+- **`bundle-server.mjs`** 把 DAZE 自己的 server（和 `@daze/core`）编成
+  `dist/desktop/build/server.cjs`。发货的应用没有 `tsx`，TypeScript 无法在
+  运行时加载。第三方包保持 *external*，从一个裁剪过的 `node_modules` 解析
+  ——尤其是 `@earendil-works/pi-coding-agent`，它带一个 `.wasm` 资产并动态
+  加载自己的部分，打包它会弄坏它。
+- **`stage-desktop.mjs`** 运行那个 bundle，并把 server 的生产依赖
+  （`npm install --omit=dev`）装进 `dist/desktop/build/node_modules`。它是
+  全新安装而不是过滤根 `node_modules`——后者在 checkout 同时被 WSL 和
+  Windows 使用时会把平台混在一起。结果就是 electron-builder 拷贝到
+  `resources/node_modules` 的东西。
+- **`make-icons.mjs`** 往 `apps/desktop/assets/` 画 `icon.png` / `icon.ico` /
+  `tray.png`——没有图像库，没有提交的二进制生成步骤。生成的图标还是提交的，
+  这样全新的 clone 不用这一步也能构建。
+
+打包后的应用在 `process.resourcesPath` 下找它的部件（见 `main.cjs`）：
+`apps/server-bundle.cjs`、`dist/web`、`node_modules`，以及 `native/` 下的
+原生 helper。原生观察器路径用 `DAZE_AGENTWATCH` / `DAZE_AGENTWATCH_LINUX`
+显式设置，因为 server 自己的路径启发假设的是 checkout 布局。
+
+## DazeEvent
+
+核心 UI 只认识一种结构：
+
+```ts
+type DazeEvent = {
+  id: string;
+  sessionId: string;
+  timestamp: number;
+  type:
+    | "agent_start" | "agent_end" | "message"   | "thinking"
+    | "tool_start"  | "tool_update" | "tool_end"
+    | "file_read"   | "file_write"  | "file_edit" | "file_change"
+    | "command"     | "search"      | "error";
+  payload: unknown;
+};
+```
+
+对原始 v0.1 规约的三个扩展：
+
+- **`search`** — Pi 的 `grep` / `find` / `ls`，所以搜索可见。它经终端视图渲染
+  （"agent 跑了点什么"只有一个输出面）。
+- **`file_change`** — 文件监视器的原始活动，给 agent 自己的工具（bash、
+  sed、…）之外的改动用。
+- **`process`** — agent 培育的一个 OS 进程，由进程观察器报告（见 Agent
+  Eggs）。
+
+上下文用量、状态、模型和文件树走单独的 `session_state` websocket 消息，所以
+事件联合保持干净。
+
+## HTTP / WS API
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| `GET` | `/api/projects` | 列出根目录下的项目（`?root=` 覆盖） |
+| `GET` | `/api/sessions/history` | 保存的会话（Daze 归档 + Pi），最新在前；`?path=` 过滤 |
+| `POST` | `/api/sessions` | `{ projectPath, agent?, resume? }` → 创建或重开会话 |
+| `GET` | `/api/sessions/:id` | 会话快照（session、files、chat、events、tree） |
+| `GET` | `/api/sessions/:id/events` | 事件历史 |
+| `GET` | `/api/sessions/:id/file?path=` | 读项目文件（用户视角） |
+| `POST` | `/api/sessions/:id/prompt` | `{ prompt }` → 发给 agent |
+| `POST` | `/api/sessions/:id/abort` | 打断运行 |
+| `GET` | `/api/sessions/:id/commands/:name/options` | 需要选择的命令的选项列表（`model`、`thinking`） |
+| `POST` | `/api/sessions/:id/command` | `{ name, args? }` → 执行聊天命令 |
+| `DELETE` | `/api/sessions/:id` | 释放会话 |
+| `WS` | `/ws/sessions/:id` | `{type:"snapshot"}` 然后 `{type:"event"}` / `{type:"session_state"}` |
+
+文件端点拒绝项目外的路径、拒绝非文件、上限 512 KB、拒绝二进制。
+
+## 聊天命令
+
+Stage 底部的 chat dock 兼作一个小终端。以 `/` 开头的行是命令；其他都是普通
+prompt。输入框左侧的 `/` 按钮在上方打开可过滤的面板——↑/↓ 移动，Enter 或
+点击执行，Esc 清除。
+
+| 命令 | 作用 |
+|---|---|
+| `/model [provider/id]` | 列出并切换模型 |
+| `/thinking [level]` | 显示或设置 thinking 级别 |
+| `/compact [instructions]` | 压缩会话上下文 |
+| `/name [name]` | 设置会话显示名 |
+| `/session` | 显示会话信息和统计 |
+| `/export [html\|jsonl]` | 把会话导出到 `~/.daze/exports/` |
+
+切换模型是**会话级**的——Pi 的全局默认不动。结果作为系统消息打印回聊天并随
+会话归档，所以恢复时会回来。
+
+命令经运行时无关的 `AgentAdapter` 分发，所以换一个运行时只需实现这几个方法
+（web UI 不变）。Pi 自己的内建斜杠命令住在它的交互式 TUI 里而不是 SDK，所以
+这些被映射到 SDK 调用（`setModel`、`setThinkingLevel`、`compact`、
+`setSessionName`、`getSessionStats`、`exportToHtml`/`exportToJsonl`）而不是
+委托给 Pi。
+
+## 本地模型
+
+DAZE 只和 Pi 说话，Pi 和任何 OpenAI 兼容端点说话——所以本地模型不需要改代码、
+不需要单独的启动路径。例：`E:\0down\ml\qwen3-4B` 里 `server_qwen.py` 伺服的
+Qwen3-4B（流式 + 工具调用）。模型 server 手动启动，不由 DAZE 启动。
+
+1. 启动模型 server：
+
+   ```bat
+   E:\0down\ml\qwen3-4B\serve_qwen.bat --port 8000
+   ```
+
+2. 在 `~/.pi/agent/models.json` 里向 Pi 注册：
+
+   ```json
+   {
+     "providers": {
+       "qwen-local": {
+         "baseUrl": "http://127.0.0.1:8000/v1",
+         "api": "openai-completions",
+         "apiKey": "local",
+         "models": [
+           {
+             "id": "qwen3-4b",
+             "name": "Qwen3 4B (local)",
+             "input": ["text"],
+             "contextWindow": 40960,
+             "maxTokens": 4096,
+             "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+             "compat": { "supportsDeveloperRole": false, "maxTokensField": "max_tokens" }
+           }
+         ]
+       }
+     }
+   }
+   ```
+
+3. （可选）在 `~/.pi/agent/settings.json` 里设为默认：
+
+   ```json
+   { "defaultProvider": "qwen-local", "defaultModel": "qwen3-4b" }
+   ```
+
+4. 用 `pi --list-models` 验证，然后启动 DAZE。
+
+4B 的模型选工具并不可靠。`DAZE_PI_TOOLS` 可以收窄集合（如
+`DAZE_PI_TOOLS=read,bash,edit,write`），练 UI 用 mock 运行时更合适。
