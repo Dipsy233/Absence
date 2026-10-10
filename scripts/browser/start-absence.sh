@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# DAZE one-click launcher for Linux and WSL.
+# ABSENCE one-click launcher for Linux and WSL.
 #
-#   scripts/browser/start-daze.sh            build and start
-#   scripts/browser/start-daze.sh check      dry run: report what would happen, start nothing
+#   scripts/browser/start-absence.sh            build and start
+#   scripts/browser/start-absence.sh check      dry run: report what would happen, start nothing
 #
-# Builds the web app and starts the DAZE server, then opens the UI. There is no
+# Builds the web app and starts the ABSENCE server, then opens the UI. There is no
 # local model server: Pi supplies the model.
 #
 # The web app is ALWAYS rebuilt. The frontend is compiled into dist/web at the
@@ -16,9 +16,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-DAZE_PORT="${DAZE_PORT:-8848}"
-DAZE_AGENT="${DAZE_AGENT:-pi}"
-DAZE_URL="http://127.0.0.1:${DAZE_PORT}/api/projects"
+ABSENCE_PORT="${ABSENCE_PORT:-8848}"
+ABSENCE_AGENT="${ABSENCE_AGENT:-pi}"
+ABSENCE_URL="http://127.0.0.1:${ABSENCE_PORT}/api/projects"
 
 DRY=0
 for arg in "$@"; do
@@ -26,11 +26,11 @@ for arg in "$@"; do
 done
 
 echo "============================================================"
-echo "  DAZE"
+echo "  ABSENCE"
 echo "------------------------------------------------------------"
 echo "  repo   : $(pwd)"
-echo "  agent  : ${DAZE_AGENT}"
-echo "  daze   : port ${DAZE_PORT}"
+echo "  agent  : ${ABSENCE_AGENT}"
+echo "  absence   : port ${ABSENCE_PORT}"
 [ "$DRY" = "1" ] && echo "  mode   : dry run - nothing will be started"
 echo "============================================================"
 echo
@@ -69,16 +69,16 @@ echo "[2/2] building web app ..."
 [ "$DRY" = "1" ] || npm run build
 
 # -------------------------------------------------------------------- server
-if curl -fsS -m 3 -o /dev/null "$DAZE_URL" 2>/dev/null; then
-	echo "[run] DAZE already running on port ${DAZE_PORT}"
+if curl -fsS -m 3 -o /dev/null "$ABSENCE_URL" 2>/dev/null; then
+	echo "[run] ABSENCE already running on port ${ABSENCE_PORT}"
 else
-	echo "[run] starting ABSENCE server ... agent=${DAZE_AGENT}"
+	echo "[run] starting ABSENCE server ... agent=${ABSENCE_AGENT}"
 	if [ "$DRY" = "1" ]; then
-		echo "      dry run: would run npm start with DAZE_AGENT=${DAZE_AGENT}"
+		echo "      dry run: would run npm start with ABSENCE_AGENT=${ABSENCE_AGENT}"
 	else
-		DAZE_AGENT="$DAZE_AGENT" nohup npm start >/tmp/daze-server.log 2>&1 &
+		ABSENCE_AGENT="$ABSENCE_AGENT" nohup npm start >/tmp/absence-server.log 2>&1 &
 		for _ in $(seq 1 60); do
-			if curl -fsS -m 3 -o /dev/null "$DAZE_URL" 2>/dev/null; then break; fi
+			if curl -fsS -m 3 -o /dev/null "$ABSENCE_URL" 2>/dev/null; then break; fi
 			sleep 1
 		done
 	fi
@@ -86,8 +86,8 @@ fi
 
 echo
 echo "============================================================"
-echo "  open   : http://localhost:${DAZE_PORT}"
-echo "  log    : /tmp/daze-server.log"
+echo "  open   : http://localhost:${ABSENCE_PORT}"
+echo "  log    : /tmp/absence-server.log"
 echo "============================================================"
 echo
 
@@ -95,9 +95,9 @@ echo
 
 # Open a browser when one is available (WSL: the Windows browser via wslview).
 if command -v wslview >/dev/null 2>&1; then
-	wslview "http://localhost:${DAZE_PORT}" >/dev/null 2>&1 || true
+	wslview "http://localhost:${ABSENCE_PORT}" >/dev/null 2>&1 || true
 elif command -v xdg-open >/dev/null 2>&1; then
-	xdg-open "http://localhost:${DAZE_PORT}" >/dev/null 2>&1 || true
+	xdg-open "http://localhost:${ABSENCE_PORT}" >/dev/null 2>&1 || true
 else
-	echo "Open http://localhost:${DAZE_PORT} in a browser."
+	echo "Open http://localhost:${ABSENCE_PORT} in a browser."
 fi

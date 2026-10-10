@@ -1,10 +1,10 @@
 // Preload for the frameless desktop window. The web UI renders its own
 // min/max/close; this bridge is the only thing it needs from the shell —
 // three one-way commands plus the maximize state. In a plain browser
-// `window.dazeDesktop` stays undefined and the UI hides the controls.
+// `window.absenceDesktop` stays undefined and the UI hides the controls.
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("dazeDesktop", {
+contextBridge.exposeInMainWorld("absenceDesktop", {
   minimize: () => ipcRenderer.send("desktop:minimize"),
   toggleMaximize: () => ipcRenderer.send("desktop:maximizeToggle"),
   close: () => ipcRenderer.send("desktop:close"),

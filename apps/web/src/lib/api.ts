@@ -1,4 +1,4 @@
-import type { CommandOption, Project, SessionHistoryEntry, SessionSnapshot } from "@daze/core";
+import type { CommandOption, Project, SessionHistoryEntry, SessionSnapshot } from "@absence/core";
 
 async function json<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -15,7 +15,7 @@ export async function fetchProjects(root?: string): Promise<Project[]> {
 
 /** What to reopen when resuming a persisted session. */
 export interface ResumeTarget {
-  dazeSessionId?: string;
+  absenceSessionId?: string;
   piSessionFile?: string;
   piSessionId?: string;
 }
@@ -38,7 +38,7 @@ export async function getSession(id: string): Promise<SessionSnapshot> {
   return json<SessionSnapshot>(await fetch(`/api/sessions/${id}`));
 }
 
-/** The persisted history (DAZE archives + Pi sessions), newest first. */
+/** The persisted history (ABSENCE archives + Pi sessions), newest first. */
 export async function fetchSessionHistory(path?: string): Promise<SessionHistoryEntry[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   return json<SessionHistoryEntry[]>(await fetch(`/api/sessions/history${query}`));

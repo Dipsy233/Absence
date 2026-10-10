@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Project, SessionHistoryEntry } from "@daze/core";
+import type { Project, SessionHistoryEntry } from "@absence/core";
 import { fetchProjects, fetchSessionHistory } from "../../lib/api";
 import { WindowControls } from "../common/WindowControls";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -85,8 +85,8 @@ export function ProjectPicker() {
     <div className="relative flex h-full items-center justify-center p-6">
       {/* Frameless desktop shell: a slim drag strip across the top carries the
           window controls; a plain browser tab renders neither. */}
-      {window.dazeDesktop ? (
-        <div className="daze-drag absolute inset-x-0 top-0 z-10 flex h-8 items-stretch justify-end">
+      {window.absenceDesktop ? (
+        <div className="absence-drag absolute inset-x-0 top-0 z-10 flex h-8 items-stretch justify-end">
           <WindowControls />
         </div>
       ) : null}
@@ -120,7 +120,7 @@ export function ProjectPicker() {
           </div>
         </div>
 
-        {/* History: persisted sessions (DAZE archives + Pi sessions), newest first */}
+        {/* History: persisted sessions (ABSENCE archives + Pi sessions), newest first */}
         <div className="mt-3">
           <button
             type="button"
@@ -151,7 +151,7 @@ export function ProjectPicker() {
                     type="button"
                     disabled={busy}
                     onClick={() => void resume(session)}
-                    title={`Resume ${session.piSessionFile ?? session.dazeSessionId ?? session.id}`}
+                    title={`Resume ${session.piSessionFile ?? session.absenceSessionId ?? session.id}`}
                     className="block w-full rounded border border-transparent px-2 py-1.5 text-left hover:border-desk-line hover:bg-desk-panel2 disabled:opacity-40"
                   >
                     <div className="flex items-baseline gap-2">

@@ -1,10 +1,10 @@
-import type { AgentStatus } from "@daze/core";
+import type { AgentStatus } from "@absence/core";
 
 /**
- * Daze Report — deterministic facts derived from a run's DazeEvents.
+ * Absence Report — deterministic facts derived from a run's AbsenceEvents.
  *
  * No LLM, no command parsing: the report compresses the Activity the observer
- * already recorded. See `E:\0down\daze-demo\read.md`.
+ * already recorded. See `E:\0down\absence-demo\read.md`.
  *
  * These are web-side view/derivation types (like types/history.ts and
  * types/replay.ts); the server never computes them.
@@ -49,7 +49,7 @@ export interface OutsideChangeFact {
 export interface Attention {
   level: AttentionLevel;
   reasons: AttentionReason[];
-  /** DazeEvent ids that justify the level (for a future "Why?" → Activity jump). */
+  /** AbsenceEvent ids that justify the level (for a future "Why?" → Activity jump). */
   evidence: string[];
 }
 
@@ -146,7 +146,7 @@ export type TimelineKind =
 /**
  * One node on the run's world line: an activity in the order it happened, plus
  * what it actually caused. The effect is read off the event stream only — a
- * command that started and never ended is "still running", but Daze never
+ * command that started and never ended is "still running", but Absence never
  * parses a command line to guess that it *meant* to start a server.
  */
 export interface TimelineNode {

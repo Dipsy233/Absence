@@ -1,4 +1,4 @@
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 import type { ChatContext } from "../types/chat";
 import { languageFromPath } from "./language";
 
@@ -67,7 +67,7 @@ export function diffContext(path: string, diff: string): ChatContext {
   return { type: "diff", path, content: diff, label: `${path} (diff)` };
 }
 
-export function eventContext(event: DazeEvent): ChatContext {
+export function eventContext(event: AbsenceEvent): ChatContext {
   return {
     type: "event",
     eventId: event.id,
@@ -76,7 +76,7 @@ export function eventContext(event: DazeEvent): ChatContext {
   };
 }
 
-export function summarizeEvent(event: DazeEvent): string {
+export function summarizeEvent(event: AbsenceEvent): string {
   switch (event.type) {
     case "file_read":
       return `read ${event.payload.path} lines ${event.payload.startLine}-${event.payload.endLine}`;

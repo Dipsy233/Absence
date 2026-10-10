@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { isAgentBusy } from "@daze/core";
+import { isAgentBusy } from "@absence/core";
 import { focusFor, useReplayItem, useStageView } from "../../hooks/useStage";
 import { useStageStore } from "../../stores/stageStore";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -20,7 +20,7 @@ import { ReportOverlay } from "../stage/ReportOverlay";
  *
  * The desk world (StageWorld) is the Stage's *default page* and is normally
  * drawn as the background, with FILE / DIFF / TERMINAL / LIVE riding on top of
- * it as a slightly translucent sheet. DAZE mode (the toggle in the session bar)
+ * it as a slightly translucent sheet. ABSENCE mode (the toggle in the session bar)
  * flips that: the desk — or the agent, when swapped — floats *in front of* the
  * content as a translucent ghost, and the page underneath becomes the sheet.
  */
@@ -31,7 +31,7 @@ export function Stage() {
   const liveStatus = useSessionStore((s) => s.agent.status);
   const replayStatus = useReplayStore((s) => s.view?.agentStatus);
   const agentOnStage = useUiStore((s) => s.agentOnStage);
-  const dazeMode = useUiStore((s) => s.dazeMode);
+  const absenceMode = useUiStore((s) => s.absenceMode);
 
   // While replaying, the Stage shows the reconstructed state of the run — the
   // agent's status is part of that, so the avatar must not keep following the
@@ -60,9 +60,9 @@ export function Stage() {
     content = <DeskStage status={status} />;
   }
 
-  // DAZE mode only means something while a content page is up; on the default
+  // ABSENCE mode only means something while a content page is up; on the default
   // desk page the world is already in front of nothing.
-  const ghost = dazeMode && sheet;
+  const ghost = absenceMode && sheet;
 
   return (
     <section className="panel min-h-0 flex-1">
@@ -70,7 +70,7 @@ export function Stage() {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="relative min-h-0 flex-1 overflow-hidden">
-          {/* The world (desk or agent): the background by default; in DAZE mode a
+          {/* The world (desk or agent): the background by default; in ABSENCE mode a
               translucent, click-through ghost in front of the content sheet. It
               stays below the chat (z-20) and the report (z-30/z-40). */}
           <div
@@ -107,7 +107,7 @@ export function Stage() {
           {/* Chat floats over the Stage — one input row, history only on the default page. */}
           <StageChat expanded={!sheet && mode !== "replay"} />
 
-          {/* The Daze Report tab + overlay, above the chat (z-30/z-40). */}
+          {/* The Absence Report tab + overlay, above the chat (z-30/z-40). */}
           <ReportOverlay />
         </div>
 
@@ -121,11 +121,11 @@ export function Stage() {
 /**
  * The translucent sheet FILE / DIFF / TERMINAL / LIVE sit on. The frame itself
  * does not fade, so live content crossfading inside never reveals the world.
- * In DAZE mode the ghost carries the translucency instead, so the page under it
+ * In ABSENCE mode the ghost carries the translucency instead, so the page under it
  * is drawn opaque and stays readable through the 60% ghost above it.
  */
 const SHEET =
-  "daze-overlay absolute inset-x-2 top-2 bottom-14 overflow-hidden rounded-lg border border-desk-line/70 shadow-[0_18px_50px_rgba(0,0,0,.45)]";
+  "absence-overlay absolute inset-x-2 top-2 bottom-14 overflow-hidden rounded-lg border border-desk-line/70 shadow-[0_18px_50px_rgba(0,0,0,.45)]";
 const sheetClass = (ghost: boolean) =>
   ghost ? `${SHEET} bg-desk-panel` : `${SHEET} bg-desk-panel/85 backdrop-blur-[3px]`;
 

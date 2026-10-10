@@ -108,7 +108,7 @@ export const THEMES: Record<ThemeId, DeskPalette> = {
 
 export const THEME_IDS: ThemeId[] = ["amber", "blue", "green"];
 
-const STORAGE_KEY = "daze.theme";
+const STORAGE_KEY = "absence.theme";
 
 /** Palette slot → CSS var suffix. */
 const VAR_SLOTS: Array<[keyof DeskPalette, string]> = [

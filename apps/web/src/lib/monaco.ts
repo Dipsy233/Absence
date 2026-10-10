@@ -19,9 +19,9 @@ import { loader } from "@monaco-editor/react";
 };
 
 // A low-contrast theme that follows the desk's palette. Not defined at module
-// load — main.tsx applies the stored theme, which defines "daze" before any
+// load — main.tsx applies the stored theme, which defines "absence" before any
 // editor mounts. Switching color themes re-defines and re-selects it.
-function dazeTheme(p: DeskPalette): monaco.editor.IStandaloneThemeData {
+function absenceTheme(p: DeskPalette): monaco.editor.IStandaloneThemeData {
   return {
     base: "vs-dark",
     inherit: true,
@@ -38,10 +38,10 @@ function dazeTheme(p: DeskPalette): monaco.editor.IStandaloneThemeData {
   };
 }
 
-/** Re-define the "daze" theme from a palette and refresh open editors. */
+/** Re-define the "absence" theme from a palette and refresh open editors. */
 export function applyMonacoTheme(p: DeskPalette): void {
-  monaco.editor.defineTheme("daze", dazeTheme(p));
-  monaco.editor.setTheme("daze");
+  monaco.editor.defineTheme("absence", absenceTheme(p));
+  monaco.editor.setTheme("absence");
 }
 
 loader.config({ monaco });

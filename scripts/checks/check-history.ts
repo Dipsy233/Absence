@@ -1,6 +1,6 @@
 /**
  * Offline check of the History / Replay logic using real events from a live
- * mock session (needs the DAZE server running).
+ * mock session (needs the ABSENCE server running).
  *
  *   npx tsx scripts/check-history.ts
  *
@@ -9,7 +9,7 @@
  * and that seeking anywhere in a run still shows an action.
  */
 import fs from "node:fs/promises";
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 import { buildHistory, pickRun, runEvents } from "../../apps/web/src/lib/history";
 import {
   createStageItem,
@@ -25,7 +25,7 @@ import { useSessionStore } from "../../apps/web/src/stores/sessionStore";
 import { useFileStore } from "../../apps/web/src/stores/fileStore";
 import { buildSnapshots, seek, timelineEnd, timelineStart } from "../../apps/web/src/lib/replay";
 
-const port = process.env.DAZE_PORT ?? process.env.PORT ?? "8848";
+const port = process.env.ABSENCE_PORT ?? process.env.PORT ?? "8848";
 const base = `http://127.0.0.1:${port}`;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -38,7 +38,7 @@ globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
   return nativeFetch(url as string, init);
 }) as typeof fetch;
 
-async function collect(prompts: string[]): Promise<{ events: DazeEvent[]; snapshot: any }> {
+async function collect(prompts: string[]): Promise<{ events: AbsenceEvent[]; snapshot: any }> {
   for (let i = 0; i < 40; i++) {
     try {
       if ((await fetch(base + "/api/projects")).ok) break;
@@ -50,13 +50,13 @@ async function collect(prompts: string[]): Promise<{ events: DazeEvent[]; snapsh
     await fetch(base + "/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectPath: "E:/0down/daze-demo", agent: "mock" }),
+      body: JSON.stringify({ projectPath: "E:/0down/absence-demo", agent: "mock" }),
     })
   ).json();
   const id = snap.session.id;
 
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/sessions/${id}`);
-  const events: DazeEvent[] = [];
+  const events: AbsenceEvent[] = [];
   ws.addEventListener("message", (raw: MessageEvent) => {
     const m = JSON.parse(String(raw.data));
     if (m.type === "event") events.push(m.event);
@@ -228,7 +228,7 @@ const run = async () => {
   useStageStore.getState().reset();
 
   // 8. the two FILE slots are independent, and a partial read stays partial
-  const partialRead: DazeEvent = {
+  const partialRead: AbsenceEvent = {
     id: "evt_partial_read",
     sessionId: "s",
     timestamp: Date.now(),
@@ -283,7 +283,7 @@ const run = async () => {
   useStageStore.getState().noteItem(agentItem); // agent read only lines 10–20
   await openUserFile("src/auth.ts");
   const userView = useStageStore.getState().userFile;
-  const truth = await fs.readFile("E:/0down/daze-demo/src/auth.ts", "utf8");
+  const truth = await fs.readFile("E:/0down/absence-demo/src/auth.ts", "utf8");
   assert(
     "left tree opens the whole file, not the read slice",
     userView?.payload.kind === "file" && userView.payload.content === truth,
@@ -296,7 +296,7 @@ const run = async () => {
 
   // 10. reads accumulate: the agent's context is the union of every read range
   useFileStore.getState().reset();
-  const readEvent = (startLine: number, endLine: number, content: string): DazeEvent => ({
+  const readEvent = (startLine: number, endLine: number, content: string): AbsenceEvent => ({
     id: `evt_read_${startLine}_${endLine}`,
     sessionId: "s",
     timestamp: Date.now(),
@@ -414,28 +414,28 @@ const run = async () => {
   );
 
   // 12. C counts the files created during a run
-  const userMessage = (n: number, content: string): DazeEvent => ({
+  const userMessage = (n: number, content: string): AbsenceEvent => ({
     id: `evt_u${n}`,
     sessionId: "s",
     timestamp: stamp(10 + n),
     type: "message",
     payload: { role: "user", content },
   });
-  const agentEnd = (n: number): DazeEvent => ({
+  const agentEnd = (n: number): AbsenceEvent => ({
     id: `evt_end${n}`,
     sessionId: "s",
     timestamp: stamp(20 + n),
     type: "agent_end",
     payload: { reason: "completed" },
   });
-  const write = (n: number, path: string): DazeEvent => ({
+  const write = (n: number, path: string): AbsenceEvent => ({
     id: `evt_wr${n}`,
     sessionId: "s",
     timestamp: stamp(30 + n),
     type: "file_write",
     payload: { path, content: "x" },
   });
-  const readOf = (n: number, path: string): DazeEvent => ({
+  const readOf = (n: number, path: string): AbsenceEvent => ({
     id: `evt_rd${n}`,
     sessionId: "s",
     timestamp: stamp(40 + n),
@@ -469,14 +469,14 @@ const run = async () => {
   // Pure checks: an instant `find` is plumbing — no Activity row, no Stage.
   // The raw event stays in the stream (counts, the report), only the views
   // filter it. A search without a recorded duration is never assumed instant.
-  const mk = (payload: Record<string, unknown>): DazeEvent =>
+  const mk = (payload: Record<string, unknown>): AbsenceEvent =>
     ({
       id: `evt_check_${Math.random().toString(36).slice(2, 8)}`,
       sessionId: "sess_check",
       timestamp: Date.now(),
       type: "search",
       payload,
-    }) as DazeEvent;
+    }) as AbsenceEvent;
   const instant = mk({ tool: "find", query: "*.ts", matches: 3, output: "", durationMs: 30 });
   const slow = mk({ tool: "find", query: "*.ts", matches: 300, output: "", durationMs: 2_000 });
   const grep = mk({ tool: "grep", query: "token", matches: 1, output: "", durationMs: 30 });
@@ -487,7 +487,7 @@ const run = async () => {
   assert("a slow find still owns the Stage", eventToStageItem(slow)?.type === "terminal");
   assert("a fast grep is not filtered (only find/ls are)", eventToActivityRow(grep)?.action === "SEARCH");
   assert("a find without a duration is kept", eventToActivityRow(legacy)?.action === "SEARCH");
-  // One standard across Daze: the search threshold IS the eggs classifier's.
+  // One standard across Absence: the search threshold IS the eggs classifier's.
   assert("the search threshold is the eggs EPHEMERAL_MS", EPHEMERAL_MS === 300);
 
   console.log(`\nsnapshots for run #1: ${snapshots.length}`);

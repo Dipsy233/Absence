@@ -25,7 +25,7 @@ export type ProcessTable = Map<number, ProcInfo>;
  * costs a few hundred ms, which is why the watcher never calls it on the agent's
  * hot path (see ProcessWatcher).
  *
- * The snapshot command's own process tree is removed from the result: Daze
+ * The snapshot command's own process tree is removed from the result: Absence
  * spawned it, and a process cannot help but observe itself.
  */
 export async function snapshotProcesses(): Promise<ProcessTable> {

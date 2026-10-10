@@ -1,8 +1,8 @@
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 import type { HistoryRun, RunCounts } from "../types/history";
 
 /** The file a stage-ish event refers to, if any. */
-function touchedPath(event: DazeEvent): string | undefined {
+function touchedPath(event: AbsenceEvent): string | undefined {
   switch (event.type) {
     case "file_read":
     case "file_write":
@@ -19,7 +19,7 @@ function touchedPath(event: DazeEvent): string | undefined {
  * A run starts at a user message and ends at `agent_end`; if a new user message
  * arrives first, the previous run was interrupted.
  */
-export function buildHistory(events: DazeEvent[]): HistoryRun[] {
+export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
   const runs: HistoryRun[] = [];
   /** Paths touched by earlier runs, so "created" means created *here*. */
   const touched = new Set<string>();
@@ -60,7 +60,7 @@ export function buildHistory(events: DazeEvent[]): HistoryRun[] {
   return runs;
 }
 
-function countRange(events: DazeEvent[], from: number, to: number, knownBefore: Set<string>): RunCounts {
+function countRange(events: AbsenceEvent[], from: number, to: number, knownBefore: Set<string>): RunCounts {
   const counts: RunCounts = { read: 0, search: 0, edit: 0, run: 0, created: 0 };
   const touched = new Set(knownBefore);
   const created = new Set<string>();
@@ -106,7 +106,7 @@ function countRange(events: DazeEvent[], from: number, to: number, knownBefore: 
 }
 
 /** The events belonging to a run. */
-export function runEvents(events: DazeEvent[], run: HistoryRun): DazeEvent[] {
+export function runEvents(events: AbsenceEvent[], run: HistoryRun): AbsenceEvent[] {
   return events.slice(run.fromIndex, run.toIndex + 1);
 }
 
@@ -124,9 +124,9 @@ export function pickRun(runs: HistoryRun[], selectedId: string | undefined): His
  * array on every event, so entries never go stale, and History / Activity / the
  * report all share one computation instead of each re-grouping the stream.
  */
-const historyCache = new WeakMap<DazeEvent[], HistoryRun[]>();
+const historyCache = new WeakMap<AbsenceEvent[], HistoryRun[]>();
 
-export function memoBuildHistory(events: DazeEvent[]): HistoryRun[] {
+export function memoBuildHistory(events: AbsenceEvent[]): HistoryRun[] {
   let runs = historyCache.get(events);
   if (!runs) {
     runs = buildHistory(events);

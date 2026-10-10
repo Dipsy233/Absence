@@ -16,7 +16,7 @@
 import type { CommandIntent } from "./CommandIntent";
 import { hasScriptExtension, TOOL_PRIOR } from "./priors";
 
-/** What Daze thinks a process is. */
+/** What Absence thinks a process is. */
 export type ProcessKind =
   /** A process worth tracking on its own: a daemon, server, script, build root. */
   | "primary"
@@ -42,7 +42,7 @@ export interface ClassifyInput {
   children: number;
   /** The pid of the process that started it. */
   ppid: number;
-  /** The pid of the shell Daze drove for this command, when known. */
+  /** The pid of the shell Absence drove for this command, when known. */
   shellPid?: number;
 }
 

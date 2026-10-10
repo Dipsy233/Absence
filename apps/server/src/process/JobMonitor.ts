@@ -28,8 +28,8 @@ export class JobMonitor {
   private constructor() {
     this.sidecar =
       process.platform === "linux"
-        ? new EbpfObserver({ exePath: process.env.DAZE_AGENTWATCH_LINUX })
-        : new JobSidecar({ exePath: process.env.DAZE_AGENTWATCH });
+        ? new EbpfObserver({ exePath: process.env.ABSENCE_AGENTWATCH_LINUX })
+        : new JobSidecar({ exePath: process.env.ABSENCE_AGENTWATCH });
     this.sidecar.on("start", (event) => this.fanOut(event as WatchStart));
     this.sidecar.on("exit", (event) => this.fanOut(event as WatchExit));
     this.sidecar.on("status", (status, detail) => {

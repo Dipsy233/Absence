@@ -1,8 +1,8 @@
-// Bundle the DAZE server for the packaged desktop app.
+// Bundle the ABSENCE server for the packaged desktop app.
 //
 // The desktop shell runs the server *in-process*. In a checkout it just lets
 // tsx load the TypeScript sources; a shipped app has no repo and no tsx, so we
-// pre-compile the server (and @daze/core, which it imports as TypeScript) into
+// pre-compile the server (and @absence/core, which it imports as TypeScript) into
 // one CommonJS file the Electron main process can `require` directly.
 //
 // Third-party packages stay external: `@earendil-works/pi-coding-agent` ships
@@ -50,19 +50,19 @@ await build({
   format: "cjs",
   sourcemap: false,
   logLevel: "info",
-  // Everything that is not DAZE's own source: resolved at runtime from the
-  // shipped node_modules / the package manager's hoisted tree. `@daze/core`
+  // Everything that is not ABSENCE's own source: resolved at runtime from the
+  // shipped node_modules / the package manager's hoisted tree. `@absence/core`
   // is our own TypeScript workspace package, so it is bundled, not external.
   packages: "external",
-  alias: { "@daze/core": path.join(repoRoot, "packages", "core", "src", "index.ts") },
+  alias: { "@absence/core": path.join(repoRoot, "packages", "core", "src", "index.ts") },
   // `import.meta.url` is used by config.ts and the native-helper path lookups;
   // a CJS bundle has no import.meta, so point it at the bundle file.
   define: {
-    "import.meta.url": "__DAZE_BUNDLE_URL__",
+    "import.meta.url": "__ABSENCE_BUNDLE_URL__",
   },
   banner: {
     js: [
-      'const __DAZE_BUNDLE_URL__ = require("node:url").pathToFileURL(__filename).href;',
+      'const __ABSENCE_BUNDLE_URL__ = require("node:url").pathToFileURL(__filename).href;',
     ].join("\n"),
   },
 });

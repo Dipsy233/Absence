@@ -1,4 +1,4 @@
-import type { AgentStatus } from "@daze/core";
+import type { AgentStatus } from "@absence/core";
 
 /** Mood drives the avatar; v0.3 can feed the same shape to Live2D (read02 §33). */
 export type AgentMood = "calm" | "focused" | "confused" | "busy" | "tired" | "happy";

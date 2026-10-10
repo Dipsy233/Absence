@@ -1,4 +1,4 @@
-import type { CommandOption } from "@daze/core";
+import type { CommandOption } from "@absence/core";
 
 /** How a command takes its argument. */
 export type CommandKind =

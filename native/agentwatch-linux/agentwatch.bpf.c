@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * agentwatch — the eBPF side of Linux process observation for Daze.
+ * agentwatch — the eBPF side of Linux process observation for Absence.
  *
- * Three tracepoints carry everything Daze needs, and none of them can be missed
+ * Three tracepoints carry everything Absence needs, and none of them can be missed
  * the way a poll can: the kernel calls them as the event happens.
  *
  *   sched_process_fork — the parent/child relationship, which is what lets a

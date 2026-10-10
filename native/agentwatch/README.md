@@ -1,6 +1,6 @@
 # agentwatch
 
-The Windows process observer Daze runs next to the server.
+The Windows process observer Absence runs next to the server.
 
 ## Why
 
@@ -41,7 +41,7 @@ everything those shells spawn are all in the job.
 ### Deliberate choices
 
 - **No `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.** If `agentwatch` dies, the server
-  and the agent's own daemons must keep running. Daze observes; it does not own.
+  and the agent's own daemons must keep running. Absence observes; it does not own.
 - **No `JOB_OBJECT_LIMIT_BREAKAWAY_OK`.** A descendant must not be able to leave
   the job and become invisible.
 - **One process, no PowerShell, no WMI, no administrator.** The job API needs no

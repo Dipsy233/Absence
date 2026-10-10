@@ -1,4 +1,4 @@
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 
 /**
  * One process the agent laid (v0.3). Folded from the session's `process` events,
@@ -10,7 +10,7 @@ export interface Egg {
   name: string;
   commandLine: string;
   status: "running" | "exited";
-  /** When Daze first saw it alive. */
+  /** When Absence first saw it alive. */
   startedAt: number;
   exitedAt?: number;
   /** Descendants rolled into this egg. */
@@ -22,7 +22,7 @@ export interface Egg {
   /** Why it was classified that way. */
   kindReason?: string;
   /** The event that last described it — what a click opens. */
-  event: DazeEvent;
+  event: AbsenceEvent;
 }
 
 /**
@@ -34,7 +34,7 @@ export interface Egg {
  * it. That is what keeps a command's `cat`, `grep` and `sleep` from burying the
  * one daemon it actually started.
  */
-export function buildEggs(events: DazeEvent[]): Egg[] {
+export function buildEggs(events: AbsenceEvent[]): Egg[] {
   const byPid = new Map<number, Egg>();
   for (const event of events) {
     if (event.type !== "process") continue;

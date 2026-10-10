@@ -5,7 +5,7 @@
  * Undefined in a plain browser tab — WindowControls keys off its presence.
  */
 interface Window {
-  dazeDesktop?: {
+  absenceDesktop?: {
     minimize: () => void;
     toggleMaximize: () => void;
     close: () => void;

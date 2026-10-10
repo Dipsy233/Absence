@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import type { Project } from "@daze/core";
+import type { Project } from "@absence/core";
 import { config } from "../config";
 import { isIgnoredDir } from "../filesystem/FileTree";
 import { toPosix } from "../util/paths";

@@ -50,17 +50,17 @@ npm start         # 单源——server 在 :8848 上伺服构建好的应用
 ### 一键启动器
 
 ```bat
-start-daze.bat            :: Windows——构建、启动 server、打开 UI
-start-daze.bat check      :: 干跑——报告会发生什么，什么都不启动
+start-absence.bat            :: Windows——构建、启动 server、打开 UI
+start-absence.bat check      :: 干跑——报告会发生什么，什么都不启动
 ```
 
 ```sh
-./start-daze.sh           # Linux / WSL——eBPF 观察器缺失时还会构建它
-./start-daze.sh check     # 干跑
+./start-absence.sh           # Linux / WSL——eBPF 观察器缺失时还会构建它
+./start-absence.sh check     # 干跑
 ```
 
 两者都是幂等的（已在监听的 server 不动），转发到 `scripts/browser/` 下的
-真正启动器。用 `DAZE_PORT` 和 `DAZE_AGENT` 覆盖端口/运行时。
+真正启动器。用 `ABSENCE_PORT` 和 `ABSENCE_AGENT` 覆盖端口/运行时。
 
 ### 桌面应用（Electron）
 
@@ -74,7 +74,7 @@ npm run desktop:pack      # 同样，但输出未打包目录（更快）
 
 桌面外壳在进程内运行 server——没有控制台窗口、`port: 0`、托盘图标、关到
 托盘让观察继续跑，运行结束而窗口没聚焦时有原生通知。窗口和浏览器是同一个
-web 应用；没有任何分叉。Windows 上 **`start-daze-app.bat`** 一键完成
+web 应用；没有任何分叉。Windows 上 **`start-absence-app.bat`** 一键完成
 构建 → 安装 → 打开。
 
 ### 在服务器上运行（Linux）
@@ -84,7 +84,7 @@ web 应用；没有任何分叉。Windows 上 **`start-daze-app.bat`** 一键完
 
 ```bash
 bash native/agentwatch-linux/build.sh        # 需要 clang + 内核头文件
-sudo ./start-daze.sh                          # root，或授予 capability：
+sudo ./start-absence.sh                          # root，或授予 capability：
 sudo setcap cap_bpf,cap_perfmon+ep native/agentwatch-linux/agentwatch-linux
 ```
 
@@ -101,7 +101,7 @@ npm install -g @earendil-works/pi-coding-agent
 
 并且要把 provider 指向 Windows 宿主（绑定在 Windows 回环上的模型 server
 从 WSL 里以 `127.0.0.1` 是够不到的）。`scripts/wsl-pi-config.sh` 拷贝
-Windows 的 `models.json` 并把主机改写成默认路由网关；`start-daze.sh` 每次
+Windows 的 `models.json` 并把主机改写成默认路由网关；`start-absence.sh` 每次
 启动都跑它，因为 WSL 重启后网关地址会变。
 
 > **与 Windows 共用 checkout：** `node_modules` 是平台相关的（esbuild 每个
@@ -180,12 +180,12 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
 |---|---|---|
 | `PORT` | `8848` | Server 端口 |
 | `HOST` | `127.0.0.1` | Server 主机 |
-| `DAZE_AGENT` | `pi` | 默认运行时：`pi` 或 `mock` |
-| `DAZE_PROJECTS_ROOT` | `~/projects` | 项目选择器列出的目录 |
-| `DAZE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | 启用的 Pi 内建工具。`bash` / `powershell` 由 Daze 自己的 shell 提供，这正是进程可被观察的原因 |
-| `DAZE_LOG_LEVEL` | `info` | Fastify 日志级别 |
-| `DAZE_STATE_DIR` | `~/.daze` | Daze 归档会话历史的位置 |
-| `DAZE_AGENTWATCH` / `DAZE_AGENTWATCH_LINUX` | 仓库 `native/` | 覆盖原生观察器二进制路径 |
+| `ABSENCE_AGENT` | `pi` | 默认运行时：`pi` 或 `mock` |
+| `ABSENCE_PROJECTS_ROOT` | `~/projects` | 项目选择器列出的目录 |
+| `ABSENCE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | 启用的 Pi 内建工具。`bash` / `powershell` 由 Absence 自己的 shell 提供，这正是进程可被观察的原因 |
+| `ABSENCE_LOG_LEVEL` | `info` | Fastify 日志级别 |
+| `ABSENCE_STATE_DIR` | `~/.absence` | Absence 归档会话历史的位置 |
+| `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | 仓库 `native/` | 覆盖原生观察器二进制路径 |
 
 ### 聊天命令
 
@@ -198,7 +198,7 @@ chat dock 兼作小终端：以 `/` 开头的行是命令，其他都是 prompt�
 Absence 只和 Pi 说话，Pi 和任何 OpenAI 兼容端点说话——在
 `~/.pi/agent/models.json` 里注册一个本地 server 就能用，不需要改代码（完整
 例子见 [docs/ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md)）。4B 的模型
-选工具并不可靠；`DAZE_PI_TOOLS` 可以收窄集合，练 UI 用 mock 运行时更合适。
+选工具并不可靠；`ABSENCE_PI_TOOLS` 可以收窄集合，练 UI 用 mock 运行时更合适。
 
 ## 安全提示
 
@@ -210,10 +210,10 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
 ## 注记与限制
 
 - 会话**持久化到磁盘**，重启后还在。Pi 把模型的对话放在
-  `~/.pi/agent/sessions/`；Absence 把 `DazeEvent` 流放在 `~/.daze/sessions/`
-  （用 `DAZE_STATE_DIR` 覆盖）。选择器的 **History** 两种都能重开。因为
+  `~/.pi/agent/sessions/`；Absence 把 `AbsenceEvent` 流放在 `~/.absence/sessions/`
+  （用 `ABSENCE_STATE_DIR` 覆盖）。选择器的 **History** 两种都能重开。因为
   `~` 是平台的家目录，**Windows 和 WSL 保存各自的历史**；把
-  `DAZE_STATE_DIR` 指到同一个共享路径可以合并——但绝不要两边同时对同一个
+  `ABSENCE_STATE_DIR` 指到同一个共享路径可以合并——但绝不要两边同时对同一个
   文件跑。
 - Pi **没有删除工具**——删除必须走 `bash rm`。当 agent 改为写入空内容时，
   文件是*被截断，不是被删除*，Absence 会标 **EMPTIED** 加字节数，让假删除一眼
@@ -228,7 +228,7 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
 ## 文档
 
 - [docs/ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md) — 事件管道、进程
-  观察与分类、仓库目录树、`DazeEvent` schema、HTTP/WS API、聊天命令、桌面
+  观察与分类、仓库目录树、`AbsenceEvent` schema、HTTP/WS API、聊天命令、桌面
   打包内部机制、本地模型配置。
 - [docs/TESTING.zh-CN.md](docs/TESTING.zh-CN.md) — 验收检查脚本及各自钉住的
   规则。

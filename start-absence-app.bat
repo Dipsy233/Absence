@@ -1,15 +1,15 @@
 @echo off
 chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
-title DAZE (desktop build)
+title ABSENCE (desktop build)
 
 rem ===========================================================================
-rem  DAZE desktop build
+rem  ABSENCE desktop build
 rem
 rem  One command that turns this checkout into a distributable desktop app.
 rem  Every artifact lands under dist\desktop\:
 rem
-rem    dist\desktop\build\server.cjs      DAZE's server + core, compiled to one
+rem    dist\desktop\build\server.cjs      ABSENCE's server + core, compiled to one
 rem                                       CJS file (no tsx needed at runtime)
 rem    dist\desktop\build\node_modules    the server's production deps only,
 rem                                       installed fresh for this platform
@@ -25,14 +25,14 @@ rem    3. server deps      apps/desktop run stage   -> dist\desktop\build\node_m
 rem    4. package          apps/desktop run dist    -> dist\desktop\release
 rem
 rem  Usage:
-rem    start-daze-app.bat          full build and package
-rem    start-daze-app.bat check    dry run - report what would happen, build nothing
-rem    start-daze-app.bat pack     same as full build, but skip the installer
+rem    start-absence-app.bat          full build and package
+rem    start-absence-app.bat check    dry run - report what would happen, build nothing
+rem    start-absence-app.bat pack     same as full build, but skip the installer
 rem                                (electron-builder --dir, faster; output is
 rem                                still dist\desktop\release\win-unpacked)
 rem
 rem  Env:
-rem    DAZE_SKIP_WEB=1   reuse the existing dist\web build (faster iteration)
+rem    ABSENCE_SKIP_WEB=1   reuse the existing dist\web build (faster iteration)
 rem ===========================================================================
 
 rem This script is at the repo root; resolve the absolute path.
@@ -46,7 +46,7 @@ if /i "%~1"=="check" set "DRY=1"
 if /i "%~1"=="pack"  set "DIRONLY=1"
 
 echo ============================================================
-echo   DAZE - desktop build
+echo   ABSENCE - desktop build
 echo ------------------------------------------------------------
 echo   repo    : %REPO%
 echo   output  : %REPO%\dist\desktop
@@ -85,8 +85,8 @@ if not exist "apps\desktop\node_modules\electron" (
 )
 
 rem ---------------------------------------------------------- 1/4 web app
-if defined DAZE_SKIP_WEB if exist "dist\web\index.html" (
-  echo [1/4] skipping the web build ^(DAZE_SKIP_WEB=1, dist\web present^)
+if defined ABSENCE_SKIP_WEB if exist "dist\web\index.html" (
+  echo [1/4] skipping the web build ^(ABSENCE_SKIP_WEB=1, dist\web present^)
   goto server_bundle
 )
 echo [1/4] building the web app ...
@@ -153,7 +153,7 @@ exit /b 0
 
 :fail
 echo.
-echo DAZE desktop build failed. See the messages above.
+echo ABSENCE desktop build failed. See the messages above.
 popd
 endlocal
 pause

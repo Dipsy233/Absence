@@ -1,12 +1,12 @@
 /**
- * Pure determinism checks for the Daze Report engine (no server required).
+ * Pure determinism checks for the Absence Report engine (no server required).
  *   npx tsx scripts/check-report.ts
  *
  * Pins the rules that are easy to get silently wrong: a failed tool emits no
  * `command` event, agent writes must not be double-counted as observed changes,
  * `created` is relative to earlier runs, and recovery must consume failures.
  */
-import { createEvent, type DazeEvent } from "@daze/core";
+import { createEvent, type AbsenceEvent } from "@absence/core";
 import { buildRunFacts, renderLive, renderRun } from "../../apps/web/src/lib/report";
 import type { HistoryRun } from "../../apps/web/src/types/history";
 
@@ -23,11 +23,11 @@ function check(label: string, condition: boolean): void {
 }
 
 const SID = "sess_check";
-const ev = <K extends DazeEvent["type"]>(type: K, payload: Extract<DazeEvent, { type: K }>["payload"]): DazeEvent =>
+const ev = <K extends AbsenceEvent["type"]>(type: K, payload: Extract<AbsenceEvent, { type: K }>["payload"]): AbsenceEvent =>
   createEvent(SID, type, payload);
 
 let clock = 0;
-function stamp<T extends DazeEvent>(event: T): T {
+function stamp<T extends AbsenceEvent>(event: T): T {
   clock += 10;
   (event as { timestamp: number }).timestamp = clock;
   return event;
@@ -40,7 +40,7 @@ const bashEnd = (id: string, isError = false) =>
 const cmd = (id: string, command: string, exitCode: number) =>
   stamp(ev("command", { command, stdout: "", stderr: "", exitCode }));
 
-function runOf(events: DazeEvent[], fromIndex: number, status: HistoryRun["status"] = "completed"): HistoryRun {
+function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["status"] = "completed"): HistoryRun {
   return {
     id: "run_x",
     index: 1,

@@ -1,7 +1,7 @@
 /**
- * Daze's two chimes, synthesised with the WebAudio API — no audio assets, and
+ * Absence's two chimes, synthesised with the WebAudio API — no audio assets, and
  * no sound until the user has interacted with the page (the browser's autoplay
- * policy is also the mute switch: Daze never asks, it just stays silent until
+ * policy is also the mute switch: Absence never asks, it just stays silent until
  * the page has been touched).
  *
  * - `attention`: the Human-attention level crossed a threshold — two rising

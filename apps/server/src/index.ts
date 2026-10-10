@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
-import { config, configure, type DazeConfig } from "./config";
+import { config, configure, type AbsenceConfig } from "./config";
 import { projectRoutes } from "./api/projects";
 import { sessionRoutes } from "./api/sessions";
 import { wsRoutes } from "./websocket/ws";
@@ -16,7 +16,7 @@ export interface StartServerOptions {
   /** Suppress Fastify's request logging (the desktop shell logs to its own file). */
   quiet?: boolean;
   /** Additional config overrides, applied before the server starts listening. */
-  config?: Partial<DazeConfig>;
+  config?: Partial<AbsenceConfig>;
 }
 
 export interface RunningServer {
@@ -30,14 +30,14 @@ export interface RunningServer {
 }
 
 /**
- * Build and start the Daze server. Used by both the CLI entry point below and
+ * Build and start the Absence server. Used by both the CLI entry point below and
  * the Electron desktop shell, which runs the server in-process instead of
  * spawning a child — so the app has one lifecycle and no stray console window.
  */
 export async function startServer(options: StartServerOptions = {}): Promise<RunningServer> {
   if (options.config) configure(options.config);
 
-  const app = Fastify({ logger: options.quiet ? false : { level: process.env.DAZE_LOG_LEVEL ?? "info" } });
+  const app = Fastify({ logger: options.quiet ? false : { level: process.env.ABSENCE_LOG_LEVEL ?? "info" } });
 
   // Start the kernel process observer before anything else is spawned. On
   // Windows this puts the server into a Job Object; on Linux it attaches eBPF
@@ -82,7 +82,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   const actualPort = typeof address === "object" && address ? address.port : port;
   const url = `http://${host}:${actualPort}`;
 
-  app.log.info(`DAZE server listening on ${url} (agent=${config.defaultAgent})`);
+  app.log.info(`ABSENCE server listening on ${url} (agent=${config.defaultAgent})`);
   app.log.info(`projects root: ${config.projectsRoot}`);
 
   return {
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
 const entry = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
 if (entry === import.meta.url) {
   main().catch((error) => {
-    console.error("DAZE server failed to start:", error);
+    console.error("ABSENCE server failed to start:", error);
     process.exit(1);
   });
 }

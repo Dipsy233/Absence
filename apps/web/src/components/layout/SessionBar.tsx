@@ -13,11 +13,11 @@ export function SessionBar() {
   const session = useSessionStore((s) => s.session);
   const context = useSessionStore((s) => s.context);
   const connected = useSessionStore((s) => s.connected);
-  const dazeMode = useUiStore((s) => s.dazeMode);
-  const toggleDazeMode = useUiStore((s) => s.toggleDazeMode);
+  const absenceMode = useUiStore((s) => s.absenceMode);
+  const toggleAbsenceMode = useUiStore((s) => s.toggleAbsenceMode);
   const theme = useUiStore((s) => s.theme);
   const cycleTheme = useUiStore((s) => s.cycleTheme);
-  const desktop = Boolean(window.dazeDesktop);
+  const desktop = Boolean(window.absenceDesktop);
 
   if (!session) return null;
 
@@ -29,7 +29,7 @@ export function SessionBar() {
     <header
       className={[
         "relative flex shrink-0 items-center gap-3 overflow-hidden border border-desk-line bg-desk-panel px-3",
-        desktop ? "daze-drag rounded-none border-t-0 border-r-0 border-l-0 pr-0" : "py-2 rounded-lg",
+        desktop ? "absence-drag rounded-none border-t-0 border-r-0 border-l-0 pr-0" : "py-2 rounded-lg",
       ].join(" ")}
     >
       <span className="shrink-0 font-mono text-lg leading-none tracking-tight text-desk-ink">ABSENCE</span>
@@ -41,16 +41,16 @@ export function SessionBar() {
         {session.projectPath}
       </span>
 
-      {/* Dead centre of the bar: the DAZE-mode toggle. Ghosts the desk world over the
+      {/* Dead centre of the bar: the ABSENCE-mode toggle. Ghosts the desk world over the
           Stage's content page while it is on. */}
       <div className="pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center">
         <button
           type="button"
-          onClick={toggleDazeMode}
+          onClick={toggleAbsenceMode}
           title="Float the desk over the Stage's content page as a translucent ghost"
           className={[
             "pointer-events-auto rounded border px-2 py-0.5 font-mono text-[11px] tracking-widest transition-colors",
-            dazeMode
+            absenceMode
               ? "border-desk-amber bg-desk-amber/10 text-desk-amber shadow-[0_0_12px_rgba(0,0,0,.3)]"
               : "border-desk-line text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber",
           ].join(" ")}

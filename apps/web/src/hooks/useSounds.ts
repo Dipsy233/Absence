@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import type { DazeEvent } from "@daze/core";
-import { isAgentBusy } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
+import { isAgentBusy } from "@absence/core";
 import type { AttentionLevel } from "../types/report";
 import { useSessionStore } from "../stores/sessionStore";
 import { playAttention, playComplete } from "../lib/sounds";
@@ -8,7 +8,7 @@ import { memoBuildHistory } from "../lib/history";
 import { buildRunFacts, renderLive } from "../lib/report";
 
 /**
- * Daze's voice, such as it is: two chimes hooked onto the event stream.
+ * Absence's voice, such as it is: two chimes hooked onto the event stream.
  *
  * - **attention change** — the live Human-attention level moved across a
  *   threshold (into, or out of, medium/high). Driven from a live reduction of
@@ -52,7 +52,7 @@ export function useSounds(): void {
 }
 
 /** Re-derive the live attention level for the newest run. */
-function liveAttentionLevel(events: DazeEvent[]): AttentionLevel {
+function liveAttentionLevel(events: AbsenceEvent[]): AttentionLevel {
   if (events.length === 0) return "none";
   const runs = memoBuildHistory(events);
   const run = runs[runs.length - 1];

@@ -1,5 +1,5 @@
 {
-  "name": "@daze/server",
+  "name": "@absence/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@daze/core": "*",
+    "@absence/core": "*",
     "@earendil-works/pi-coding-agent": "^1.0.2",
     "@fastify/static": "^8.0.4",
     "@fastify/websocket": "^11.0.2",

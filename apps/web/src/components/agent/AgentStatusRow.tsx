@@ -1,4 +1,4 @@
-import { isAgentBusy, type AgentStatus } from "@daze/core";
+import { isAgentBusy, type AgentStatus } from "@absence/core";
 import { statusLabel } from "../../lib/agent";
 
 /**

@@ -15,7 +15,7 @@ export default function App() {
   useSounds();
   // Inside the desktop shell the session bar is the frameless window's title
   // bar, so it must sit flush with the top edge.
-  const desktop = Boolean(window.dazeDesktop);
+  const desktop = Boolean(window.absenceDesktop);
 
   if (!session) {
     return (

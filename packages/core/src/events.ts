@@ -1,8 +1,8 @@
 /**
- * DazeEvent — the single data structure the whole UI understands.
+ * AbsenceEvent — the single data structure the whole UI understands.
  *
  * The core UI must never know about Pi. Everything is expressed as a
- * "DazeEvent": a description of "what just happened".
+ * "AbsenceEvent": a description of "what just happened".
  *
  * Note: this union is the read.md §8 list plus three small, documented
  * extensions — `search` (Pi's grep/find/ls, so searching is visible),
@@ -113,10 +113,10 @@ export interface ProcessPayload {
   name: string;
   commandLine: string;
   status: "running" | "exited";
-  /** When Daze first saw it alive — within a second of the real start. */
+  /** When Absence first saw it alive — within a second of the real start. */
   startedAt: number;
   exitedAt?: number;
-  /** Descendants rolled into this egg (Daze reports the roots only). */
+  /** Descendants rolled into this egg (Absence reports the roots only). */
   children: number;
   /** The shell command that laid it. */
   command?: string;
@@ -137,7 +137,7 @@ export interface ErrorPayload {
 /**
  * Maps each event type to its payload shape. Consumers narrow by `type`.
  */
-export interface DazeEventPayloadMap {
+export interface AbsenceEventPayloadMap {
   agent_start: AgentStartPayload;
   agent_end: AgentEndPayload;
   message: MessagePayload;
@@ -155,9 +155,9 @@ export interface DazeEventPayloadMap {
   error: ErrorPayload;
 }
 
-export type DazeEventType = keyof DazeEventPayloadMap;
+export type AbsenceEventType = keyof AbsenceEventPayloadMap;
 
-export const DAZE_EVENT_TYPES = [
+export const ABSENCE_EVENT_TYPES = [
   "agent_start",
   "agent_end",
   "message",
@@ -173,21 +173,21 @@ export const DAZE_EVENT_TYPES = [
   "search",
   "process",
   "error",
-] as const satisfies readonly DazeEventType[];
+] as const satisfies readonly AbsenceEventType[];
 
-/** Discriminated union of every DazeEvent. */
-export type DazeEvent = {
-  [K in DazeEventType]: {
+/** Discriminated union of every AbsenceEvent. */
+export type AbsenceEvent = {
+  [K in AbsenceEventType]: {
     id: string;
     sessionId: string;
     timestamp: number;
     type: K;
-    payload: DazeEventPayloadMap[K];
+    payload: AbsenceEventPayloadMap[K];
   };
-}[DazeEventType];
+}[AbsenceEventType];
 
-/** A DazeEvent of a specific type. */
-export type DazeEventOf<K extends DazeEventType> = Extract<DazeEvent, { type: K }>;
+/** A AbsenceEvent of a specific type. */
+export type AbsenceEventOf<K extends AbsenceEventType> = Extract<AbsenceEvent, { type: K }>;
 
 let counter = 0;
 
@@ -199,19 +199,19 @@ export function newEventId(): string {
 }
 
 /**
- * Create a fully-formed DazeEvent for a given type. The payload type is
+ * Create a fully-formed AbsenceEvent for a given type. The payload type is
  * enforced against the event type.
  */
-export function createEvent<K extends DazeEventType>(
+export function createEvent<K extends AbsenceEventType>(
   sessionId: string,
   type: K,
-  payload: DazeEventPayloadMap[K],
-): DazeEventOf<K> {
+  payload: AbsenceEventPayloadMap[K],
+): AbsenceEventOf<K> {
   return {
     id: newEventId(),
     sessionId,
     timestamp: Date.now(),
     type,
     payload,
-  } as DazeEventOf<K>;
+  } as AbsenceEventOf<K>;
 }

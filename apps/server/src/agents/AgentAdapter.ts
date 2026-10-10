@@ -2,18 +2,18 @@ import {
   createEvent,
   type CommandOption,
   type ContextState,
-  type DazeEvent,
-  type DazeEventPayloadMap,
-  type DazeEventType,
+  type AbsenceEvent,
+  type AbsenceEventPayloadMap,
+  type AbsenceEventType,
   type SessionStatsInfo,
-} from "@daze/core";
+} from "@absence/core";
 import type { ProcessWatcher } from "../process/ProcessWatcher";
 
 /**
  * The runtime-agnostic boundary (read.md §7).
  *
  * Every agent runtime — Pi today, anything later — is reduced to this
- * interface. The rest of Daze only ever sees DazeEvent.
+ * interface. The rest of Absence only ever sees AbsenceEvent.
  */
 export interface AgentStartContext {
   sessionId: string;
@@ -31,10 +31,10 @@ export interface AgentStartResult {
 
 /** Everything an adapter needs from the session that owns it. */
 export interface AdapterOptions {
-  /** Pi's built-in tool allowlist (`DAZE_PI_TOOLS`). */
+  /** Pi's built-in tool allowlist (`ABSENCE_PI_TOOLS`). */
   tools: string[];
   /**
-   * Present when Daze owns the shell (see process/DazeShell), so a process the
+   * Present when Absence owns the shell (see process/AbsenceShell), so a process the
    * agent leaves running can be reported back as a `process` event.
    */
   processWatcher?: ProcessWatcher;
@@ -46,7 +46,7 @@ export interface AgentAdapter {
   /** Resolves when the run finishes (matches Pi's prompt semantics). */
   prompt(text: string): Promise<void>;
   abort(): Promise<void>;
-  subscribe(fn: (event: DazeEvent) => void): () => void;
+  subscribe(fn: (event: AbsenceEvent) => void): () => void;
   /** Context window usage, or undefined when the runtime cannot report it. */
   getContextUsage(): ContextState | undefined;
   /** The runtime's own persisted session file, when it keeps one (Pi does). */
@@ -91,7 +91,7 @@ export abstract class BaseAdapter implements AgentAdapter {
   abstract readonly runtime: string;
   protected sessionId = "";
   protected cwd = "";
-  private subscribers = new Set<(event: DazeEvent) => void>();
+  private subscribers = new Set<(event: AbsenceEvent) => void>();
 
   abstract start(ctx: AgentStartContext): Promise<AgentStartResult>;
   abstract prompt(text: string): Promise<void>;
@@ -99,21 +99,21 @@ export abstract class BaseAdapter implements AgentAdapter {
   abstract getContextUsage(): ContextState | undefined;
   abstract dispose(): void;
 
-  subscribe(fn: (event: DazeEvent) => void): () => void {
+  subscribe(fn: (event: AbsenceEvent) => void): () => void {
     this.subscribers.add(fn);
     return () => {
       this.subscribers.delete(fn);
     };
   }
 
-  protected emit(event: DazeEvent): void {
+  protected emit(event: AbsenceEvent): void {
     for (const subscriber of this.subscribers) {
       subscriber(event);
     }
   }
 
-  /** Emit a DazeEvent for this session, with the payload type checked. */
-  protected emitDaze<K extends DazeEventType>(type: K, payload: DazeEventPayloadMap[K]): void {
+  /** Emit a AbsenceEvent for this session, with the payload type checked. */
+  protected emitAbsence<K extends AbsenceEventType>(type: K, payload: AbsenceEventPayloadMap[K]): void {
     this.emit(createEvent(this.sessionId, type, payload));
   }
 }

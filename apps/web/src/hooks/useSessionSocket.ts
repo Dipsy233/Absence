@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { DazeEvent, SessionRuntimeState, SessionSnapshot } from "@daze/core";
+import type { AbsenceEvent, SessionRuntimeState, SessionSnapshot } from "@absence/core";
 import { useSessionStore } from "../stores/sessionStore";
 import { useFileStore } from "../stores/fileStore";
 import { useChatStore } from "../stores/chatStore";
@@ -8,7 +8,7 @@ import { useUiStore } from "../stores/uiStore";
 
 type ServerMessage =
   | { type: "snapshot"; state: SessionSnapshot }
-  | { type: "event"; event: DazeEvent }
+  | { type: "event"; event: AbsenceEvent }
   | { type: "session_state"; state: SessionRuntimeState }
   | { type: "error"; message: string };
 

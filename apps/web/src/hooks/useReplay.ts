@@ -1,4 +1,4 @@
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 import { useReplayStore } from "../stores/replayStore";
 
 export interface ReplayClock {
@@ -16,7 +16,7 @@ export function useReplayClock(): ReplayClock {
   return computeClock(events, currentTime);
 }
 
-export function computeClock(events: DazeEvent[], currentTime: number): ReplayClock {
+export function computeClock(events: AbsenceEvent[], currentTime: number): ReplayClock {
   const start = events[0]?.timestamp ?? 0;
   const end = events[events.length - 1]?.timestamp ?? 0;
   const duration = Math.max(1, end - start);

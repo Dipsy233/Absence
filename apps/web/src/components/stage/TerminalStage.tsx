@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { eventContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 
 interface TerminalStageProps {
   command: string;
   stdout: string;
   stderr: string;
   exitCode: number;
-  event?: DazeEvent;
+  event?: AbsenceEvent;
 }
 
 export function TerminalStage({ command, stdout, stderr, exitCode, event }: TerminalStageProps) {

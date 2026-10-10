@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 import type { ReplaySpeed, ReplaySnapshot, ReplayStatus, ReplayView } from "../types/replay";
 import {
   buildSnapshots,
@@ -23,7 +23,7 @@ function clearTimer(): void {
 
 interface ReplayStore {
   /** The events of the run currently being replayed. */
-  events: DazeEvent[];
+  events: AbsenceEvent[];
   label?: string;
   snapshots: ReplaySnapshot[];
   status: ReplayStatus;
@@ -32,7 +32,7 @@ interface ReplayStore {
   view?: ReplayView;
 
   /** Load a run to replay. `startAtEnd` keeps the view at live instead. */
-  load: (events: DazeEvent[], options?: { startAtEnd?: boolean; label?: string }) => void;
+  load: (events: AbsenceEvent[], options?: { startAtEnd?: boolean; label?: string }) => void;
   play: () => void;
   pause: () => void;
   stop: () => void;
@@ -46,7 +46,7 @@ interface ReplayStore {
 
 export const useReplayStore = create<ReplayStore>((set, get) => {
   const empty = {
-    events: [] as DazeEvent[],
+    events: [] as AbsenceEvent[],
     label: undefined,
     snapshots: [] as ReplaySnapshot[],
     status: "idle" as ReplayStatus,

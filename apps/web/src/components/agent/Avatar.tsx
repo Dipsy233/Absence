@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { AgentStatus } from "@daze/core";
+import type { AgentStatus } from "@absence/core";
 import { type AgentVisualState } from "../../lib/agent";
 import { AgentStatusRow } from "./AgentStatusRow";
 import "./heti.css";
@@ -29,7 +29,7 @@ type HetiState =
   | "confuse"
   | "error";
 
-/** DAZE status → Heti pose (README §Agent status). */
+/** ABSENCE status → Heti pose (README §Agent status). */
 const STATE_FOR: Record<AgentStatus, HetiState> = {
   listening: "relax",
   thinking: "think",

@@ -6,7 +6,7 @@ import { applyTheme, readStoredTheme } from "./lib/theme";
 import "./index.css";
 
 // Apply the stored color theme before render: it sets the CSS vars the whole
-// UI derives from and defines Monaco's "daze" theme ahead of any editor.
+// UI derives from and defines Monaco's "absence" theme ahead of any editor.
 applyTheme(readStoredTheme());
 
 const container = document.getElementById("root");

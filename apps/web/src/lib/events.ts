@@ -1,11 +1,11 @@
-import type { AgentStatus, DazeEvent } from "@daze/core";
+import type { AgentStatus, AbsenceEvent } from "@absence/core";
 import type { ActivityRow, StageItem } from "../types/stage";
-import { EPHEMERAL_MS } from "@daze/server/src/process/classify";
+import { EPHEMERAL_MS } from "@absence/server/src/process/classify";
 import { formatBytes, formatClock } from "./format";
 import { languageFromPath } from "./language";
 
 /** Events worth showing in the Activity timeline (read02 §18). */
-export const ACTIVITY_TYPES = new Set<DazeEvent["type"]>([
+export const ACTIVITY_TYPES = new Set<AbsenceEvent["type"]>([
   "agent_start",
   "agent_end",
   "thinking",
@@ -20,7 +20,7 @@ export const ACTIVITY_TYPES = new Set<DazeEvent["type"]>([
 ]);
 
 /** Events that own the Stage. */
-export const STAGE_EVENT_TYPES = new Set<DazeEvent["type"]>([
+export const STAGE_EVENT_TYPES = new Set<AbsenceEvent["type"]>([
   "thinking",
   "file_read",
   "file_write",
@@ -33,15 +33,15 @@ export const STAGE_EVENT_TYPES = new Set<DazeEvent["type"]>([
  * A run ended, a new one started, or the agent began speaking: the Stage goes
  * back to its default page. Text to the user ends whatever action was showing.
  */
-export function clearsStage(event: DazeEvent): boolean {
+export function clearsStage(event: AbsenceEvent): boolean {
   if (event.type === "agent_end") return true;
-  // A system message is a Daze notice/command result, not the agent speaking,
+  // A system message is a Absence notice/command result, not the agent speaking,
   // so it must leave whatever the Stage is showing alone.
   return event.type === "message" && event.payload.role !== "system";
 }
 
 /** The action the Stage should still be showing, or undefined for the default page. */
-export function lastStageAction(events: DazeEvent[]): DazeEvent | undefined {
+export function lastStageAction(events: AbsenceEvent[]): AbsenceEvent | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!;
     if (clearsStage(event)) return undefined;
@@ -67,7 +67,7 @@ export function createStageItem(
 }
 
 /** The file a stage-ish event refers to, if any. */
-export function eventPath(event: DazeEvent | undefined): string | undefined {
+export function eventPath(event: AbsenceEvent | undefined): string | undefined {
   if (!event) return undefined;
   switch (event.type) {
     case "file_read":
@@ -81,7 +81,7 @@ export function eventPath(event: DazeEvent | undefined): string | undefined {
 }
 
 function baseItem(
-  event: DazeEvent,
+  event: AbsenceEvent,
   type: StageItem["type"],
   title: string,
   payload: StageItem["payload"],
@@ -106,12 +106,12 @@ function baseItem(
  * An instant search is plumbing, not an action worth a row: a `find` that
  * returned in a blink told the agent where a file is, which the file tree and
  * the report's counts already say. The threshold is the eggs classifier's own
- * `EPHEMERAL_MS` — one standard for "lived only a blink" across Daze, applied
+ * `EPHEMERAL_MS` — one standard for "lived only a blink" across Absence, applied
  * here to a search event's measured duration instead of a process's lifetime.
  * Below it the search stays in the raw stream (counts, report) but is filtered
  * out of Activity and the Stage.
  */
-export function isInstantSearch(event: DazeEvent): boolean {
+export function isInstantSearch(event: AbsenceEvent): boolean {
   if (event.type !== "search") return false;
   const { tool, durationMs } = event.payload;
   if (tool !== "find" && tool !== "ls") return false;
@@ -119,7 +119,7 @@ export function isInstantSearch(event: DazeEvent): boolean {
   return durationMs !== undefined && durationMs < EPHEMERAL_MS;
 }
 
-export function eventToStageItem(event: DazeEvent): StageItem | undefined {
+export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
   if (isInstantSearch(event)) return undefined;
   switch (event.type) {
     case "thinking": {
@@ -275,7 +275,7 @@ export function firstLine(text: string): string {
 }
 
 /** A compact, clickable row for the Activity panel. */
-export function eventToActivityRow(event: DazeEvent): ActivityRow | undefined {
+export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined {
   if (!ACTIVITY_TYPES.has(event.type)) return undefined;
   if (isInstantSearch(event)) return undefined;
   const id = event.id;
@@ -442,7 +442,7 @@ export function statusForTool(toolName: string): AgentStatus {
 }
 
 /** Derive agent status from a single event (used by the replay reconstruction). */
-export function statusFromEvent(event: DazeEvent): AgentStatus | undefined {
+export function statusFromEvent(event: AbsenceEvent): AgentStatus | undefined {
   switch (event.type) {
     case "agent_start":
       return "thinking";

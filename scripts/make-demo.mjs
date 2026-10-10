@@ -1,22 +1,22 @@
 /**
- * Scaffold a demo project for testing DAZE v0.2.
+ * Scaffold a demo project for testing ABSENCE v0.2.
  *
  *   node scripts/make-demo.mjs [targetDir] [--force]
  *
  * The generated project is deliberately shaped so that ordinary prompts
- * exercise every DAZE panel: file reads with line ranges, searches, repeated
+ * exercise every ABSENCE panel: file reads with line ranges, searches, repeated
  * edits to one file (File History / Replay), a runnable test script
  * (Terminal) and a TODO.md (Plan).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const target = path.resolve(process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : "E:/0down/daze-demo");
+const target = path.resolve(process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : "E:/0down/absence-demo");
 const force = process.argv.includes("--force");
 
 const files = {
   "package.json": `{
-  "name": "daze-demo",
+  "name": "absence-demo",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -26,17 +26,17 @@ const files = {
 }
 `,
 
-  "README.md": `# daze-demo
+  "README.md": `# absence-demo
 
-A small project used to test DAZE. Nothing here is important — it exists so the
+A small project used to test ABSENCE. Nothing here is important — it exists so the
 agent has something realistic to read, search, edit and run.
 
 - \`src/auth.ts\` holds the interesting logic (token refresh).
 - \`src/api.ts\` calls into auth.
-- \`TODO.md\` is what DAZE shows in the Plan panel.
+- \`TODO.md\` is what ABSENCE shows in the Plan panel.
 `,
 
-  "TODO.md": `# daze-demo TODO
+  "TODO.md": `# absence-demo TODO
 
 - [x] create the project
 - [x] add the auth module
@@ -171,7 +171,7 @@ test("isExpired is false for a future timestamp", () => {
   "notes.txt": `scratch notes
 
 - used to test file deletion vs. truncation
-- emptying this file should show EMPTIED in DAZE, not a delete
+- emptying this file should show EMPTIED in ABSENCE, not a delete
 `,
 };
 
@@ -198,5 +198,5 @@ console.log(`demo project: ${target}`);
 console.log(`  written: ${written}, skipped (already existed): ${skipped}`);
 if (skipped > 0 && !force) console.log("  pass --force to overwrite existing files");
 console.log("");
-console.log("Open it in DAZE with this path:");
+console.log("Open it in ABSENCE with this path:");
 console.log(`  ${target.replace(/\\/g, "/")}`);

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import type { SessionHistoryEntry } from "@daze/core";
+import type { SessionHistoryEntry } from "@absence/core";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentKind } from "../config";
 import { config } from "../config";
@@ -26,7 +26,7 @@ function resolveAgent(value: string | undefined): AgentKind {
 /** Session lifecycle API (read.md §31–32). */
 export async function sessionRoutes(app: FastifyInstance): Promise<void> {
   /**
-   * The persisted history: DAZE archives merged with Pi's session files, newest
+   * The persisted history: ABSENCE archives merged with Pi's session files, newest
    * first. `?path=` narrows it to one project. This is what survives a restart.
    */
   app.get("/api/sessions/history", async (request) => {
@@ -39,7 +39,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       | {
           projectPath?: string;
           agent?: string;
-          resume?: { dazeSessionId?: string; piSessionFile?: string; piSessionId?: string };
+          resume?: { absenceSessionId?: string; piSessionFile?: string; piSessionId?: string };
         }
       | undefined;
     const projectPath = body?.projectPath?.trim();
@@ -52,9 +52,9 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     }
     const raw = body?.resume;
     const resume =
-      raw && (raw.dazeSessionId || raw.piSessionFile)
+      raw && (raw.absenceSessionId || raw.piSessionFile)
         ? {
-            dazeSessionId: raw.dazeSessionId,
+            absenceSessionId: raw.absenceSessionId,
             piSessionFile: raw.piSessionFile,
             piSessionId: raw.piSessionId,
           }
@@ -163,9 +163,9 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 }
 
 /**
- * Merge DAZE's archives with Pi's own session files into one history list.
- * DAZE's archive wins on identity (it names the Pi session file); a Pi session
- * with no DAZE archive still appears, it just cannot restore the Stage.
+ * Merge ABSENCE's archives with Pi's own session files into one history list.
+ * ABSENCE's archive wins on identity (it names the Pi session file); a Pi session
+ * with no ABSENCE archive still appears, it just cannot restore the Stage.
  */
 async function sessionHistory(projectPath?: string): Promise<SessionHistoryEntry[]> {
   const entries = new Map<string, SessionHistoryEntry>();
@@ -173,10 +173,10 @@ async function sessionHistory(projectPath?: string): Promise<SessionHistoryEntry
 
   for (const meta of await listArchives(projectPath)) {
     if (meta.piSessionFile) seenPiFiles.add(meta.piSessionFile);
-    const key = meta.piSessionFile ? `pi:${meta.piSessionFile}` : `daze:${meta.dazeSessionId}`;
+    const key = meta.piSessionFile ? `pi:${meta.piSessionFile}` : `absence:${meta.absenceSessionId}`;
     entries.set(key, {
-      id: meta.dazeSessionId,
-      dazeSessionId: meta.dazeSessionId,
+      id: meta.absenceSessionId,
+      absenceSessionId: meta.absenceSessionId,
       piSessionFile: meta.piSessionFile,
       piSessionId: meta.piSessionId,
       projectPath: meta.projectPath,

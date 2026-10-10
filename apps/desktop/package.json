@@ -1,10 +1,10 @@
 {
-  "name": "@daze/desktop",
+  "name": "@absence/desktop",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DAZE desktop shell — runs the Daze server in-process and shows the UI in a native window.",
-  "author": "DAZE",
+  "description": "ABSENCE desktop shell — runs the Absence server in-process and shows the UI in a native window.",
+  "author": "ABSENCE",
   "license": "MIT",
   "main": "main.cjs",
   "scripts": {
@@ -22,8 +22,8 @@
     "tsx": "^4.19.2"
   },
   "build": {
-    "appId": "com.daze.observer",
-    "productName": "DAZE",
+    "appId": "com.absence.observer",
+    "productName": "Absence",
     "directories": {
       "output": "../../dist/desktop/release",
       "buildResources": "assets"

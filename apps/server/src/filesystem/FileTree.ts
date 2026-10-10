@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { FileTreeNode } from "@daze/core";
+import type { FileTreeNode } from "@absence/core";
 import { toPosix } from "../util/paths";
 
 const IGNORED_DIRS = new Set([

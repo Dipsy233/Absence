@@ -1,4 +1,4 @@
-import type { AgentStatus, DazeEvent } from "@daze/core";
+import type { AgentStatus, AbsenceEvent } from "@absence/core";
 
 /** Reconstructed file contents at a point in time. */
 export type FileMap = Record<string, string>;
@@ -12,14 +12,14 @@ export interface ReplaySnapshot {
   agentStatus: AgentStatus;
   /** What the Stage was showing at this point. Without it, a seek that lands on
    *  a snapshot with no later action would show an empty Stage. */
-  currentAction?: DazeEvent;
+  currentAction?: AbsenceEvent;
 }
 
 /** The state the Stage renders while in replay mode. */
 export interface ReplayView {
   files: FileMap;
   agentStatus: AgentStatus;
-  currentAction?: DazeEvent;
+  currentAction?: AbsenceEvent;
   appliedIndex: number;
   timestamp: number;
 }

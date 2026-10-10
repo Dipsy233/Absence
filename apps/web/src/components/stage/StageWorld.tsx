@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 /**
- * The desk world — ported from the `daze-table.html` prototype.
+ * The desk world — ported from the `absence-table.html` prototype.
  *
  * This is the Stage's *default page*: it is rendered as a persistent background
  * behind every other view, so FILE / DIFF / TERMINAL / LIVE appear as translucent
@@ -137,7 +137,7 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
   }, [focus]);
 
   const classes = [
-    "daze-world",
+    "absence-world",
     focus === "reading" ? "reading focus-paper" : "",
     focus === "editing" ? "editing focus-paper" : "",
     focus === "terminal" ? "focus-screen" : "",
@@ -148,21 +148,21 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
 
   return (
     <div ref={rootRef} className={classes} aria-hidden="true">
-      <div ref={cameraRef} className="daze-world__camera">
+      <div ref={cameraRef} className="absence-world__camera">
         <svg viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid meet">
           <defs>
             {/* The desk world is themed through CSS vars (src/lib/theme.ts);
                 SVG presentation attributes can't hold var(), so paints go on
                 style below. */}
-            <linearGradient id="dazeDeskGrad" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id="absenceDeskGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" style={{ stopColor: "rgb(var(--desk-surface-top))" }} />
               <stop offset="1" style={{ stopColor: "rgb(var(--desk-panel))" }} />
             </linearGradient>
-            <linearGradient id="dazeScreenGrad" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id="absenceScreenGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" style={{ stopColor: "rgb(var(--desk-screen-top))" }} />
               <stop offset="1" style={{ stopColor: "rgb(var(--desk-deep))" }} />
             </linearGradient>
-            <filter id="dazeSoftGlow">
+            <filter id="absenceSoftGlow">
               <feGaussianBlur stdDeviation="10" />
             </filter>
           </defs>
@@ -175,7 +175,7 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
               width="1130"
               height="690"
               rx="18"
-              fill="url(#dazeDeskGrad)"
+              fill="url(#absenceDeskGrad)"
               style={{ stroke: "rgb(var(--desk-line))" }}
             />
             <path
@@ -202,7 +202,7 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
               rx="12"
               style={{ fill: "rgb(var(--desk-panel2))", stroke: "rgb(var(--desk-line))" }}
             />
-            <rect x="748" y="110" width="294" height="198" rx="8" fill="url(#dazeScreenGrad)" />
+            <rect x="748" y="110" width="294" height="198" rx="8" fill="url(#absenceScreenGrad)" />
             <rect
               id="monitorGlow"
               x="748"
@@ -211,11 +211,11 @@ export function StageWorld({ focus = "desk" }: StageWorldProps) {
               height="198"
               rx="8"
               style={{ fill: "rgb(var(--desk-teal))" }}
-              filter="url(#dazeSoftGlow)"
+              filter="url(#absenceSoftGlow)"
             />
             <rect id="screenWake" x="748" y="110" width="294" height="198" rx="8" style={{ fill: "rgb(var(--desk-accent))" }} />
             <text x="766" y="148" style={{ fill: "rgb(var(--desk-teal))" }} fontSize={13} fontFamily="monospace">
-              $ daze-agent
+              $ absence-agent
             </text>
             <text id="termLine" ref={termLineRef} x="762" y="205" />
             <rect id="termCursor" ref={termCursorRef} x="762" y="189" width="10" height="18" rx="2" style={{ fill: "rgb(var(--desk-accent))" }} />

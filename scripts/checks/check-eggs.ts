@@ -5,10 +5,10 @@
  * The risky part of "Agent Eggs" is not the snapshot but the *attribution*: which
  * of the processes that appeared during a shell command are the agent's, and
  * which are just the rest of the machine. That logic is a pure function, so it is
- * pinned here — the command window, the ancestor chain, the marker Daze puts on
+ * pinned here — the command window, the ancestor chain, the marker Absence puts on
  * its own shells, and the orphan it refuses to guess about.
  */
-import { createEvent, type DazeEvent } from "@daze/core";
+import { createEvent, type AbsenceEvent } from "@absence/core";
 import { attributeProcesses, candidatePids } from "../../apps/server/src/process/ProcessWatcher";
 import type { ProcessTable } from "../../apps/server/src/process/ProcessTable";
 import { buildEggs, countEggs, filterEggs } from "../../apps/web/src/lib/eggs";
@@ -26,9 +26,9 @@ function check(label: string, condition: boolean, detail = ""): void {
 }
 
 const SERVER = 1000;
-const MARK = new Set(["daze-test"]);
-/** A command line carrying Daze's marker, as Pi's own shell does. */
-const MARKED = (cmd: string) => `bash -c "# daze-test\n${cmd}"`;
+const MARK = new Set(["absence-test"]);
+/** A command line carrying Absence's marker, as Pi's own shell does. */
+const MARKED = (cmd: string) => `bash -c "# absence-test\n${cmd}"`;
 
 /** `[pid, ppid, name, commandLine?]` rows → a process table. */
 function table(rows: [number, number, string, string?][], startedAt = 0): ProcessTable {
@@ -89,7 +89,7 @@ function table(rows: [number, number, string, string?][], startedAt = 0): Proces
   const { roots, claimed } = attributeProcesses(snapshot, [1001, 1002, 1003], new Set(), SERVER, MARK);
   check("a descendant of the server is ours", claimed.includes(1002));
   check("an unrelated process is not", !claimed.includes(1003));
-  check("the shell Daze drove is not an egg", !claimed.includes(1001));
+  check("the shell Absence drove is not an egg", !claimed.includes(1001));
   check("what it ran becomes the egg", roots.length === 1 && roots[0]?.pid === 1002);
   // A freshly started server is young enough to fall inside the first command's
   // window; claiming it swallowed everything the command spawned.
@@ -113,7 +113,7 @@ function table(rows: [number, number, string, string?][], startedAt = 0): Proces
   check("with its descendants rolled up", children.get(1002) === 2, `got ${children.get(1002)}`);
 }
 
-// D. the agent's own shell script is an egg — Daze's marker is what tells them apart.
+// D. the agent's own shell script is an egg — Absence's marker is what tells them apart.
 {
   const snapshot = table([
     [1000, 4, "node"],
@@ -192,7 +192,7 @@ function table(rows: [number, number, string, string?][], startedAt = 0): Proces
     startedAt: 2_000,
     children: 0,
   });
-  const events: DazeEvent[] = [laid, other, died];
+  const events: AbsenceEvent[] = [laid, other, died];
 
   const eggs = buildEggs(events);
   check("two pids fold into two eggs", eggs.length === 2, `got ${eggs.length}`);
@@ -206,7 +206,7 @@ function table(rows: [number, number, string, string?][], startedAt = 0): Proces
   check("the dead tab shows only exited eggs", filterEggs(eggs, "dead")[0]?.pid === 4242);
   check("the all tab shows everything", filterEggs(eggs, "all").length === 2);
 
-  const nonProcess: DazeEvent[] = [createEvent(SID, "message", { role: "assistant", content: "hi" })];
+  const nonProcess: AbsenceEvent[] = [createEvent(SID, "message", { role: "assistant", content: "hi" })];
   check("non-process events are ignored", buildEggs(nonProcess).length === 0);
 }
 

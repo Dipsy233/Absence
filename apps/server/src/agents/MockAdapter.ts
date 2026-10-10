@@ -5,13 +5,13 @@ import type { BashOperations } from "@earendil-works/pi-coding-agent";
 import {
   type CommandOption,
   type ContextState,
-  type DazeEvent,
-  type DazeEventPayloadMap,
-  type DazeEventType,
+  type AbsenceEvent,
+  type AbsenceEventPayloadMap,
+  type AbsenceEventType,
   type SessionStatsInfo,
-} from "@daze/core";
+} from "@absence/core";
 import { BaseAdapter, type AdapterOptions, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
-import { createDazeShell } from "../process/DazeShell";
+import { createAbsenceShell } from "../process/AbsenceShell";
 import { readFileSafe, scanCodeFiles } from "../filesystem/FileTree";
 import { unifiedDiff } from "../util/diff";
 import { languageFromPath } from "../util/language";
@@ -25,7 +25,7 @@ const PREFERRED = /(app|index|main|auth|api|server|client|utils|user|login|confi
  * It reads real files from the project so the Stage shows real content,
  * and paces events the way a real agent would.
  *
- * Its shell command is real too: it goes through the same Daze shell the Pi
+ * Its shell command is real too: it goes through the same Absence shell the Pi
  * runtime uses, so the process watcher reports eggs with no credentials needed.
  */
 export class MockAdapter extends BaseAdapter {
@@ -106,10 +106,10 @@ export class MockAdapter extends BaseAdapter {
   }
 
   async exportSession(format: "html" | "jsonl"): Promise<string> {
-    const dir = path.join(os.homedir(), ".daze", "exports");
+    const dir = path.join(os.homedir(), ".absence", "exports");
     await fs.mkdir(dir, { recursive: true });
     const file = path.join(dir, `${this.sessionId || "mock"}.${format}`);
-    await fs.writeFile(file, `DAZE mock export (${format}) for session ${this.sessionId}\n`, "utf-8");
+    await fs.writeFile(file, `ABSENCE mock export (${format}) for session ${this.sessionId}\n`, "utf-8");
     return file;
   }
 
@@ -117,11 +117,11 @@ export class MockAdapter extends BaseAdapter {
     return this.busy;
   }
 
-  /** Daze's shell when a watcher is present, else Pi's plain local shell. */
+  /** Absence's shell when a watcher is present, else Pi's plain local shell. */
   private async shellOperations(): Promise<BashOperations> {
     if (this.shell) return this.shell;
     if (this.options.processWatcher) {
-      this.shell = (await createDazeShell(this.options.processWatcher)).bash;
+      this.shell = (await createAbsenceShell(this.options.processWatcher)).bash;
     } else {
       const { createLocalBashOperations } = await import("@earendil-works/pi-coding-agent");
       this.shell = createLocalBashOperations();
@@ -149,8 +149,8 @@ export class MockAdapter extends BaseAdapter {
   async prompt(_text: string): Promise<void> {
     this.aborted = false;
     this.busy = true;
-    const emit = <K extends DazeEventType>(type: K, payload: DazeEventPayloadMap[K]) =>
-      this.emitDaze(type, payload);
+    const emit = <K extends AbsenceEventType>(type: K, payload: AbsenceEventPayloadMap[K]) =>
+      this.emitAbsence(type, payload);
 
     const bail = () => this.aborted;
 
@@ -235,8 +235,8 @@ export class MockAdapter extends BaseAdapter {
     // credentials — and both kinds of egg:
     //   • one left running (it exits on its own after a minute),
     //   • one that lives and dies *inside* the command, which is only visible
-    //     because Daze samples while the command is still running.
-    // Daze reports what the agent started; it never kills anything.
+    //     because Absence samples while the command is still running.
+    // Absence reports what the agent started; it never kills anything.
     const serverCommand = `(node -e "setTimeout(()=>{},60000)" &); node -e "setTimeout(()=>{},6000)"`;
     const serverId = "mock_bash_server";
     emit("tool_start", { toolCallId: serverId, toolName: "bash", args: { command: serverCommand } });
@@ -320,7 +320,7 @@ export class MockAdapter extends BaseAdapter {
 
   private finish(reason: string): void {
     this.busy = false;
-    this.emitDaze("agent_end", { reason });
+    this.emitAbsence("agent_end", { reason });
   }
 
   async abort(): Promise<void> {
@@ -343,8 +343,8 @@ function selectFiles(files: string[], count: number): string[] {
 function injectEdit(content: string, filePath: string, round = 1): string {
   const comment =
     languageFromPath(filePath) === "markdown"
-      ? `<!-- reviewed by daze · pass ${round} -->`
-      : `// reviewed by daze · pass ${round}`;
+      ? `<!-- reviewed by absence · pass ${round} -->`
+      : `// reviewed by absence · pass ${round}`;
   const lines = content.split("\n");
   const head = lines[0]?.startsWith("#!") ? 1 : 0;
   lines.splice(head, 0, comment);

@@ -1,4 +1,4 @@
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 import { eventContext } from "../../lib/context";
 import { formatOffset } from "../../lib/format";
 import { useChatStore } from "../../stores/chatStore";
@@ -13,13 +13,13 @@ interface ProcessStageProps {
   command?: string;
   startedAt: number;
   exitedAt?: number;
-  event?: DazeEvent;
+  event?: AbsenceEvent;
 }
 
 /**
  * One egg on the Stage (v0.3): a process the agent laid and left behind.
  *
- * Read-only by design — Daze reports what is running, it never kills it. This is
+ * Read-only by design — Absence reports what is running, it never kills it. This is
  * the one place where "the agent started a server" can be stated as an observed
  * fact: a process that outlived the shell command that spawned it.
  */

@@ -12,7 +12,7 @@ export function CodeView({ value, language }: CodeViewProps) {
       height="100%"
       language={language}
       value={value}
-      theme="daze"
+      theme="absence"
       loading={<div className="p-2 font-mono text-[10px] text-desk-dim">loading…</div>}
       options={{
         readOnly: true,

@@ -1,7 +1,7 @@
 /**
- * Shared domain types for Daze. Kept deliberately small for v0.1.
+ * Shared domain types for Absence. Kept deliberately small for v0.1.
  */
-import type { DazeEvent } from "./events";
+import type { AbsenceEvent } from "./events";
 
 /** The agent's coarse state — drives the Avatar and status text. */
 export type AgentStatus =
@@ -47,7 +47,7 @@ export interface Session {
   /**
    * How the OS processes the agent lays are being observed. "exact" means the
    * kernel reports each creation and exit (Windows Job Object); "sampled" means
-   * Daze polls, which can miss short-lived processes. Absent when monitoring is
+   * Absence polls, which can miss short-lived processes. Absent when monitoring is
    * not in use at all.
    */
   processPrecision?: "exact" | "sampled";
@@ -56,15 +56,15 @@ export interface Session {
 /**
  * One row in the persisted session history (GET /api/sessions/history).
  *
- * A row can come from two places and they are merged: DAZE's own events archive
+ * A row can come from two places and they are merged: ABSENCE's own events archive
  * (so the Stage, Activity and file history come back) and Pi's session file (so
  * the model's conversation is resumed). Either may be absent.
  */
 export interface SessionHistoryEntry {
   /** Stable key for the row. */
   id: string;
-  /** DAZE's archive id — resume restores events, files and chat. */
-  dazeSessionId?: string;
+  /** ABSENCE's archive id — resume restores events, files and chat. */
+  absenceSessionId?: string;
   /** Pi's session file — resume reconnects the model's conversation. */
   piSessionFile?: string;
   piSessionId?: string;
@@ -76,11 +76,11 @@ export interface SessionHistoryEntry {
   messageCount: number;
   firstPrompt?: string;
   runtime: "pi" | "mock" | string;
-  /** True when DAZE has an events archive on disk for this session. */
+  /** True when ABSENCE has an events archive on disk for this session. */
   archived: boolean;
 }
 
-/** Content Daze remembers about a file the agent has touched (read.md §26). */
+/** Content Absence remembers about a file the agent has touched (read.md §26). */
 export interface FileState {
   path: string;
   content: string;
@@ -142,15 +142,15 @@ export interface SessionStatsInfo {
 }
 
 /** The frontend's view of a session (read.md §12). */
-export interface DazeState {
+export interface AbsenceState {
   session: Session;
   agent: {
     status: AgentStatus;
     model?: string;
   };
-  currentAction?: DazeEvent;
+  currentAction?: AbsenceEvent;
   files: FileState[];
-  activity: DazeEvent[];
+  activity: AbsenceEvent[];
   chat: ChatMessage[];
   context?: ContextState;
   tree?: FileTreeNode;
@@ -169,8 +169,8 @@ export interface SessionRuntimeState {
 
 /** Response body of GET /api/sessions/:id. */
 export interface SessionSnapshot extends SessionRuntimeState {
-  currentAction?: DazeEvent;
+  currentAction?: AbsenceEvent;
   files: FileState[];
   chat: ChatMessage[];
-  events: DazeEvent[];
+  events: AbsenceEvent[];
 }

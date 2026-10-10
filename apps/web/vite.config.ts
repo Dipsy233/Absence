@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// The web app talks to the Daze server over /api and /ws. In dev we proxy
+// The web app talks to the Absence server over /api and /ws. In dev we proxy
 // both to the server so the browser sees a single origin.
 export default defineConfig({
   plugins: [react()],

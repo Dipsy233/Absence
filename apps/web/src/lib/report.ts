@@ -1,4 +1,4 @@
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 import type { HistoryRun } from "../types/history";
 import type {
   Attention,
@@ -26,9 +26,9 @@ import { countDiff, eventPath, firstLine } from "./events";
 import { contiguousRanges, renderKnownLines } from "./knownLines";
 
 /**
- * The Daze Report engine (E:\0down\daze-demo\read.md).
+ * The Absence Report engine (E:\0down\absence-demo\read.md).
  *
- * Pure, deterministic reduction of a run's DazeEvents into facts, then into
+ * Pure, deterministic reduction of a run's AbsenceEvents into facts, then into
  * prose. No LLM, no command parsing — it only reports what the observer saw.
  */
 
@@ -75,7 +75,7 @@ function orderedSet() {
   };
 }
 
-export function buildRunFacts(events: DazeEvent[], run: HistoryRun): RunFacts {
+export function buildRunFacts(events: AbsenceEvent[], run: HistoryRun): RunFacts {
   const slice = events.slice(run.fromIndex, run.toIndex + 1);
 
   // `created` means "new here": seed with every path seen before this run so a
@@ -600,7 +600,7 @@ function loopAttentionFor(loops: LoopFact[]): { level: AttentionLevel; reasons: 
  * is never parsed to guess that it *meant* to start a service.
  */
 function buildTimeline(
-  slice: DazeEvent[],
+  slice: AbsenceEvent[],
   run: HistoryRun,
   commandFacts: CommandFact[],
   agentChanged: Set<string>,
@@ -608,7 +608,7 @@ function buildTimeline(
 ): TimelineNode[] {
   const commandByEvent = new Map(commandFacts.map((command) => [command.eventId, command]));
   const nodes: TimelineNode[] = [];
-  const push = (event: DazeEvent, kind: TimelineKind, action: string, subject: string, effects: string[]) =>
+  const push = (event: AbsenceEvent, kind: TimelineKind, action: string, subject: string, effects: string[]) =>
     nodes.push({
       eventId: event.id,
       kind,
@@ -779,7 +779,7 @@ function buildPhases(signals: { kind: PhaseSignalKind; eventId: string; at: numb
  * A failure is "recovered" when a later successful command follows at least one
  * intervening event (doc §22). Each success consumes at most one failure.
  */
-function findRecoveries(commands: BuiltCommand[], slice: DazeEvent[]): Recovery[] {
+function findRecoveries(commands: BuiltCommand[], slice: AbsenceEvent[]): Recovery[] {
   const recoveries: Recovery[] = [];
   const pending: number[] = [];
   for (let index = 0; index < commands.length; index++) {

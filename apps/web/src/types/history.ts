@@ -1,4 +1,4 @@
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 
 /**
  * One "run": from the user's prompt until the agent finished replying or the
@@ -27,4 +27,4 @@ export interface RunCounts {
   created: number;
 }
 
-export type { DazeEvent };
+export type { AbsenceEvent };

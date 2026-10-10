@@ -4,7 +4,7 @@ import path from "node:path";
 
 export type AgentKind = "pi" | "mock";
 
-export interface DazeConfig {
+export interface AbsenceConfig {
   port: number;
   host: string;
   /** Directory whose subfolders are offered as projects. */
@@ -20,26 +20,26 @@ export interface DazeConfig {
 }
 
 function envAgent(): AgentKind {
-  const value = (process.env.DAZE_AGENT ?? "pi").toLowerCase();
+  const value = (process.env.ABSENCE_AGENT ?? "pi").toLowerCase();
   return value === "mock" ? "mock" : "pi";
 }
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 
-export const config: DazeConfig = {
+export const config: AbsenceConfig = {
   port: Number(process.env.PORT ?? 8848),
   host: process.env.HOST ?? "127.0.0.1",
-  projectsRoot: process.env.DAZE_PROJECTS_ROOT ?? path.join(os.homedir(), "projects"),
+  projectsRoot: process.env.ABSENCE_PROJECTS_ROOT ?? path.join(os.homedir(), "projects"),
   defaultAgent: envAgent(),
-  piTools: (process.env.DAZE_PI_TOOLS ?? "read,bash,edit,write,grep,find,ls")
+  piTools: (process.env.ABSENCE_PI_TOOLS ?? "read,bash,edit,write,grep,find,ls")
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean),
-  piModel: process.env.DAZE_PI_MODEL,
+  piModel: process.env.ABSENCE_PI_MODEL,
   // Built UI lives at the repo root under dist/web (see apps/web/vite.config.ts
-  // and the desktop staging script). Override with DAZE_WEB_DIST if hosting
+  // and the desktop staging script). Override with ABSENCE_WEB_DIST if hosting
   // elsewhere.
-  webDist: process.env.DAZE_WEB_DIST ?? path.join(repoRoot, "dist/web"),
+  webDist: process.env.ABSENCE_WEB_DIST ?? path.join(repoRoot, "dist/web"),
 };
 
 /**
@@ -49,7 +49,7 @@ export const config: DazeConfig = {
  * the server knowing who is hosting it. Everything else reads the same
  * singleton, so no call site changes.
  */
-export function configure(patch: Partial<DazeConfig>): DazeConfig {
+export function configure(patch: Partial<AbsenceConfig>): AbsenceConfig {
   Object.assign(config, patch);
   return config;
 }

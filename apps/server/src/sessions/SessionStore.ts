@@ -5,14 +5,14 @@ import {
   type ChatMessage,
   type CommandOption,
   type ContextState,
-  type DazeEvent,
+  type AbsenceEvent,
   type FileState,
   type FileTreeNode,
   type Session,
   type SessionRuntimeState,
   type SessionSnapshot,
   type SessionStatsInfo,
-} from "@daze/core";
+} from "@absence/core";
 import { config, type AgentKind } from "../config";
 import { appendEvents, drainArchive, readEvents, writeMeta } from "./archive";
 import { EventBus } from "../events";
@@ -29,7 +29,7 @@ import { toPosix } from "../util/paths";
 const MAX_EVENTS = 1000;
 
 /** Events that own the Stage. */
-const STAGE_TYPES = new Set<DazeEvent["type"]>([
+const STAGE_TYPES = new Set<AbsenceEvent["type"]>([
   "thinking",
   "file_read",
   "file_write",
@@ -41,9 +41,9 @@ const STAGE_TYPES = new Set<DazeEvent["type"]>([
 ]);
 
 /** Everything needed to reopen a session after it was closed or the server restarted. */
-export interface DazeResume {
-  /** DAZE's archive id — its events rebuild the Stage, Activity, files and chat. */
-  dazeSessionId?: string;
+export interface AbsenceResume {
+  /** ABSENCE's archive id — its events rebuild the Stage, Activity, files and chat. */
+  absenceSessionId?: string;
   /** Pi's session file — reopens the model's conversation. */
   piSessionFile?: string;
   piSessionId?: string;
@@ -52,21 +52,21 @@ export interface DazeResume {
 
 /**
  * One open workspace, observed (read.md §24). Live state is in memory; the
- * DazeEvent stream is also archived to disk, so a session survives a restart.
+ * AbsenceEvent stream is also archived to disk, so a session survives a restart.
  */
-export class DazeSession {
+export class AbsenceSession {
   readonly id: string;
-  readonly bus = new EventBus<DazeEvent>();
+  readonly bus = new EventBus<AbsenceEvent>();
   readonly stateBus = new EventBus<SessionRuntimeState>();
   readonly session: Session;
 
   private adapter: AgentAdapter;
   private watcher?: FileWatcher;
-  /** Reports the OS processes the agent lays; Daze owns the shell (v0.3). */
+  /** Reports the OS processes the agent lays; Absence owns the shell (v0.3). */
   private processWatcher: ProcessWatcher;
   private unsubAdapter?: () => void;
-  private events: DazeEvent[] = [];
-  private currentAction?: DazeEvent;
+  private events: AbsenceEvent[] = [];
+  private currentAction?: AbsenceEvent;
   private files = new Map<string, FileState>();
   private chat: ChatMessage[] = [];
   private context?: ContextState;
@@ -82,8 +82,8 @@ export class DazeSession {
   private treeTimer?: NodeJS.Timeout;
   private disposed = false;
 
-  constructor(projectPath: string, kind: AgentKind, private readonly resume?: DazeResume) {
-    this.id = resume?.dazeSessionId ?? newId("sess");
+  constructor(projectPath: string, kind: AgentKind, private readonly resume?: AbsenceResume) {
+    this.id = resume?.absenceSessionId ?? newId("sess");
     this.session = {
       id: this.id,
       projectPath,
@@ -110,9 +110,9 @@ export class DazeSession {
   }
 
   async start(): Promise<void> {
-    // Bring DAZE's own history back first, so the UI already has the Stage,
+    // Bring ABSENCE's own history back first, so the UI already has the Stage,
     // Activity, files and chat from before the restart.
-    const archiveId = this.resume?.dazeSessionId;
+    const archiveId = this.resume?.absenceSessionId;
     if (archiveId !== undefined) {
       const events = await readEvents(this.session.projectPath, archiveId);
       for (const event of events) this.applyToState(event);
@@ -280,7 +280,7 @@ export class DazeSession {
     }
   }
 
-  history(): DazeEvent[] {
+  history(): AbsenceEvent[] {
     return [...this.events];
   }
 
@@ -320,7 +320,7 @@ export class DazeSession {
 
   // --------------------------------------------------------------------------
 
-  private handleEvent(event: DazeEvent): void {
+  private handleEvent(event: AbsenceEvent): void {
     if (this.disposed) return;
     this.lastActiveAt = event.timestamp;
     this.events.push(event);
@@ -333,15 +333,15 @@ export class DazeSession {
     this.scheduleState();
   }
 
-  /** Used for events Daze itself originates (before the bus exists). */
-  private emitInternal(event: DazeEvent): void {
+  /** Used for events Absence itself originates (before the bus exists). */
+  private emitInternal(event: AbsenceEvent): void {
     this.events.push(event);
     this.bus.emit(event);
     this.persist(event);
   }
 
   /** Append to the on-disk archive and refresh its header (best-effort). */
-  private persist(event: DazeEvent): void {
+  private persist(event: AbsenceEvent): void {
     appendEvents(this.session.projectPath, this.id, [event]);
     this.scheduleMeta();
   }
@@ -357,7 +357,7 @@ export class DazeSession {
   private async flushMeta(): Promise<void> {
     await writeMeta(this.session.projectPath, {
       version: 1,
-      dazeSessionId: this.id,
+      absenceSessionId: this.id,
       projectPath: this.session.projectPath,
       projectName: this.session.projectName,
       startedAt: this.session.startedAt,
@@ -371,7 +371,7 @@ export class DazeSession {
     });
   }
 
-  private applyToState(event: DazeEvent): void {
+  private applyToState(event: AbsenceEvent): void {
     if (STAGE_TYPES.has(event.type)) {
       this.currentAction = event;
     }
@@ -396,7 +396,7 @@ export class DazeSession {
 
       case "message": {
         const payload = event.payload;
-        // A system message is Daze talking (a command result, a notice), not the
+        // A system message is Absence talking (a command result, a notice), not the
         // agent: it must not flip the avatar to "speaking" or clear the Stage.
         if (payload.role === "system") {
           this.chat.push({
@@ -619,24 +619,24 @@ function formatSessionStats(stats: SessionStatsInfo): string {
 
 /** In-memory registry of live sessions. */
 export class SessionStore {
-  private sessions = new Map<string, DazeSession>();
+  private sessions = new Map<string, AbsenceSession>();
 
-  async create(projectPath: string, kind: AgentKind, resume?: DazeResume): Promise<DazeSession> {
+  async create(projectPath: string, kind: AgentKind, resume?: AbsenceResume): Promise<AbsenceSession> {
     // Reopening a session that is still live just returns it.
-    const resumeId = resume?.dazeSessionId;
+    const resumeId = resume?.absenceSessionId;
     const existing = resumeId !== undefined ? this.sessions.get(resumeId) : undefined;
     if (existing) return existing;
-    const session = new DazeSession(projectPath, kind, resume);
+    const session = new AbsenceSession(projectPath, kind, resume);
     this.sessions.set(session.id, session);
     await session.start();
     return session;
   }
 
-  get(id: string): DazeSession | undefined {
+  get(id: string): AbsenceSession | undefined {
     return this.sessions.get(id);
   }
 
-  list(): DazeSession[] {
+  list(): AbsenceSession[] {
     return [...this.sessions.values()];
   }
 

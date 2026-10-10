@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { WatchExit, WatchStart, WatchStatus } from "./observer";
 
 /**
- * The Windows process observer: the Daze-side half of `native/agentwatch`.
+ * The Windows process observer: the Absence-side half of `native/agentwatch`.
  *
  * `WatchStart`, `WatchExit` and `WatchStatus` are the platform-neutral shapes
  * from `observer.ts`; the Linux observer emits the same ones.
@@ -22,7 +22,7 @@ export interface SidecarEvents {
 type Listener<K extends keyof SidecarEvents> = SidecarEvents[K];
 
 /**
- * The Daze-side half of `native/agentwatch`. It starts the helper, hands it the
+ * The Absence-side half of `native/agentwatch`. It starts the helper, hands it the
  * server's pid so the server itself is placed in a Job Object, and republishes
  * every process creation and exit the kernel reports.
  *
@@ -236,7 +236,7 @@ function numberOrUndefined(value: unknown): number | undefined {
  * committed next to its source rather than copied into the build output.
  */
 function defaultExePath(): string {
-  if (process.env.DAZE_AGENTWATCH) return process.env.DAZE_AGENTWATCH;
+  if (process.env.ABSENCE_AGENTWATCH) return process.env.ABSENCE_AGENTWATCH;
   const base = path.dirname(fileURLToPath(import.meta.url));
   // apps/server/src/process → repo root
   const repoRoot = path.resolve(base, "../../../..");

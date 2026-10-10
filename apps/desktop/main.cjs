@@ -1,4 +1,4 @@
-// ABSENCE desktop shell (project DAZE → renamed Absence).
+// ABSENCE desktop shell (project ABSENCE → renamed Absence).
 //
 // The server runs *in this process* (not a spawned child), so the app has one
 // lifecycle: closing the window can stop the server, and there is never a
@@ -53,7 +53,7 @@ function logLine(message) {
 }
 
 /**
- * Load the DAZE server module — the compiled bundle when packaged, the
+ * Load the ABSENCE server module — the compiled bundle when packaged, the
  * TypeScript sources via tsx in a checkout. Both cases return the same object
  * shape (`{ startServer, sessionStore }`) so callers never branch.
  */
@@ -161,11 +161,11 @@ async function startEmbeddedServer() {
     const nativeRoot = path.join(RESOURCES_ROOT, "native");
     const winHelper = path.join(nativeRoot, "agentwatch", "agentwatch.exe");
     const linuxHelper = path.join(nativeRoot, "agentwatch-linux", "agentwatch-linux");
-    if (fs.existsSync(winHelper) && !process.env.DAZE_AGENTWATCH) {
-      process.env.DAZE_AGENTWATCH = winHelper;
+    if (fs.existsSync(winHelper) && !process.env.ABSENCE_AGENTWATCH) {
+      process.env.ABSENCE_AGENTWATCH = winHelper;
     }
-    if (fs.existsSync(linuxHelper) && !process.env.DAZE_AGENTWATCH_LINUX) {
-      process.env.DAZE_AGENTWATCH_LINUX = linuxHelper;
+    if (fs.existsSync(linuxHelper) && !process.env.ABSENCE_AGENTWATCH_LINUX) {
+      process.env.ABSENCE_AGENTWATCH_LINUX = linuxHelper;
     }
   } else if (!fs.existsSync(serverEntry)) {
     throw new Error(`server entry not found: ${serverEntry}`);
@@ -181,12 +181,12 @@ async function startEmbeddedServer() {
 }
 
 /**
- * True when *a DAZE* Vite dev server is listening on the proxy port.
+ * True when *a ABSENCE* Vite dev server is listening on the proxy port.
  *
  * A bare `HEAD /` would happily connect to any Vite project that happens to
  * own 5173. Instead we ask the embedded server's own `/api/projects` — which
  * Vite proxies — and only accept the answer if it is a JSON array, the shape
- * only DAZE's route returns. A foreign Vite answers that path with its SPA
+ * only ABSENCE's route returns. A foreign Vite answers that path with its SPA
  * fallback HTML, so `res.ok` is true but the body is not an array, and we
  * correctly fall back to the built assets.
  */

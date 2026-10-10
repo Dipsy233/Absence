@@ -55,8 +55,8 @@ export function FileStage({
               },
               options: {
                 isWholeLine: true,
-                className: "daze-line-hl",
-                linesDecorationsClassName: "daze-line-badge",
+                className: "absence-line-hl",
+                linesDecorationsClassName: "absence-line-badge",
               },
             },
           ]
@@ -103,15 +103,15 @@ export function FileStage({
           height="100%"
           language={language}
           value={content}
-          theme="daze"
+          theme="absence"
           loading={<div className="p-4 font-mono text-xs text-desk-dim">loading editor…</div>}
           onMount={(editor) => {
             editorRef.current = editor;
             applyDecorations();
             editor.addAction({
-              id: "daze.addSelectionToChat",
+              id: "absence.addSelectionToChat",
               label: "Add selection to Chat",
-              contextMenuGroupId: "z_daze",
+              contextMenuGroupId: "z_absence",
               contextMenuOrder: 1,
               run: (instance) => {
                 const model = instance.getModel();
@@ -131,9 +131,9 @@ export function FileStage({
               },
             });
             editor.addAction({
-              id: "daze.addFileToChat",
+              id: "absence.addFileToChat",
               label: "Add file to Chat",
-              contextMenuGroupId: "z_daze",
+              contextMenuGroupId: "z_absence",
               contextMenuOrder: 2,
               run: () => addContext(fileContext(path, content)),
             });

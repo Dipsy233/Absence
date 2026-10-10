@@ -19,7 +19,7 @@ const FILTERS: EggFilter[] = ["running", "dead", "all"];
 /**
  * Agent Eggs (v0.3): the processes the agent laid and left behind.
  *
- * Read-only on purpose — Daze reports what is running, it never kills an egg.
+ * Read-only on purpose — Absence reports what is running, it never kills an egg.
  * An egg is a process that outlived the shell command that spawned it, so a
  * command that simply finished is not an egg; a dev server it started is.
  *

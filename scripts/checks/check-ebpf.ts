@@ -10,7 +10,7 @@
  * Build the helper first:  native/agentwatch-linux/build.sh
  */
 import { spawn } from "node:child_process";
-import type { ProcessPayload } from "@daze/core";
+import type { ProcessPayload } from "@absence/core";
 import { JobMonitor } from "../../apps/server/src/process/JobMonitor";
 import { ProcessWatcher } from "../../apps/server/src/process/ProcessWatcher";
 

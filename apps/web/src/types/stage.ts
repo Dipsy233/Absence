@@ -1,4 +1,4 @@
-import type { DazeEvent, FileTreeNode } from "@daze/core";
+import type { AbsenceEvent, FileTreeNode } from "@absence/core";
 
 /** Stage modes. `live` follows the agent; the rest are pinned views. */
 export type StageMode = "live" | "desk" | "file" | "diff" | "terminal" | "replay" | "thought" | "process";
@@ -62,7 +62,7 @@ export interface StageItem {
   payload: StagePayload;
   createdAt: number;
   /** The originating event, kept for "+ Chat" and replay seeking. */
-  event?: DazeEvent;
+  event?: AbsenceEvent;
 }
 
 /** Desk data model (read02 §34). Visuals land in v0.3. */
@@ -82,7 +82,7 @@ export interface DeskItem {
 /** A renderable activity row (read02 §18). */
 export interface ActivityRow {
   id: string;
-  event: DazeEvent;
+  event: AbsenceEvent;
   time: string;
   action: string;
   primary: string;

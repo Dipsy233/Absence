@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import type { AgentStatus } from "@daze/core";
+import type { AgentStatus } from "@absence/core";
 import type { StageItem, StageMode } from "../types/stage";
 import type { WorldFocus } from "../components/stage/StageWorld";
 import { useSessionStore } from "../stores/sessionStore";

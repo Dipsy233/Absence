@@ -1,13 +1,13 @@
 @echo off
 chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
-title DAZE launcher
+title ABSENCE launcher
 
 rem ===========================================================================
-rem  DAZE one-click launcher
+rem  ABSENCE one-click launcher
 rem
-rem  Builds the web app and starts the DAZE server, then opens the UI. There is
-rem  no local model server any more: Pi supplies the model, so DAZE needs no
+rem  Builds the web app and starts the ABSENCE server, then opens the UI. There is
+rem  no local model server any more: Pi supplies the model, so ABSENCE needs no
 rem  separate inference process.
 rem
 rem  The web app is ALWAYS rebuilt. The frontend is compiled into dist/web at
@@ -18,12 +18,12 @@ rem  This launcher lives under scripts/browser/, but always operates on the
 rem  repo root (two levels up).
 rem
 rem  Usage:
-rem    scripts\browser\start-daze.bat            build and start
-rem    scripts\browser\start-daze.bat check      dry run: report what would happen, start nothing
+rem    scripts\browser\start-absence.bat            build and start
+rem    scripts\browser\start-absence.bat check      dry run: report what would happen, start nothing
 rem
 rem  Override by setting before running:
-rem    DAZE_PORT    (default 8848)
-rem    DAZE_AGENT   (default pi)
+rem    ABSENCE_PORT    (default 8848)
+rem    ABSENCE_AGENT   (default pi)
 rem ===========================================================================
 
 rem This script is scripts/browser → the repo root is two levels up.
@@ -32,10 +32,10 @@ pushd "%REPO%"
 set "REPO=%CD%"
 popd
 
-if not defined DAZE_PORT set "DAZE_PORT=8848"
-if not defined DAZE_AGENT set "DAZE_AGENT=pi"
+if not defined ABSENCE_PORT set "ABSENCE_PORT=8848"
+if not defined ABSENCE_AGENT set "ABSENCE_AGENT=pi"
 
-set "DAZE_URL=http://127.0.0.1:%DAZE_PORT%/api/projects"
+set "ABSENCE_URL=http://127.0.0.1:%ABSENCE_PORT%/api/projects"
 
 set "DRY=0"
 if /i "%~1"=="check" set "DRY=1"
@@ -45,11 +45,11 @@ where curl >nul 2>&1
 if errorlevel 1 (set "HAVE_CURL=0") else (set "HAVE_CURL=1")
 
 echo ============================================================
-echo   DAZE
+echo   ABSENCE
 echo ------------------------------------------------------------
 echo   repo   : %REPO%
-echo   agent  : %DAZE_AGENT%
-echo   daze   : port %DAZE_PORT%
+echo   agent  : %ABSENCE_AGENT%
+echo   absence   : port %ABSENCE_PORT%
 if "%DRY%"=="1" echo   mode   : dry run - nothing will be started
 echo ============================================================
 echo.
@@ -81,29 +81,29 @@ if "%DRY%"=="1" (
 popd
 
 rem --------------------------------------------------------------- server
-call :http_ok "%DAZE_URL%"
-if not errorlevel 1 goto daze_ready
+call :http_ok "%ABSENCE_URL%"
+if not errorlevel 1 goto absence_ready
 
-echo [run] starting ABSENCE server ... agent=%DAZE_AGENT%
+echo [run] starting ABSENCE server ... agent=%ABSENCE_AGENT%
 if "%DRY%"=="1" (
-  echo       dry run: would run npm start with DAZE_AGENT=%DAZE_AGENT%
-  goto daze_done
+  echo       dry run: would run npm start with ABSENCE_AGENT=%ABSENCE_AGENT%
+  goto absence_done
 )
-set "DAZE_AGENT=%DAZE_AGENT%"
+set "ABSENCE_AGENT=%ABSENCE_AGENT%"
 pushd "%REPO%"
 start "ABSENCE server" cmd /c "npm start"
 popd
-call :wait_http "%DAZE_URL%" 60 "daze server"
-goto daze_done
+call :wait_http "%ABSENCE_URL%" 60 "absence server"
+goto absence_done
 
-:daze_ready
-echo [run] DAZE already running on port %DAZE_PORT%
+:absence_ready
+echo [run] ABSENCE already running on port %ABSENCE_PORT%
 
-:daze_done
+:absence_done
 
 echo.
 echo ============================================================
-echo   open   : http://localhost:%DAZE_PORT%
+echo   open   : http://localhost:%ABSENCE_PORT%
 echo ============================================================
 echo.
 
@@ -113,7 +113,7 @@ if "%DRY%"=="1" (
 )
 
 echo Opening the browser. Close the "ABSENCE server" window to stop everything.
-start "" "http://localhost:%DAZE_PORT%"
+start "" "http://localhost:%ABSENCE_PORT%"
 echo.
 pause >nul
 exit /b 0

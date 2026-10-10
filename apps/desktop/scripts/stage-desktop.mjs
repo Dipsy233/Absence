@@ -1,7 +1,7 @@
 // Stage everything the packaged desktop app needs, under dist/desktop/build/.
 //
 // The app runs the server in-process, so "everything it needs" is:
-//   dist/desktop/build/server.cjs        DAZE's compiled server + core (no runtime tsx)
+//   dist/desktop/build/server.cjs        ABSENCE's compiled server + core (no runtime tsx)
 //   dist/desktop/build/node_modules      only the server's *production* deps
 //   dist/web                             the built UI (copied by electron-builder)
 //   native/agentwatch*                   the process-observer helpers
@@ -22,7 +22,7 @@ const repoRoot = path.resolve(here, "..", "..", "..");
 const buildDir = path.join(repoRoot, "dist", "desktop", "build");
 const stageDir = path.join(buildDir, "stage");
 
-// 1. Bundle DAZE's own server (also rewrites build/server.cjs).
+// 1. Bundle ABSENCE's own server (also rewrites build/server.cjs).
 console.log("[stage] bundling the server ...");
 execFileSync(process.execPath, [path.join(here, "bundle-server.mjs")], { stdio: "inherit" });
 
@@ -35,14 +35,14 @@ fs.mkdirSync(stageDir, { recursive: true });
 const serverPkg = JSON.parse(
   fs.readFileSync(path.join(repoRoot, "apps", "server", "package.json"), "utf8"),
 );
-// `@daze/core` is bundled into server.cjs, so it must not be resolved from
+// `@absence/core` is bundled into server.cjs, so it must not be resolved from
 // node_modules at runtime. Everything else the server requires is external.
 const deps = { ...serverPkg.dependencies };
-delete deps["@daze/core"];
+delete deps["@absence/core"];
 
 fs.writeFileSync(
   path.join(stageDir, "package.json"),
-  JSON.stringify({ name: "daze-server-deps", private: true, dependencies: deps }, null, 2),
+  JSON.stringify({ name: "absence-server-deps", private: true, dependencies: deps }, null, 2),
 );
 
 // npm is a shell script on POSIX and a batch file on Windows. Run it through

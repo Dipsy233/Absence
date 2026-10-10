@@ -2,12 +2,12 @@ import { create } from "zustand";
 import type {
   AgentStatus,
   ContextState,
-  DazeEvent,
+  AbsenceEvent,
   Session,
   SessionHistoryEntry,
   SessionRuntimeState,
   SessionSnapshot,
-} from "@daze/core";
+} from "@absence/core";
 import * as api from "../lib/api";
 import { STAGE_EVENT_TYPES, clearsStage, isInstantSearch, lastStageAction } from "../lib/events";
 
@@ -16,9 +16,9 @@ const MAX_EVENTS = 2000;
 interface SessionStore {
   session?: Session;
   agent: { status: AgentStatus; model?: string };
-  events: DazeEvent[];
+  events: AbsenceEvent[];
   /** The most recent event that owns the Stage (read02 §14). */
-  currentAction?: DazeEvent;
+  currentAction?: AbsenceEvent;
   context?: ContextState;
   connected: boolean;
   error?: string;
@@ -33,7 +33,7 @@ interface SessionStore {
   reset: () => void;
   hydrate: (snapshot: SessionSnapshot) => void;
   applyRuntimeState: (state: SessionRuntimeState) => void;
-  ingestEvent: (event: DazeEvent) => void;
+  ingestEvent: (event: AbsenceEvent) => void;
   setConnected: (connected: boolean) => void;
 }
 
@@ -55,9 +55,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   resumeSession: async (entry) => {
     set({ error: undefined });
     const resume =
-      entry.dazeSessionId || entry.piSessionFile
+      entry.absenceSessionId || entry.piSessionFile
         ? {
-            dazeSessionId: entry.dazeSessionId,
+            absenceSessionId: entry.absenceSessionId,
             piSessionFile: entry.piSessionFile,
             piSessionId: entry.piSessionId,
           }

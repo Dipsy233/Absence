@@ -2,7 +2,7 @@
  * The shape of a process event, shared by every platform observer.
  *
  * Windows learns these from a Job Object's completion port, Linux from eBPF
- * tracepoints; neither detail leaks past this file. What the rest of Daze —
+ * tracepoints; neither detail leaks past this file. What the rest of Absence —
  * `ProcessWatcher`, `classify`, the eggs panel — sees is only these two events.
  */
 

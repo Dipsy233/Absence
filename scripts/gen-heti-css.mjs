@@ -3,7 +3,7 @@
  * (E:/dd/jy/agent/index.html) into a scoped stylesheet for the web app.
  *
  * - extracts the <style> block
- * - drops the toolbar / html / body / hint rules (DAZE owns the page chrome)
+ * - drops the toolbar / html / body / hint rules (ABSENCE owns the page chrome)
  * - prefixes every selector with `.heti-root` so nothing leaks globally
  * - keeps @keyframes verbatim
  *
@@ -89,7 +89,7 @@ const header = `/* ============================================================
    Heti — 毛绒鲸鱼套装虚拟形象 (character only)
    Generated from E:/dd/jy/agent/index.html by scripts/gen-heti-css.mjs.
    Every selector is scoped under .heti-root; the page background is left
-   transparent so the character sits on DAZE's own surface.
+   transparent so the character sits on ABSENCE's own surface.
    Assets live in apps/web/public/heti/*.png.
    ============================================================ */\n`;
 

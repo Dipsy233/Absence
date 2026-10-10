@@ -5,16 +5,16 @@ Absence 内部实现的深入文档。介绍与使用方法见 [README](../READM
 ```
 Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
    ▲                                                                     │
-   └──────────── DazeEvent stream (file_read / file_edit / command / …) ─┘
+   └──────────── AbsenceEvent stream (file_read / file_edit / command / …) ─┘
 ```
 
-- `packages/core` — 共享的 `DazeEvent` + 领域类型。UI 认识的唯一词汇表；它
+- `packages/core` — 共享的 `AbsenceEvent` + 领域类型。UI 认识的唯一词汇表；它
   永远不会知道 Pi 的存在。
 - `apps/server` — Fastify + WebSocket。`PiAdapter` 包装 Pi SDK，把
-  `AgentSessionEvent` 映射成 `DazeEvent`；`MockAdapter` 不需要凭据就能回放
+  `AgentSessionEvent` 映射成 `AbsenceEvent`；`MockAdapter` 不需要凭据就能回放
   一段脚本化的运行；`chokidar` 监视项目的带外改动。**Absence 拥有 shell**：
-  `process/DazeShell` 包装 Pi 自己的本地 shell 操作，注册成自定义
-  `bash` / `powershell` 工具（自定义工具按名字遮蔽内建的，所以 `DAZE_PI_TOOLS`
+  `process/AbsenceShell` 包装 Pi 自己的本地 shell 操作，注册成自定义
+  `bash` / `powershell` 工具（自定义工具按名字遮蔽内建的，所以 `ABSENCE_PI_TOOLS`
   不受影响）。Pi 照样执行每条命令——Absence 只拥有边界，正是这个边界告诉
   `ProcessWatcher` 一条命令何时运行，并在它头部放一个唯一标记，让 Pi 为这条
   命令生成的 shell（和它外面的启动器）能被精确识别，而不是靠名字或父进程链
@@ -40,13 +40,13 @@ Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAda
   进程可以原地 `exec`，所以 `nohup node ticker.mjs` 在同一个 pid 下上报两次
   ——一次是 `nohup`，一次是 `node`。所以 pid 单独不能表示"已处理过"；观察器
   以 **(pid, 命令行)** 对为键，第二个事件按它本来的新进程来判。Pi 保留自己的
-  会话文件（这样对话可以恢复），Absence 把它观察到的 `DazeEvent` 流归档在旁边。
+  会话文件（这样对话可以恢复），Absence 把它观察到的 `AbsenceEvent` 流归档在旁边。
 - `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion。
   面板是入口，Stage 是内容的归宿；Absence Report 和 Agent Eggs 都是对同一条事件
   流的归约。
 
 ```
-daze/                     npm workspaces: packages/*  apps/server  apps/web
+absence/                     npm workspaces: packages/*  apps/server  apps/web
   dist/                   全部构建产物（git 忽略），一个地方：
     web/                    构建好的 UI（apps/web → vite outDir）
     desktop/build/          server bundle + 就位的生产 node_modules
@@ -54,36 +54,36 @@ daze/                     npm workspaces: packages/*  apps/server  apps/web
   tsconfig.base.json      strict, noUncheckedIndexedAccess
   native/agentwatch/      Windows 进程观察器（Job Object，预编译随库提交）
   native/agentwatch-linux/ Linux 进程观察器（eBPF，预编译随库提交）
-  start-daze.bat          以下启动器的转发快捷方式
-  start-daze-app.bat      （每个只有一行——真正的逻辑在被启动的代码那边，
-  start-daze.sh            不在根目录）
+  start-absence.bat          以下启动器的转发快捷方式
+  start-absence-app.bat      （每个只有一行——真正的逻辑在被启动的代码那边，
+  start-absence.sh            不在根目录）
   scripts/
-    browser/start-daze.bat  Windows 浏览器启动器
-    browser/start-daze.sh   Linux / WSL 浏览器启动器
+    browser/start-absence.bat  Windows 浏览器启动器
+    browser/start-absence.sh   Linux / WSL 浏览器启动器
     checks/               check-*.ts 验收脚本
     wsl-pi-config.sh      让 WSL 里的 pi 指向 Windows 宿主的模型服务
 
 apps/desktop/             Electron 外壳（不是 workspace；自己的 node_modules）
   main.cjs                在进程内跑 server，开窗口，托盘
-  start-daze-app.bat      Windows 桌面启动器
+  start-absence-app.bat      Windows 桌面启动器
   assets/tray.png         托盘图标
   scripts/                仅桌面使用的构建工具：
     bundle-server.mjs       把 server + core 编成一个 CJS 文件
     stage-desktop.mjs       打包 + 为打包安装生产依赖
     make-icons.mjs          画 icon.png / icon.ico / tray.png
 
-packages/core/src/        events.ts（DazeEvent + payload map）  types.ts  index.ts
+packages/core/src/        events.ts（AbsenceEvent + payload map）  types.ts  index.ts
 
 apps/server/src/
   agents/                 AgentAdapter.ts（运行时无关的边界）
                           PiAdapter.ts  MockAdapter.ts  createAdapter.ts
-  process/                DazeShell.ts（拥有 shell）  ProcessWatcher.ts（eggs）
+  process/                AbsenceShell.ts（拥有 shell）  ProcessWatcher.ts（eggs）
                           ProcessTable.ts（pid / ppid / 命令行 / 启动时间）
                           observer.ts（平台中立的事件形状）
                           JobMonitor.ts + JobSidecar.ts（Windows 内核事件）
                           EbpfObserver.ts（Linux 内核事件）
                           CommandIntent.ts + classify.ts + priors.ts（primary/tool）
-  sessions/               SessionStore.ts  archive.ts（~/.daze/sessions）
+  sessions/               SessionStore.ts  archive.ts（~/.absence/sessions）
   filesystem/             FileTree.ts  FileWatcher.ts（chokidar）
   events/                 EventBus.ts
   websocket/ws.ts   api/{projects,sessions}.ts   util/{diff,ids,language,paths}.ts
@@ -114,7 +114,7 @@ apps/web/public/heti/     头像的 PNG 部件（16：body, head, hair, ahoge,
                           tail, hands, feet, 7 张脸）
 
 scripts/                  make-demo.mjs  wsl-pi-config.sh
-  browser/                start-daze.bat  start-daze.sh（浏览器启动器）
+  browser/                start-absence.bat  start-absence.sh（浏览器启动器）
   checks/                 check-history.ts  check-report.ts  check-eggs.ts
                           check-classify.ts  check-agentwatch.ts  check-ebpf.ts
                           gen-heti-css.mjs（重新生成头像样式表）
@@ -134,9 +134,9 @@ npm run desktop         # 打开原生窗口
 npm run desktop:dev     # DevTools 开；Vite dev server 在时就用它
 ```
 
-在 Windows 上，仓库根目录的 **`start-daze-app.bat`** 一键完成所有事
+在 Windows 上，仓库根目录的 **`start-absence-app.bat`** 一键完成所有事
 （构建 → 缺外壳就装 → 开窗口）；加 `check` 是干跑。它只有一行，转发到
-`apps/desktop/start-daze-app.bat`，桌面启动器真正住在那里。浏览器启动器
+`apps/desktop/start-absence-app.bat`，桌面启动器真正住在那里。浏览器启动器
 不变，对 WSL / eBPF 工作流仍然是正确的选择。
 
 外壳比浏览器多出的东西：一个没有地址栏和标签页的单窗口、没有原生标题栏——
@@ -171,7 +171,7 @@ npm run desktop:dev     # DevTools 开；Vite dev server 在时就用它
 
 ### 打包可分发的应用
 
-`apps/desktop/start-daze-app.bat` 从 checkout 运行外壳，这需要磁盘上有仓库、
+`apps/desktop/start-absence-app.bat` 从 checkout 运行外壳，这需要磁盘上有仓库、
 `node_modules` 和 `tsx`。要把 Absence 变成能交给别人的东西——一个没有仓库、
 没有 Node 的安装器——用打包脚本：
 
@@ -184,7 +184,7 @@ Windows 上会往 `dist/desktop/release/` 写一个 NSIS 安装器；Linux 是 A
 macOS 是 DMG。有三件生成的产物值得知道（都在 `apps/desktop/scripts/` 下，
 因为它们只属于桌面）：
 
-- **`bundle-server.mjs`** 把 DAZE 自己的 server（和 `@daze/core`）编成
+- **`bundle-server.mjs`** 把 ABSENCE 自己的 server（和 `@absence/core`）编成
   `dist/desktop/build/server.cjs`。发货的应用没有 `tsx`，TypeScript 无法在
   运行时加载。第三方包保持 *external*，从一个裁剪过的 `node_modules` 解析
   ——尤其是 `@earendil-works/pi-coding-agent`，它带一个 `.wasm` 资产并动态
@@ -200,15 +200,15 @@ macOS 是 DMG。有三件生成的产物值得知道（都在 `apps/desktop/scri
 
 打包后的应用在 `process.resourcesPath` 下找它的部件（见 `main.cjs`）：
 `apps/server-bundle.cjs`、`dist/web`、`node_modules`，以及 `native/` 下的
-原生 helper。原生观察器路径用 `DAZE_AGENTWATCH` / `DAZE_AGENTWATCH_LINUX`
+原生 helper。原生观察器路径用 `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX`
 显式设置，因为 server 自己的路径启发假设的是 checkout 布局。
 
-## DazeEvent
+## AbsenceEvent
 
 核心 UI 只认识一种结构：
 
 ```ts
-type DazeEvent = {
+type AbsenceEvent = {
   id: string;
   sessionId: string;
   timestamp: number;
@@ -265,7 +265,7 @@ prompt。输入框左侧的 `/` 按钮在上方打开可过滤的面板——↑
 | `/compact [instructions]` | 压缩会话上下文 |
 | `/name [name]` | 设置会话显示名 |
 | `/session` | 显示会话信息和统计 |
-| `/export [html\|jsonl]` | 把会话导出到 `~/.daze/exports/` |
+| `/export [html\|jsonl]` | 把会话导出到 `~/.absence/exports/` |
 
 切换模型是**会话级**的——Pi 的全局默认不动。结果作为系统消息打印回聊天并随
 会话归档，所以恢复时会回来。
@@ -321,5 +321,5 @@ Qwen3-4B（流式 + 工具调用）。模型 server 手动启动，不由 Absenc
 
 4. 用 `pi --list-models` 验证，然后启动 Absence。
 
-4B 的模型选工具并不可靠。`DAZE_PI_TOOLS` 可以收窄集合（如
-`DAZE_PI_TOOLS=read,bash,edit,write`），练 UI 用 mock 运行时更合适。
+4B 的模型选工具并不可靠。`ABSENCE_PI_TOOLS` 可以收窄集合（如
+`ABSENCE_PI_TOOLS=read,bash,edit,write`），练 UI 用 mock 运行时更合适。

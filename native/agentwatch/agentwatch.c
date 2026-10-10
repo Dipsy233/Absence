@@ -1,7 +1,7 @@
 /*
- * agentwatch — the process observer Daze runs alongside the server.
+ * agentwatch — the process observer Absence runs alongside the server.
  *
- * Daze cannot see the processes Pi's shell tools spawn by polling `ps`/CIM:
+ * Absence cannot see the processes Pi's shell tools spawn by polling `ps`/CIM:
  * a process that lives 20 ms is simply not there when the next snapshot lands.
  * This helper removes the sampling problem entirely by asking the kernel to
  * report every process creation and exit as it happens.
@@ -24,7 +24,7 @@
  * Deliberate choices
  * ------------------
  *  - No JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: if this helper dies, the server and
- *    the agent's own daemons must keep running. Daze observes; it does not own.
+ *    the agent's own daemons must keep running. Absence observes; it does not own.
  *  - No JOB_OBJECT_LIMIT_BREAKAWAY_OK: a descendant must not be able to leave
  *    the job and become invisible.
  *  - The job is not configured with a process limit; the completion port is the

@@ -28,7 +28,7 @@ jobs:
       - run: npm ci
       # Structural checks that do not need kernel observers, elevated rights, or
       # a running server: egg building, process classification (including the
-      # tool prior), and the Daze Report engine run against recorded fixtures.
+      # tool prior), and the Absence Report engine run against recorded fixtures.
       # (check:history and the observer checks need a live server / kernel
       # access, so they stay manual: `npm run check:process`, `npm run
       # check:history`.)

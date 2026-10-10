@@ -47,7 +47,7 @@ export const TOOL_PRIOR = new Set([
 
 /**
  * Launchers that are transparent: they change *how* a process runs (detached,
- * timed, niceness) but not *what* it is. The real process is the child, so Daze
+ * timed, niceness) but not *what* it is. The real process is the child, so Absence
  * reports that child rather than the launcher — otherwise `nohup node ticker.mjs`
  * shows up as `nohup.exe` and the daemon is hidden behind it.
  */

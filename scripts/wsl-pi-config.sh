@@ -13,10 +13,10 @@
 #
 # Source of truth for the providers is the Windows pi config, so a provider added
 # there is picked up here without a second edit. Override with:
-#   DAZE_WIN_PI_DIR   (default: the Windows user's %USERPROFILE%/.pi/agent)
+#   ABSENCE_WIN_PI_DIR   (default: the Windows user's %USERPROFILE%/.pi/agent)
 set -euo pipefail
 
-WIN_HOME="${DAZE_WIN_HOME:-}"
+WIN_HOME="${ABSENCE_WIN_HOME:-}"
 if [ -z "$WIN_HOME" ]; then
 	# The Windows user profile as WSL sees it, e.g. /mnt/c/Users/Name.
 	for candidate in /mnt/c/Users/*; do
@@ -24,12 +24,12 @@ if [ -z "$WIN_HOME" ]; then
 	done
 fi
 
-SRC="${DAZE_WIN_PI_DIR:-${WIN_HOME:+$WIN_HOME/.pi/agent}}"
+SRC="${ABSENCE_WIN_PI_DIR:-${WIN_HOME:+$WIN_HOME/.pi/agent}}"
 DEST="${HOME}/.pi/agent"
 
 GW="$(ip route show | grep -i default | awk '{ print $3 }')"
 if [ -z "$GW" ]; then
-	echo "start-daze: could not resolve the Windows host address (no default route)" >&2
+	echo "start-absence: could not resolve the Windows host address (no default route)" >&2
 	echo "            is this really WSL? On native Linux set the providers up yourself." >&2
 	exit 0
 fi
@@ -40,10 +40,10 @@ if [ -n "${SRC:-}" ] && [ -f "$SRC/models.json" ]; then
 	# Rewrite the loopback host to the Windows gateway. pi's own config is the
 	# source, so ids, keys and limits stay in one place.
 	sed -E "s#http://(127\.0\.0\.1|localhost):#http://${GW}:#g" "$SRC/models.json" > "$DEST/models.json"
-	echo "start-daze: pi providers rewritten to ${GW} (from $SRC/models.json)"
+	echo "start-absence: pi providers rewritten to ${GW} (from $SRC/models.json)"
 else
-	echo "start-daze: no Windows pi models.json found at ${SRC:-<none>};"
-	echo "            set DAZE_WIN_PI_DIR or configure ~/.pi/agent/models.json by hand" >&2
+	echo "start-absence: no Windows pi models.json found at ${SRC:-<none>};"
+	echo "            set ABSENCE_WIN_PI_DIR or configure ~/.pi/agent/models.json by hand" >&2
 fi
 
 # Carry the default provider/model selection across too, so WSL pi starts on the

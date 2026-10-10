@@ -1,17 +1,17 @@
 # agentwatch-linux
 
-The Linux process observer Daze runs next to the server.
+The Linux process observer Absence runs next to the server.
 
 ## Why
 
-Daze cannot see the processes a shell lays by polling `/proc`: a process that
+Absence cannot see the processes a shell lays by polling `/proc`: a process that
 lives a millisecond is gone before the next look, and no amount of tightening the
 interval fixes that — it is the sampling theorem. On Linux the fix is not to look
 faster but to stop looking: the kernel will report every process it creates.
 
 ## How
 
-Three **eBPF tracepoints**, attached by this helper, carry everything Daze needs:
+Three **eBPF tracepoints**, attached by this helper, carry everything Absence needs:
 
 | Tracepoint | Gives |
 |---|---|
@@ -42,7 +42,7 @@ in the event itself, so eBPF wins on the one thing that matters.
 ### Privileges
 
 Loading BPF needs `CAP_BPF` + `CAP_PERFMON` (or root). WSL runs as root by
-default, so nothing is needed there. On a machine where Daze runs unprivileged:
+default, so nothing is needed there. On a machine where Absence runs unprivileged:
 
 ```sh
 sudo setcap cap_bpf,cap_perfmon+ep agentwatch-linux
@@ -54,7 +54,7 @@ session falls back to polling with the reason shown in the UI.
 ## Output
 
 One JSON object per line on stdout, the same shape as the Windows observer so the
-Daze side parses both with one code path:
+Absence side parses both with one code path:
 
 | Event | Fields |
 |---|---|

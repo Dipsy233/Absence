@@ -1,11 +1,11 @@
-import type { DazeEvent } from "@daze/core";
+import type { AbsenceEvent } from "@absence/core";
 import { eventContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
 
 interface ThoughtStageProps {
   text: string;
   streaming?: boolean;
-  event?: DazeEvent;
+  event?: AbsenceEvent;
 }
 
 /**

@@ -2,7 +2,7 @@
    Heti — 毛绒鲸鱼套装虚拟形象 (character only)
    Generated from E:/dd/jy/agent/index.html by scripts/gen-heti-css.mjs.
    Every selector is scoped under .heti-root; the page background is left
-   transparent so the character sits on DAZE's own surface.
+   transparent so the character sits on ABSENCE's own surface.
    Assets live in apps/web/public/heti/*.png.
    ============================================================ */
 .heti-root .viewport{position:relative;z-index:10;flex:1 1 auto;overflow:hidden}

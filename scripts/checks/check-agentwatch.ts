@@ -12,7 +12,7 @@
  * path is what runs there, and it is the same code the server uses.
  */
 import { spawn } from "node:child_process";
-import type { ProcessPayload } from "@daze/core";
+import type { ProcessPayload } from "@absence/core";
 import { JobMonitor } from "../../apps/server/src/process/JobMonitor";
 import { ProcessWatcher } from "../../apps/server/src/process/ProcessWatcher";
 
@@ -87,12 +87,12 @@ async function main(): Promise<void> {
     events.some((event) => event.status === "exited"),
   );
 
-  // Daze's own shell carries a marker and must never be reported as an egg; its
-  // children (the real work) must be. This is the shape `DazeShell` produces:
+  // Absence's own shell carries a marker and must never be reported as an egg; its
+  // children (the real work) must be. This is the shape `AbsenceShell` produces:
   // the marker is a `# comment` at the head of the command.
-  watcher.noteMarker("daze-test-marker");
+  watcher.noteMarker("absence-test-marker");
   const markedId = watcher.begin("test: marked shell");
-  const marked = spawn("cmd.exe", ["/c", "echo daze-test-marker & exit 0"], {
+  const marked = spawn("cmd.exe", ["/c", "echo absence-test-marker & exit 0"], {
     stdio: "ignore",
     windowsHide: true,
   });
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   await sleep(1500);
   watcher.end(markedId);
   check(
-    "the shell carrying Daze's marker is not reported as an egg",
+    "the shell carrying Absence's marker is not reported as an egg",
     !events.some((event) => event.pid === markedPid),
     `saw pid ${markedPid}`,
   );

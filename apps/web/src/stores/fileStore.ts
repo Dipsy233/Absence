@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DazeEvent, FileTreeNode, SessionSnapshot } from "@daze/core";
+import type { AbsenceEvent, FileTreeNode, SessionSnapshot } from "@absence/core";
 import type { FileVersion, FileView } from "../types/file";
 import { languageFromPath } from "../lib/language";
 import { renderKnownState } from "../lib/knownLines";
@@ -30,7 +30,7 @@ function latest(view: FileView): FileVersion | undefined {
 }
 
 /** Mutates `views` in place, always assigning fresh FileView objects. */
-function applyEvent(views: Record<string, FileView>, event: DazeEvent): void {
+function applyEvent(views: Record<string, FileView>, event: AbsenceEvent): void {
   switch (event.type) {
     case "file_read": {
       const { path, content, startLine, endLine } = event.payload;
@@ -105,7 +105,7 @@ interface FileStore {
   files: Record<string, FileView>;
 
   setTree: (tree?: FileTreeNode) => void;
-  ingest: (event: DazeEvent) => void;
+  ingest: (event: AbsenceEvent) => void;
   hydrate: (snapshot: SessionSnapshot) => void;
   reset: () => void;
 }

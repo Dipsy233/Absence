@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { isAgentBusy, type CommandOption } from "@daze/core";
+import { isAgentBusy, type CommandOption } from "@absence/core";
 import { buildPrompt } from "../../lib/context";
 import * as api from "../../lib/api";
 import { COMMANDS, findCommand, type CommandSpec } from "../../lib/commands";

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { isAgentBusy, type DazeEvent } from "@daze/core";
+import { isAgentBusy, type AbsenceEvent } from "@absence/core";
 import { memoBuildHistory, pickRun } from "../../lib/history";
 import { eventToStageItem } from "../../lib/events";
 import { buildRunFacts, renderLive, renderRun } from "../../lib/report";
@@ -21,10 +21,10 @@ import type {
 } from "../../types/report";
 
 /**
- * The Daze Report (E:\0down\daze-demo\read.md): a small tab at the top-centre of
+ * The Absence Report (E:\0down\absence-demo\read.md): a small tab at the top-centre of
  * the Stage that expands into a translucent layer over the Stage body. While a
  * run is live it reports the current phase; once it settles it summarises what
- * the run changed. Derived entirely from the DazeEvent stream.
+ * the run changed. Derived entirely from the AbsenceEvent stream.
  */
 export function ReportOverlay() {
   const events = useSessionStore((s) => s.events);
@@ -48,7 +48,7 @@ export function ReportOverlay() {
   const report = useMemo(() => (facts && !running ? renderRun(facts) : undefined), [facts, running]);
 
   /** What the pane to the left of the report is showing. */
-  const [preview, setPreview] = useState<{ event: DazeEvent; node?: TimelineNode } | undefined>(undefined);
+  const [preview, setPreview] = useState<{ event: AbsenceEvent; node?: TimelineNode } | undefined>(undefined);
   useEffect(() => {
     if (!reportOpen) setPreview(undefined);
   }, [reportOpen]);
@@ -63,8 +63,8 @@ export function ReportOverlay() {
   const reveal = (ids: string[], node?: TimelineNode) => {
     if (run) selectRun(run.id);
     const wanted = new Set(ids);
-    let chosen: DazeEvent | undefined;
-    let fallback: DazeEvent | undefined;
+    let chosen: AbsenceEvent | undefined;
+    let fallback: AbsenceEvent | undefined;
     for (let i = events.length - 1; i >= 0; i--) {
       const event = events[i]!;
       if (!wanted.has(event.id)) continue;
@@ -102,7 +102,7 @@ export function ReportOverlay() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="daze-overlay absolute inset-x-0 top-0 bottom-14 z-30 flex overflow-hidden border border-desk-line/70 bg-desk-panel/85 backdrop-blur-[3px]"
+            className="absence-overlay absolute inset-x-0 top-0 bottom-14 z-30 flex overflow-hidden border border-desk-line/70 bg-desk-panel/85 backdrop-blur-[3px]"
           >
             <AnimatePresence>
               {preview ? (
@@ -159,7 +159,7 @@ function EvidencePane({
   node,
   onClose,
 }: {
-  event: DazeEvent;
+  event: AbsenceEvent;
   node?: TimelineNode;
   onClose: () => void;
 }) {

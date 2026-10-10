@@ -7,4 +7,4 @@
 // is what makes the in-process observation work.
 export { startServer } from "./index";
 export { sessionStore } from "./sessions/SessionStore";
-export { isAgentBusy } from "@daze/core";
+export { isAgentBusy } from "@absence/core";

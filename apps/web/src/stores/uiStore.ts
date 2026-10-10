@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { applyTheme, readStoredTheme, storeTheme, THEME_IDS, type ThemeId } from "../lib/theme";
 
-const CHAT_HISTORY_KEY = "daze.chatHistoryOpen";
+const CHAT_HISTORY_KEY = "absence.chatHistoryOpen";
 
 /** Remembered across visits (and refreshes) so the chat docks the way you left it. */
 function readChatHistoryOpen(): boolean {
@@ -40,11 +40,11 @@ interface UiStore {
    */
   agentOnStage: boolean;
   /**
-   * DAZE mode: the desk world (or the agent, when swapped) floats *in front of*
+   * ABSENCE mode: the desk world (or the agent, when swapped) floats *in front of*
    * the Stage's content page as a translucent ghost, instead of behind it.
    */
-  dazeMode: boolean;
-  /** Whether the Daze Report overlay covers the Stage. Transient view state. */
+  absenceMode: boolean;
+  /** Whether the Absence Report overlay covers the Stage. Transient view state. */
   reportOpen: boolean;
   /** Event highlighted in the Activity panel after following a report link. */
   focusedEventId?: string;
@@ -57,7 +57,7 @@ interface UiStore {
   selectRun: (id?: string) => void;
   setChatHistoryOpen: (open: boolean) => void;
   toggleAgentOnStage: () => void;
-  toggleDazeMode: () => void;
+  toggleAbsenceMode: () => void;
   toggleReport: () => void;
   focusEvent: (id?: string) => void;
   cycleTheme: () => void;
@@ -70,7 +70,7 @@ export const useUiStore = create<UiStore>((set) => ({
   selectedRunId: undefined,
   chatHistoryOpen: readChatHistoryOpen(),
   agentOnStage: false,
-  dazeMode: false,
+  absenceMode: false,
   reportOpen: false,
   focusedEventId: undefined,
   theme: readStoredTheme(),
@@ -91,7 +91,7 @@ export const useUiStore = create<UiStore>((set) => ({
 
   toggleAgentOnStage: () => set((s) => ({ agentOnStage: !s.agentOnStage })),
 
-  toggleDazeMode: () => set((s) => ({ dazeMode: !s.dazeMode })),
+  toggleAbsenceMode: () => set((s) => ({ absenceMode: !s.absenceMode })),
 
   toggleReport: () => set((s) => ({ reportOpen: !s.reportOpen })),
 

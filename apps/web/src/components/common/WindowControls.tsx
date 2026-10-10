@@ -3,14 +3,14 @@ import { useEffect, useState } from "react";
 /**
  * The desktop shell's self-rendered window controls (min / max / close),
  * replacing the native title bar (frame: false in apps/desktop/main.cjs).
- * Rendered only inside Electron — `window.dazeDesktop` is undefined in a
+ * Rendered only inside Electron — `window.absenceDesktop` is undefined in a
  * plain browser tab, so the web app shows nothing. Close goes through the
  * shell's close handler, which hides to the tray; real quit stays in the
  * tray menu.
  */
 export function WindowControls() {
   const [maximized, setMaximized] = useState(false);
-  const shell = window.dazeDesktop;
+  const shell = window.absenceDesktop;
 
   useEffect(() => {
     if (!shell) return;
@@ -27,7 +27,7 @@ export function WindowControls() {
 
   const base = "flex h-full w-11 items-center justify-center text-desk-dim transition-colors";
   return (
-    <div className="daze-nodrag flex h-8 shrink-0 items-stretch">
+    <div className="absence-nodrag flex h-8 shrink-0 items-stretch">
       <button
         type="button"
         title="Minimize"

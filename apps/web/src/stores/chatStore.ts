@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatMessage, DazeEvent, SessionSnapshot } from "@daze/core";
+import type { ChatMessage, AbsenceEvent, SessionSnapshot } from "@absence/core";
 import type { ChatContext } from "../types/chat";
 
 function lastStreamingIndex(chat: ChatMessage[]): number {
@@ -10,7 +10,7 @@ function lastStreamingIndex(chat: ChatMessage[]): number {
   return -1;
 }
 
-function applyChatEvent(chat: ChatMessage[], event: DazeEvent): ChatMessage[] | null {
+function applyChatEvent(chat: ChatMessage[], event: AbsenceEvent): ChatMessage[] | null {
   if (event.type !== "message") return null;
   const payload = event.payload;
 
@@ -64,7 +64,7 @@ interface ChatStore {
   addContext: (context: ChatContext) => void;
   removeContext: (index: number) => void;
   clearContext: () => void;
-  ingest: (event: DazeEvent) => void;
+  ingest: (event: AbsenceEvent) => void;
   hydrate: (snapshot: SessionSnapshot) => void;
   reset: () => void;
 }

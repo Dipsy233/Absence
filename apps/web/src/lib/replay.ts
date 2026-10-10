@@ -1,4 +1,4 @@
-import type { AgentStatus, DazeEvent } from "@daze/core";
+import type { AgentStatus, AbsenceEvent } from "@absence/core";
 import type { FileMap, ReplaySnapshot, ReplayView } from "../types/replay";
 import { STAGE_EVENT_TYPES, isInstantSearch, statusFromEvent } from "./events";
 
@@ -10,7 +10,7 @@ const SNAPSHOT_INTERVAL_MS = 5000;
  * authoritative whole-file contents; a read only seeds a path we know nothing
  * about, because reads return a slice.
  */
-export function applyEventToFiles(files: FileMap, event: DazeEvent): void {
+export function applyEventToFiles(files: FileMap, event: AbsenceEvent): void {
   switch (event.type) {
     case "file_write":
       files[event.payload.path] = event.payload.content;
@@ -32,7 +32,7 @@ export function applyEventToFiles(files: FileMap, event: DazeEvent): void {
 }
 
 /** Checkpoints every N events or 5 seconds (read02 §27). */
-export function buildSnapshots(events: DazeEvent[]): ReplaySnapshot[] {
+export function buildSnapshots(events: AbsenceEvent[]): ReplaySnapshot[] {
   const first = events[0];
   const snapshots: ReplaySnapshot[] = [
     { index: 0, timestamp: first?.timestamp ?? 0, files: {}, agentStatus: "listening" },
@@ -41,7 +41,7 @@ export function buildSnapshots(events: DazeEvent[]): ReplaySnapshot[] {
 
   const files: FileMap = {};
   let status: AgentStatus = "listening";
-  let currentAction: DazeEvent | undefined;
+  let currentAction: AbsenceEvent | undefined;
   let nextByTime = (first?.timestamp ?? 0) + SNAPSHOT_INTERVAL_MS;
 
   for (let i = 0; i < events.length; i++) {
@@ -71,7 +71,7 @@ export function buildSnapshots(events: DazeEvent[]): ReplaySnapshot[] {
  * Reconstruct the world at timestamp `t`: nearest snapshot, then apply the
  * remaining events (read02 §26). Never replays from the very first event.
  */
-export function seek(events: DazeEvent[], snapshots: ReplaySnapshot[], t: number): ReplayView {
+export function seek(events: AbsenceEvent[], snapshots: ReplaySnapshot[], t: number): ReplayView {
   let snapshot = snapshots[0]!;
   for (const candidate of snapshots) {
     if (candidate.timestamp <= t) snapshot = candidate;
@@ -80,7 +80,7 @@ export function seek(events: DazeEvent[], snapshots: ReplaySnapshot[], t: number
 
   const files: FileMap = { ...snapshot.files };
   let status: AgentStatus = snapshot.agentStatus;
-  let currentAction: DazeEvent | undefined = snapshot.currentAction;
+  let currentAction: AbsenceEvent | undefined = snapshot.currentAction;
   let appliedIndex = snapshot.index;
 
   for (let i = snapshot.index; i < events.length; i++) {
@@ -96,22 +96,22 @@ export function seek(events: DazeEvent[], snapshots: ReplaySnapshot[], t: number
   return { files, agentStatus: status, currentAction, appliedIndex, timestamp: t };
 }
 
-export function timelineStart(events: DazeEvent[]): number {
+export function timelineStart(events: AbsenceEvent[]): number {
   return events[0]?.timestamp ?? 0;
 }
 
-export function timelineEnd(events: DazeEvent[]): number {
+export function timelineEnd(events: AbsenceEvent[]): number {
   return events[events.length - 1]?.timestamp ?? 0;
 }
 
-export function nextEventTimestamp(events: DazeEvent[], t: number): number | undefined {
+export function nextEventTimestamp(events: AbsenceEvent[], t: number): number | undefined {
   for (const event of events) {
     if (event.timestamp > t) return event.timestamp;
   }
   return undefined;
 }
 
-export function prevEventTimestamp(events: DazeEvent[], t: number): number | undefined {
+export function prevEventTimestamp(events: AbsenceEvent[], t: number): number | undefined {
   let prev: number | undefined;
   for (const event of events) {
     if (event.timestamp < t) prev = event.timestamp;

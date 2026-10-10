@@ -1,7 +1,7 @@
-// Generate the DAZE app icon (assets/icon.png, icon.ico) with no image
+// Generate the ABSENCE app icon (assets/icon.png, icon.ico) with no image
 // dependencies: the icon is a simple drawing we can rasterize by hand.
 //
-// DAZE's mark is a dark disc with a teal "pause/observe" ring and a warm dot —
+// ABSENCE's mark is a dark disc with a teal "pause/observe" ring and a warm dot —
 // an eye that is also a stop button. Precise enough for an app icon, and it
 // never depends on a binary asset being committed.
 import fs from "node:fs";

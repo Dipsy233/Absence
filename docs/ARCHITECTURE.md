@@ -8,17 +8,17 @@ guide, see the [README](../README.md).
 ```
 Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
    ▲                                                                     │
-   └────────────── DazeEvent stream (file_read / file_edit / command / …) ┘
+   └────────────── AbsenceEvent stream (file_read / file_edit / command / …) ┘
 ```
 
-- `packages/core` — the shared `DazeEvent` + domain types. The only vocabulary
+- `packages/core` — the shared `AbsenceEvent` + domain types. The only vocabulary
   the UI knows; it never learns that Pi exists.
 - `apps/server` — Fastify + WebSocket. `PiAdapter` wraps the Pi SDK and maps
-  `AgentSessionEvent` → `DazeEvent`; `MockAdapter` replays a scripted run with no
+  `AgentSessionEvent` → `AbsenceEvent`; `MockAdapter` replays a scripted run with no
   credentials; `chokidar` watches the project for out-of-band changes. **Absence owns
-  the shell**: `process/DazeShell` wraps Pi's own local shell operations and
+  the shell**: `process/AbsenceShell` wraps Pi's own local shell operations and
   registers them as custom `bash` / `powershell` tools (a custom tool shadows the
-  built-in one by name, so `DAZE_PI_TOOLS` is untouched). Pi still executes every
+  built-in one by name, so `ABSENCE_PI_TOOLS` is untouched). Pi still executes every
   command — Absence only owns the boundary, which is what tells `ProcessWatcher` when
   a command ran, and puts a unique marker at the head of it so the shell Pi
   spawns for that command (and the launcher around it) can be recognised exactly
@@ -52,13 +52,13 @@ Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAda
   mean "already handled"; the watcher keys on the **(pid, command line)** pair, so
   the second event is judged as the new process it is. Pi keeps
   its own session file (so a conversation can be resumed) and Absence archives the
-  `DazeEvent` stream it observed alongside it.
+  `AbsenceEvent` stream it observed alongside it.
 - `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion. The
   panels are entry points and the Stage is where content lives; the Absence Report
   and Agent Eggs are both reductions of the same event stream.
 
 ```
-daze/                     npm workspaces: packages/*  apps/server  apps/web
+absence/                     npm workspaces: packages/*  apps/server  apps/web
   dist/                   ALL build output (git ignored), one place:
     web/                    the built UI (apps/web → vite outDir)
     desktop/build/          server bundle + staged production node_modules
@@ -66,36 +66,36 @@ daze/                     npm workspaces: packages/*  apps/server  apps/web
   tsconfig.base.json      strict, noUncheckedIndexedAccess
   native/agentwatch/      Windows process observer (Job Object, committed prebuilt)
   native/agentwatch-linux/ Linux process observer (eBPF, committed prebuilt)
-  start-daze.bat          shortcuts that forward to the launchers below
-  start-daze-app.bat      (thin, one line each — the real logic lives with
-  start-daze.sh           the code it launches, not at the root)
+  start-absence.bat          shortcuts that forward to the launchers below
+  start-absence-app.bat      (thin, one line each — the real logic lives with
+  start-absence.sh           the code it launches, not at the root)
   scripts/
-    browser/start-daze.bat  browser launcher (Windows)
-    browser/start-daze.sh   browser launcher (Linux / WSL)
+    browser/start-absence.bat  browser launcher (Windows)
+    browser/start-absence.sh   browser launcher (Linux / WSL)
     checks/               check-*.ts acceptance scripts
     wsl-pi-config.sh      point WSL pi at the Windows host's model services
 
 apps/desktop/             Electron shell (not a workspace; own node_modules)
   main.cjs                runs the server in-process, opens the window, tray
-  start-daze-app.bat      desktop launcher (Windows)
+  start-absence-app.bat      desktop launcher (Windows)
   assets/tray.png         tray icon
   scripts/                desktop-only build tooling:
     bundle-server.mjs       compile the server + core to one CJS file
     stage-desktop.mjs       bundle + install prod deps for packaging
     make-icons.mjs          draw icon.png / icon.ico / tray.png
 
-packages/core/src/        events.ts (DazeEvent + payload map)  types.ts  index.ts
+packages/core/src/        events.ts (AbsenceEvent + payload map)  types.ts  index.ts
 
 apps/server/src/
   agents/                 AgentAdapter.ts (the runtime-agnostic boundary)
                           PiAdapter.ts  MockAdapter.ts  createAdapter.ts
-  process/                DazeShell.ts (owns the shell)  ProcessWatcher.ts (eggs)
+  process/                AbsenceShell.ts (owns the shell)  ProcessWatcher.ts (eggs)
                           ProcessTable.ts (pid / ppid / command line / start time)
                           observer.ts (platform-neutral event shapes)
                           JobMonitor.ts + JobSidecar.ts (Windows kernel events)
                           EbpfObserver.ts (Linux kernel events)
                           CommandIntent.ts + classify.ts + priors.ts (primary vs tool)
-  sessions/               SessionStore.ts  archive.ts (~/.daze/sessions)
+  sessions/               SessionStore.ts  archive.ts (~/.absence/sessions)
   filesystem/             FileTree.ts  FileWatcher.ts (chokidar)
   events/                 EventBus.ts
   websocket/ws.ts   api/{projects,sessions}.ts   util/{diff,ids,language,paths}.ts
@@ -126,18 +126,18 @@ apps/web/public/heti/     the avatar's PNG parts (16: body, head, hair, ahoge,
                           tail, hands, feet, 7 faces)
 
 scripts/                  make-demo.mjs  wsl-pi-config.sh
-  browser/                start-daze.bat  start-daze.sh (browser launchers)
+  browser/                start-absence.bat  start-absence.sh (browser launchers)
   checks/                 check-history.ts  check-report.ts  check-eggs.ts
                           check-classify.ts  check-agentwatch.ts  check-ebpf.ts
                           gen-heti-css.mjs (regenerates heti.css)
 ```
 
-## DazeEvent
+## AbsenceEvent
 
 The core UI understands exactly one structure:
 
 ```ts
-type DazeEvent = {
+type AbsenceEvent = {
   id: string;
   sessionId: string;
   timestamp: number;
@@ -196,7 +196,7 @@ move, Enter or click to run, Esc to clear.
 | `/compact [instructions]` | Compact the conversation context |
 | `/name [name]` | Set the session display name |
 | `/session` | Show session info and stats |
-| `/export [html\|jsonl]` | Export the session under `~/.daze/exports/` |
+| `/export [html\|jsonl]` | Export the session under `~/.absence/exports/` |
 
 Switching the model is **session-scoped** — Pi's global default is left alone.
 Results are printed back into the chat as system messages and archived with the
@@ -234,7 +234,7 @@ The packaging scripts (`npm run desktop:dist` / `desktop:pack`) produce three
 generated pieces (all under `apps/desktop/scripts/`, because they are
 desktop-only):
 
-- **`bundle-server.mjs`** compiles DAZE's own server (and `@daze/core`)
+- **`bundle-server.mjs`** compiles ABSENCE's own server (and `@absence/core`)
   into `dist/desktop/build/server.cjs`. A shipped app has no `tsx`, so the
   TypeScript can no longer be loaded at runtime. Third-party packages stay
   *external* and are resolved from a pruned `node_modules` instead — notably
@@ -253,7 +253,7 @@ desktop-only):
 The packaged app finds its pieces under `process.resourcesPath` instead of the
 repo root (see `main.cjs`): `apps/server-bundle.cjs`, `dist/web`,
 `node_modules`, and the native helpers under `native/`. The native observer path
-is set explicitly via `DAZE_AGENTWATCH` / `DAZE_AGENTWATCH_LINUX`, because the
+is set explicitly via `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX`, because the
 server's own path heuristic assumes a checkout layout.
 
 ## Local model
@@ -296,6 +296,6 @@ served by `server_qwen.py`. The model server is started by hand, not by Absence.
 
 4. Verify with `pi --list-models`, then start Absence.
 
-A 4B model is not reliable at choosing tools. `DAZE_PI_TOOLS` narrows the set
-(e.g. `DAZE_PI_TOOLS=read,bash,edit,write`), and the mock runtime is better for
+A 4B model is not reliable at choosing tools. `ABSENCE_PI_TOOLS` narrows the set
+(e.g. `ABSENCE_PI_TOOLS=read,bash,edit,write`), and the mock runtime is better for
 exercising the UI.

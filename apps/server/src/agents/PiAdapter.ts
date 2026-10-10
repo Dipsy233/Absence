@@ -4,22 +4,22 @@ import os from "node:os";
 import {
   type CommandOption,
   type ContextState,
-  type DazeEventPayloadMap,
-  type DazeEventType,
+  type AbsenceEventPayloadMap,
+  type AbsenceEventType,
   type SessionStatsInfo,
-} from "@daze/core";
+} from "@absence/core";
 import type { AgentSession, AgentSessionEvent, CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import { BaseAdapter, type AdapterOptions, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
-import { createDazeShell } from "../process/DazeShell";
+import { createAbsenceShell } from "../process/AbsenceShell";
 import { readFileSafe } from "../filesystem/FileTree";
 import { languageFromPath } from "../util/language";
 import { toPosix } from "../util/paths";
 
 /**
- * Wraps the Pi SDK (read.md §6). Pi is the worker; Daze only observes.
+ * Wraps the Pi SDK (read.md §6). Pi is the worker; Absence only observes.
  *
  * We subscribe to `AgentSessionEvent` and translate each one into a
- * DazeEvent. The UI never learns that Pi exists.
+ * AbsenceEvent. The UI never learns that Pi exists.
  */
 export class PiAdapter extends BaseAdapter {
   readonly runtime = "pi";
@@ -56,7 +56,7 @@ export class PiAdapter extends BaseAdapter {
     } = await import("@earendil-works/pi-coding-agent");
 
     // Pi persists a conversation to ~/.pi/agent/sessions/<cwd>/ by default. A
-    // resumed session reopens that file; a fresh one creates it. (DAZE used to
+    // resumed session reopens that file; a fresh one creates it. (ABSENCE used to
     // force SessionManager.inMemory here, which is why history never survived.)
     const manager = ctx.sessionFile
       ? SessionManager.open(ctx.sessionFile, undefined, ctx.cwd)
@@ -64,9 +64,9 @@ export class PiAdapter extends BaseAdapter {
 
     // Take over the shell: a custom tool registered under the same name shadows
     // Pi's built-in one (Pi's registry keys by name), so the allowlist in
-    // DAZE_PI_TOOLS is untouched. Pi still executes the command — Daze just owns
+    // ABSENCE_PI_TOOLS is untouched. Pi still executes the command — Absence just owns
     // the boundary, which is what lets it see the processes the agent lays.
-    const shell = this.options.processWatcher ? await createDazeShell(this.options.processWatcher) : undefined;
+    const shell = this.options.processWatcher ? await createAbsenceShell(this.options.processWatcher) : undefined;
     // The cast is Pi's own typing wart: a tool definition is typed with the
     // schema it was built for, while the registry wants the widened form.
     const customTools = shell
@@ -206,9 +206,9 @@ export class PiAdapter extends BaseAdapter {
   async exportSession(format: "html" | "jsonl"): Promise<string> {
     const session = this.session;
     if (!session) throw new Error("Pi session not started");
-    // Always an explicit path under ~/.daze: exportToJsonl() defaults to cwd,
+    // Always an explicit path under ~/.absence: exportToJsonl() defaults to cwd,
     // which would drop the file into the project and fire file_change events.
-    const dir = path.join(os.homedir(), ".daze", "exports");
+    const dir = path.join(os.homedir(), ".absence", "exports");
     await fs.mkdir(dir, { recursive: true });
     const base = this.piSessionId ?? this.sessionId ?? "session";
     if (format === "jsonl") {
@@ -229,7 +229,7 @@ export class PiAdapter extends BaseAdapter {
     try {
       await this.session.prompt(text);
     } catch (error) {
-      this.emitDaze("error", { message: errorMessage(error) });
+      this.emitAbsence("error", { message: errorMessage(error) });
     }
   }
 
@@ -247,8 +247,8 @@ export class PiAdapter extends BaseAdapter {
   }
 
   private onEvent(event: AgentSessionEvent): void {
-    const emit = <K extends DazeEventType>(type: K, payload: DazeEventPayloadMap[K]) =>
-      this.emitDaze(type, payload);
+    const emit = <K extends AbsenceEventType>(type: K, payload: AbsenceEventPayloadMap[K]) =>
+      this.emitAbsence(type, payload);
 
     switch (event.type) {
       case "agent_start":
@@ -347,7 +347,7 @@ export class PiAdapter extends BaseAdapter {
     }
   }
 
-  /** Turn a finished tool call into a first-class, visual DazeEvent. */
+  /** Turn a finished tool call into a first-class, visual AbsenceEvent. */
   private async mapToolResult(
     toolName: string,
     rawArgs: unknown,
@@ -369,7 +369,7 @@ export class PiAdapter extends BaseAdapter {
           const lineCount = content.length === 0 ? 0 : content.split("\n").length;
           const endLine = startLine + Math.max(0, lineCount - 1);
           this.mergeSlice(abs, startLine, content);
-          this.emitDaze("file_read", {
+          this.emitAbsence("file_read", {
             path: this.display(args.path),
             startLine,
             endLine,
@@ -383,7 +383,7 @@ export class PiAdapter extends BaseAdapter {
           // The argument is exactly what the agent wrote.
           const content = String(args.content ?? "");
           this.rememberWholeFile(abs, content);
-          this.emitDaze("file_write", {
+          this.emitAbsence("file_write", {
             path: this.display(args.path),
             content,
           });
@@ -403,7 +403,7 @@ export class PiAdapter extends BaseAdapter {
           // unresolved, binary, gone) must not overwrite the file we hold with
           // an empty whole-file version.
           if (after.length > 0 || known === undefined) this.rememberWholeFile(abs, after);
-          this.emitDaze("file_edit", {
+          this.emitAbsence("file_edit", {
             path: this.display(args.path),
             before,
             after,
@@ -417,7 +417,7 @@ export class PiAdapter extends BaseAdapter {
             ?.structuredContent;
           const output = structured?.output !== undefined ? String(structured.output) : textOfResult(result);
           const exitCode = structured?.exit_code !== undefined ? Number(structured.exit_code) : 0;
-          this.emitDaze("command", {
+          this.emitAbsence("command", {
             command: String(args.command ?? ""),
             stdout: output,
             stderr: "",
@@ -437,7 +437,7 @@ export class PiAdapter extends BaseAdapter {
                 ? this.display(args.path)
                 : undefined;
           const query = toolName === "ls" ? this.display(args.path ?? ".") : String(args.pattern ?? "");
-          this.emitDaze("search", {
+          this.emitAbsence("search", {
             tool: toolName,
             query,
             scope,
@@ -451,7 +451,7 @@ export class PiAdapter extends BaseAdapter {
           break;
       }
     } catch (error) {
-      this.emitDaze("error", { message: errorMessage(error) });
+      this.emitAbsence("error", { message: errorMessage(error) });
     }
   }
 
@@ -484,7 +484,7 @@ export class PiAdapter extends BaseAdapter {
 
   private abs(p: unknown): string {
     // A small model sometimes echoes the UI's `@file` reference style and passes
-    // the tool a path like `@src/api.ts`. Pi's own tools tolerate it; Daze must
+    // the tool a path like `@src/api.ts`. Pi's own tools tolerate it; Absence must
     // too, or the read/edit content is read from a file that does not exist and
     // every recorded version comes out empty. Strip the prefix before joining.
     const value = String(p ?? "").replace(/^@/, "");

@@ -1,7 +1,7 @@
 /*
- * agentwatch — the Linux process observer Daze runs alongside the server.
+ * agentwatch — the Linux process observer Absence runs alongside the server.
  *
- * Daze cannot see the processes a shell lays by polling /proc: a process that
+ * Absence cannot see the processes a shell lays by polling /proc: a process that
  * lives a millisecond is gone before the next look, and Linux offers no way to
  * close that gap except by asking the kernel to tell you. This helper does
  * exactly that, through eBPF tracepoints, and reports every fork, exec and exit
@@ -18,14 +18,14 @@
  * for a process that lives a millisecond.
  *
  * Output is one JSON object per line on stdout, the same shape as the Windows
- * observer, so the Daze side parses both with one code path:
+ * observer, so the Absence side parses both with one code path:
  *
  *   {"ev":"ready"}
  *   {"ev":"start","pid":1,"ppid":0,"path":"/usr/bin/bash","cmd":"bash -c …","comm":"bash"}
  *   {"ev":"exit","pid":1,"code":0}
  *
  * Privileges: loading BPF needs CAP_BPF + CAP_PERFMON (or root). On a machine
- * where Daze runs unprivileged, grant them to the binary:
+ * where Absence runs unprivileged, grant them to the binary:
  *
  *   sudo setcap cap_bpf,cap_perfmon+ep agentwatch-linux
  *

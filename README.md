@@ -54,18 +54,18 @@ that conversation.
 ### One-click launchers
 
 ```bat
-start-daze.bat            :: Windows — build, start the server, open the UI
-start-daze.bat check      :: dry run — report what would happen, start nothing
+start-absence.bat            :: Windows — build, start the server, open the UI
+start-absence.bat check      :: dry run — report what would happen, start nothing
 ```
 
 ```sh
-./start-daze.sh           # Linux / WSL — also builds the eBPF observer if missing
-./start-daze.sh check     # dry run
+./start-absence.sh           # Linux / WSL — also builds the eBPF observer if missing
+./start-absence.sh check     # dry run
 ```
 
 Both are idempotent (a running server is left alone) and forward to the real
-launchers under `scripts/browser/`. Override the port/runtime with `DAZE_PORT`
-and `DAZE_AGENT`.
+launchers under `scripts/browser/`. Override the port/runtime with `ABSENCE_PORT`
+and `ABSENCE_AGENT`.
 
 ### Desktop app (Electron)
 
@@ -80,7 +80,7 @@ npm run desktop:pack      # same, but an unpacked folder (faster)
 The desktop shell runs the server in-process — no console window, `port: 0`,
 a tray icon, close-to-tray so observation keeps running, and a native
 notification when a run finishes unfocused. The window is the same web app as
-the browser; nothing is forked. On Windows, **`start-daze-app.bat`** does
+the browser; nothing is forked. On Windows, **`start-absence-app.bat`** does
 build → install → open in one click.
 
 ### Running on a server (Linux)
@@ -91,7 +91,7 @@ with permission to load it:
 
 ```bash
 bash native/agentwatch-linux/build.sh        # needs clang + kernel headers
-sudo ./start-daze.sh                          # root, or grant capabilities:
+sudo ./start-absence.sh                          # root, or grant capabilities:
 sudo setcap cap_bpf,cap_perfmon+ep native/agentwatch-linux/agentwatch-linux
 ```
 
@@ -110,7 +110,7 @@ npm install -g @earendil-works/pi-coding-agent
 and its providers pointed at the Windows host (a loopback server on Windows is
 not reachable as `127.0.0.1` from inside WSL). `scripts/wsl-pi-config.sh`
 copies the Windows `models.json` and rewrites hosts to the default-route
-gateway; `start-daze.sh` runs it on every launch because the gateway address
+gateway; `start-absence.sh` runs it on every launch because the gateway address
 changes when WSL restarts.
 
 > **Sharing the checkout with Windows:** `node_modules` is platform-specific
@@ -202,12 +202,12 @@ it crosses medium/high, and a run-complete chime sounds when a run finishes.
 |---|---|---|
 | `PORT` | `8848` | Server port |
 | `HOST` | `127.0.0.1` | Server host |
-| `DAZE_AGENT` | `pi` | Default runtime: `pi` or `mock` |
-| `DAZE_PROJECTS_ROOT` | `~/projects` | Directory listed in the project picker |
-| `DAZE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | Pi built-in tools to enable. `bash` / `powershell` are served by Absence's own shell, which is what makes processes observable |
-| `DAZE_LOG_LEVEL` | `info` | Fastify log level |
-| `DAZE_STATE_DIR` | `~/.daze` | Where Absence archives session history (env-var prefix kept as `DAZE_` for compatibility) |
-| `DAZE_AGENTWATCH` / `DAZE_AGENTWATCH_LINUX` | repo `native/` | Override the native observer binary path |
+| `ABSENCE_AGENT` | `pi` | Default runtime: `pi` or `mock` |
+| `ABSENCE_PROJECTS_ROOT` | `~/projects` | Directory listed in the project picker |
+| `ABSENCE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | Pi built-in tools to enable. `bash` / `powershell` are served by Absence's own shell, which is what makes processes observable |
+| `ABSENCE_LOG_LEVEL` | `info` | Fastify log level |
+| `ABSENCE_STATE_DIR` | `~/.absence` | Where Absence archives session history (env-var prefix kept as `ABSENCE_` for compatibility) |
+| `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | repo `native/` | Override the native observer binary path |
 
 ### Chat commands
 
@@ -221,7 +221,7 @@ session-scoped; results are archived with the session and come back on resume.
 Absence talks to Pi, and Pi talks to any OpenAI-compatible endpoint — register a
 local server in `~/.pi/agent/models.json` and it works with no code changes
 (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a worked example). A 4B
-model is not reliable at choosing tools; `DAZE_PI_TOOLS` narrows the set, and
+model is not reliable at choosing tools; `ABSENCE_PI_TOOLS` narrows the set, and
 the mock runtime is better for exercising the UI.
 
 ## Security note
@@ -236,11 +236,11 @@ port to the public internet.
 ## Notes & limitations
 
 - Sessions **persist to disk** and survive a restart. Pi keeps the model's
-  conversation under `~/.pi/agent/sessions/`; Absence keeps the `DazeEvent` stream
-  under `~/.daze/sessions/` (override with `DAZE_STATE_DIR`). The picker's
+  conversation under `~/.pi/agent/sessions/`; Absence keeps the `AbsenceEvent` stream
+  under `~/.absence/sessions/` (override with `ABSENCE_STATE_DIR`). The picker's
   **History** reopens either: Absence's archive restores the Stage, Activity,
   files and chat; Pi's restores the model's context. Windows and WSL keep
-  separate histories (`~` differs); point `DAZE_STATE_DIR` at one shared path
+  separate histories (`~` differs); point `ABSENCE_STATE_DIR` at one shared path
   to merge them — but never run both platforms against one file at once.
 - Pi has **no delete tool** — deleting goes through `bash rm`. When an agent
   instead writes empty content the file is *truncated, not deleted*, and Absence
@@ -256,7 +256,7 @@ port to the public internet.
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the event pipeline, process
-  observation and classification, the repo tree, the `DazeEvent` schema, the
+  observation and classification, the repo tree, the `AbsenceEvent` schema, the
   HTTP/WS API, chat commands, desktop packaging internals, and the local-model
   setup.
 - [docs/TESTING.md](docs/TESTING.md) — the acceptance check scripts and what

@@ -1,4 +1,4 @@
-import type { ProcessPayload } from "@daze/core";
+import type { ProcessPayload } from "@absence/core";
 import { parseCommandIntent, type CommandIntent } from "./CommandIntent";
 import { classifyProcess } from "./classify";
 import { isTransparentLauncher } from "./priors";
@@ -101,7 +101,7 @@ interface Egg {
   exePath?: string;
   /** The intent of the command that laid it, for re-classification on exit. */
   intent: CommandIntent;
-  /** The shell pid Daze drove the command through, when known. */
+  /** The shell pid Absence drove the command through, when known. */
   shellPid?: number;
   /** The command a young tool belongs to; promoted to primary on survival. */
   reclassifyOnSurvive: boolean;
@@ -112,7 +112,7 @@ interface Egg {
 }
 
 export interface ProcessWatcherOptions {
-  /** Every egg state change, ready to become a `process` DazeEvent. */
+  /** Every egg state change, ready to become a `process` AbsenceEvent. */
   onProcess: (payload: ProcessPayload) => void;
   /**
    * The process every egg descends from. Defaults to the server itself, which
@@ -127,19 +127,19 @@ export interface ProcessWatcherOptions {
 /**
  * Watches the OS for processes the agent creates (read.md §6, v0.3).
  *
- * An egg is a process the agent started that Daze has not seen before — a dev
+ * An egg is a process the agent started that Absence has not seen before — a dev
  * server, a watcher, a daemon script. Its status says what became of it, which
  * is exactly what the panel's `running` / `dead` tabs are for; a process that
  * lived and died inside one long command is still something the agent created,
  * and it is reported as it is seen, then marked `exited` when it goes.
  *
- * The agent's shell is Daze's own (see DazeShell), so Daze knows when every
+ * The agent's shell is Absence's own (see AbsenceShell), so Absence knows when every
  * command starts and finishes — that window is the evidence. Snapshots are never
  * taken on the agent's path: `begin` is free, and the sampling happens while the
  * command runs and after it has returned, off to the side.
  *
  * Eggs are reported at the root of each new subtree, because one `npm run dev`
- * is one egg and not the nine processes it turns into. Daze never kills
+ * is one egg and not the nine processes it turns into. Absence never kills
  * anything: it reports what the agent started, and notices when it dies.
  */
 export class ProcessWatcher {
@@ -150,7 +150,7 @@ export class ProcessWatcher {
   /** Every pid we have ever claimed — a re-parented child must still read as ours. */
   private readonly seen = new Set<number>();
   /**
-   * Markers Daze put at the head of the commands it drove (see DazeShell). Any
+   * Markers Absence put at the head of the commands it drove (see AbsenceShell). Any
    * process carrying one is plumbing — the shell and its launcher — never an egg.
    */
   private readonly markers = new Set<string>();
@@ -237,7 +237,7 @@ export class ProcessWatcher {
     void this.ensureBaseline();
   }
 
-  /** Daze put this marker at the head of a command it drove. */
+  /** Absence put this marker at the head of a command it drove. */
   noteMarker(marker: string): void {
     this.markers.add(marker);
   }
@@ -445,7 +445,7 @@ export class ProcessWatcher {
     this.jobExec.set(pid, line);
 
     if (this.hasMarker(event.commandLine)) {
-      // Daze's own shell (or the launcher around it): plumbing, never an egg.
+      // Absence's own shell (or the launcher around it): plumbing, never an egg.
       // Remembered so its descendants still read as ours, but deliberately NOT
       // registered as a parent egg: the shell only forwards the command, so its
       // children are the roots of the subtrees we actually report.
@@ -678,7 +678,7 @@ export class ProcessWatcher {
 
 /**
  * The processes worth looking at: alive in this snapshot, not already known to
- * Daze, and started inside the command's window.
+ * Absence, and started inside the command's window.
  *
  * The start time is what makes this precise, and it is authoritative when the OS
  * reports it: a `sleep` from the user's own terminal — or the child of the next
@@ -690,7 +690,7 @@ export class ProcessWatcher {
  * Note the baseline is consulted *only* on that fallback: it is a snapshot, and a
  * snapshot costs half a second, so one taken when a command begins lands after
  * the command has already spawned things — excluding on it would hide exactly the
- * processes Daze is looking for.
+ * processes Absence is looking for.
  */
 export function candidatePids(
   baseline: ProcessTable | undefined,
@@ -718,8 +718,8 @@ export function candidatePids(
  *
  * Three things are never new eggs, and each was a real false positive:
  *  - a console host (`conhost.exe`), which Windows attaches to any console process;
- *  - the shell Daze drove the command through, and the launcher around it —
- *    recognised by the marker Daze put at the head of the command, so a shell the
+ *  - the shell Absence drove the command through, and the launcher around it —
+ *    recognised by the marker Absence put at the head of the command, so a shell the
  *    agent started *itself* (`bash daemon.sh`) is reported like anything else;
  *  - anything under an egg we already reported: `npm` is the egg, the `node` it
  *    spawns a second later is its child, not a second egg.
@@ -728,7 +728,7 @@ export function candidatePids(
  * is already ours (a reported egg, or one of our marked shells). An orphan whose
  * parent is unknown is *not* ours: claiming every orphan swept in unrelated
  * `sleep`s from elsewhere on the machine, and a process that needs them to be
- * attributed is one Daze cannot honestly pin on the agent.
+ * attributed is one Absence cannot honestly pin on the agent.
  */
 export function attributeProcesses(
   table: ProcessTable,
@@ -781,7 +781,7 @@ export function isConsoleHost(name: string): boolean {
   return CONSOLE_HOSTS.has(name.toLowerCase());
 }
 
-/** True when this process carries one of the markers Daze put on its own commands. */
+/** True when this process carries one of the markers Absence put on its own commands. */
 function hasMarker(info: ProcInfo | undefined, markers: ReadonlySet<string>): boolean {
   if (!info || markers.size === 0) return false;
   for (const marker of markers) {

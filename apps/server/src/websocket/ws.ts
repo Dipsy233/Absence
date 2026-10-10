@@ -23,7 +23,7 @@ function send(socket: ClientSocket, message: unknown): void {
 /**
  * WS /ws/sessions/:id (read.md §11, §33).
  *
- * On connect we replay the current snapshot, then stream DazeEvents and
+ * On connect we replay the current snapshot, then stream AbsenceEvents and
  * session-state updates.
  */
 export async function wsRoutes(app: FastifyInstance): Promise<void> {

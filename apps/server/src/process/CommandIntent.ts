@@ -1,8 +1,8 @@
 /**
  * What a shell command *intends*, read from the command text the agent submitted.
  *
- * This is the strongest signal Daze has for telling a real process from a
- * throwaway tool, and it costs nothing but a string parse: Daze owns the shell,
+ * This is the strongest signal Absence has for telling a real process from a
+ * throwaway tool, and it costs nothing but a string parse: Absence owns the shell,
  * so every command is in hand before it runs. The point is not to implement a
  * shell grammar — it is to pull out the few facts that separate a daemon from a
  * `cat`:

@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent } from "react";
-import type { FileTreeNode } from "@daze/core";
+import type { FileTreeNode } from "@absence/core";
 import { useChatStore } from "../../stores/chatStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useSessionStore } from "../../stores/sessionStore";

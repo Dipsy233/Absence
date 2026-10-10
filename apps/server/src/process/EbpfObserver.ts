@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { WatchExit, WatchStart, WatchStatus } from "./observer";
 
 /**
- * The Linux process observer: the Daze-side half of `native/agentwatch-linux`.
+ * The Linux process observer: the Absence-side half of `native/agentwatch-linux`.
  *
  * The helper is an eBPF program and its user-space loader, which reports every
  * fork, exec and exit the kernel performs. There is nothing to poll: a process
@@ -233,7 +233,7 @@ function numberOrUndefined(value: unknown): number | undefined {
 
 /** The committed binary lives next to its source, not in the build output. */
 function defaultExePath(): string {
-  if (process.env.DAZE_AGENTWATCH_LINUX) return process.env.DAZE_AGENTWATCH_LINUX;
+  if (process.env.ABSENCE_AGENTWATCH_LINUX) return process.env.ABSENCE_AGENTWATCH_LINUX;
   const base = path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(base, "../../../..");
   return path.join(repoRoot, "native", "agentwatch-linux", "agentwatch-linux");

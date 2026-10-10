@@ -1,4 +1,4 @@
-import { isAgentBusy, type AgentStatus } from "@daze/core";
+import { isAgentBusy, type AgentStatus } from "@absence/core";
 
 /**
  * The default desk page (read02 §11, §34). Nothing draws here — the desk stays
