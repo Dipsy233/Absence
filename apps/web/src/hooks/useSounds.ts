@@ -3,7 +3,7 @@ import type { AbsenceEvent } from "@absence/core";
 import { isAgentBusy } from "@absence/core";
 import type { AttentionLevel } from "../types/report";
 import { useSessionStore } from "../stores/sessionStore";
-import { playApproval, playAttention, playComplete } from "../lib/sounds";
+import { playApproval, playAttention, playComplete, startSoundCoveragePolling } from "../lib/sounds";
 import { memoBuildHistory } from "../lib/history";
 import { buildRunFacts, renderLive } from "../lib/report";
 
@@ -29,6 +29,12 @@ export function useSounds(): void {
   const prevAttention = useRef<AttentionLevel>("none");
   const hadActivity = useRef(false);
   const voicedApprovals = useRef<Set<string>>(new Set());
+
+  // Poll which events the active custom sound set covers, so uploaded chimes
+  // play instead of the synthesised ones without a reload.
+  useEffect(() => {
+    startSoundCoveragePolling();
+  }, []);
 
   useEffect(() => {
     const last = events[events.length - 1];

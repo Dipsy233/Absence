@@ -183,7 +183,7 @@ export function AvatarSkinPane() {
   };
 
   return (
-    <div className="flex w-1/3 flex-col overflow-y-auto p-4">
+    <div className="flex min-w-0 flex-1 basis-0 flex-col overflow-y-auto p-4">
       <h2 className="mb-1 font-mono text-sm tracking-widest text-desk-ink">AVATAR SKIN</h2>
       <p className="mb-3 text-[11px] leading-snug text-desk-dim">
         Pick a status, upload a file (mp4 / gif / png / webp / svg) and it becomes that status's

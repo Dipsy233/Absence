@@ -1,5 +1,7 @@
 /**
- * Absence's chimes, synthesised with the WebAudio API — no audio assets, and
+ * Absence's voice, such as it is: three chimes hooked onto the event stream.
+ *
+ * By default they are synthesised with the WebAudio API — no audio assets, and
  * no sound until the user has interacted with the page (the browser's autoplay
  * policy is also the mute switch: Absence never asks, it just stays silent until
  * the page has been touched).
@@ -11,6 +13,11 @@
  * - `approval`: the runtime is waiting on the user's decision — a three-note
  *   rising alert that is deliberately unlike the other two, because this is the
  *   one chime that asks for a response rather than reporting one.
+ *
+ * A custom sound set (Settings → SOUND SETS) can replace any of these with an
+ * uploaded audio file, served at /sound/<event>. When the active set has a file
+ * for an event, that file plays; otherwise the synthesised chime above rings,
+ * so a half-finished set still works.
  */
 
 let ctx: AudioContext | undefined;
@@ -39,8 +46,109 @@ function tone(at: AudioContext, start: number, frequency: number, duration: numb
   osc.stop(at.currentTime + start + duration + 0.05);
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   Custom sound sets.
+
+   The Settings dialog uploads files into the server's sound-sets directory and
+   activates one. Here we poll which events the active set covers, then play the
+   uploaded file instead of the synth chime. Mirrors useAvatarSkinCoverage.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export type SoundEvent = "attention" | "complete" | "approval";
+
+interface SoundCoverage {
+  active: string;
+  /** Event → stored file name (presence means a custom file exists). */
+  files: Partial<Record<SoundEvent, string>>;
+}
+
+const POLL_MS = 4000;
+let coverage: SoundCoverage | undefined;
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+
+/** Fetch (once) and poll the active sound set's coverage. Idempotent. */
+export function startSoundCoveragePolling(): void {
+  if (pollTimer !== undefined || typeof window === "undefined") return;
+  const tick = async () => {
+    try {
+      const res = await fetch("/api/sounds", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        active: string;
+        activeFiles: Partial<Record<string, string>>;
+      };
+      coverage = {
+        active: json.active,
+        files: (json.activeFiles ?? {}) as Partial<Record<SoundEvent, string>>,
+      };
+    } catch {
+      // Server unreachable: keep whatever we had.
+    }
+  };
+  void tick();
+  pollTimer = setInterval(tick, POLL_MS);
+}
+
+/** A custom file exists for this event in the active set. */
+function customFileFor(event: SoundEvent): boolean {
+  return Boolean(coverage?.active && coverage.files[event]);
+}
+
+/**
+ * Play the active set's uploaded chime for an event. Returns false when there
+ * is none (the caller then falls back to the synthesised tone).
+ */
+function playCustom(event: SoundEvent): boolean {
+  if (!customFileFor(event)) return false;
+  try {
+    const el = new Audio(`/sound/${event}?v=${encodeURIComponent(coverage!.active)}`);
+    el.volume = 1;
+    void el.play().catch(() => {
+      // Autoplay blocked or decode error — fall back to the synth chime.
+      synthPlay(event);
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Dispatch to the synth implementation of an event. */
+function synthPlay(event: SoundEvent): void {
+  if (event === "attention") playAttentionSynth("medium");
+  else if (event === "complete") playCompleteSynth();
+  else playApprovalSynth();
+}
+
+/* ── Public entry points (custom file first, synth fallback) ──────────────── */
+
 /** Human attention changed level — urgent when it reached high. */
 export function playAttention(level: "medium" | "high"): void {
+  if (playCustom("attention")) return;
+  playAttentionSynth(level);
+}
+
+/** The run finished — a resolved, descending third. */
+export function playComplete(): void {
+  if (playCustom("complete")) return;
+  playCompleteSynth();
+}
+
+/**
+ * The runtime is waiting on the user's decision — a rising three-note alert.
+ *
+ * Tuned to be unmistakable next to `attention` (two notes, level-dependent) and
+ * `complete` (two notes, descending): three ascending steps, the last one held,
+ * so a blocked agent announces itself even when the user is looking elsewhere.
+ */
+export function playApproval(): void {
+  if (playCustom("approval")) return;
+  playApprovalSynth();
+}
+
+/* ── Synthesised chimes ──────────────────────────────────────────────────── */
+
+function playAttentionSynth(level: "medium" | "high"): void {
   const at = audio();
   if (!at) return;
   if (level === "high") {
@@ -53,22 +161,14 @@ export function playAttention(level: "medium" | "high"): void {
   }
 }
 
-/** The run finished — a resolved, descending third. */
-export function playComplete(): void {
+function playCompleteSynth(): void {
   const at = audio();
   if (!at) return;
   tone(at, 0, 880, 0.16, 0.1);
   tone(at, 0.18, 660, 0.28, 0.1);
 }
 
-/**
- * The runtime is waiting on the user's decision — a rising three-note alert.
- *
- * Tuned to be unmistakable next to `attention` (two notes, level-dependent) and
- * `complete` (two notes, descending): three ascending steps, the last one held,
- * so a blocked agent announces itself even when the user is looking elsewhere.
- */
-export function playApproval(): void {
+function playApprovalSynth(): void {
   const at = audio();
   if (!at) return;
   tone(at, 0, 587, 0.12, 0.1); // D5

@@ -210,3 +210,55 @@ export async function activateAvatarSkin(name: string): Promise<{ active: string
     await fetch(`/api/avatar-skins/${encodeURIComponent(name)}/activate`, { method: "POST" }),
   );
 }
+
+/* ── Sound sets (user-uploaded chimes) ────────────────────────────────────── */
+
+export interface SoundSetMeta {
+  name: string;
+  /** Event → stored file name. */
+  files: Partial<Record<string, string>>;
+  complete: boolean;
+}
+
+export interface SoundSetState {
+  dir: string;
+  active: string;
+  builtin: string;
+  sets: SoundSetMeta[];
+  activeFiles: Partial<Record<string, string>>;
+}
+
+export async function fetchSounds(): Promise<SoundSetState> {
+  return json<SoundSetState>(await fetch("/api/sounds"));
+}
+
+export async function createSoundSet(name: string): Promise<void> {
+  await json(await fetch(`/api/sounds/${encodeURIComponent(name)}`, { method: "POST" }));
+}
+
+export async function uploadSoundFile(name: string, event: string, file: File): Promise<void> {
+  const query = `event=${encodeURIComponent(event)}&filename=${encodeURIComponent(file.name)}`;
+  await json(
+    await fetch(`/api/sounds/${encodeURIComponent(name)}/files?${query}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file,
+    }),
+  );
+}
+
+export async function deleteSoundFile(name: string, event: string): Promise<void> {
+  await json(
+    await fetch(`/api/sounds/${encodeURIComponent(name)}/files/${encodeURIComponent(event)}`, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function deleteSoundSet(name: string): Promise<void> {
+  await json(await fetch(`/api/sounds/${encodeURIComponent(name)}`, { method: "DELETE" }));
+}
+
+export async function activateSoundSet(name: string): Promise<{ active: string }> {
+  return json(await fetch(`/api/sounds/${encodeURIComponent(name)}/activate`, { method: "POST" }));
+}

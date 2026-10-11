@@ -8,6 +8,7 @@ import { projectRoutes } from "./api/projects";
 import { sessionRoutes } from "./api/sessions";
 import { eggFilterRoutes } from "./api/eggFilter";
 import { avatarSkinRoutes } from "./api/avatarSkins";
+import { soundRoutes } from "./api/sounds";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
 
@@ -44,7 +45,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   // Raw-body parser for the avatar-skin uploads: the client PUTs bare file
   // bytes (application/octet-stream), not JSON.
   app.addContentTypeParser(
-    ["application/octet-stream", "image/png", "image/gif", "image/jpeg", "image/webp", "image/svg+xml", "video/mp4", "video/webm", "video/quicktime"],
+    ["application/octet-stream", "image/png", "image/gif", "image/jpeg", "image/webp", "image/svg+xml", "video/mp4", "video/webm", "video/quicktime", "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/aac", "audio/flac", "audio/webm"],
     { parseAs: "buffer", bodyLimit: 64 * 1024 * 1024 },
     (_request, body, done) => done(null, body),
   );
@@ -70,6 +71,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   await app.register(sessionRoutes);
   await app.register(eggFilterRoutes);
   await app.register(avatarSkinRoutes);
+  await app.register(soundRoutes);
   await app.register(wsRoutes);
 
   // Serve the built web app when it exists (production / single-origin).

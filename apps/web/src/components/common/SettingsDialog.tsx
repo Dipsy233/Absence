@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { THEMES, type ThemeId } from "../../lib/theme";
 import { useSettingsStore, type LeftPanelId, type RailPanelId } from "../../stores/settingsStore";
 import { AvatarSkinPane } from "./AvatarSkinPane";
+import { SoundPane } from "./SoundPane";
 import {
   activateEggFilter,
   deleteEggFilter,
@@ -29,10 +30,12 @@ const THEME_IDS: ThemeId[] = ["amber", "blue", "green"];
  * The Settings dialog, opened from the gear button in the session bar. Split
  * into two halves:
  *
- *   left  — avatar skin: upload animation files per status (see AvatarSkinPane)
- *   right — appearance & layout (theme, rail orders) + Agent Eggs filter profiles: a small file manager over the server's
- *           profile directory (name on top, content below, saved files in a
- *           sidebar; same name overwrites, a new name creates a file)
+ *   left   — appearance & layout (theme, rail orders) (see AppearancePane)
+ *   middle — avatar skin: upload animation files per status (see AvatarSkinPane)
+ *   middle — sound sets: upload chimes per event (see SoundPane)
+ *   right  — Agent Eggs filter profiles: a small file manager over the server's
+ *            profile directory (name on top, content below, saved files in a
+ *            sidebar; same name overwrites, a new name creates a file)
  *
  * Rendered through a portal so the session bar's overflow/drag rules cannot
  * clip or swallow it.
@@ -47,14 +50,19 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[85vh] w-[1120px] overflow-hidden rounded-lg border border-desk-line bg-desk-panel shadow-[0_8px_40px_rgba(0,0,0,.5)]">
-        {/* ════ Left: avatar skin uploads ═══════════════════ */}
+      <div className="flex max-h-[85vh] w-[1500px] max-w-[96vw] overflow-hidden rounded-lg border border-desk-line bg-desk-panel shadow-[0_8px_40px_rgba(0,0,0,.5)]">
+        {/* ════ Left: appearance & layout ═══════════════════ */}
+        <AppearancePane />
+
+        <div className="w-px shrink-0 bg-desk-line" />
+
+        {/* ════ Avatar skin: upload animations per status ═══ */}
         <AvatarSkinPane />
 
         <div className="w-px shrink-0 bg-desk-line" />
 
-        {/* ════ Middle: appearance & layout ═════════════════ */}
-        <AppearancePane />
+        {/* ════ Sound sets: upload chimes per event ═════════ */}
+        <SoundPane />
 
         <div className="w-px shrink-0 bg-desk-line" />
 
@@ -67,8 +75,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   Appearance & layout (the right half, top): theme and the two rails' panel
-   order. Same sections the dialog had when it was a single column.
+   Appearance & layout (the left pane): theme and the two rails' panel order.
+   Same sections the dialog had when it was a single column.
    ════════════════════════════════════════════════════════════════════════ */
 function AppearancePane() {
   const theme = useSettingsStore((s) => s.theme);
@@ -79,8 +87,8 @@ function AppearancePane() {
   const moveLeftPanel = useSettingsStore((s) => s.moveLeftPanel);
 
   return (
-    <div className="w-1/3 overflow-y-auto p-4">
-      <h2 className="mb-3 font-mono text-sm tracking-widest text-desk-ink">SETTINGS</h2>
+    <div className="min-w-0 flex-1 basis-0 overflow-y-auto p-4">
+      <h2 className="mb-3 font-mono text-sm tracking-widest text-desk-ink">APPEARANCE</h2>
 
       {/* ── Theme ──────────────────────────────────────────── */}
       <section className="mb-4">
@@ -267,7 +275,7 @@ function EggFilterPane() {
   };
 
   return (
-    <div className="w-1/3 overflow-y-auto p-4">
+    <div className="min-w-0 flex-1 basis-0 overflow-y-auto p-4">
       <h2 className="mb-1 font-mono text-sm tracking-widest text-desk-ink">EGGS FILTER</h2>
       <p className="mb-3 text-[11px] leading-snug text-desk-dim">
         Command names the classifier treats as helpers, one per line. Profiles live in
