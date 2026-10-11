@@ -23,6 +23,7 @@ import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
 import { ProcessWatcher } from "../process/ProcessWatcher";
 import { JobMonitor } from "../process/JobMonitor";
+import { unifiedDiff } from "../util/diff";
 import { newId } from "../util/ids";
 import { toPosix } from "../util/paths";
 
@@ -36,6 +37,7 @@ const STAGE_TYPES = new Set<AbsenceEvent["type"]>([
   "file_edit",
   "command",
   "search",
+  "approval",
   "agent_start",
   "agent_end",
 ]);
@@ -68,6 +70,16 @@ export class AbsenceSession {
   private events: AbsenceEvent[] = [];
   private currentAction?: AbsenceEvent;
   private files = new Map<string, FileState>();
+  /**
+   * Content the agent itself just reported (an explicit `file_edit`/`file_write`),
+   * keyed by project-relative path. The filesystem watcher consults this so a
+   * shell write (`Set-Content`, `echo >`) is not reported twice when the agent
+   * also announced it: whichever arrives first wins, the other is dropped.
+   */
+  private recentAgentWrites = new Map<string, { content: string; at: number }>();
+  /** Paths whose disk diff is being computed right now, so concurrent watcher
+   * events for one write cannot both diff against the same stale known content. */
+  private diffingFiles = new Set<string>();
   private chat: ChatMessage[] = [];
   private context?: ContextState;
   private tree?: FileTreeNode;
@@ -178,6 +190,36 @@ export class AbsenceSession {
     await this.adapter.abort();
   }
 
+  /**
+   * Answer an approval prompt the agent raised (see the `approval` event). The
+   * decision is one of that event's option values; the adapter unblocks the
+   * runtime request. A system notice records the choice in the chat so it is
+   * archived with the session.
+   */
+  async respondApproval(id: string, value: string): Promise<void> {
+    if (!this.adapter.respondApproval) {
+      this.handleEvent(
+        createEvent(this.id, "message", {
+          role: "system",
+          content: "This runtime has no approvals to answer.",
+          streaming: false,
+        }),
+      );
+      return;
+    }
+    await this.adapter.respondApproval(id, value);
+    this.handleEvent(
+      createEvent(this.id, "message", {
+        role: "system",
+        content: `Approval ${value}.`,
+        streaming: false,
+      }),
+    );
+    // The agent is working again; wait for the next event to say what it is.
+    this.setStatus("thinking");
+    this.scheduleState();
+  }
+
   /** Choice lists for the commands that need one (the palette's submenu). */
   async commandOptions(name: string): Promise<CommandOption[]> {
     switch (name) {
@@ -190,6 +232,16 @@ export class AbsenceSession {
           value: level,
           label: level,
           active: level === thinking.level,
+        }));
+      }
+      case "permission": {
+        const permission = this.adapter.getPermission?.();
+        if (!permission) return [];
+        return permission.available.map((level) => ({
+          value: level,
+          label: level,
+          description: PERMISSION_DESCRIPTIONS[level],
+          active: level === permission.level,
         }));
       }
       default:
@@ -206,7 +258,7 @@ export class AbsenceSession {
     const adapter = this.adapter;
     const notice = (content: string): void =>
       this.handleEvent(createEvent(this.id, "message", { role: "system", content, streaming: false }));
-    const mutating = name === "model" || name === "thinking" || name === "compact";
+    const mutating = name === "model" || name === "thinking" || name === "compact" || name === "permission";
     if (mutating && (adapter.isBusy?.() ?? false)) {
       notice(`Cannot run /${name} while the agent is working — stop it first.`);
       return;
@@ -234,6 +286,19 @@ export class AbsenceSession {
           }
           const applied = await adapter.setThinking(level);
           notice(`Thinking level set to ${applied}.`);
+          break;
+        }
+        case "permission": {
+          if (!adapter.getPermission || !adapter.setPermission) {
+            return notice("This runtime has no permission setting.");
+          }
+          const level = args.trim();
+          if (!level) {
+            const current = adapter.getPermission();
+            return notice(`Permission: ${current.level}. Options: ${current.available.join(", ")}.`);
+          }
+          const applied = await adapter.setPermission(level);
+          notice(`Permission set to ${applied}. New turns run with it; the approvals card reflects it.`);
           break;
         }
         case "compact": {
@@ -448,11 +513,25 @@ export class AbsenceSession {
 
       case "file_write":
         this.setStatus("editing");
+        this.noteAgentWrite(event.payload.path, event.payload.content);
         this.upsertFile(event.payload.path, event.payload.content, { bump: true });
         break;
 
       case "file_edit":
         this.setStatus("editing");
+        // A runtime that reports a patch without a diff (Codex's `fileChange`
+        // carries paths, not hunks) still gets a real diff here, computed
+        // against what Absence last knew. This runs before the bus emits, so
+        // subscribers receive the enriched event.
+        if (!event.payload.diff) {
+          const previous = this.files.get(event.payload.path)?.content;
+          if (previous !== undefined && previous !== event.payload.after) {
+            event.payload.diff = unifiedDiff(previous, event.payload.after, event.payload.path, event.payload.path);
+          } else if (event.payload.before) {
+            event.payload.diff = unifiedDiff(event.payload.before, event.payload.after, event.payload.path, event.payload.path);
+          }
+        }
+        this.noteAgentWrite(event.payload.path, event.payload.after);
         this.upsertFile(event.payload.path, event.payload.after, { bump: true });
         break;
 
@@ -462,6 +541,12 @@ export class AbsenceSession {
 
       case "search":
         this.setStatus("searching");
+        break;
+
+      case "approval":
+        // A pending approval is the agent waiting on the user: nothing else is
+        // happening until one of the card's options is chosen.
+        this.setStatus("waiting");
         break;
 
       case "process":
@@ -547,6 +632,78 @@ export class AbsenceSession {
     const rel = toPosix(path.relative(this.session.projectPath, absolutePath));
     if (!rel || rel.startsWith("..")) return;
     this.handleEvent(createEvent(this.id, "file_change", { path: rel, kind }));
+    // The watcher is what turns a shell write into a diff: Codex has no Write
+    // action in its command parse (`Set-Content`, `echo > file`, a sed in a
+    // pipeline are all `Unknown`), so without this a file changed by a command
+    // would show only as "file touch" and never as a diff on the Stage.
+    void this.diffFromDisk(rel);
+  }
+
+  /**
+   * Read a project file back from disk and, when its content differs from what
+   * Absence last knew, emit the `file_write`/`file_edit` that a runtime with a
+   * first-class write tool would have sent directly.
+   *
+   * This is how a file changed by a shell command reaches the Stage: the diff is
+   * computed here instead of being declared by the agent. It is skipped when the
+   * change is one the agent already reported (see `recentAgentWrites`), so a
+   * Codex `apply_patch` or Pi's edit tool is not counted twice.
+   */
+  private async diffFromDisk(rel: string): Promise<void> {
+    if (this.diffingFiles.has(rel)) return;
+    this.diffingFiles.add(rel);
+    try {
+      await this.computeDiskDiff(rel);
+    } finally {
+      this.diffingFiles.delete(rel);
+    }
+  }
+
+  private async computeDiskDiff(rel: string): Promise<void> {
+    const absolute = path.join(this.session.projectPath, rel);
+    const content = await readFileSafe(absolute);
+    // Binary, gone, or unreadable: the `file_change` above already told the
+    // story; not every file has a text diff to show.
+    if (content === null) return;
+
+    const known = this.files.get(rel);
+    if (known?.content === content) return;
+
+    // The agent announced this exact write, and the watcher just arrived after
+    // it: the agent's own event already carried the change, so drop the echo.
+    const reported = this.recentAgentWrites.get(rel);
+    if (reported && reported.content === content) {
+      this.recentAgentWrites.delete(rel);
+      return;
+    }
+
+    if (known === undefined) {
+      this.handleEvent(createEvent(this.id, "file_write", { path: rel, content }));
+      return;
+    }
+    this.handleEvent(
+      createEvent(this.id, "file_edit", {
+        path: rel,
+        before: known.content,
+        after: content,
+        diff: unifiedDiff(known.content, content, rel, rel),
+      }),
+    );
+  }
+
+  /**
+   * Remember a write the agent reported directly, so the watcher does not
+   * report it a second time. Old entries are pruned so the map cannot grow
+   * without bound over a long session.
+   */
+  private noteAgentWrite(rel: string, content: string): void {
+    const at = Date.now();
+    this.recentAgentWrites.set(rel, { content, at });
+    if (this.recentAgentWrites.size > 64) {
+      for (const [key, value] of this.recentAgentWrites) {
+        if (at - value.at > 10_000) this.recentAgentWrites.delete(key);
+      }
+    }
   }
 
   /** A change outside the project — rare, and always worth reporting. */
@@ -600,6 +757,13 @@ function statusForTool(toolName: string): AgentStatus {
       return "running";
   }
 }
+
+/** One-line explanations for the sandbox levels in the `/permission` palette. */
+const PERMISSION_DESCRIPTIONS: Record<string, string> = {
+  "read-only": "the agent may read but never write",
+  "workspace-write": "the agent may edit inside the project",
+  "danger-full-access": "no sandbox — the agent may touch anything",
+};
 
 /** Render the `/session` command output as one system chat message. */
 function formatSessionStats(stats: SessionStatsInfo): string {

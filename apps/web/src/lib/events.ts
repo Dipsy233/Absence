@@ -16,6 +16,7 @@ export const ACTIVITY_TYPES = new Set<AbsenceEvent["type"]>([
   "command",
   "search",
   "process",
+  "approval",
   "error",
 ]);
 
@@ -27,6 +28,7 @@ export const STAGE_EVENT_TYPES = new Set<AbsenceEvent["type"]>([
   "file_edit",
   "command",
   "search",
+  "approval",
 ]);
 
 /**
@@ -252,6 +254,21 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
         event,
       };
     }
+    case "approval": {
+      // An approval is a prompt, not an action: it is keyed on the approval id
+      // so re-deriving the item (every state push, every replay tick) does not
+      // re-mount the card and drop the user's focus mid-decision.
+      const { id: approvalId, kind: approvalKind, title, detail, reason, cwd, options } = event.payload;
+      return {
+        id: `approval_${approvalId}`,
+        type: "approval",
+        title: "Approval needed",
+        source: { eventId: event.id },
+        payload: { kind: "approval", approvalId, approvalKind, title, detail, reason, cwd, options },
+        createdAt: event.timestamp,
+        event,
+      };
+    }
     default:
       return undefined;
   }
@@ -375,6 +392,17 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
         tone: "run",
         stageItem,
       };
+    case "approval":
+      return {
+        id,
+        event,
+        time,
+        action: "APPROVE?",
+        primary: event.payload.title,
+        secondary: event.payload.reason ?? event.payload.kind,
+        tone: "approval",
+        stageItem,
+      };
     case "search":
       return {
         id,
@@ -463,6 +491,8 @@ export function statusFromEvent(event: AbsenceEvent): AgentStatus | undefined {
       return "running";
     case "search":
       return "searching";
+    case "approval":
+      return "waiting";
     case "error":
       return "error";
     default:

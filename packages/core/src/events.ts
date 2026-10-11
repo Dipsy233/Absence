@@ -135,6 +135,45 @@ export interface ErrorPayload {
 }
 
 /**
+ * One selectable choice on an approval prompt. `value` is what the adapter
+ * sends back to the runtime (a decision slug); `label` is what the user reads.
+ */
+export interface ApprovalOption {
+  value: string;
+  label: string;
+  /** How the button is coloured. */
+  tone: "accept" | "accept-session" | "decline" | "cancel";
+}
+
+/**
+ * A runtime asking the user for permission to do something — the Codex
+ * app-server's `item/commandExecution/requestApproval` / `requestApproval`
+ * prompts, surfaced as a first-class event.
+ *
+ * The agent is blocked until one of `options` is answered (see
+ * `Session.respondApproval`). The Stage shows `detail` verbatim so the user
+ * reads exactly what is being approved, not a paraphrase.
+ */
+export interface ApprovalPayload {
+  /** The runtime's own request id, echoed back when a decision is made. */
+  id: string;
+  /** What kind of action is under review. */
+  kind: "command" | "file_change" | "permissions" | string;
+  /** A short title for the card and the Activity row. */
+  title: string;
+  /** The full request text, shown verbatim on the Stage. */
+  detail: string;
+  /** Why the runtime is asking (network access, extra write root, …). */
+  reason?: string;
+  /** The command's working directory, when the request names one. */
+  cwd?: string;
+  /** The runtime item this prompt belongs to, for pairing with the Stage. */
+  itemId?: string;
+  /** The choices the user may pick. Never empty. */
+  options: ApprovalOption[];
+}
+
+/**
  * Maps each event type to its payload shape. Consumers narrow by `type`.
  */
 export interface AbsenceEventPayloadMap {
@@ -152,6 +191,7 @@ export interface AbsenceEventPayloadMap {
   command: CommandPayload;
   search: SearchPayload;
   process: ProcessPayload;
+  approval: ApprovalPayload;
   error: ErrorPayload;
 }
 
@@ -172,6 +212,7 @@ export const ABSENCE_EVENT_TYPES = [
   "command",
   "search",
   "process",
+  "approval",
   "error",
 ] as const satisfies readonly AbsenceEventType[];
 

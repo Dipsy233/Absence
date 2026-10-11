@@ -193,6 +193,7 @@ export class JobSidecar {
           exePath: typeof parsed.path === "string" ? parsed.path : undefined,
           commandLine: typeof parsed.cmd === "string" ? parsed.cmd : undefined,
           lost: parsed.lost === true,
+          absenceSessionId: typeof parsed.sess === "string" && parsed.sess.length > 0 ? parsed.sess : undefined,
         } satisfies WatchStart);
         return undefined;
       }

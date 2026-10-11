@@ -12,7 +12,16 @@
  * and every descendant it spawns afterwards, joins the same job — including
  * processes spawned by `child_process.spawn`, with no cooperation from them.
  * Associating an IO completion port with the job turns creation/exit into
- * queued events, so there is nothing to poll and nothing to miss.
+ * queued events, so there is nothing to poll.
+ *
+ * Creation is read from that port. Exits are read from a second, stronger
+ * source: a thread-pool wait (`RegisterWaitForSingleObject`) is registered on
+ * every process handle the observer opens, and a process handle goes signaled
+ * the instant the process exits. A Job-Object EXIT_PROCESS message can be lost
+ * when a whole tree is terminated at once (`taskkill /T`, a runtime tearing
+ * down its shell), but a signaled kernel handle cannot — so the wait is the
+ * authoritative exit, and the completion-port message is the fallback for
+ * processes the observer never got a handle on.
  *
  * The server is placed into the job *after* it has started (see main): the
  * caller passes its pid on the command line, and we open it with
@@ -126,11 +135,18 @@ static ULONGLONG filetime_to_unix_ms(FILETIME ft)
     return t / 10000ULL - 11644473600000ULL;
 }
 
+/* Serialises JSON writes: the completion-port loop and the thread-pool wait
+ * callbacks all emit to the same stdout. Without this, two exits at once can
+ * interleave into a corrupt line. */
+static CRITICAL_SECTION g_write_lock;
+
 static void emit_json_line(const char *body)
 {
+    EnterCriticalSection(&g_write_lock);
     fputs(body, stdout);
     fputc('\n', stdout);
     fflush(stdout);
+    LeaveCriticalSection(&g_write_lock);
 }
 
 /* ------------------------------------------------------------------ */
@@ -143,6 +159,11 @@ static void emit_json_line(const char *body)
 typedef struct ProcNode {
     DWORD pid;
     HANDLE handle;
+    /* The thread-pool wait registered on `handle`. A process handle becomes
+     * signaled the instant the process exits, and that signal is a kernel
+     * object state — it cannot be dropped the way a Job-Object completion-port
+     * message can. The wait is what makes an exit event unmissable. */
+    HANDLE wait;
     struct ProcNode *next;
 } ProcNode;
 
@@ -151,6 +172,9 @@ static ProcNode *g_table[BUCKETS];
 static CRITICAL_SECTION g_lock;
 static HANDLE g_target_handle = NULL;
 
+/* Defined after `take`/`emit_json_line`; a process handle signaled = it exited. */
+static void CALLBACK on_handle_signaled(PVOID ctx, BOOLEAN timed_out);
+
 static unsigned bucket(DWORD pid) { return (unsigned)(pid * 2654435761u) % BUCKETS; }
 
 static void remember(DWORD pid, HANDLE h)
@@ -158,10 +182,31 @@ static void remember(DWORD pid, HANDLE h)
     EnterCriticalSection(&g_lock);
     unsigned b = bucket(pid);
     for (ProcNode *n = g_table[b]; n; n = n->next) {
-        if (n->pid == pid) { CloseHandle(n->handle); n->handle = h; LeaveCriticalSection(&g_lock); return; }
+        if (n->pid == pid) {
+            if (n->wait) { UnregisterWaitEx(n->wait, INVALID_HANDLE_VALUE); n->wait = NULL; }
+            CloseHandle(n->handle);
+            n->handle = h;
+            n->wait = NULL;
+            if (!RegisterWaitForSingleObject(&n->wait, h, on_handle_signaled,
+                                             (PVOID)(ULONG_PTR)pid, INFINITE, WT_EXECUTEONLYONCE)) {
+                n->wait = NULL;
+            }
+            LeaveCriticalSection(&g_lock);
+            return;
+        }
     }
     ProcNode *n = (ProcNode *)malloc(sizeof(ProcNode));
-    if (n) { n->pid = pid; n->handle = h; n->next = g_table[b]; g_table[b] = n; }
+    if (n) {
+        n->pid = pid;
+        n->handle = h;
+        n->wait = NULL;
+        n->next = g_table[b];
+        g_table[b] = n;
+        if (!RegisterWaitForSingleObject(&n->wait, h, on_handle_signaled,
+                                         (PVOID)(ULONG_PTR)pid, INFINITE, WT_EXECUTEONLYONCE)) {
+            n->wait = NULL;
+        }
+    }
     LeaveCriticalSection(&g_lock);
 }
 
@@ -175,6 +220,12 @@ static HANDLE take(DWORD pid)
         if ((*link)->pid == pid) {
             ProcNode *dead = *link;
             h = dead->handle;
+            /* WT_EXECUTEONLYONCE has already auto-unregistered the wait when
+             * this runs from the callback, so the call fails harmlessly. When
+             * it runs from the completion-port path the wait is still live and
+             * must be cancelled. INVALID_HANDLE_VALUE = do not block, which is
+             * also what makes this safe to call from inside a callback. */
+            if (dead->wait) { UnregisterWaitEx(dead->wait, INVALID_HANDLE_VALUE); dead->wait = NULL; }
             *link = dead->next;
             free(dead);
             break;
@@ -220,9 +271,72 @@ static WCHAR *read_command_line(HANDLE h, size_t *len, int *truncated)
     return out;
 }
 
+/* The marker Absence injects into the agent runtime's shell environment
+ * (Codex: `shell_environment_policy.set`, verified to survive PowerShell and
+ * detached `Start-Process` children). When a spawned process inherits it, the
+ * process belongs to that Absence session even though Absence could not wrap
+ * the runtime's shell. Reported as `sess` on the start event.
+ *
+ * The environment is NOT reachable through NtQueryInformationProcess class 61:
+ * that class returns a remote-pointer structure whose Buffer lives in the
+ * target's address space. The reliable read is the PEB walk below.
+ *
+ * x64 layout (verified empirically on Windows 10/11):
+ *   PEB + 0x20          -> RTL_USER_PROCESS_PARAMETERS *
+ *   parameters + 0x80   -> Environment (remote WCHAR block, NUL-separated)
+ *   parameters + 0x3F0  -> EnvironmentSize (bytes)
+ */
+static const WCHAR ABSENCE_SESSION_ENV[] = L"ABSENCE_SESSION_ID=";
+
+static WCHAR *read_session_marker(HANDLE h, size_t *len)
+{
+    *len = 0;
+    PROCESS_BASIC_INFORMATION pbi;
+    if (NtQueryInformationProcess(h, ProcessBasicInformation, &pbi, sizeof pbi, NULL) < 0) return NULL;
+
+    BYTE peb[512];
+    SIZE_T got = 0;
+    if (!ReadProcessMemory(h, pbi.PebBaseAddress, peb, sizeof peb, &got)) return NULL;
+    if (got < 0x28) return NULL;
+    BYTE *params = *(BYTE **)(peb + 0x20);
+    if (!params) return NULL;
+
+    BYTE pbuf[0x400];
+    if (!ReadProcessMemory(h, params, pbuf, sizeof pbuf, &got)) return NULL;
+    if (got < 0x3F8) return NULL;
+    BYTE *envRemote = *(BYTE **)(pbuf + 0x80);
+    SIZE_T envSize = *(SIZE_T *)(pbuf + 0x3F0);
+    if (!envRemote || envSize == 0 || envSize > 4u * 1024 * 1024) return NULL;
+
+    BYTE *env = (BYTE *)malloc(envSize);
+    if (!env) return NULL;
+    if (!ReadProcessMemory(h, envRemote, env, envSize, &got)) {
+        free(env);
+        return NULL;
+    }
+
+    /* Entries are `NAME=VALUE` wide strings separated by NUL, ended by an
+     * empty one. Scan on 2-byte boundaries until the needle matches. */
+    size_t nameLen = (sizeof(ABSENCE_SESSION_ENV) / sizeof(WCHAR)) - 1;
+    WCHAR *found = NULL;
+    for (SIZE_T i = 0; i + nameLen * sizeof(WCHAR) < got; i += sizeof(WCHAR)) {
+        const WCHAR *entry = (const WCHAR *)(env + i);
+        if (_wcsnicmp(entry, ABSENCE_SESSION_ENV, nameLen) != 0) continue;
+        const WCHAR *value = entry + nameLen;
+        SIZE_T avail = (got - i) / sizeof(WCHAR) - nameLen;
+        size_t vlen = 0;
+        while (vlen < avail && value[vlen]) vlen++;
+        found = (WCHAR *)malloc((vlen + 1) * sizeof(WCHAR));
+        if (found) { memcpy(found, value, vlen * sizeof(WCHAR)); found[vlen] = 0; *len = vlen; }
+        break;
+    }
+    free(env);
+    return found;
+}
+
 static void on_new(DWORD pid)
 {
-    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, pid);
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ | SYNCHRONIZE, FALSE, pid);
     if (!h) {
         char line[128];
         snprintf(line, sizeof line, "{\"ev\":\"start\",\"pid\":%lu,\"lost\":true}", (unsigned long)pid);
@@ -230,7 +344,6 @@ static void on_new(DWORD pid)
         return;
     }
     remember(pid, h);
-
     FILETIME created, exitT, kernel, user;
     GetProcessTimes(h, &created, &exitT, &kernel, &user);
 
@@ -270,19 +383,30 @@ static void on_new(DWORD pid)
     if (cmd) json_escape_utf8(cmd, cmdChars, cmdJson, cmdBytes);
     else cmdJson[0] = '\0';
 
-    size_t cap = pathBytes + cmdBytes + 256;
+    /* The session marker, when the process inherited one. Absent on anything
+     * the machine runs on its own; present on the runtime's shell tree. */
+    size_t sessChars = 0;
+    WCHAR *sess = read_session_marker(h, &sessChars);
+    size_t sessBytes = ((sessChars ? sessChars : 1) * 6) + 16;
+    char *sessJson = (char *)malloc(sessBytes);
+    if (sess) json_escape_utf8(sess, sessChars, sessJson, sessBytes);
+    else sessJson[0] = '\0';
+
+    size_t cap = pathBytes + cmdBytes + sessBytes + 320;
     char *line = (char *)malloc(cap);
     if (line) {
         snprintf(line, cap,
-            "{\"ev\":\"start\",\"pid\":%lu,\"ppid\":%lu,\"create\":%llu,\"path\":\"%s\",\"cmd\":\"%s\",\"cmdTruncated\":%s}",
+            "{\"ev\":\"start\",\"pid\":%lu,\"ppid\":%lu,\"create\":%llu,\"path\":\"%s\",\"cmd\":\"%s\",\"cmdTruncated\":%s,\"sess\":\"%s\"}",
             (unsigned long)pid, (unsigned long)ppid, filetime_to_unix_ms(created),
-            pathJson, cmdJson, truncated ? "true" : "false");
+            pathJson, cmdJson, truncated ? "true" : "false", sessJson);
         emit_json_line(line);
         free(line);
     }
     free(pathJson);
     free(cmdJson);
+    free(sessJson);
     if (cmd) free(cmd);
+    if (sess) free(sess);
 }
 
 static void on_exit(DWORD pid)
@@ -298,6 +422,36 @@ static void on_exit(DWORD pid)
      * process itself; the exit event is already queued, so this returns at
      * once. It is *not* an infinite wait — that would stall the event loop. */
     WaitForSingleObject(h, 0);
+    FILETIME created, exitT, kernel, user;
+    GetProcessTimes(h, &created, &exitT, &kernel, &user);
+    DWORD code = 0;
+    GetExitCodeProcess(h, &code);
+    char line[256];
+    snprintf(line, sizeof line,
+        "{\"ev\":\"exit\",\"pid\":%lu,\"durMs\":%llu,\"cpuMs\":%llu,\"code\":%lu}",
+        (unsigned long)pid,
+        (unsigned long long)(filetime_to_unix_ms(exitT) - filetime_to_unix_ms(created)),
+        (unsigned long long)((((ULONGLONG)kernel.dwHighDateTime << 32 | kernel.dwLowDateTime) +
+                              ((ULONGLONG)user.dwHighDateTime << 32 | user.dwLowDateTime)) / 10000ULL),
+        (unsigned long)code);
+    emit_json_line(line);
+    CloseHandle(h);
+}
+
+/*
+ * The thread pool fired because a process handle went signaled — the process
+ * has exited. This is the reliable exit path: a process handle's signal is
+ * kernel object state, so unlike a Job-Object completion-port message it cannot
+ * be lost when a whole tree dies at once. The completion-port EXIT message is
+ * kept as a second opinion, and `take` makes the two race safely: whichever
+ * runs first owns the node and emits, the other finds no node and stays quiet.
+ */
+static void CALLBACK on_handle_signaled(PVOID ctx, BOOLEAN timed_out)
+{
+    (void)timed_out;
+    DWORD pid = (DWORD)(ULONG_PTR)ctx;
+    HANDLE h = take(pid);
+    if (!h) return; /* the completion port already reported this exit */
     FILETIME created, exitT, kernel, user;
     GetProcessTimes(h, &created, &exitT, &kernel, &user);
     DWORD code = 0;
@@ -347,6 +501,7 @@ int wmain(int argc, wchar_t **argv)
     }
 
     InitializeCriticalSection(&g_lock);
+    InitializeCriticalSection(&g_write_lock);
 
     HANDLE job = CreateJobObjectW(NULL, NULL);
     if (!job) {
@@ -421,5 +576,15 @@ int wmain(int argc, wchar_t **argv)
     CloseHandle(job);
     CloseHandle(port);
     if (g_target_handle) CloseHandle(g_target_handle);
+    /* Cancel every outstanding wait before the process exits, so no callback
+     * fires against a torn-down table. UnregisterWaitEx(NULL) blocks until the
+     * callback (if running) returns. */
+    EnterCriticalSection(&g_lock);
+    for (unsigned i = 0; i < BUCKETS; i++) {
+        for (ProcNode *n = g_table[i]; n; n = n->next) {
+            if (n->wait) { UnregisterWaitEx(n->wait, NULL); n->wait = NULL; }
+        }
+    }
+    LeaveCriticalSection(&g_lock);
     return 0;
 }

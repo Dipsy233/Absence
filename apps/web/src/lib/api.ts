@@ -22,7 +22,7 @@ export interface ResumeTarget {
 
 export async function createSession(
   projectPath: string,
-  agent?: "pi" | "mock",
+  agent?: "pi" | "codex" | "mock",
   resume?: ResumeTarget,
 ): Promise<SessionSnapshot> {
   return json<SessionSnapshot>(
@@ -86,6 +86,17 @@ export async function runCommand(sessionId: string, name: string, args: string):
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, args }),
+    }),
+  );
+}
+
+/** Answer an approval prompt the agent raised; unblocks the runtime request. */
+export async function respondApproval(sessionId: string, id: string, value: string): Promise<void> {
+  await json(
+    await fetch(`/api/sessions/${sessionId}/approval`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, value }),
     }),
   );
 }

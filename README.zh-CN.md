@@ -222,6 +222,10 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
 | `ABSENCE_AGENT` | `pi` | 默认运行时：`pi` 或 `mock` |
 | `ABSENCE_PROJECTS_ROOT` | `~/projects` | 项目选择器列出的目录 |
 | `ABSENCE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | 启用的 Pi 内建工具。`bash` / `powershell` 由 Absence 自己的 shell 提供，这正是进程可被观察的原因 |
+| `ABSENCE_CODEX_SANDBOX` | `workspace-write` | Codex 沙箱：`read-only`、`workspace-write` 或 `danger-full-access`。不设置时 app-server 默认只读，每次写入都会卡在审批上 |
+| `ABSENCE_CODEX_APPROVAL` | `on-request` | Codex 审批策略：`untrusted`、`on-request`、`on-failure` 或 `never` |
+| `ABSENCE_CODEX_APPROVAL_DECISION` | `ask` | Absence 如何处理 Codex 的审批提示：`ask`（记为一条 activity 并等用户点选），或自动 `accept` / `accept-for-session` / `decline` |
+| `ABSENCE_CODEX_EXEC_SERVER` | 开 | 通过 Codex 的 exec-server 协议接管其 shell（见下）。设为 `0` 则让 Codex 自己跑命令，仅依赖 Job Object 观察器 |
 | `ABSENCE_LOG_LEVEL` | `info` | Fastify 日志级别 |
 | `ABSENCE_STATE_DIR` | `~/.absence` | Absence 归档会话历史的位置 |
 | `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | 仓库 `native/` | 覆盖原生观察器二进制路径 |
@@ -229,8 +233,46 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
 ### 聊天命令
 
 chat dock 兼作小终端：以 `/` 开头的行是命令，其他都是 prompt。`/model`、
-`/thinking`、`/compact`、`/name`、`/session`、`/export [html|jsonl]`。切换
-模型是会话级的；结果随会话归档，恢复时会回来。
+`/thinking`、`/permission`、`/compact`、`/name`、`/session`、`/export [html|jsonl]`。
+`/permission` 设置 agent 运行的沙箱（`read-only`、`workspace-write`、
+`danger-full-access`）。切换模型是会话级的；结果随会话归档，恢复时会回来。
+
+当运行时（如 Codex）请求提权时，Absence 会发一个 `approval` 事件：Activity 记
+一行 `APPROVE?`，agent 停在那里等你的决定。和其他 activity 一样，点这一行才会
+在 Stage 打开原文和可选项——不会有任何东西被强制推到 Stage 上。
+
+### 接管 Codex 的 shell
+
+Pi 的 shell 就是 Absence 自己的（见 `AbsenceShell`），这正是 Absence 能看到
+Pi 每条命令所拉起的所有进程的原因。Codex 跑在独立进程里，同样的办法用不上
+——但 Codex 暴露了一个 **exec-server**：它会把命令执行委托过去。Absence 起一个
+loopback exec-server，用 `environment/add` 注册它，并把 thread 固定到该
+environment，于是 Codex 会把每条命令作为 `process/start` 交给 Absence，由
+Absence 自己 spawn。
+
+这一点很关键：Codex 自己 spawn 的命令可能逃出观察器所在的 Job Object
+——`Start-Process` 等分离式启动会经 shell（explorer.exe）委派，而它不在 job 里，
+进程就此消失。由 Absence spawn 时，命令始终是 Absence 的子进程、在 job 内，退出也
+是第一手观测到的，所以蛋永远不会卡在 `running`。设
+`ABSENCE_CODEX_EXEC_SERVER=0` 可关闭此机制，仅依赖观察器。
+
+executor 也负责中断。当命令不以 PTY 运行时，Codex 不会向 stdin 写 Ctrl+C 来停止
+它，而是调 `process.interrupt()`，以 `process/signal { signal: "interrupt" }` 到达。
+Absence 用一个进程树 kill 来响应——这就是真实控制台里 Ctrl+C 对命令的含义。
+（一个忽略 `process/signal` 的 executor 会让命令继续运行，agent 就会报告
+「Ctrl+C 无效」。）
+
+命令的运行方式与 Codex 自己的 executor 一致。Codex 默认用普通管道，只在模型要求
+`tty: true` 时才分配 PTY；Absence 也是如此——`tty: true` 时用 `node-pty`（Windows
+上为 ConPTY）开真 PTY，否则用普通管道。PTY 会把 stdout 与 stderr 合并为单一流
+（以 `pty` 上报），并转发写入其中的 Ctrl+C，因此交互式命令的行为与原生完全一致。
+
+命令运行的环境也与 Codex 自己的 executor 完全一致。Codex 会同时发一个 `env_policy`
+（inherit / exclude / set / include-only）和一个稀疏的 `env`；Absence 严格按
+Codex 的 `shell_environment::create_env` 规则将该策略作用于自身环境
+（`ShellEnvironment.ts`），再让请求的 `env` 覆盖。从策略而非裸 `env` 构建环境，
+正是 `PATH` 与 `PATHEXT` 得以保留的原因，因此 `node ticker.mjs` 能像原生一样找到
+`node`。
 
 ## 安全提示
 

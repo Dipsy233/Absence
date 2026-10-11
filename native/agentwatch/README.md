@@ -22,7 +22,13 @@ calls `AssignProcessToJobObject`, which needs only `PROCESS_SET_QUOTA` and
 `PROCESS_TERMINATE`. No cooperation from Pi, the SDK, or the server's own code.
 
 An **IO completion port** associated with the job turns creation and exit into
-queued events, so there is nothing to poll.
+queued events. Creation is read from the port. Exits are read from a second,
+stronger source: a **thread-pool wait** is registered on every process handle
+(`RegisterWaitForSingleObject`), and a process handle goes signaled the moment
+the process exits. A `JOB_OBJECT_MSG_EXIT_PROCESS` message can be dropped when a
+whole tree is terminated in one burst (`taskkill /T`, a runtime tearing down its
+shell), but a signaled kernel handle cannot — so the wait is authoritative and
+the port message is the fallback for processes no handle was opened on.
 
 ```
 agentwatch.exe --target-pid <server pid>
@@ -30,9 +36,11 @@ agentwatch.exe --target-pid <server pid>
         ├─ CreateJobObject
         ├─ CreateIoCompletionPort + JobObjectAssociateCompletionPortInformation
         ├─ OpenProcess(server) + AssignProcessToJobObject(server)
-        └─ loop GetQueuedCompletionStatus
-              JOB_OBJECT_MSG_NEW_PROCESS  → on_new
-              JOB_OBJECT_MSG_EXIT_PROCESS → on_exit
+        ├─ loop GetQueuedCompletionStatus
+        │     JOB_OBJECT_MSG_NEW_PROCESS  → on_new
+        │     JOB_OBJECT_MSG_EXIT_PROCESS → on_exit  (fallback)
+        └─ per process: RegisterWaitForSingleObject(handle) → on_handle_signaled
+              (authoritative exit — the handle signal cannot be lost)
 ```
 
 From then on the server, Pi, the shell Pi spawns for each `bash` tool call, and

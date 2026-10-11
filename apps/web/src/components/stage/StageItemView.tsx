@@ -4,6 +4,7 @@ import { DiffStage } from "./DiffStage";
 import { TerminalStage } from "./TerminalStage";
 import { ThoughtStage } from "./ThoughtStage";
 import { ProcessStage } from "./ProcessStage";
+import { ApprovalStage } from "./ApprovalStage";
 
 /** Renders whichever Stage item is active (read02 §11–17). */
 export function StageItemView({ item }: { item: StageItem }) {
@@ -57,6 +58,19 @@ export function StageItemView({ item }: { item: StageItem }) {
           command={payload.command}
           startedAt={payload.startedAt}
           exitedAt={payload.exitedAt}
+          event={item.event}
+        />
+      );
+    case "approval":
+      return (
+        <ApprovalStage
+          approvalId={payload.approvalId}
+          approvalKind={payload.approvalKind}
+          title={payload.title}
+          detail={payload.detail}
+          reason={payload.reason}
+          cwd={payload.cwd}
+          options={payload.options}
           event={item.event}
         />
       );

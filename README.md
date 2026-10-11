@@ -213,7 +213,8 @@ Human attention watches for the agent defeating itself: a **file version loop**
 **command retry loop** (the same command failed twice or more) raise attention
 to *medium*; a change **outside the project** to *low*; an egg **still running**
 after the run ends to *high*. The live attention level also sounds a chime when
-it crosses medium/high, and a run-complete chime sounds when a run finishes.
+it crosses medium/high, an approval prompt rings when the runtime blocks on your
+decision, and a run-complete chime sounds when a run finishes.
 
 ## Personalization
 
@@ -249,6 +250,10 @@ details.
 | `ABSENCE_AGENT` | `pi` | Default runtime: `pi` or `mock` |
 | `ABSENCE_PROJECTS_ROOT` | `~/projects` | Directory listed in the project picker |
 | `ABSENCE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | Pi built-in tools to enable. `bash` / `powershell` are served by Absence's own shell, which is what makes processes observable |
+| `ABSENCE_CODEX_SANDBOX` | `workspace-write` | Codex sandbox: `read-only`, `workspace-write` or `danger-full-access`. Without it the app-server runs read-only and every write waits on an approval |
+| `ABSENCE_CODEX_APPROVAL` | `on-request` | Codex approval policy: `untrusted`, `on-request`, `on-failure` or `never` |
+| `ABSENCE_CODEX_APPROVAL_DECISION` | `ask` | How Absence handles a Codex approval prompt: `ask` (record it as an activity and wait for a click), or an automatic `accept` / `accept-for-session` / `decline` |
+| `ABSENCE_CODEX_EXEC_SERVER` | on | Take over Codex's shell through its exec-server protocol (see below). Set `0` to let Codex run commands itself and fall back to the Job Object observer |
 | `ABSENCE_LOG_LEVEL` | `info` | Fastify log level |
 | `ABSENCE_STATE_DIR` | `~/.absence` | Where Absence archives session history (env-var prefix kept as `ABSENCE_` for compatibility) |
 | `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | repo `native/` | Override the native observer binary path |
@@ -256,9 +261,55 @@ details.
 ### Chat commands
 
 The chat dock doubles as a small terminal: a line starting with `/` is a
-command, anything else is a prompt. `/model`, `/thinking`, `/compact`,
-`/name`, `/session`, `/export [html|jsonl]`. Model switching is
-session-scoped; results are archived with the session and come back on resume.
+command, anything else is a prompt. `/model`, `/thinking`, `/permission`,
+`/compact`, `/name`, `/session`, `/export [html|jsonl]`. `/permission` sets the
+sandbox the agent runs in (`read-only`, `workspace-write`, `danger-full-access`).
+Model switching is session-scoped; results are archived with the session and
+come back on resume.
+
+When the runtime (Codex) asks for permission, Absence raises an `approval`
+event: Activity records an `APPROVE?` row and the agent waits on the decision.
+Like any other activity, clicking the row opens the request verbatim and its
+options on the Stage — nothing is forced onto the Stage for you.
+
+### Taking over Codex's shell
+
+Pi's shell is Absence's own (see `AbsenceShell`), which is what lets Absence see
+every process a Pi command lays. Codex runs in its own process, so the same
+trick is not available — but Codex exposes an **exec-server** it will delegate
+command execution to. Absence starts a loopback exec-server, registers it with
+`environment/add`, and pins the thread to it, so Codex hands every command to
+Absence as a `process/start` request that Absence spawns itself.
+
+That matters because a command Codex spawns on its own can escape the Job
+Object the observer watches — `Start-Process` and other detached launches go
+through the shell (explorer.exe), which is outside the job, and the process then
+goes invisible. When Absence spawns the command, it is always Absence's own
+child, inside the job, and its exit is seen first-hand, so an egg can never be
+stuck at `running`. Set `ABSENCE_CODEX_EXEC_SERVER=0` to disable this and rely on
+the observer alone.
+
+The executor also owns interrupts. When a command runs without a PTY, Codex does
+not stop it by writing Ctrl+C to its stdin — it calls `process.interrupt()`,
+which arrives as `process/signal { signal: "interrupt" }`. Absence answers it
+with a process-tree kill, which is what Ctrl+C means to a command in a real
+console. (An executor that ignores `process/signal` leaves the command running
+and the agent reports that Ctrl+C did nothing.)
+
+Commands run the way Codex's own executor runs them. Codex defaults to plain
+pipes and only allocates a PTY when the model asks for `tty: true`; Absence does
+the same — a real PTY through `node-pty` (ConPTY on Windows) for `tty: true`,
+plain pipes otherwise. A PTY merges stdout and stderr into one stream (reported
+as `pty`) and delivers Ctrl+C written to it, so an interactive command behaves
+exactly as it would natively.
+
+Commands also run under the same environment they would on Codex's own executor.
+Codex sends an `env_policy` (inherit / exclude / set / include-only) alongside a
+sparse `env`; Absence runs that policy over its own environment exactly as
+Codex's `shell_environment::create_env` does (`ShellEnvironment.ts`), then lets
+the request's `env` win. Taking the environment from the policy — not from the
+sparse `env` alone — is what keeps `PATH` and `PATHEXT` present, so a command
+like `node ticker.mjs` resolves `node` just as it does natively.
 
 ## Security note
 

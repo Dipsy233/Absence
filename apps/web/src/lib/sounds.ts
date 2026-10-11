@@ -1,5 +1,5 @@
 /**
- * Absence's two chimes, synthesised with the WebAudio API — no audio assets, and
+ * Absence's chimes, synthesised with the WebAudio API — no audio assets, and
  * no sound until the user has interacted with the page (the browser's autoplay
  * policy is also the mute switch: Absence never asks, it just stays silent until
  * the page has been touched).
@@ -8,6 +8,9 @@
  *   notes, urgent at high, a softer pair at medium.
  * - `complete`: the run finished and the agent has a reply — one resolved
  *   major third, descending, like a kettle clicking off.
+ * - `approval`: the runtime is waiting on the user's decision — a three-note
+ *   rising alert that is deliberately unlike the other two, because this is the
+ *   one chime that asks for a response rather than reporting one.
  */
 
 let ctx: AudioContext | undefined;
@@ -56,4 +59,19 @@ export function playComplete(): void {
   if (!at) return;
   tone(at, 0, 880, 0.16, 0.1);
   tone(at, 0.18, 660, 0.28, 0.1);
+}
+
+/**
+ * The runtime is waiting on the user's decision — a rising three-note alert.
+ *
+ * Tuned to be unmistakable next to `attention` (two notes, level-dependent) and
+ * `complete` (two notes, descending): three ascending steps, the last one held,
+ * so a blocked agent announces itself even when the user is looking elsewhere.
+ */
+export function playApproval(): void {
+  const at = audio();
+  if (!at) return;
+  tone(at, 0, 587, 0.12, 0.1); // D5
+  tone(at, 0.14, 740, 0.12, 0.1); // F#5
+  tone(at, 0.28, 988, 0.3, 0.11); // B5
 }

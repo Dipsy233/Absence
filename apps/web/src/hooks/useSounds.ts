@@ -3,17 +3,20 @@ import type { AbsenceEvent } from "@absence/core";
 import { isAgentBusy } from "@absence/core";
 import type { AttentionLevel } from "../types/report";
 import { useSessionStore } from "../stores/sessionStore";
-import { playAttention, playComplete } from "../lib/sounds";
+import { playApproval, playAttention, playComplete } from "../lib/sounds";
 import { memoBuildHistory } from "../lib/history";
 import { buildRunFacts, renderLive } from "../lib/report";
 
 /**
- * Absence's voice, such as it is: two chimes hooked onto the event stream.
+ * Absence's voice, such as it is: three chimes hooked onto the event stream.
  *
  * - **attention change** — the live Human-attention level moved across a
  *   threshold (into, or out of, medium/high). Driven from a live reduction of
  *   the current run, not from the report overlay, so it works while the report
  *   is closed.
+ * - **approval waiting** — the runtime raised an approval prompt and is blocked
+ *   on the user's decision. Rung once per approval id, because the agent cannot
+ *   make progress without an answer and the user may be looking elsewhere.
  * - **run complete** — `agent_end` after activity: the agent has a reply.
  *
  * Silent until the user interacts with the page (the browser's autoplay
@@ -25,10 +28,23 @@ export function useSounds(): void {
   const status = useSessionStore((s) => s.agent.status);
   const prevAttention = useRef<AttentionLevel>("none");
   const hadActivity = useRef(false);
+  const voicedApprovals = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const last = events[events.length - 1];
-    if (last?.type === "agent_start") hadActivity.current = false;
+
+    // A pending approval is the one thing the user must act on, so it rings
+    // regardless of where the run stands. Replays and re-renders re-deliver the
+    // same event, so the id set keeps it to one chime per prompt.
+    if (last?.type === "approval" && !voicedApprovals.current.has(last.payload.id)) {
+      voicedApprovals.current.add(last.payload.id);
+      playApproval();
+    }
+
+    if (last?.type === "agent_start") {
+      hadActivity.current = false;
+      voicedApprovals.current.clear();
+    }
     if (last && last.type !== "agent_start" && last.type !== "agent_end") hadActivity.current = true;
     if (last?.type === "agent_end") {
       if (hadActivity.current && last.payload.reason !== "aborted") playComplete();

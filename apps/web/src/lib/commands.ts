@@ -27,6 +27,7 @@ export interface CommandSpec {
 export const COMMANDS: CommandSpec[] = [
   { name: "model", description: "Switch the model", argHint: "<provider/id>", kind: "choice" },
   { name: "thinking", description: "Set the thinking level", argHint: "<level>", kind: "choice" },
+  { name: "permission", description: "Set the sandbox / permission level", argHint: "<level>", kind: "choice" },
   { name: "compact", description: "Compact the context", argHint: "[instructions]", kind: "text" },
   { name: "name", description: "Set the session name", argHint: "<name>", kind: "text" },
   { name: "session", description: "Show session info and stats", kind: "none" },

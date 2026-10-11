@@ -1,9 +1,18 @@
-import type { AbsenceEvent, FileTreeNode } from "@absence/core";
+import type { AbsenceEvent, ApprovalOption, FileTreeNode } from "@absence/core";
 
 /** Stage modes. `live` follows the agent; the rest are pinned views. */
-export type StageMode = "live" | "desk" | "file" | "diff" | "terminal" | "replay" | "thought" | "process";
+export type StageMode =
+  | "live"
+  | "desk"
+  | "file"
+  | "diff"
+  | "terminal"
+  | "replay"
+  | "thought"
+  | "process"
+  | "approval";
 
-export type StageItemType = "file" | "diff" | "terminal" | "thought" | "process";
+export type StageItemType = "file" | "diff" | "terminal" | "thought" | "process" | "approval";
 
 export type StagePayload =
   | {
@@ -51,6 +60,17 @@ export type StagePayload =
       /** mtime of the state we are showing, used for the "alive for" line. */
       startedAt: number;
       exitedAt?: number;
+    }
+  /** The runtime asking the user for permission (Codex's approval prompts). */
+  | {
+      kind: "approval";
+      approvalId: string;
+      approvalKind: string;
+      title: string;
+      detail: string;
+      reason?: string;
+      cwd?: string;
+      options: ApprovalOption[];
     };
 
 /** One thing placed on the Stage (read02 §12). */
@@ -87,7 +107,17 @@ export interface ActivityRow {
   action: string;
   primary: string;
   secondary?: string;
-  tone: "read" | "search" | "edit" | "run" | "lifecycle" | "think" | "process" | "error" | "warn";
+  tone:
+    | "read"
+    | "search"
+    | "edit"
+    | "run"
+    | "lifecycle"
+    | "think"
+    | "process"
+    | "approval"
+    | "error"
+    | "warn";
   /** The Stage item this row opens, if any (read02 §19). */
   stageItem?: StageItem;
 }

@@ -23,12 +23,14 @@ interface SessionStore {
   connected: boolean;
   error?: string;
 
-  startSession: (projectPath: string, agent?: "pi" | "mock") => Promise<void>;
+  startSession: (projectPath: string, agent?: "pi" | "codex" | "mock") => Promise<void>;
   /** Reopen a persisted session from the history list. */
   resumeSession: (entry: SessionHistoryEntry) => Promise<void>;
   sendPrompt: (text: string) => Promise<void>;
   /** Run a terminal-box command (its output streams back as a system message). */
   runCommand: (name: string, args: string) => Promise<void>;
+  /** Answer an approval prompt the agent raised (the `approval` event). */
+  respondApproval: (id: string, value: string) => Promise<void>;
   abort: () => Promise<void>;
   reset: () => void;
   hydrate: (snapshot: SessionSnapshot) => void;
@@ -64,7 +66,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         : undefined;
     const snapshot = await api.createSession(
       entry.projectPath,
-      entry.runtime === "mock" ? "mock" : undefined,
+      entry.runtime === "mock" ? "mock" : entry.runtime === "codex" ? "codex" : undefined,
       resume,
     );
     get().hydrate(snapshot);
@@ -80,6 +82,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const id = get().session?.id;
     if (!id) return;
     await api.runCommand(id, name, args);
+  },
+
+  respondApproval: async (approvalId, value) => {
+    const id = get().session?.id;
+    if (!id) return;
+    await api.respondApproval(id, approvalId, value);
   },
 
   abort: async () => {

@@ -5,6 +5,7 @@ import { isTransparentLauncher } from "./priors";
 import { JobMonitor } from "./JobMonitor";
 import type { WatchExit, WatchStart } from "./observer";
 import { snapshotProcesses, type ProcessTable, type ProcInfo } from "./ProcessTable";
+import { unwrapCommandText } from "./CodexShell";
 
 /** How long after a command returns we take the final look. */
 const SETTLE_MS = 2500;
@@ -201,6 +202,26 @@ export class ProcessWatcher {
   private readonly jobExec = new Map<number, string>();
   /** The working directory commands run in; set by the shell wrapper. */
   private jobCwd = process.cwd();
+  /**
+   * The Absence session the observed runtime belongs to, when that runtime's
+   * shell environment carries the injected `ABSENCE_SESSION_ID` (Codex does;
+   * Pi is marked on the command line instead). Set by `beginSession`; start
+   * events whose env marker matches get attributed to this session's commands
+   * even where the ancestry heuristic is blind.
+   */
+  private jobSessionId?: string;
+
+  /**
+   * True once this watcher has been told which Absence session it observes
+   * (`beginSession`). Codex runs in this mode: Absence cannot wrap its shell,
+   * so the runtime injects `ABSENCE_SESSION_ID` and the kernel reports it on
+   * every process the runtime's shell tree lays. Pi does not — its marker is
+   * on the command line — so this stays off and the older heuristics apply
+   * unchanged.
+   */
+  private get sessionMode(): boolean {
+    return this.jobSessionId !== undefined;
+  }
 
   constructor(private readonly options: ProcessWatcherOptions) {
     this.rootPid = options.rootPid ?? process.pid;
@@ -243,13 +264,22 @@ export class ProcessWatcher {
   }
 
   /**
+   * Declare which Absence session the observed runtime belongs to. Start
+   * events whose environment carries the same `ABSENCE_SESSION_ID` are then
+   * known to be the runtime's shell tree rather than machine noise.
+   */
+  beginSession(sessionId: string): void {
+    this.jobSessionId = sessionId;
+  }
+
+  /**
    * A shell command is about to run. Deliberately cheap: taking a snapshot here
    * would add the cost of it to every command the agent runs. All we keep is
    * *when* it started, and that it closes whatever window was still open — two
    * commands a second apart must not both claim the same new process.
    */
-  begin(command: string, cwd?: string): number {
-    const at = this.now();
+  begin(command: string, cwd?: string, startedAtMs?: number): number {
+    const at = startedAtMs && startedAtMs < this.now() ? startedAtMs : this.now();
     if (cwd) this.jobCwd = cwd;
     for (const earlier of this.open.values()) earlier.closedAt ??= at;
     for (const window of this.pending) window.closedAt ??= at;
@@ -453,11 +483,34 @@ export class ProcessWatcher {
       return;
     }
 
+    // Session attribution, the Codex counterpart of the command-line marker.
+    // When the runtime injects `ABSENCE_SESSION_ID`, the kernel reports it on
+    // every process of the runtime's shell tree; that marker, not the window,
+    // is the authoritative answer to "is this ours?". A process carrying a
+    // *different* session's marker is someone else's (another Absence session
+    // sharing the machine) and is none of our business; an *unmarked* process
+    // in session mode is the server's own infrastructure (update checks, git,
+    // the helper itself), never a command the agent laid.
+    const session = this.sessionVerdict(event);
+    if (session === "foreign") {
+      this.jobSeen.add(pid);
+      return;
+    }
+    if (session === "unmarked" && this.sessionMode) {
+      // Remembered so nothing descends from a phantom root, but never reported:
+      // Codex's unmarked children are plumbing, and the window would otherwise
+      // hand them to whichever command happened to be running.
+      this.jobSeen.add(pid);
+      return;
+    }
+
     const window = this.commandFor(event.createdAt);
     if (window === undefined) {
-      // Outside any command window: infrastructure the server itself spawns
-      // (update checks, git, tooling). Remembered so its children do not get
-      // mistaken for a command's work, but not reported.
+      // Outside any command window. An env-marked process is still the
+      // runtime's shell tree (a detached daemon, most likely), so it is
+      // remembered but not reported — it has no command to be credited to.
+      // Unmarked, it is infrastructure the server itself spawns (update
+      // checks, git, tooling): remembered for the same reason.
       this.jobSeen.add(pid);
       return;
     }
@@ -617,6 +670,23 @@ export class ProcessWatcher {
     return false;
   }
 
+  /**
+   * Whether a kernel event belongs to this Absence session, judged by the
+   * `ABSENCE_SESSION_ID` the runtime injected into its shell environment.
+   *
+   *   - "ours"     — the marker matches `beginSession`; the runtime laid it.
+   *   - "foreign"  — the marker is a *different* session's; not ours to report.
+   *   - "unmarked" — no marker was reported. In session mode (Codex) that is
+   *                  the server's own infrastructure; outside it, the older
+   *                  heuristics (ancestry, the command window) still decide.
+   */
+  private sessionVerdict(event: WatchStart): "ours" | "foreign" | "unmarked" {
+    if (this.jobSessionId === undefined) return "unmarked";
+    const marker = event.absenceSessionId;
+    if (marker === undefined) return "unmarked";
+    return marker === this.jobSessionId ? "ours" : "foreign";
+  }
+
   private async checkAlive(): Promise<void> {
     this.aliveTimer = undefined;
     if (this.disposed) return;
@@ -648,7 +718,11 @@ export class ProcessWatcher {
       pid: egg.info.pid,
       ppid: egg.info.ppid,
       name: egg.info.name,
-      commandLine: egg.info.commandLine,
+      // The reported command line is the human-facing one: for a command Codex
+      // wrapped in a shell (`pwsh -NoProfile -Command "<preamble>node x"`) this
+      // is the model's own command, so the egg panel shows what was asked for,
+      // not the plumbing. Matching and classification used the raw line already.
+      commandLine: unwrapCommandText(egg.info.commandLine),
       status: egg.status,
       startedAt: egg.startedAt,
       exitedAt: egg.exitedAt,

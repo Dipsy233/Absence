@@ -23,6 +23,14 @@ export interface WatchStart {
    * event still proves it existed, which is exactly what polling could not say.
    */
   lost?: boolean;
+  /**
+   * The value of `ABSENCE_SESSION_ID` in the process's environment, when the
+   * observer could read it (Windows reads the env block at creation). A
+   * runtime whose shell Absence cannot wrap (Codex) injects the variable, so
+   * its whole shell tree carries the session that spawned it — the Codex
+   * counterpart of Pi's command-line marker.
+   */
+  absenceSessionId?: string;
 }
 
 /** A process has exited. */

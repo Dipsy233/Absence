@@ -13,6 +13,8 @@ function modeForItem(item: StageItem): StageMode {
       return "thought";
     case "process":
       return "process";
+    case "approval":
+      return "approval";
     default:
       return "desk";
   }

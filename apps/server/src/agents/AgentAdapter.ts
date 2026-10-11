@@ -83,6 +83,21 @@ export interface AgentAdapter {
   /** True while the runtime is mid-run (mutating commands are refused). */
   isBusy?(): boolean;
 
+  // --- approvals -------------------------------------------------------------
+  /**
+   * Answer an approval prompt the runtime raised (a `approval` event). The
+   * `value` is one of the option values from that event. Resolves once the
+   * runtime accepted the decision.
+   */
+  respondApproval?(id: string, value: string): Promise<void>;
+  /** The runtime's current permission/sandbox setting, when it has one. */
+  getPermission?(): { level: string; available: string[] };
+  /**
+   * Change the runtime's permission/sandbox setting for subsequent turns
+   * (the sandbox the agent runs in). Returns the applied level.
+   */
+  setPermission?(level: string): Promise<string>;
+
   dispose(): void;
 }
 

@@ -42,9 +42,14 @@ export function useStageView(): StageView {
   return { mode, following, item: following ? liveItem : activeItem, liveItem };
 }
 
-/** Which object the world camera should frame, given what the Stage is showing. */
+/**
+ * Which object the world camera should frame, given what the Stage is showing.
+ */
 export function focusFor(mode: StageMode, status: AgentStatus, replayItem?: StageItem): WorldFocus {
   switch (mode) {
+    case "approval":
+      // The agent is blocked on the user's decision — the camera holds on it.
+      return "thinking";
     case "file":
       return "reading";
     case "diff":

@@ -147,8 +147,8 @@ export function AgentEggsPanel() {
                     </span>
                     <span className="ml-auto shrink-0 text-desk-dim">pid {egg.pid}</span>
                   </span>
-                  <span className="block truncate pl-3 text-desk-dim" title={egg.commandLine}>
-                    {egg.commandLine || egg.command || ""}
+                  <span className="block truncate pl-3 text-desk-dim" title={egg.command || egg.commandLine}>
+                    {egg.command || egg.commandLine || ""}
                   </span>
                   <span className="block pl-3 text-[10px] text-desk-dim/80">
                     {egg.status === "running" ? "running for" : "lived"}{" "}

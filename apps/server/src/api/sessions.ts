@@ -19,7 +19,7 @@ async function isDirectory(candidate: string): Promise<boolean> {
 }
 
 function resolveAgent(value: string | undefined): AgentKind {
-  if (value === "mock" || value === "pi") return value;
+  if (value === "mock" || value === "pi" || value === "codex") return value;
   return config.defaultAgent;
 }
 
@@ -128,6 +128,24 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     const session = sessionStore.get(id);
     if (!session) return reply.code(404).send({ error: "session not found" });
     await session.abort();
+    return { ok: true };
+  });
+
+  /**
+   * Answer an approval prompt the agent raised (the `approval` event). `value`
+   * is one of that event's option values; it unblocks the runtime request.
+   */
+  app.post("/api/sessions/:id/approval", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const session = sessionStore.get(id);
+    if (!session) return reply.code(404).send({ error: "session not found" });
+    const body = request.body as { id?: string; value?: string } | undefined;
+    const approvalId = body?.id?.trim();
+    const value = body?.value?.trim();
+    if (!approvalId || !value) {
+      return reply.code(400).send({ error: "id and value are required" });
+    }
+    await session.respondApproval(approvalId, value);
     return { ok: true };
   });
 
