@@ -348,12 +348,16 @@ export class DshAdapter extends BaseAdapter {
     const content = textOfToolContent(update.content);
     try {
       if (lowered === "read" || lowered === "file_read") {
-        // DSH's read tool result carries the file contents; use them verbatim
-        // when present, otherwise read back from disk.
+        // DSH's read result is wrapped:
+        //   <path>…</path>\n<type>file</type>\n<content>\nNN: line\n…
+        // Absence's file_read wants the plain text with real line numbers, so
+        // unwrap and de-number. Fall back to reading from disk when the result
+        // is empty.
         const p = toolInputPath(update) ?? "";
         if (!p) return;
         const abs = this.abs(p);
-        const text = content.length > 0 ? content : (await readFileSafe(abs)) ?? "";
+        const raw = content.length > 0 ? content : (await readFileSafe(abs)) ?? "";
+        const text = stripDshReadWrapper(raw);
         const lineCount = text.length === 0 ? 0 : text.split("\n").length;
         this.emitAbsence("file_read", {
           path: this.display(p),
@@ -365,11 +369,19 @@ export class DshAdapter extends BaseAdapter {
       } else if (lowered === "write" || lowered === "file_write") {
         const p = toolInputPath(update) ?? "";
         if (!p) return;
-        this.emitAbsence("file_write", { path: this.display(p), content });
+        // The tool result is only a status line ("Created file …"); the bytes
+        // the agent wrote are in the call's input.
+        const written = toolInputContent(update);
+        const abs = this.abs(p);
+        const text = written ?? ((await readFileSafe(abs)) ?? "");
+        this.emitAbsence("file_write", { path: this.display(p), content: text });
       } else if (lowered === "edit" || lowered === "str_replace" || lowered === "str_replace_editor") {
         const p = toolInputPath(update) ?? "";
         if (!p) return;
-        this.emitAbsence("file_edit", { path: this.display(p), before: "", after: content, diff: "" });
+        // dsh reports the new content / a diff in the result; the before/after
+        // pair is reconstructed from disk when the tool only says "updated".
+        const after = stripDshReadWrapper(content);
+        this.emitAbsence("file_edit", { path: this.display(p), before: "", after, diff: "" });
       } else if (lowered === "bash" || lowered === "pwsh" || lowered === "shell" || lowered === "command") {
         this.emitAbsence("command", {
           command: String(toolInputCommand(update) ?? ""),
@@ -587,6 +599,52 @@ function toolInputPath(update: any): string | undefined {
     if (typeof record[key] === "string") return record[key] as string;
   }
   return undefined;
+}
+
+/** The bytes a write/edit tool was given to store, from its call input. */
+function toolInputContent(update: any): string | undefined {
+  const input = update?.rawInput ?? update?.input;
+  if (!input || typeof input !== "object") return undefined;
+  const record = input as Record<string, unknown>;
+  for (const key of ["content", "contents", "text", "new_string", "newText"]) {
+    if (typeof record[key] === "string") return record[key] as string;
+  }
+  return undefined;
+}
+
+/**
+ * Unwrap a dsh read result. The tool answers with:
+ *
+ *   <path>/abs/path</path>
+ *   <type>file</type>
+ *   <content>
+ *   1: first line
+ *   2: second line
+ *   </content>
+ *
+ * Absence's `file_read` carries the plain text (no wrapper, no line-number
+ * prefix), the same shape Pi's read produces, so strip both here.
+ */
+function stripDshReadWrapper(text: string): string {
+  let body = text;
+  // Drop a leading <path>… and <type>… header, and the <content> opener.
+  const contentAt = body.indexOf("<content>");
+  if (contentAt >= 0) {
+    body = body.slice(contentAt + "<content>".length);
+  } else if (/^\s*<path>[\s\S]*?<\/path>/.test(body)) {
+    // No <content> tag: strip the header lines anyway.
+    body = body.replace(/^\s*<path>[\s\S]*?<\/path>\s*/, "").replace(/^\s*<type>[^<]*<\/type>\s*/, "");
+  }
+  // Remove a trailing </content>.
+  body = body.replace(/\s*<\/content>\s*$/, "");
+  // Drop one leading and one trailing newline introduced by the wrapper.
+  body = body.replace(/^\n/, "").replace(/\n$/, "");
+  // Remove the “N: ” / “N\t” line-number prefix dsh puts on each line.
+  body = body
+    .split("\n")
+    .map((line) => line.replace(/^\s*\d+[:\t]\s?/, ""))
+    .join("\n");
+  return body;
 }
 
 function toolInputCommand(update: any): string | undefined {
