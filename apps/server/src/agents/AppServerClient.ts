@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { resolveCodexBin } from "./CodexBin";
+import { config } from "../config";
 
 /**
  * A newline-delimited JSON-RPC client for `codex app-server`.
@@ -104,19 +106,38 @@ export class AppServerClient {
    * the server is accepting requests.
    */
   async start(): Promise<void> {
-    // Windows cannot spawn a .js shim directly (EFTYPE): go through node,
-    // unless the entry is a real executable.
+    // Windows cannot spawn a .js shim directly (EFTYPE): go through node. A
+    // .cmd/.bat wrapper (the global `codex.cmd` npm installs) cannot be spawned
+    // directly either (EINVAL): run it through the shell, which every platform
+    // handles.
     const entry = this.options.codexEntry ?? codexEntryPath();
     const isScript = entry.endsWith(".js") || entry.endsWith(".cjs") || entry.endsWith(".mjs");
-    const command = isScript ? process.execPath : entry;
-    const args = isScript ? [entry, "app-server"] : ["app-server"];
-    this.child = spawn(command, args, {
-      cwd: this.options.cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: this.options.env,
-    });
+    const isBatch = process.platform === "win32" && /\.(cmd|bat)$/i.test(entry);
 
-    const child = this.child;
+    let child: ReturnType<typeof spawn>;
+    if (isBatch) {
+      // A `.cmd`/`.bat` wrapper (the global npm-installed codex) cannot be
+      // spawned directly on Windows (EINVAL); run it through the shell with the
+      // executable quoted so a path containing spaces still works.
+      child = spawn(`"${entry}" app-server`, {
+        cwd: this.options.cwd,
+        stdio: ["pipe", "pipe", "pipe"],
+        env: this.options.env,
+        shell: true,
+        windowsVerbatimArguments: true,
+      });
+    } else {
+      // A .js shim goes through node (Windows cannot spawn it directly: EFTYPE).
+      const command = isScript ? process.execPath : entry;
+      const args = isScript ? [entry, "app-server"] : ["app-server"];
+      child = spawn(command, args, {
+        cwd: this.options.cwd,
+        stdio: ["pipe", "pipe", "pipe"],
+        env: this.options.env,
+      });
+    }
+    this.child = child;
+
     // A failed spawn (command not found — e.g. codex is not installed) emits an
     // 'error' event asynchronously. An EventEmitter with no 'error' listener
     // throws, which would take the whole server process down; catching it here
@@ -375,21 +396,12 @@ export function sandboxPolicyFor(mode: string): Record<string, unknown> {
 }
 
 /**
- * Locate the codex CLI entry. The npm package ships a bin shim; resolve it the
- * same way the SDK does so a globally-installed codex also works.
+ * Locate the codex CLI entry. Absence drives the user's own codex, so a
+ * global install on PATH wins over any package that happens to sit next to
+ * Absence (see agents/CodexBin.ts).
  */
 function codexEntryPath(): string {
-  try {
-    const req = createRequireFromHere();
-    return req.resolve("@openai/codex/bin/codex.js");
-  } catch {
-    return "codex";
-  }
-}
-
-import { createRequire } from "node:module";
-function createRequireFromHere(): NodeJS.Require {
-  return createRequire(import.meta.url);
+  return resolveCodexBin(config.codexBin);
 }
 
 /** A fresh request id for logs (unused on the wire; the client numbers its own). */

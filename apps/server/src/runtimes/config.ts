@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { config, configure } from "../config";
 import { resolveDshBin } from "../agents/DshClient";
+import { resolveCodexBinDetailed } from "../agents/CodexBin";
 
 /* ══════════════════════════════════════════════════════════════════════════
    Runtime configuration — the binary paths the agent runtimes need, editable
@@ -96,36 +96,16 @@ export function setRuntimePaths(patch: RuntimePaths): RuntimePaths {
   return next;
 }
 
-function exists(p: string | undefined): boolean {
-  if (!p) return false;
-  try {
-    return fs.existsSync(p);
-  } catch {
-    return false;
-  }
-}
-
-/** Locate the codex CLI the same way AppServerClient does, without spawning it. */
-export function resolveCodexBin(override?: string): string | undefined {
-  if (override && override.trim()) return override.trim();
-  try {
-    // Mirror AppServerClient.codexEntryPath: the npm package ships a bin shim.
-    const req = createRequire(import.meta.url);
-    return req.resolve("@openai/codex/bin/codex.js");
-  } catch {
-    return undefined;
-  }
-}
-
 /** Every runtime, with an availability verdict for the picker. */
 export function runtimeStatuses(): RuntimeStatus[] {
   const saved = read();
-  const codexPath = config.codexBin ?? saved.codexBin;
-  const codexResolved = resolveCodexBin(codexPath);
-  const codexAvailable = codexResolved === "codex" ? true : exists(codexResolved);
+  const codex = resolveCodexBinDetailed(config.codexBin ?? saved.codexBin);
+  const codexAvailable = codex.source !== "none";
   const dshResolved = resolveDshBin(config.dshBin ?? saved.dshBin);
-  // resolveDshBin falls back to the bare name "dsh"; treat that as PATH lookup.
-  const dshAvailable = dshResolved === "dsh" ? true : exists(dshResolved);
+  // resolveDshBin returns a real path when it finds the DSH Desktop install, or
+  // the bare name "dsh" to mean "let PATH resolve it". Either way dsh is
+  // startable; an unresolvable `dsh` will fail at spawn and be reported then.
+  const dshAvailable = dshResolved !== undefined;
 
   return [
     {
@@ -140,9 +120,9 @@ export function runtimeStatuses(): RuntimeStatus[] {
       label: "Codex",
       available: codexAvailable,
       configurable: true,
-      path: codexResolved,
+      path: codex.source === "none" ? undefined : codex.entry,
       note: codexAvailable
-        ? "path to codex.js or the codex executable"
+        ? `path to codex.js or the codex executable (${codex.source})`
         : "not found — install codex or set its path below",
     },
     {

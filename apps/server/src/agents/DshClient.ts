@@ -89,26 +89,40 @@ export class DshClient {
    */
   async start(): Promise<void> {
     const entry = resolveDshBin(this.options.dshBin);
-    // Windows cannot spawn a .js shim directly (EFTYPE): go through node,
-    // unless the resolved entry is a real executable.
+    // Windows cannot spawn a .js shim directly (EFTYPE): go through node. A
+    // .cmd/.bat wrapper cannot be spawned directly either (EINVAL): run it
+    // through the shell with the executable quoted.
     const isScript = entry.endsWith(".js") || entry.endsWith(".cjs") || entry.endsWith(".mjs");
-    const command = isScript ? process.execPath : entry;
-    const args = isScript
-      ? [entry, "--profile", this.options.profile]
-      : ["--profile", this.options.profile];
+    const isBatch = process.platform === "win32" && /\.(cmd|bat)$/i.test(entry);
+    const env = {
+      ...process.env,
+      NO_COLOR: "1",
+      ...(this.options.dshHome ? { DSH_HOME: this.options.dshHome } : {}),
+      ...this.options.env,
+    };
 
-    this.child = spawn(command, args, {
-      cwd: this.options.cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        NO_COLOR: "1",
-        ...(this.options.dshHome ? { DSH_HOME: this.options.dshHome } : {}),
-        ...this.options.env,
-      },
-    });
+    let child: ReturnType<typeof spawn>;
+    if (isBatch) {
+      child = spawn(`"${entry}" --profile ${this.options.profile}`, {
+        cwd: this.options.cwd,
+        stdio: ["pipe", "pipe", "pipe"],
+        env,
+        shell: true,
+        windowsVerbatimArguments: true,
+      });
+    } else {
+      const command = isScript ? process.execPath : entry;
+      const args = isScript
+        ? [entry, "--profile", this.options.profile]
+        : ["--profile", this.options.profile];
+      child = spawn(command, args, {
+        cwd: this.options.cwd,
+        stdio: ["pipe", "pipe", "pipe"],
+        env,
+      });
+    }
+    this.child = child;
 
-    const child = this.child;
     // A failed spawn (command not found — e.g. dsh is not installed) emits an
     // 'error' event asynchronously. An EventEmitter with no 'error' listener
     // throws, which would take the whole server process down; catching it here
