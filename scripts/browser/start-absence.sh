@@ -7,9 +7,11 @@
 # Builds the web app and starts the ABSENCE server, then opens the UI. Pi
 # supplies the model.
 #
-# The web app is ALWAYS rebuilt. The frontend is compiled into dist/web at the
-# repo root and the server only serves that directory, so a stale dist is what
-# you would otherwise see no matter what changed in src.
+# The web app is rebuilt only when dist/web is missing or older than a web
+# source/config file. The frontend is compiled into dist/web at the repo root
+# and the server only serves that directory, so a stale dist is what you would
+# otherwise see no matter what changed in src — this checks for real, not just
+# "does the folder exist".
 #
 # This launcher lives under scripts/browser/, but always operates on the repo
 # root (two levels up).
@@ -65,8 +67,25 @@ else
 fi
 
 # --------------------------------------------------------------------- build
-echo "[2/2] building web app ..."
-[ "$DRY" = "1" ] || npm run build
+# Rebuild only when the output is missing or older than any web source. A
+# freshly checked-out dist/web (or one built moments ago) is left alone; a
+# source edit makes the nearest file newer and triggers the build.
+needs_web_build() {
+	[ -f dist/web/index.html ] || return 0
+	local newer
+	newer=$(find apps/web/src packages/core/src \
+		apps/web/index.html apps/web/package.json apps/web/vite.config.ts \
+		apps/web/tailwind.config.js apps/web/postcss.config.js \
+		-type f -newer dist/web/index.html 2>/dev/null | head -n 1)
+	[ -n "$newer" ]
+}
+
+if needs_web_build; then
+	echo "[2/2] building web app ..."
+	[ "$DRY" = "1" ] || npm run build
+else
+	echo "[2/2] web build is up to date - skipping"
+fi
 
 # -------------------------------------------------------------------- server
 if curl -fsS -m 3 -o /dev/null "$ABSENCE_URL" 2>/dev/null; then

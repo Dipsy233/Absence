@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 
-export type AgentKind = "pi" | "codex" | "mock";
+export type AgentKind = "pi" | "codex" | "dsh" | "mock";
 
 export interface AbsenceConfig {
   port: number;
@@ -46,13 +46,39 @@ export interface AbsenceConfig {
    * that would otherwise escape the Job Object.
    */
   codexExecServer: boolean;
+  /**
+   * The `dsh` (DeepSeek Harness) ACP entry to run. Absence drives DSH through
+   * its automation-only Agent Client Protocol server (`dsh --profile acp`),
+   * a JSON-RPC/NDJSON channel on stdio — the same observer shape as Codex's
+   * app-server. Override with ABSENCE_DSH_BIN; when unset, Absence probes the
+   * common install locations (see agents/DshClient.ts) and finally falls back
+   * to a bare `dsh` on PATH.
+   */
+  dshBin?: string;
+  /**
+   * The dsh profile the ACP server boots. The shipped automation profile is
+   * `acp` (`dsh --profile acp`); override with ABSENCE_DSH_PROFILE.
+   */
+  dshProfile: string;
+  /**
+   * DSH_HOME — where dsh keeps its profiles and settings. Defaults to
+   * ~/.dsh (dsh's own default); override with ABSENCE_DSH_HOME.
+   */
+  dshHome?: string;
+  /**
+   * Provider/model the ACP session starts on, written into the spawned
+   * process's environment as DSH_PROVIDER / DSH_MODEL when set. Left unset,
+   * the profile's own defaults apply (deepseek-official / deepseek-v4-flash).
+   */
+  dshProvider?: string;
+  dshModel?: string;
   /** Serve the built web app from this directory when present. */
   webDist: string;
 }
 
 function envAgent(): AgentKind {
   const value = (process.env.ABSENCE_AGENT ?? "pi").toLowerCase();
-  return value === "mock" || value === "codex" ? value : "pi";
+  return value === "mock" || value === "codex" || value === "dsh" ? value : "pi";
 }
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -100,6 +126,11 @@ export const config: AbsenceConfig = {
   codexApproval: normalizeCodexApproval(process.env.ABSENCE_CODEX_APPROVAL),
   codexApprovalDecision: normalizeApprovalDecision(process.env.ABSENCE_CODEX_APPROVAL_DECISION),
   codexExecServer: envFlag(process.env.ABSENCE_CODEX_EXEC_SERVER, true),
+  dshBin: process.env.ABSENCE_DSH_BIN,
+  dshProfile: process.env.ABSENCE_DSH_PROFILE ?? "acp",
+  dshHome: process.env.ABSENCE_DSH_HOME,
+  dshProvider: process.env.ABSENCE_DSH_PROVIDER,
+  dshModel: process.env.ABSENCE_DSH_MODEL,
   // Built UI lives at the repo root under dist/web (see apps/web/vite.config.ts
   // and the desktop staging script). Override with ABSENCE_WEB_DIST if hosting
   // elsewhere.

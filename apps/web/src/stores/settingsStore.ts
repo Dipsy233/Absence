@@ -29,12 +29,19 @@ export interface Settings {
   railOrder: RailPanelId[];
   /** Left rail top → bottom. */
   leftOrder: LeftPanelId[];
+  /**
+   * Show the LAID/DIED process rows (Agent Eggs) in the Activity panel. Off
+   * (the default) hides them so the panel reads as actions only; the eggs
+   * themselves stay visible in the Agent Eggs panel either way.
+   */
+  displayInActivity: boolean;
 }
 
 const DEFAULTS: Settings = {
   theme: "amber",
   railOrder: ["agent", "folder", "eggs"],
   leftOrder: ["files", "history", "activity"],
+  displayInActivity: false,
 };
 
 function load(): Settings {
@@ -47,6 +54,7 @@ function load(): Settings {
       // Keep only known ids; append anything missing so each rail always renders all panels.
       railOrder: normalizeIds(parsed.railOrder, RAIL_PANEL_IDS) as RailPanelId[],
       leftOrder: normalizeIds(parsed.leftOrder, LEFT_PANEL_IDS) as LeftPanelId[],
+      displayInActivity: parsed.displayInActivity ?? DEFAULTS.displayInActivity,
     };
   } catch {
     return DEFAULTS;
@@ -73,6 +81,7 @@ interface SettingsStore extends Settings {
   moveRailPanel: (id: RailPanelId, dir: "up" | "down") => void;
   setLeftOrder: (order: LeftPanelId[]) => void;
   moveLeftPanel: (id: LeftPanelId, dir: "up" | "down") => void;
+  setDisplayInActivity: (value: boolean) => void;
   reset: () => void;
 }
 
@@ -86,6 +95,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   setLeftOrder: (leftOrder) =>
     set((s) => persistIt(s, { leftOrder: normalizeIds(leftOrder, LEFT_PANEL_IDS) as LeftPanelId[] })),
   moveLeftPanel: (id, dir) => set((s) => ({ leftOrder: movePanel(s.leftOrder, id, dir) })),
+  setDisplayInActivity: (value) => set((s) => persistIt(s, { displayInActivity: value })),
   reset: () => set((s) => persistIt(s, DEFAULTS)),
 }));
 
@@ -106,6 +116,7 @@ function persistIt(state: Settings, patch: Partial<Settings>): Partial<SettingsS
     theme: next.theme,
     railOrder: next.railOrder,
     leftOrder: next.leftOrder,
+    displayInActivity: next.displayInActivity,
   });
   return patch;
 }

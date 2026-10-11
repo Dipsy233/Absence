@@ -5,7 +5,7 @@ import { WindowControls } from "../common/WindowControls";
 import { useSessionStore } from "../../stores/sessionStore";
 import { resetAllStores } from "../../stores/reset";
 
-type AgentChoice = "auto" | "pi" | "codex" | "mock";
+type AgentChoice = "auto" | "pi" | "codex" | "dsh" | "mock";
 
 /** Short, human time for a session row: time only today, date + time otherwise. */
 function formatWhen(timestamp: number): string {
@@ -186,7 +186,7 @@ export function ProjectPicker() {
         <div className="mt-4">
           <div className="label mb-1">runtime</div>
           <div className="flex gap-1">
-            {(["auto", "pi", "codex", "mock"] as AgentChoice[]).map((choice) => (
+            {(["auto", "pi", "codex", "dsh", "mock"] as AgentChoice[]).map((choice) => (
               <button
                 key={choice}
                 type="button"
@@ -203,7 +203,7 @@ export function ProjectPicker() {
             ))}
           </div>
           <p className="mt-1 text-[11px] text-desk-dim/80">
-            auto uses Pi when credentials are configured; codex uses the Codex CLI; otherwise falls back to the mock runtime.
+            auto uses Pi when credentials are configured; codex uses the Codex CLI; dsh uses DeepSeek Harness over its ACP server; otherwise falls back to the mock runtime.
           </p>
         </div>
 

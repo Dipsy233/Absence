@@ -6,6 +6,7 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { Panel } from "../Panel";
 import { ActivityItem } from "./ActivityItem";
 
@@ -18,13 +19,20 @@ export function ActivityPanel() {
   const setMode = useStageStore((s) => s.setMode);
   const load = useReplayStore((s) => s.load);
   const replayTime = useReplayStore((s) => s.currentTime);
+  const displayInActivity = useSettingsStore((s) => s.displayInActivity);
 
   const runs = useMemo(() => memoBuildHistory(events), [events]);
   const run = pickRun(runs, selectedRunId);
   const shown = useMemo(() => (run ? runEvents(events, run) : events), [events, run]);
   const rows = useMemo(
-    () => shown.map(eventToActivityRow).filter((row): row is ActivityRow => row !== undefined),
-    [shown],
+    () =>
+      shown
+        .map(eventToActivityRow)
+        .filter((row): row is ActivityRow => row !== undefined)
+        // The Setting can hide the LAID/DIED process rows (Agent Eggs) so the
+        // panel reads as actions only; the eggs stay in the Agent Eggs panel.
+        .filter((row) => displayInActivity || row.tone !== "process"),
+    [shown, displayInActivity],
   );
 
   // In replay the "current" row is the last one the cursor has passed: the

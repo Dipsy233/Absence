@@ -31,3 +31,6 @@ native/agentwatch-linux/*.skel.h
 apps/server/src/process/avatar-skins/
 apps/server/src/process/egg-filters/
 apps/server/src/process/sound-sets/
+
+# esbuild scratch dir used by the launcher (kept out of the scanned system temp)
+.tmp-build/

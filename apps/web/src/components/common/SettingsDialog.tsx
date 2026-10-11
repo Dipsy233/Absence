@@ -196,6 +196,8 @@ function AppearancePane() {
    immediately.
    ════════════════════════════════════════════════════════════════════════ */
 function EggFilterPane() {
+  const displayInActivity = useSettingsStore((s) => s.displayInActivity);
+  const setDisplayInActivity = useSettingsStore((s) => s.setDisplayInActivity);
   const [profiles, setProfiles] = useState<EggFilterProfileMeta[]>([]);
   const [active, setActive] = useState("");
   const [dir, setDir] = useState("");
@@ -360,6 +362,19 @@ function EggFilterPane() {
           {" — also filter a listed name when it is the command's declared subject (e.g. "}
           <span className="font-mono">node ticker.mjs</span>
           {"). A process that outlived its command stays visible either way."}
+        </span>
+      </label>
+
+      <label className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-desk-dim">
+        <input
+          type="checkbox"
+          checked={displayInActivity}
+          onChange={(e) => setDisplayInActivity(e.target.checked)}
+          className="mt-0.5 accent-[rgb(var(--desk-accent))]"
+        />
+        <span>
+          <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">display in activity</span>
+          {" — show LAID / DIED process events in the Activity panel. Off hides them so the panel reads as actions only; the eggs stay visible in the Agent Eggs panel either way."}
         </span>
       </label>
 

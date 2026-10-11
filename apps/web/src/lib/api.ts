@@ -22,7 +22,7 @@ export interface ResumeTarget {
 
 export async function createSession(
   projectPath: string,
-  agent?: "pi" | "codex" | "mock",
+  agent?: "pi" | "codex" | "dsh" | "mock",
   resume?: ResumeTarget,
 ): Promise<SessionSnapshot> {
   return json<SessionSnapshot>(

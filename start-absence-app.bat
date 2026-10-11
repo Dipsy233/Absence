@@ -85,8 +85,16 @@ if not exist "apps\desktop\node_modules\electron" (
 )
 
 rem ---------------------------------------------------------- 1/4 web app
+rem Skip the web build when dist\web is already newer than every web source,
+rem so a repeat run is cheap. ABSENCE_SKIP_WEB=1 still forces a skip when the
+rem output merely exists.
 if defined ABSENCE_SKIP_WEB if exist "dist\web\index.html" (
   echo [1/4] skipping the web build ^(ABSENCE_SKIP_WEB=1, dist\web present^)
+  goto server_bundle
+)
+call :needs_web_build
+if not errorlevel 1 (
+  echo [1/4] web build is up to date - skipping
   goto server_bundle
 )
 echo [1/4] building the web app ...
@@ -149,6 +157,19 @@ echo ============================================================
 
 popd
 endlocal
+exit /b 0
+
+rem ======================================================== helpers ========
+rem :needs_web_build — exit /b 1 when dist\web must be (re)built, exit /b 0
+rem when it is missing or older than any web source/config file.
+:needs_web_build
+if not exist "%REPO%\dist\web\index.html" exit /b 1
+powershell -NoProfile -Command ^
+  "$out = Get-Item -LiteralPath '%REPO%\dist\web\index.html';" ^
+  "$files = @(Get-ChildItem -Path '%REPO%\apps\web\src','%REPO%\packages\core\src' -Recurse -File -ErrorAction SilentlyContinue);" ^
+  "$files += Get-Item -LiteralPath '%REPO%\apps\web\index.html','%REPO%\apps\web\package.json','%REPO%\apps\web\vite.config.ts','%REPO%\apps\web\tailwind.config.js','%REPO%\apps\web\postcss.config.js' -ErrorAction SilentlyContinue;" ^
+  "if ($files | Where-Object { $_.LastWriteTimeUtc -gt $out.LastWriteTimeUtc }) { exit 1 } else { exit 0 }" >nul 2>&1
+if errorlevel 1 exit /b 1
 exit /b 0
 
 :fail

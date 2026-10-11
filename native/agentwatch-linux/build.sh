@@ -9,8 +9,25 @@
 #
 # Requires: clang (with the bpf target), llvm-strip, libbpf-dev, libelf-dev,
 # bpftool (for vmlinux.h). On Ubuntu: apt install clang llvm libbpf-dev libelf-dev.
+#
+# Skips the build when agentwatch-linux already exists and is newer than every
+# source file; pass --force to rebuild anyway.
 set -euo pipefail
 cd "$(dirname "$0")"
+
+# ------------------------------------------------------- skip when up to date
+FORCE=0
+for arg in "$@"; do
+	[ "$arg" = "--force" ] && FORCE=1
+done
+if [ "$FORCE" = "0" ] && [ -x agentwatch-linux ] && [ "${1:-}" != "--vmlinux" ]; then
+	newer=$(find . -maxdepth 1 -type f \( -name '*.c' -o -name '*.h' \) \
+		-newer agentwatch-linux 2>/dev/null | head -n 1)
+	if [ -z "$newer" ]; then
+		echo "agentwatch-linux is up to date - skipping (use --force to rebuild)"
+		exit 0
+	fi
+fi
 
 # bpftool is often a wrapper that cannot find the running kernel's tools on WSL;
 # the real binary lives under /usr/lib/linux-tools.

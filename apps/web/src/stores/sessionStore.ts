@@ -23,7 +23,7 @@ interface SessionStore {
   connected: boolean;
   error?: string;
 
-  startSession: (projectPath: string, agent?: "pi" | "codex" | "mock") => Promise<void>;
+  startSession: (projectPath: string, agent?: "pi" | "codex" | "dsh" | "mock") => Promise<void>;
   /** Reopen a persisted session from the history list. */
   resumeSession: (entry: SessionHistoryEntry) => Promise<void>;
   sendPrompt: (text: string) => Promise<void>;
@@ -66,7 +66,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         : undefined;
     const snapshot = await api.createSession(
       entry.projectPath,
-      entry.runtime === "mock" ? "mock" : entry.runtime === "codex" ? "codex" : undefined,
+      entry.runtime === "mock"
+        ? "mock"
+        : entry.runtime === "codex"
+          ? "codex"
+          : entry.runtime === "dsh"
+            ? "dsh"
+            : undefined,
       resume,
     );
     get().hydrate(snapshot);

@@ -19,7 +19,7 @@ async function isDirectory(candidate: string): Promise<boolean> {
 }
 
 function resolveAgent(value: string | undefined): AgentKind {
-  if (value === "mock" || value === "pi" || value === "codex") return value;
+  if (value === "mock" || value === "pi" || value === "codex" || value === "dsh") return value;
   return config.defaultAgent;
 }
 
