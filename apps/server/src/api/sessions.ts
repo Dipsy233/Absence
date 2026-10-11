@@ -6,7 +6,7 @@ import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentKind } from "../config";
 import { config } from "../config";
 import { listArchives } from "../sessions/archive";
-import { sessionStore } from "../sessions/SessionStore";
+import { sessionStore, RuntimeUnavailableError } from "../sessions/SessionStore";
 import { toPosix } from "../util/paths";
 
 async function isDirectory(candidate: string): Promise<boolean> {
@@ -59,7 +59,19 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
             piSessionId: raw.piSessionId,
           }
         : undefined;
-    const session = await sessionStore.create(resolved, resolveAgent(body?.agent), resume);
+    const session = await (async () => {
+      try {
+        return await sessionStore.create(resolved, resolveAgent(body?.agent), resume);
+      } catch (error) {
+        // The runtime would not start (not installed / bad path / no
+        // credentials). Surface it to the picker instead of a bare 500.
+        if (error instanceof RuntimeUnavailableError) {
+          return reply.code(503).send({ error: error.message, runtime: error.runtime });
+        }
+        throw error;
+      }
+    })();
+    if (!session) return reply;
     return session.snapshot();
   });
 

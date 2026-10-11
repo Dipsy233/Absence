@@ -9,8 +9,10 @@ import { sessionRoutes } from "./api/sessions";
 import { eggFilterRoutes } from "./api/eggFilter";
 import { avatarSkinRoutes } from "./api/avatarSkins";
 import { soundRoutes } from "./api/sounds";
+import { runtimeRoutes } from "./api/runtimes";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
+import { applyRuntimePaths } from "./runtimes/config";
 
 export interface StartServerOptions {
   /** Port to listen on. `0` lets the OS pick a free one (the desktop shell). */
@@ -39,6 +41,9 @@ export interface RunningServer {
  */
 export async function startServer(options: StartServerOptions = {}): Promise<RunningServer> {
   if (options.config) configure(options.config);
+  // Paths saved from the picker (~/.absence/runtimes.json) override the env
+  // defaults, so a runtime moved since last launch still resolves.
+  applyRuntimePaths();
 
   const app = Fastify({ logger: options.quiet ? false : { level: process.env.ABSENCE_LOG_LEVEL ?? "info" } });
 
@@ -72,6 +77,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   await app.register(eggFilterRoutes);
   await app.register(avatarSkinRoutes);
   await app.register(soundRoutes);
+  await app.register(runtimeRoutes);
   await app.register(wsRoutes);
 
   // Serve the built web app when it exists (production / single-origin).

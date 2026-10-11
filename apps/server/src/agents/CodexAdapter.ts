@@ -81,6 +81,9 @@ export class CodexAdapter extends BaseAdapter {
 
     this.client = new AppServerClient({
       cwd: ctx.cwd,
+      // A path configured from the picker (or ABSENCE_CODEX_BIN) overrides the
+      // package-resolved default inside AppServerClient.
+      codexEntry: config.codexBin,
       env: {
         ...process.env,
         // Straight into the server's own env: thread/start's `config` map

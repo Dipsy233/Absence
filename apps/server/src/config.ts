@@ -47,6 +47,13 @@ export interface AbsenceConfig {
    */
   codexExecServer: boolean;
   /**
+   * The Codex CLI entry to run (the JS shim `@openai/codex/bin/codex.js`, or a
+   * real executable). Unset means Absence resolves it from the installed
+   * package. Editable from the Project Picker (persisted to
+   * ~/.absence/runtimes.json); ABSENCE_CODEX_BIN seeds it from the environment.
+   */
+  codexBin?: string;
+  /**
    * The `dsh` (DeepSeek Harness) ACP entry to run. Absence drives DSH through
    * its automation-only Agent Client Protocol server (`dsh --profile acp`),
    * a JSON-RPC/NDJSON channel on stdio — the same observer shape as Codex's
@@ -126,6 +133,7 @@ export const config: AbsenceConfig = {
   codexApproval: normalizeCodexApproval(process.env.ABSENCE_CODEX_APPROVAL),
   codexApprovalDecision: normalizeApprovalDecision(process.env.ABSENCE_CODEX_APPROVAL_DECISION),
   codexExecServer: envFlag(process.env.ABSENCE_CODEX_EXEC_SERVER, true),
+  codexBin: process.env.ABSENCE_CODEX_BIN,
   dshBin: process.env.ABSENCE_DSH_BIN,
   dshProfile: process.env.ABSENCE_DSH_PROFILE ?? "acp",
   dshHome: process.env.ABSENCE_DSH_HOME,

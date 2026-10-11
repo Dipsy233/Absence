@@ -109,6 +109,21 @@ export class DshClient {
     });
 
     const child = this.child;
+    // A failed spawn (command not found — e.g. dsh is not installed) emits an
+    // 'error' event asynchronously. An EventEmitter with no 'error' listener
+    // throws, which would take the whole server process down; catching it here
+    // turns the failure into a rejected handshake instead, so the caller can
+    // report "not installed" and fall back.
+    child.on("error", (error) => {
+      this.closed = true;
+      const wrapped = new Error(`failed to start dsh (${entry}): ${error instanceof Error ? error.message : String(error)}`);
+      for (const [, p] of this.pending) p.reject(wrapped);
+      this.pending.clear();
+      // Unblock anything waiting on the handshake that never arrived.
+      for (const flush of this.queue) flush();
+      this.queue = [];
+      this.options.onExit?.(null);
+    });
     child.on("exit", (code) => {
       this.closed = true;
       for (const [, p] of this.pending) p.reject(new Error(`dsh acp server exited (code ${code})`));
@@ -216,8 +231,17 @@ export class DshClient {
 
     const send = (): Promise<any> =>
       new Promise((resolve, reject) => {
+        if (this.closed || !this.child) {
+          reject(new Error("dsh acp client is closed"));
+          return;
+        }
+        const stdin = this.child.stdin;
+        if (!stdin) {
+          reject(new Error("dsh acp stdin is unavailable"));
+          return;
+        }
         this.pending.set(id, { resolve, reject });
-        this.child!.stdin!.write(payload + "\n", (error) => {
+        stdin.write(payload + "\n", (error) => {
           if (error) {
             this.pending.delete(id);
             reject(error);

@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Project, SessionHistoryEntry } from "@absence/core";
-import { fetchProjects, fetchSessionHistory } from "../../lib/api";
+import {
+  fetchProjects,
+  fetchSessionHistory,
+  fetchRuntimes,
+  saveRuntimePaths,
+  type RuntimeKind,
+  type RuntimeStatus,
+} from "../../lib/api";
 import { WindowControls } from "../common/WindowControls";
 import { useSessionStore } from "../../stores/sessionStore";
 import { resetAllStores } from "../../stores/reset";
 
-type AgentChoice = "auto" | "pi" | "codex" | "dsh" | "mock";
+type AgentChoice = RuntimeKind;
 
 /** Short, human time for a session row: time only today, date + time otherwise. */
 function formatWhen(timestamp: number): string {
@@ -24,10 +31,14 @@ export function ProjectPicker() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<SessionHistoryEntry[]>([]);
   const [path, setPath] = useState("");
-  const [agent, setAgent] = useState<AgentChoice>("auto");
+  const [agent, setAgent] = useState<AgentChoice>("pi");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [runtimes, setRuntimes] = useState<RuntimeStatus[]>([]);
+  // Paths the user is editing in the runtime config panel, keyed by kind.
+  const [pathEdits, setPathEdits] = useState<{ codex?: string; dsh?: string }>({});
+  const [savingPaths, setSavingPaths] = useState(false);
 
   const refreshSessions = () => {
     fetchSessionHistory()
@@ -35,11 +46,24 @@ export function ProjectPicker() {
       .catch(() => setSessions([]));
   };
 
+  const refreshRuntimes = () => {
+    fetchRuntimes()
+      .then((list) => {
+        setRuntimes(list);
+        setPathEdits((prev) => ({
+          codex: prev.codex ?? list.find((r) => r.kind === "codex")?.path ?? "",
+          dsh: prev.dsh ?? list.find((r) => r.kind === "dsh")?.path ?? "",
+        }));
+      })
+      .catch(() => setRuntimes([]));
+  };
+
   useEffect(() => {
     fetchProjects()
       .then(setProjects)
       .catch(() => setProjects([]));
     refreshSessions();
+    refreshRuntimes();
   }, []);
 
   // Typing a path filters the history — and unfolds it so the matches are visible.
@@ -59,11 +83,24 @@ export function ProjectPicker() {
     setError(undefined);
     try {
       resetAllStores();
-      await startSession(projectPath.trim(), agent === "auto" ? undefined : agent);
+      await startSession(projectPath.trim(), agent);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const savePaths = async () => {
+    setSavingPaths(true);
+    setError(undefined);
+    try {
+      const list = await saveRuntimePaths({ codexBin: pathEdits.codex, dshBin: pathEdits.dsh });
+      setRuntimes(list);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingPaths(false);
     }
   };
 
@@ -185,27 +222,76 @@ export function ProjectPicker() {
 
         <div className="mt-4">
           <div className="label mb-1">runtime</div>
-          <div className="flex gap-1">
-            {(["auto", "pi", "codex", "dsh", "mock"] as AgentChoice[]).map((choice) => (
+          <div className="flex flex-wrap gap-1">
+            {runtimes.map((rt) => (
               <button
-                key={choice}
+                key={rt.kind}
                 type="button"
-                onClick={() => setAgent(choice)}
+                onClick={() => setAgent(rt.kind)}
+                title={rt.note}
                 className={[
-                  "rounded border px-3 py-1 text-xs",
-                  agent === choice
+                  "flex items-center gap-1.5 rounded border px-3 py-1 text-xs",
+                  agent === rt.kind
                     ? "border-desk-amber/70 bg-desk-amber/10 text-desk-amber"
                     : "border-desk-line bg-desk-panel2 text-desk-dim hover:text-desk-ink",
                 ].join(" ")}
               >
-                {choice}
+                <span
+                  aria-hidden
+                  className={["h-1.5 w-1.5 rounded-full", rt.available ? "bg-desk-teal" : "bg-desk-ember"].join(" ")}
+                />
+                {rt.label}
               </button>
             ))}
           </div>
           <p className="mt-1 text-[11px] text-desk-dim/80">
-            auto uses Pi when credentials are configured; codex uses the Codex CLI; dsh uses DeepSeek Harness over its ACP server; otherwise falls back to the mock runtime.
+            A green dot means the runtime was found. A red dot means it is not installed (or the path is wrong) — fix
+            it below before opening.
           </p>
         </div>
+
+        {/* Runtime paths: point codex / dsh at their binary when the probe misses. */}
+        {runtimes.some((rt) => rt.configurable) ? (
+          <div className="mt-3">
+            <div className="label mb-1">runtime paths</div>
+            <div className="space-y-2">
+              {runtimes
+                .filter((rt) => rt.configurable)
+                .map((rt) => {
+                  const key = rt.kind as "codex" | "dsh";
+                  return (
+                    <div key={rt.kind}>
+                      <div className="mb-0.5 flex items-center gap-1.5 text-[10px]">
+                        <span
+                          aria-hidden
+                          className={["h-1.5 w-1.5 rounded-full", rt.available ? "bg-desk-teal" : "bg-desk-ember"].join(" ")}
+                        />
+                        <span className="font-mono uppercase tracking-wide text-desk-ink">{rt.label} path</span>
+                        <span className="truncate text-desk-dim/80">{rt.available ? "found" : "not found"}</span>
+                      </div>
+                      <input
+                        value={pathEdits[key] ?? ""}
+                        onChange={(e) => setPathEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+                        placeholder={rt.note}
+                        spellCheck={false}
+                        className="w-full rounded border border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[11px] text-desk-ink outline-none placeholder:text-desk-dim/50 focus:border-desk-amber/70"
+                      />
+                    </div>
+                  );
+                })}
+            </div>
+            <div className="mt-2 flex items-center justify-end">
+              <button
+                type="button"
+                disabled={savingPaths}
+                onClick={() => void savePaths()}
+                className="rounded border border-desk-line px-3 py-1 font-mono text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber disabled:opacity-40"
+              >
+                {savingPaths ? "saving…" : "save paths"}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {error ? (
           <div className="mt-4 rounded border border-desk-ember/50 bg-desk-ember/10 px-3 py-2 text-xs text-desk-ember">

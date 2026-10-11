@@ -66,13 +66,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         : undefined;
     const snapshot = await api.createSession(
       entry.projectPath,
-      entry.runtime === "mock"
-        ? "mock"
-        : entry.runtime === "codex"
-          ? "codex"
-          : entry.runtime === "dsh"
-            ? "dsh"
-            : undefined,
+      entry.runtime === "mock" || entry.runtime === "codex" || entry.runtime === "dsh" ? entry.runtime : "pi",
       resume,
     );
     get().hydrate(snapshot);

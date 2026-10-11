@@ -3,9 +3,51 @@ import type { CommandOption, Project, SessionHistoryEntry, SessionSnapshot } fro
 async function json<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(`${response.status} ${response.statusText} ${text}`.trim());
+    // The server returns { error } on failure; show that message verbatim
+    // (e.g. a runtime that is not installed) instead of a raw status line.
+    let message = `${response.status} ${response.statusText}`.trim();
+    try {
+      const parsed = JSON.parse(text) as { error?: unknown };
+      if (parsed && typeof parsed.error === "string" && parsed.error.trim()) message = parsed.error;
+      else if (text.trim()) message = `${message} ${text}`.trim();
+    } catch {
+      if (text.trim()) message = `${message} ${text}`.trim();
+    }
+    throw new Error(message);
   }
   return (await response.json()) as T;
+}
+
+export type RuntimeKind = "pi" | "codex" | "dsh" | "mock";
+
+/** One agent runtime and whether it can start right now (GET /api/runtimes). */
+export interface RuntimeStatus {
+  kind: RuntimeKind;
+  label: string;
+  available: boolean;
+  configurable: boolean;
+  path?: string;
+  note: string;
+}
+
+export async function fetchRuntimes(): Promise<RuntimeStatus[]> {
+  const { runtimes } = await json<{ runtimes: RuntimeStatus[] }>(await fetch("/api/runtimes"));
+  return runtimes;
+}
+
+/** Save codex / dsh binary paths; an empty string clears the override. */
+export async function saveRuntimePaths(patch: {
+  codexBin?: string;
+  dshBin?: string;
+}): Promise<RuntimeStatus[]> {
+  const { runtimes } = await json<{ runtimes: RuntimeStatus[] }>(
+    await fetch("/api/runtimes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  );
+  return runtimes;
 }
 
 export async function fetchProjects(root?: string): Promise<Project[]> {

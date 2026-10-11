@@ -18,7 +18,6 @@ import { appendEvents, drainArchive, readEvents, writeMeta } from "./archive";
 import { EventBus } from "../events";
 import type { AgentAdapter } from "../agents/AgentAdapter";
 import { createAdapter } from "../agents/createAdapter";
-import { MockAdapter } from "../agents/MockAdapter";
 import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
 import { ProcessWatcher } from "../process/ProcessWatcher";
@@ -28,6 +27,26 @@ import { newId } from "../util/ids";
 import { toPosix } from "../util/paths";
 
 const MAX_EVENTS = 1000;
+
+/**
+ * Thrown when the requested agent runtime cannot start — not installed, the
+ * binary path is wrong, or credentials are missing. Carries a message ready for
+ * the UI, naming the runtime and the underlying cause, and never falls back to
+ * the mock runtime (the user asked for this runtime and should hear why).
+ */
+export class RuntimeUnavailableError extends Error {
+  readonly runtime: string;
+  override readonly cause?: unknown;
+  constructor(runtime: string, cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(
+      `${runtime} runtime could not start — check that it is installed and its path is configured. (${detail})`,
+    );
+    this.name = "RuntimeUnavailableError";
+    this.runtime = runtime;
+    this.cause = cause;
+  }
+}
 
 /** Events that own the Stage. */
 const STAGE_TYPES = new Set<AbsenceEvent["type"]>([
@@ -138,19 +157,17 @@ export class AbsenceSession {
       cwd: this.session.projectPath,
       sessionFile: this.piSessionFile,
     };
+    // No silent fallback: if the requested runtime will not start (not
+    // installed, wrong path, missing credentials), the session fails loudly so
+    // the user can fix the runtime instead of unknowingly driving a mock.
+    // The error propagates to the API, which returns it and the picker shows it.
     try {
       const result = await this.adapter.start(ctx);
       this.session.model = result.model;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.adapter = new MockAdapter({ tools: config.piTools, processWatcher: this.processWatcher });
-      const result = await this.adapter.start(ctx);
-      this.session.model = result.model;
-      this.session.agentRuntime = "mock";
-      this.session.degraded = true;
-      this.emitInternal(
-        createEvent(this.id, "error", { message: `Pi runtime unavailable, using mock: ${message}` }),
-      );
+      this.adapter.dispose();
+      this.processWatcher.stop();
+      throw new RuntimeUnavailableError(this.session.agentRuntime, error);
     }
 
     // The adapter may have opened (or created) its own persisted session file.
@@ -792,7 +809,14 @@ export class SessionStore {
     if (existing) return existing;
     const session = new AbsenceSession(projectPath, kind, resume);
     this.sessions.set(session.id, session);
-    await session.start();
+    try {
+      await session.start();
+    } catch (error) {
+      // The runtime would not start: drop the half-built session so it does not
+      // linger in the store, and let the API report the failure to the picker.
+      this.sessions.delete(session.id);
+      throw error;
+    }
     return session;
   }
 

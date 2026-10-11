@@ -117,6 +117,21 @@ export class AppServerClient {
     });
 
     const child = this.child;
+    // A failed spawn (command not found — e.g. codex is not installed) emits an
+    // 'error' event asynchronously. An EventEmitter with no 'error' listener
+    // throws, which would take the whole server process down; catching it here
+    // turns the failure into a rejected handshake instead.
+    child.on("error", (error) => {
+      this.closed = true;
+      const wrapped = new Error(
+        `failed to start codex (${entry}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      for (const [, p] of this.pending) p.reject(wrapped);
+      this.pending.clear();
+      for (const flush of this.queue) flush();
+      this.queue = [];
+      this.options.onExit?.(null);
+    });
     child.on("exit", (code) => {
       this.closed = true;
       for (const [, p] of this.pending) p.reject(new Error(`codex app-server exited (code ${code})`));
