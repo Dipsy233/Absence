@@ -10,16 +10,20 @@ npx tsx scripts/checks/check-history.ts      # 需要 server 在跑
 npx tsx scripts/checks/check-report.ts       # Absence Report 引擎（不需要 server）
 npx tsx scripts/checks/check-eggs.ts         # 进程检测（无 server，不 spawn）
 npx tsx scripts/checks/check-classify.ts     # 命令意图 + primary/tool 切分
+npx tsx scripts/checks/check-codex.ts        # Codex 命令解析 + 审批（纯）
+npx tsx scripts/checks/check-codexshell.ts   # 去掉 Codex 的 shell 外壳（纯）
+npx tsx scripts/checks/check-shellenv.ts     # Codex env_policy → 命令环境（纯）
+npx tsx scripts/checks/check-execserver.ts   # 真实 WebSocket 上的 Codex exec-server
+npx tsx scripts/checks/check-fsdiff.ts       # 文件 diff 引擎（纯）
 npx tsx scripts/checks/check-agentwatch.ts   # 内核进程观察器（Windows）
 npx tsx scripts/checks/check-ebpf.ts         # 内核进程观察器（Linux）
-node scripts/gen-whalebun-css.mjs                # 重新生成头像样式表
+node scripts/gen-whalebun-css.mjs            # 重新生成头像样式表
 ```
 
-`npm run check:process` 把三个进程相关的 harness 一起跑。
+`npm run check:process` 把全部进程相关 harness 一起跑。
 
 CI workflow（`.github/workflows/ci.yml`）在每次 push / PR 上跑 typecheck 和离线
-harness（eggs、classify、report）。`check:history` 和两个内核观察器检查需要
-活 server 或内核权限，保持手动。
+harness。`check:history` 和两个内核观察器检查需要活 server 或内核权限，保持手动。
 
 `make-demo.mjs` 写一个小项目，形状让普通 prompt 练到每个面板：带行区间的读、
 能跑的 `npm test`、给 agent 读的 `TODO.md`、以及留给删除 vs 截断情形的
@@ -59,4 +63,23 @@ phase 在 recovery 之后落到 `verifying`，Timeline 按事件顺序每个活�
 
 `check-ebpf.ts` 对 Linux 观察器做同样的事：启动 `agentwatch-linux`，驱动真实
 的 `ProcessWatcher`，断言短命的孩子全被抓到、带命令行、归属到培育它们的
-命令。
+命令——并且设了 session id 时无标记的进程仍被捕获（Linux 归因规则）。
+
+`check-codex.ts` 是 Codex 命令层的纯 harness：从 Codex 自己的 `commandActions`
+读出 read/search/list（带文本回退），以及从 `availableDecisions` 推导的审批决策
+与选项。
+
+`check-codexshell.ts` 钉住去掉 Codex shell 外壳的规则：`pwsh -Command "…"`
+（带 UTF-8 前导）、`bash -lc "…"`、`cmd /c …`、多 flag 形式和带引号的 exe 路径
+都归约为模型写的命令；非 shell 调用原样保留。
+
+`check-shellenv.ts` 钉住环境构建：Codex 的 `env_policy`
+（inherit / 默认排除 / 自定义排除 / set / include-only）作用于 executor 自身
+环境，再让请求的稀疏 `env` 覆盖——正是这条规则保住了 `PATH` 和 `PATHEXT`。
+
+`check-execserver.ts` 在 loopback WebSocket 上驱动真实的 exec-server：
+`initialize`，随后 `process/start`/`output`/`exited`/`closed`，一条 `tty: true`
+命令在 `pty` 流上输出并在写入 Ctrl+C 时停止，以及 `process/signal interrupt`
+第一手停掉一条运行中的命令。
+
+`check-fsdiff.ts` 是文件 diff 引擎的纯 harness。

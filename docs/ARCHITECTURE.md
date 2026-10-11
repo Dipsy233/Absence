@@ -7,22 +7,29 @@ guide, see the [README](../README.md).
 
 ```
 Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
-   ▲                                                                     │
+   ▲                                                              └─▶ Codex (app-server, JSON-RPC)
+   │                                                                     │
    └────────────── AbsenceEvent stream (file_read / file_edit / command / …) ┘
 ```
 
 - `packages/core` — the shared `AbsenceEvent` + domain types. The only vocabulary
-  the UI knows; it never learns that Pi exists.
-- `apps/server` — Fastify + WebSocket. `PiAdapter` wraps the Pi SDK and maps
-  `AgentSessionEvent` → `AbsenceEvent`; `MockAdapter` replays a scripted run with no
-  credentials; `chokidar` watches the project for out-of-band changes. **Absence owns
-  the shell**: `process/AbsenceShell` wraps Pi's own local shell operations and
-  registers them as custom `bash` / `powershell` tools (a custom tool shadows the
-  built-in one by name, so `ABSENCE_PI_TOOLS` is untouched). Pi still executes every
-  command — Absence only owns the boundary, which is what tells `ProcessWatcher` when
-  a command ran, and puts a unique marker at the head of it so the shell Pi
-  spawns for that command (and the launcher around it) can be recognised exactly
-  rather than guessed from a name or a parent chain.
+  the UI knows; it never learns that Pi or Codex exists.
+- `apps/server` — Fastify + WebSocket. Each runtime is one `AgentAdapter`:
+  `PiAdapter` wraps the Pi SDK in-process and maps `AgentSessionEvent` →
+  `AbsenceEvent`; `CodexAdapter` drives `codex app-server` over JSON-RPC and maps
+  its notifications the same way (`AppServerClient` is the transport — chosen over
+  `codex exec --json` because the app-server carries real item ids, call ids and
+  timestamps); `MockAdapter` replays a scripted run with no credentials;
+  `chokidar` watches the project for out-of-band changes. **Absence owns the
+  shell in both real runtimes.** For Pi, `process/AbsenceShell` wraps Pi's own
+  local shell operations and registers them as custom `bash` / `powershell` tools
+  (a custom tool shadows the built-in one by name, so `ABSENCE_PI_TOOLS` is
+  untouched). For Codex, `process/ExecServer` *is* the executor: Absence starts a
+  loopback exec-server, registers it with `environment/add` and pins the thread to
+  it, so Codex hands every command to Absence as a `process/start` to spawn. Either
+  way Absence owns the command boundary, which is what tells `ProcessWatcher` when
+  a command ran. Pi marks the command with a `#` comment; Codex is attributed by
+  ancestry alone, which the takeover makes complete.
   `ProcessWatcher` then observes the process table. On **Windows** it does not
   sample it at all: `native/agentwatch` is a small helper that puts the server
   into a **Job Object**, and the kernel then reports every creation and exit as
@@ -88,8 +95,12 @@ packages/core/src/        events.ts (AbsenceEvent + payload map)  types.ts  inde
 
 apps/server/src/
   agents/                 AgentAdapter.ts (the runtime-agnostic boundary)
-                          PiAdapter.ts  MockAdapter.ts  createAdapter.ts
-  process/                AbsenceShell.ts (owns the shell)  ProcessWatcher.ts (eggs)
+                          PiAdapter.ts  CodexAdapter.ts  CodexCommands.ts
+                          AppServerClient.ts (codex app-server JSON-RPC)
+                          MockAdapter.ts  createAdapter.ts
+  process/                AbsenceShell.ts (owns Pi's shell)  ProcessWatcher.ts (eggs)
+                          ExecServer.ts (owns Codex's shell: the exec-server)
+                          ShellEnvironment.ts (Codex env_policy)  CodexShell.ts (unwrap)
                           ProcessTable.ts (pid / ppid / command line / start time)
                           observer.ts (platform-neutral event shapes)
                           JobMonitor.ts + JobSidecar.ts (Windows kernel events)
@@ -141,32 +152,72 @@ scripts/                  make-demo.mjs  wsl-pi-config.sh
                           gen-whalebun-css.mjs (regenerates whalebun.css)
 ```
 
-## AbsenceEvent
+## Codex (`CodexAdapter`)
 
-The core UI understands exactly one structure:
+Pi is embedded, so Absence controls the shell by wrapping Pi's tool operations.
+Codex is a separate process, driven over its own protocol — and the observation
+path is correspondingly different.
 
-```ts
-type AbsenceEvent = {
-  id: string;
-  sessionId: string;
-  timestamp: number;
-  type:
-    | "agent_start" | "agent_end" | "message"   | "thinking"
-    | "tool_start"  | "tool_update" | "tool_end"
-    | "file_read"   | "file_write"  | "file_edit" | "file_change"
-    | "command"     | "search"      | "error";
-  payload: unknown;
-};
+```
+AgentAdapter
+  └─ CodexAdapter ── AppServerClient ──(stdio JSON-RPC)── codex app-server
+        │                                                     │
+        │  environment/add(exe-server URL)                   │  process/start
+        │  thread & turn environments ───────────────────────┘
+        ▼
+  CodexExecServer (loopback WebSocket, JSON-RPC)
+        │  spawn(argv)  ← Absence is the executor
+        ▼
+  the command, Absence's own child inside the Job/eBPF window
 ```
 
-Three extensions over the original v0.1 spec:
+- **Transport** — `AppServerClient` speaks newline-delimited JSON-RPC to
+  `codex app-server`. The app-server (not `codex exec --json`) is used because it
+  carries real item ids, call ids and `startedAtMs`/`completedAtMs`; the SDK's
+  `--json` transport regenerates item ids and drops call ids and timestamps, so a
+  command's lifecycle could not be paired with the processes it lays.
+- **Shell takeover** — `CodexExecServer` is a small JSON-RPC server on loopback.
+  `CodexAdapter.start` starts it, registers it with `environment/add` and puts it
+  in the thread's `environments`, so Codex executes every command through it. It
+  implements `process/start` (spawn), `process/read`/`write`, `process/terminate`
+  and `process/signal` (interrupt), and drives `ProcessWatcher.begin/end` so eggs
+  attribute exactly as they do for Pi.
+- **PTY** — `process/start` with `tty: true` allocates a real PTY through
+  `node-pty` (ConPTY on Windows); otherwise plain pipes. This mirrors Codex, which
+  defaults to pipes and only allocates a PTY when the model asks.
+- **Environment** — the executor builds the command's environment from the
+  request's `env_policy` (`ShellEnvironment.ts`, a faithful port of Codex's
+  `shell_environment::create_env`), then lets the request's sparse `env` win.
+- **Display** — `CodexShell.ts` undoes Codex's shell wrapper (the `pwsh -Command
+  "…"`, `bash -lc "…"`, `cmd /c …` and the UTF-8 preamble) so commands and eggs
+  show what the model wrote.
+- **Approvals** — Codex's `item/…/requestApproval` server-to-client requests are
+  surfaced as `approval` events and answered by `respondApproval` (or
+  automatically, per `ABSENCE_CODEX_APPROVAL_DECISION`).
 
-- **`search`** — Pi's `grep` / `find` / `ls`, so searching is visible. It renders
+## AbsenceEvent
+
+The core UI understands exactly one structure — the event union below. Whatever
+runtime produced an update, only these types ever cross the WebSocket:
+
+```ts
+type AbsenceEventType =
+  | "agent_start" | "agent_end" | "message"   | "thinking"
+  | "tool_start"  | "tool_update" | "tool_end"
+  | "file_read"   | "file_write"  | "file_edit" | "file_change"
+  | "command"     | "search"      | "process"   | "approval" | "error";
+```
+
+Extensions over the original v0.1 spec:
+
+- **`search`** — `grep` / `find` / `ls`, so searching is visible. It renders
   through the terminal view (one output surface for "the agent ran something").
 - **`file_change`** — raw filesystem-watcher activity, for edits that happen
   outside the agent's own tools (bash, sed, …).
 - **`process`** — an OS process the agent laid, reported by the process watcher
   (see Agent Eggs).
+- **`approval`** — the runtime (Codex) asking the user for permission; recorded as
+  an `APPROVE?` activity and answered from the Stage.
 
 Context usage, status, model and the file tree ride a separate
 `session_state` websocket message, so the event union stays clean.

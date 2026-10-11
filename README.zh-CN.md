@@ -10,10 +10,10 @@
 > Absence 帮你观察 AI 干活，理解发生的一切，最后臣服于 AI 的支配。
 
 Absence 是一个面向 AI agent 的实时可视化观察器。它不试图让 agent 更聪明——
-它让人*看见* agent 正在做什么。
+它让人*看见* agent 正在做什么。**Pi** 和 **OpenAI Codex** 都是一等运行时。
 
 ```
-Pi 运行 agent。
+Pi 或 Codex 运行 agent。
 Absence 观察事件。
 Stage 把事件变成人可以看的东西。
 ```
@@ -47,9 +47,9 @@ Stage 把事件变成人可以看的东西。
 
 ## 快速开始
 
-环境要求：Node.js **22.19+**（测过 24）和 npm。一个配置好的 Pi（跑一次
-`pi` 并登录）是可选的——没有凭据时 Absence 退回一段脚本化的 mock 运行时并
-明说。
+环境要求：Node.js **22.19+**（测过 24）和 npm。需要一个运行时：配置好的
+**Pi**（跑一次 `pi` 并登录）或已登录的 **Codex**（`codex`）。两者都没有时，
+Absence 退回一段脚本化的 mock 运行时并明说。
 
 ```bash
 npm install
@@ -59,10 +59,10 @@ npm run build     # 构建 web 应用
 npm start         # 单源——server 在 :8848 上伺服构建好的应用
 ```
 
-然后打开 `http://127.0.0.1:8848`，输入或选择项目路径，选运行时，点
-**Open**，在 Stage 底部的聊天框里给 agent 发任务。路径框下面的 **History**
-列表展开保存的会话——Absence 自己的归档合并 Pi 的，最新在前；点一行重新打开
-那段对话。
+然后打开 `http://127.0.0.1:8848`，输入或选择项目路径，选运行时（**Pi** 或
+**Codex**），点 **Open**，在 Stage 底部的聊天框里给 agent 发任务。路径框下面的
+**History** 列表展开保存的会话——Absence 自己的归档合并运行时的，最新在前；
+点一行重新打开那段对话。
 
 ### 一键启动器
 
@@ -219,7 +219,7 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
 |---|---|---|
 | `PORT` | `8848` | Server 端口 |
 | `HOST` | `127.0.0.1` | Server 主机 |
-| `ABSENCE_AGENT` | `pi` | 默认运行时：`pi` 或 `mock` |
+| `ABSENCE_AGENT` | `pi` | 默认运行时：`pi`、`codex` 或 `mock`。项目选择器可按会话选；这是回退值 |
 | `ABSENCE_PROJECTS_ROOT` | `~/projects` | 项目选择器列出的目录 |
 | `ABSENCE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | 启用的 Pi 内建工具。`bash` / `powershell` 由 Absence 自己的 shell 提供，这正是进程可被观察的原因 |
 | `ABSENCE_CODEX_SANDBOX` | `workspace-write` | Codex 沙箱：`read-only`、`workspace-write` 或 `danger-full-access`。不设置时 app-server 默认只读，每次写入都会卡在审批上 |
@@ -235,7 +235,22 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
 chat dock 兼作小终端：以 `/` 开头的行是命令，其他都是 prompt。`/model`、
 `/thinking`、`/permission`、`/compact`、`/name`、`/session`、`/export [html|jsonl]`。
 `/permission` 设置 agent 运行的沙箱（`read-only`、`workspace-write`、
-`danger-full-access`）。切换模型是会话级的；结果随会话归档，恢复时会回来。
+`danger-full-access`）。切换模型是会话级的；结果随会话归档，恢复时会回来。命令经
+运行时无关的适配器分发，所以在 Pi 和 Codex 上行为一致。
+
+### 运行时
+
+Absence 驱动两个 agent 运行时；项目选择器（和 `ABSENCE_AGENT`）决定用哪个。
+
+- **Pi** — SDK 在进程内运行（`PiAdapter`）。Absence 包住 Pi 自己的 shell
+  操作（`AbsenceShell`），从而拥有命令边界。
+- **Codex** — Absence 驱动 `codex app-server`，这是 Codex 为观察者定义的
+  JSON-RPC 通道（`CodexAdapter`）。不同于 `codex exec --json`，app-server 带有
+  真实的 item id、call id 和时间戳，所以命令的生命周期能与它拉起的进程精确配对。
+  Absence 随后**接管 Codex 的 shell**，在那里也拥有命令边界。
+
+无论哪种，Absence 其余部分只看得到 `AbsenceEvent`；Stage、Replay、Report 和
+聊天命令从不需要知道是哪个运行时在跑。
 
 当运行时（如 Codex）请求提权时，Absence 会发一个 `approval` 事件：Activity 记
 一行 `APPROVE?`，agent 停在那里等你的决定。和其他 activity 一样，点这一行才会
@@ -290,7 +305,8 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
 
 - 会话**持久化到磁盘**，重启后还在。Pi 把模型的对话放在
   `~/.pi/agent/sessions/`；Absence 把 `AbsenceEvent` 流放在 `~/.absence/sessions/`
-  （用 `ABSENCE_STATE_DIR` 覆盖）。选择器的 **History** 两种都能重开。因为
+  （用 `ABSENCE_STATE_DIR` 覆盖）。选择器的 **History** 两种都能重开。Codex 会话
+  通过 `thread/resume` 恢复（Absence 保存 thread id）。因为
   `~` 是平台的家目录，**Windows 和 WSL 保存各自的历史**；把
   `ABSENCE_STATE_DIR` 指到同一个共享路径可以合并——但绝不要两边同时对同一个
   文件跑。
@@ -300,7 +316,9 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
 - 有内核观察器（Job Object / eBPF）时没有采样下限——20 ms 的进程和任何
   进程一样被看见。快照回退有 ~0.5 秒的下限，从命令孤立的进程
   （命令返回后的 `npm run dev &`）不会被归属，agent *绕过* shell 启动的
-  进程（WMI、计划任务、别的 pid namespace）暂时看不见。
+  进程（WMI、计划任务、别的 pid namespace）暂时看不见。在 **WSL2** 下，eBPF
+  观察器上报的是内核的 pid，与 WSL 呈现的 `/proc` 视图不一致（一个固定偏移）；
+  在原生 Linux 内核上两者一致。
 - 桌子世界的 `DeskState` / `DeskItem` 存在但尚未被事件驱动。
 
 ## 文档
@@ -310,6 +328,8 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
   打包内部机制。
 - [docs/TESTING.zh-CN.md](docs/TESTING.zh-CN.md) — 验收检查脚本及各自钉住的
   规则。
+- [docs/RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md) — v0.3.0 带来了
+  什么：Codex 支持、shell 接管、PTY、审批即 activity。
 - [docs/RELEASE_NOTES_v0.2.0.md](docs/RELEASE_NOTES_v0.2.0.md) — v0.2.0 带来了
   什么：形象皮肤、Eggs 过滤配置文件、设置弹窗。
 

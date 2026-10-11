@@ -28,10 +28,17 @@ jobs:
       - run: npm ci
       # Structural checks that do not need kernel observers, elevated rights, or
       # a running server: egg building, process classification (including the
-      # tool prior), and the Absence Report engine run against recorded fixtures.
+      # tool prior), the Absence Report engine against recorded fixtures, and the
+      # Codex layer (command parsing, shell-wrapper stripping, env policy, and
+      # the exec-server protocol over a loopback socket).
       # (check:history and the observer checks need a live server / kernel
       # access, so they stay manual: `npm run check:process`, `npm run
       # check:history`.)
       - run: npm run check:eggs
       - run: npm run check:classify
       - run: npm run check:report
+      - run: npm run check:codex
+      - run: npm run check:codexshell
+      - run: npm run check:shellenv
+      - run: npm run check:execserver
+      - run: npm run check:fsdiff

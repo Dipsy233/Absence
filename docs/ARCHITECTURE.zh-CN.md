@@ -4,21 +4,28 @@ Absence 内部实现的深入文档。介绍与使用方法见 [README](../READM
 
 ```
 Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
-   ▲                                                                     │
+   ▲                                                              └─▶ Codex (app-server, JSON-RPC)
+   │                                                                     │
    └──────────── AbsenceEvent stream (file_read / file_edit / command / …) ─┘
 ```
 
 - `packages/core` — 共享的 `AbsenceEvent` + 领域类型。UI 认识的唯一词汇表；它
-  永远不会知道 Pi 的存在。
-- `apps/server` — Fastify + WebSocket。`PiAdapter` 包装 Pi SDK，把
-  `AgentSessionEvent` 映射成 `AbsenceEvent`；`MockAdapter` 不需要凭据就能回放
-  一段脚本化的运行；`chokidar` 监视项目的带外改动。**Absence 拥有 shell**：
-  `process/AbsenceShell` 包装 Pi 自己的本地 shell 操作，注册成自定义
-  `bash` / `powershell` 工具（自定义工具按名字遮蔽内建的，所以 `ABSENCE_PI_TOOLS`
-  不受影响）。Pi 照样执行每条命令——Absence 只拥有边界，正是这个边界告诉
-  `ProcessWatcher` 一条命令何时运行，并在它头部放一个唯一标记，让 Pi 为这条
-  命令生成的 shell（和它外面的启动器）能被精确识别，而不是靠名字或父进程链
-  去猜。`ProcessWatcher` 然后观察进程表。在 **Windows** 上它完全不采样：
+  永远不会知道 Pi 或 Codex 的存在。
+- `apps/server` — Fastify + WebSocket。每个运行时是一个 `AgentAdapter`：
+  `PiAdapter` 在进程内包装 Pi SDK，把 `AgentSessionEvent` 映射成
+  `AbsenceEvent`；`CodexAdapter` 用 JSON-RPC 驱动 `codex app-server`，同样方式
+  映射它的通知（`AppServerClient` 是传输层——选它而非 `codex exec --json`，因为
+  app-server 带真实的 item id、call id 和时间戳）；`MockAdapter` 不需要凭据就能
+  回放一段脚本化的运行；`chokidar` 监视项目的带外改动。**两个真实运行时里
+  Absence 都拥有 shell。** 对 Pi，`process/AbsenceShell` 包装 Pi 自己的本地
+  shell 操作，注册成自定义 `bash` / `powershell` 工具（自定义工具按名字遮蔽
+  内建的，所以 `ABSENCE_PI_TOOLS` 不受影响）。对 Codex，`process/ExecServer`
+  *就是* executor：Absence 起一个 loopback exec-server，用 `environment/add`
+  注册并把 thread 固定到它，于是 Codex 把每条命令作为 `process/start` 交给
+  Absence 去 spawn。无论哪种，Absence 都拥有命令边界，正是这个边界告诉
+  `ProcessWatcher` 一条命令何时运行。Pi 用 `#` 注释给命令打标记；Codex 仅靠
+  祖先链归因，而接管让这条链天然完整。`ProcessWatcher` 然后观察进程表。
+  在 **Windows** 上它完全不采样：
   `native/agentwatch` 是一个小 helper，把 server 放进一个 **Job Object**，
   内核随后把每一次创建和退出实时上报。在 **Linux** 上它也不采样：
   `native/agentwatch-linux` 挂三个 eBPF tracepoint
@@ -76,8 +83,12 @@ packages/core/src/        events.ts（AbsenceEvent + payload map）  types.ts  i
 
 apps/server/src/
   agents/                 AgentAdapter.ts（运行时无关的边界）
-                          PiAdapter.ts  MockAdapter.ts  createAdapter.ts
-  process/                AbsenceShell.ts（拥有 shell）  ProcessWatcher.ts（eggs）
+                          PiAdapter.ts  CodexAdapter.ts  CodexCommands.ts
+                          AppServerClient.ts（codex app-server JSON-RPC）
+                          MockAdapter.ts  createAdapter.ts
+  process/                AbsenceShell.ts（拥有 Pi 的 shell）  ProcessWatcher.ts（eggs）
+                          ExecServer.ts（拥有 Codex 的 shell：exec-server）
+                          ShellEnvironment.ts（Codex env_policy）  CodexShell.ts（去壳）
                           ProcessTable.ts（pid / ppid / 命令行 / 启动时间）
                           observer.ts（平台中立的事件形状）
                           JobMonitor.ts + JobSidecar.ts（Windows 内核事件）
@@ -211,32 +222,68 @@ macOS 是 DMG。有三件生成的产物值得知道（都在 `apps/desktop/scri
 原生 helper。原生观察器路径用 `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX`
 显式设置，因为 server 自己的路径启发假设的是 checkout 布局。
 
-## AbsenceEvent
+## Codex（`CodexAdapter`）
 
-核心 UI 只认识一种结构：
+Pi 是内嵌的，所以 Absence 通过包装 Pi 的工具操作来控制 shell。Codex 是独立
+进程，用它自己的协议驱动——观察路径也因此不同。
 
-```ts
-type AbsenceEvent = {
-  id: string;
-  sessionId: string;
-  timestamp: number;
-  type:
-    | "agent_start" | "agent_end" | "message"   | "thinking"
-    | "tool_start"  | "tool_update" | "tool_end"
-    | "file_read"   | "file_write"  | "file_edit" | "file_change"
-    | "command"     | "search"      | "error";
-  payload: unknown;
-};
+```
+AgentAdapter
+  └─ CodexAdapter ── AppServerClient ──(stdio JSON-RPC)── codex app-server
+        │                                                     │
+        │  environment/add(exe-server URL)                   │  process/start
+        │  thread & turn environments ───────────────────────┘
+        ▼
+  CodexExecServer（loopback WebSocket，JSON-RPC）
+        │  spawn(argv)  ← Absence 就是 executor
+        ▼
+  命令，作为 Absence 自己的子进程，位于 Job/eBPF 窗口内
 ```
 
-对原始 v0.1 规约的三个扩展：
+- **传输** — `AppServerClient` 对 `codex app-server` 说换行分隔的 JSON-RPC。
+  之所以用 app-server（而非 `codex exec --json`）：它带真实的 item id、call id
+  和 `startedAtMs`/`completedAtMs`；SDK 的 `--json` 传输会重新生成 item id、
+  丢掉 call id 和时间戳，命令的生命周期就无法与它拉起的进程配对。
+- **shell 接管** — `CodexExecServer` 是 loopback 上的一个小 JSON-RPC 服务。
+  `CodexAdapter.start` 起它、用 `environment/add` 注册，并放进 thread 的
+  `environments`，于是 Codex 的每条命令都经它执行。它实现 `process/start`
+  （spawn）、`process/read`/`write`、`process/terminate` 和 `process/signal`
+  （interrupt），并驱动 `ProcessWatcher.begin/end`，让蛋的归因和 Pi 完全一致。
+- **PTY** — `process/start` 带 `tty: true` 时通过 `node-pty`（Windows 上
+  ConPTY）开真 PTY；否则普通管道。这与 Codex 一致——它默认管道，只在模型要求
+  时分配 PTY。
+- **环境** — executor 用请求的 `env_policy` 构建命令环境
+  （`ShellEnvironment.ts`，忠实移植 Codex 的
+  `shell_environment::create_env`），再让请求的稀疏 `env` 覆盖。
+- **显示** — `CodexShell.ts` 去掉 Codex 的 shell 外壳（`pwsh -Command "…"`、
+  `bash -lc "…"`、`cmd /c …` 和 UTF-8 前导），让命令和蛋显示模型实际写的东西。
+- **审批** — Codex 的 `item/…/requestApproval` 服务端向客户端请求被呈现为
+  `approval` 事件，由 `respondApproval` 应答（或按
+  `ABSENCE_CODEX_APPROVAL_DECISION` 自动应答）。
 
-- **`search`** — Pi 的 `grep` / `find` / `ls`，所以搜索可见。它经终端视图渲染
+## AbsenceEvent
+
+核心 UI 只认识一种结构——下面的事件联合。无论哪个运行时产生的更新，只有这些
+类型会跨过 WebSocket：
+
+```ts
+type AbsenceEventType =
+  | "agent_start" | "agent_end" | "message"   | "thinking"
+  | "tool_start"  | "tool_update" | "tool_end"
+  | "file_read"   | "file_write"  | "file_edit" | "file_change"
+  | "command"     | "search"      | "process"   | "approval" | "error";
+```
+
+对原始 v0.1 规约的扩展：
+
+- **`search`** — `grep` / `find` / `ls`，所以搜索可见。它经终端视图渲染
   （"agent 跑了点什么"只有一个输出面）。
 - **`file_change`** — 文件监视器的原始活动，给 agent 自己的工具（bash、
   sed、…）之外的改动用。
 - **`process`** — agent 培育的一个 OS 进程，由进程观察器报告（见 Agent
   Eggs）。
+- **`approval`** — 运行时（Codex）向用户请求提权；记为一条 `APPROVE?` activity，
+  在 Stage 上应答。
 
 上下文用量、状态、模型和文件树走单独的 `session_state` websocket 消息，所以
 事件联合保持干净。

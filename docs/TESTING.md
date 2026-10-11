@@ -10,17 +10,21 @@ node scripts/make-demo.mjs [dir] [--force]   # scaffold a demo project
 npm run check:report                         # Absence Report engine (no server needed)
 npm run check:eggs                           # process detection (no server, nothing spawned)
 npm run check:classify                       # command intent + primary/tool split
-npm run check:process                        # the three process harnesses together
+npm run check:codex                          # Codex command parsing + approvals (pure)
+npm run check:codexshell                     # undoing Codex's shell wrapper (pure)
+npm run check:shellenv                       # Codex env_policy → command env (pure)
+npm run check:execserver                     # Codex exec-server over a real WebSocket
+npm run check:fsdiff                         # the file-diff engine (pure)
+npm run check:process                        # every process harness together
 npm run check:history                        # needs the Absence server running
 npx tsx scripts/checks/check-agentwatch.ts   # kernel process observer (Windows)
 npx tsx scripts/checks/check-ebpf.ts         # kernel process observer (Linux)
-node scripts/gen-whalebun-css.mjs                # regenerate the avatar's stylesheet
+node scripts/gen-whalebun-css.mjs            # regenerate the avatar's stylesheet
 ```
 
 The CI workflow (`.github/workflows/ci.yml`) runs the typecheck and the offline
-harnesses (eggs, classify, report) on every push and pull request.
-`check:history` and the two kernel-observer checks need a live server or kernel
-access, so they stay manual.
+harnesses on every push and pull request. `check:history` and the two
+kernel-observer checks need a live server or kernel access, so they stay manual.
 
 `make-demo.mjs` writes a small project shaped so ordinary prompts exercise every
 panel: reads with line ranges, a runnable `npm test`, a `TODO.md` for the agent to
@@ -73,4 +77,26 @@ the command that laid them, and that Absence's own marked shell is never an egg.
 `check-ebpf.ts` does the same for the Linux observer: it starts
 `agentwatch-linux`, drives the real `ProcessWatcher`, and asserts that
 short-lived children are all caught with their command line and attributed to
-the command that laid them.
+the command that laid them — and that an unmarked process is still captured
+while a session id is set (the Linux attribution rule).
+
+`check-codex.ts` is the pure harness for the Codex command layer: reading a
+read/search/list out of Codex's own `commandActions` (with a text fallback), and
+the approval decisions and options derived from Codex's `availableDecisions`.
+
+`check-codexshell.ts` pins undoing Codex's shell wrapper: `pwsh -Command "…"`
+(with the UTF-8 preamble), `bash -lc "…"`, `cmd /c …`, multi-flag forms and a
+quoted exe path all reduce to the model's command; a non-shell invocation is
+left alone.
+
+`check-shellenv.ts` pins the environment build: Codex's `env_policy`
+(inherit / default excludes / custom excludes / set / include-only) is applied
+to the executor's own environment, then the request's sparse `env` wins — the
+rule that keeps `PATH` and `PATHEXT` present.
+
+`check-execserver.ts` drives the real exec-server over a loopback WebSocket:
+`initialize`, then `process/start`/`output`/`exited`/`closed`, a `tty: true`
+command streaming on the `pty` stream and stopping on a written Ctrl+C, and
+`process/signal interrupt` stopping a running command first-hand.
+
+`check-fsdiff.ts` is the pure harness for the file-diff engine.

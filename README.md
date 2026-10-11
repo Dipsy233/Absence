@@ -11,10 +11,11 @@ English | [中文](README.zh-CN.md)
 > surrender to AI domination.
 
 Absence is a real-time visualization observer for AI agents. It does not try to make
-an agent smarter — it lets a human *see* what the agent is doing.
+an agent smarter — it lets a human *see* what the agent is doing. **Pi** and
+**OpenAI Codex** are both first-class runtimes.
 
 ```
-Pi runs the agent.
+Pi or Codex runs the agent.
 Absence observes the events.
 The Stage turns events into something humans can watch.
 ```
@@ -52,9 +53,10 @@ avatar settling back to *listening*:
 
 ## Quick start
 
-Requirements: Node.js **22.19+** (24 tested) and npm. A configured Pi (run
-`pi` once and log in) is optional — without credentials Absence falls back to a
-scripted mock runtime and says so.
+Requirements: Node.js **22.19+** (24 tested) and npm. A runtime is required: a
+configured **Pi** (run `pi` once and log in) or a logged-in **Codex**
+(`codex`). Without either, Absence falls back to a scripted mock runtime and
+says so.
 
 ```bash
 npm install
@@ -65,10 +67,10 @@ npm start         # single origin — server serves the built app on :8848
 ```
 
 Then open `http://127.0.0.1:8848`, enter or pick a project path, choose a
-runtime, hit **Open**, and send the agent a task in the chat box at the bottom
-of the Stage. The **History** list under the path box unfolds saved sessions —
-Absence's own archives merged with Pi's — newest first; clicking a row reopens
-that conversation.
+runtime (**Pi** or **Codex**), hit **Open**, and send the agent a task in the chat
+box at the bottom of the Stage. The **History** list under the path box unfolds
+saved sessions — Absence's own archives merged with the runtime's — newest
+first; clicking a row reopens that conversation.
 
 ### One-click launchers
 
@@ -247,7 +249,7 @@ details.
 |---|---|---|
 | `PORT` | `8848` | Server port |
 | `HOST` | `127.0.0.1` | Server host |
-| `ABSENCE_AGENT` | `pi` | Default runtime: `pi` or `mock` |
+| `ABSENCE_AGENT` | `pi` | Default runtime: `pi`, `codex` or `mock`. The project picker chooses per session; this is the fallback |
 | `ABSENCE_PROJECTS_ROOT` | `~/projects` | Directory listed in the project picker |
 | `ABSENCE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | Pi built-in tools to enable. `bash` / `powershell` are served by Absence's own shell, which is what makes processes observable |
 | `ABSENCE_CODEX_SANDBOX` | `workspace-write` | Codex sandbox: `read-only`, `workspace-write` or `danger-full-access`. Without it the app-server runs read-only and every write waits on an approval |
@@ -265,7 +267,24 @@ command, anything else is a prompt. `/model`, `/thinking`, `/permission`,
 `/compact`, `/name`, `/session`, `/export [html|jsonl]`. `/permission` sets the
 sandbox the agent runs in (`read-only`, `workspace-write`, `danger-full-access`).
 Model switching is session-scoped; results are archived with the session and
-come back on resume.
+come back on resume. The commands dispatch through the runtime-agnostic adapter,
+so they work the same on Pi and Codex.
+
+### Runtimes
+
+Absence drives two agent runtimes; the project picker (and `ABSENCE_AGENT`)
+chooses which.
+
+- **Pi** — the SDK runs in-process (`PiAdapter`). Absence wraps Pi's own shell
+  operations (`AbsenceShell`) so it owns the command boundary.
+- **Codex** — Absence drives `codex app-server`, the JSON-RPC channel Codex
+  defines for observers (`CodexAdapter`). Unlike `codex exec --json`, the
+  app-server carries real item ids, call ids and timestamps, so a command's
+  lifecycle pairs exactly with the processes it lays. Absence then **takes over
+  Codex's shell** so it owns the command boundary there too.
+
+Either way the rest of Absence only ever sees `AbsenceEvent`; the Stage, Replay,
+the Report and the chat commands never learn which runtime ran.
 
 When the runtime (Codex) asks for permission, Absence raises an `approval`
 event: Activity records an `APPROVE?` row and the agent waits on the decision.
@@ -333,7 +352,8 @@ port to the public internet.
   conversation under `~/.pi/agent/sessions/`; Absence keeps the `AbsenceEvent` stream
   under `~/.absence/sessions/` (override with `ABSENCE_STATE_DIR`). The picker's
   **History** reopens either: Absence's archive restores the Stage, Activity,
-  files and chat; Pi's restores the model's context. Windows and WSL keep
+  files and chat; Pi's restores the model's context. Codex sessions resume through
+  `thread/resume` (Absence stores the thread id). Windows and WSL keep
   separate histories (`~` differs); point `ABSENCE_STATE_DIR` at one shared path
   to merge them — but never run both platforms against one file at once.
 - Pi has **no delete tool** — deleting goes through `bash rm`. When an agent
@@ -343,7 +363,9 @@ port to the public internet.
   20 ms process is seen like any other. The snapshot fallback has a ~0.5 s
   floor, an orphaned process (`npm run dev &` after the command returns) is not
   attributed, and processes started around the shell (WMI, a scheduled task, a
-  different pid namespace) are not seen yet.
+  different pid namespace) are not seen yet. Under **WSL2** the eBPF observer's
+  pids are the kernel's and do not match the `/proc` view WSL presents (a fixed
+  offset); on a native Linux kernel the two agree.
 - The desk world's `DeskState` / `DeskItem` exist but are not yet driven by
   events.
 
@@ -355,6 +377,8 @@ port to the public internet.
   setup.
 - [docs/TESTING.md](docs/TESTING.md) — the acceptance check scripts and what
   each one pins down.
+- [docs/RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md) — what v0.3.0
+  added: Codex support, shell takeover, PTY, approval activities.
 - [docs/RELEASE_NOTES_v0.2.0.md](docs/RELEASE_NOTES_v0.2.0.md) — what v0.2.0
   added: avatar skins, egg-filter profiles, the settings dialog.
 
