@@ -256,6 +256,11 @@ Absence 自己 spawn。
 是第一手观测到的，所以蛋永远不会卡在 `running`。设
 `ABSENCE_CODEX_EXEC_SERVER=0` 可关闭此机制，仅依赖观察器。
 
+这一接管也是 Codex 在 Linux 上可被观察的前提。Linux 侧的观察器是 eBPF（见
+`native/agentwatch-linux`），它不上报任何环境标记，进程只能靠祖先链归因；Windows
+专用的 `ABSENCE_SESSION_ID` 在这里无处附着。由 Absence spawn 后，祖先链天然完整，
+于是两个平台上每个蛋都能落到拉起它的那条命令上。
+
 executor 也负责中断。当命令不以 PTY 运行时，Codex 不会向 stdin 写 Ctrl+C 来停止
 它，而是调 `process.interrupt()`，以 `process/signal { signal: "interrupt" }` 到达。
 Absence 用一个进程树 kill 来响应——这就是真实控制台里 Ctrl+C 对命令的含义。

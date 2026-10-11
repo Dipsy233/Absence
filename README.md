@@ -289,6 +289,13 @@ child, inside the job, and its exit is seen first-hand, so an egg can never be
 stuck at `running`. Set `ABSENCE_CODEX_EXEC_SERVER=0` to disable this and rely on
 the observer alone.
 
+The takeover is what makes Codex observation work on Linux. There the observer
+is eBPF (see `native/agentwatch-linux`) and reports no environment marker, so a
+process is attributed by its ancestry alone; the Windows-only
+`ABSENCE_SESSION_ID` trick has nothing to attach to. When Absence spawns the
+command, the ancestry is complete by construction, so every egg lands on the
+command that laid it on both platforms.
+
 The executor also owns interrupts. When a command runs without a PTY, Codex does
 not stop it by writing Ctrl+C to its stdin — it calls `process.interrupt()`,
 which arrives as `process/signal { signal: "interrupt" }`. Absence answers it

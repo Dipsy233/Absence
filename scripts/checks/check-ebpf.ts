@@ -79,6 +79,26 @@ async function main(): Promise<void> {
     events.some((event) => event.status === "exited"),
   );
 
+  // Regression: Codex mode calls `beginSession`, but the eBPF observer reports
+  // no `ABSENCE_SESSION_ID` marker (there is no env read on Linux, and the shell
+  // wrapper is a command-line comment, not an env var). A session id must only
+  // *exclude* other sessions' processes, never discard the unmarked ones — or
+  // Linux would capture nothing at all under Codex.
+  const codexEvents: ProcessPayload[] = [];
+  const codexWatcher = new ProcessWatcher({ onProcess: (payload) => codexEvents.push(payload) });
+  codexWatcher.warm();
+  codexWatcher.beginSession("codex-session-check");
+  const codexId = codexWatcher.begin("node -v", process.cwd());
+  spawn("/bin/sh", ["-c", "exec /bin/echo CODEX_MARK"], { stdio: "ignore" });
+  await sleep(1500);
+  codexWatcher.end(codexId);
+  check(
+    "an unmarked process is still captured while a session id is set",
+    codexEvents.some((event) => event.commandLine.includes("CODEX_MARK")),
+    JSON.stringify(codexEvents.map((e) => e.commandLine)),
+  );
+  codexWatcher.stop();
+
   watcher.stop();
   monitor.dispose();
 

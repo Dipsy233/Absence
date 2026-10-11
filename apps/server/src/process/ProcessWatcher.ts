@@ -203,25 +203,13 @@ export class ProcessWatcher {
   /** The working directory commands run in; set by the shell wrapper. */
   private jobCwd = process.cwd();
   /**
-   * The Absence session the observed runtime belongs to, when that runtime's
-   * shell environment carries the injected `ABSENCE_SESSION_ID` (Codex does;
-   * Pi is marked on the command line instead). Set by `beginSession`; start
-   * events whose env marker matches get attributed to this session's commands
-   * even where the ancestry heuristic is blind.
+   * The Absence session the observed runtime belongs to, when the runtime's
+   * shell environment carries `ABSENCE_SESSION_ID` (Windows does, through the
+   * Job-Object observer's PEB read; the Linux eBPF observer reports no marker).
+   * Set by `beginSession`. Used only to *exclude* — a process carrying a
+   * different session's marker is meant to be ignored — never as a requirement.
    */
   private jobSessionId?: string;
-
-  /**
-   * True once this watcher has been told which Absence session it observes
-   * (`beginSession`). Codex runs in this mode: Absence cannot wrap its shell,
-   * so the runtime injects `ABSENCE_SESSION_ID` and the kernel reports it on
-   * every process the runtime's shell tree lays. Pi does not — its marker is
-   * on the command line — so this stays off and the older heuristics apply
-   * unchanged.
-   */
-  private get sessionMode(): boolean {
-    return this.jobSessionId !== undefined;
-  }
 
   constructor(private readonly options: ProcessWatcherOptions) {
     this.rootPid = options.rootPid ?? process.pid;
@@ -264,9 +252,10 @@ export class ProcessWatcher {
   }
 
   /**
-   * Declare which Absence session the observed runtime belongs to. Start
-   * events whose environment carries the same `ABSENCE_SESSION_ID` are then
-   * known to be the runtime's shell tree rather than machine noise.
+   * Declare which Absence session the observed runtime belongs to. Start events
+   * whose environment carries a *different* `ABSENCE_SESSION_ID` are then known
+   * to be another session's and are ignored. Observations without a marker — all
+   * of Linux, where the eBPF observer reports none — are unaffected.
    */
   beginSession(sessionId: string): void {
     this.jobSessionId = sessionId;
@@ -483,23 +472,17 @@ export class ProcessWatcher {
       return;
     }
 
-    // Session attribution, the Codex counterpart of the command-line marker.
-    // When the runtime injects `ABSENCE_SESSION_ID`, the kernel reports it on
-    // every process of the runtime's shell tree; that marker, not the window,
-    // is the authoritative answer to "is this ours?". A process carrying a
-    // *different* session's marker is someone else's (another Absence session
-    // sharing the machine) and is none of our business; an *unmarked* process
-    // in session mode is the server's own infrastructure (update checks, git,
-    // the helper itself), never a command the agent laid.
+    // Session attribution. When a runtime's shell carries `ABSENCE_SESSION_ID`,
+    // the kernel reports it and a process belonging to a *different* session is
+    // none of our business — the one thing the marker is used for here. It is
+    // deliberately not a *requirement*: the Linux observer (eBPF) reports no
+    // marker at all, and the shell wrapper is a comment on the command line
+    // rather than an environment variable, so an unmarked process is judged by
+    // the window and its ancestry below, exactly as it always was for Pi. When
+    // Codex delegates execution (see CodexExecServer) every command is Absence's
+    // own child, so that ancestry is complete.
     const session = this.sessionVerdict(event);
     if (session === "foreign") {
-      this.jobSeen.add(pid);
-      return;
-    }
-    if (session === "unmarked" && this.sessionMode) {
-      // Remembered so nothing descends from a phantom root, but never reported:
-      // Codex's unmarked children are plumbing, and the window would otherwise
-      // hand them to whichever command happened to be running.
       this.jobSeen.add(pid);
       return;
     }
