@@ -85,6 +85,8 @@ function AppearancePane() {
   const moveRailPanel = useSettingsStore((s) => s.moveRailPanel);
   const leftOrder = useSettingsStore((s) => s.leftOrder);
   const moveLeftPanel = useSettingsStore((s) => s.moveLeftPanel);
+  const collapseChatOnContent = useSettingsStore((s) => s.collapseChatOnContent);
+  const setCollapseChatOnContent = useSettingsStore((s) => s.setCollapseChatOnContent);
 
   return (
     <div className="min-w-0 flex-1 basis-0 overflow-y-auto p-4">
@@ -111,6 +113,23 @@ function AppearancePane() {
             </button>
           ))}
         </div>
+      </section>
+
+      {/* ── Chat ──────────────────────────────────────────── */}
+      <section className="mb-4">
+        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">Chat</h3>
+        <label className="flex items-start gap-1.5 text-[11px] leading-snug text-desk-dim">
+          <input
+            type="checkbox"
+            checked={collapseChatOnContent}
+            onChange={(e) => setCollapseChatOnContent(e.target.checked)}
+            className="mt-0.5 accent-[rgb(var(--desk-accent))]"
+          />
+          <span>
+            <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">collapse on content</span>
+            {" — fold the chat history away whenever the Stage shows a file, diff, terminal or the report. Off (the default) keeps the chat exactly as you left it."}
+          </span>
+        </label>
       </section>
 
       {/* ── Left rail order ──────────────────────────────── */}

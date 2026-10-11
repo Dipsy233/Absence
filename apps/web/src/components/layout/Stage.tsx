@@ -83,7 +83,7 @@ export function Stage() {
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {/* The world (desk or agent): the background by default; in ABSENCE mode a
               translucent, click-through ghost in front of the content sheet. It
-              stays below the chat (z-20) and the report (z-30/z-40). */}
+              stays below the chat, which floats on top of everything (z-50). */}
           <div
             className={
               ghost
@@ -115,10 +115,11 @@ export function Stage() {
             <span className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-teal">● LIVE</span>
           ) : null}
 
-          {/* Chat floats over the Stage — one input row, history only on the default page. */}
+          {/* Chat floats over the Stage, above every page (file / diff / terminal /
+              report). One input row, history only on the default page. */}
           <StageChat expanded={!sheet && mode !== "replay"} />
 
-          {/* The Absence Report tab + overlay, above the chat (z-30/z-40). */}
+          {/* The Absence Report tab + overlay, below the chat so it never hides it. */}
           <ReportOverlay />
         </div>
 

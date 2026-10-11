@@ -35,6 +35,12 @@ export interface Settings {
    * themselves stay visible in the Agent Eggs panel either way.
    */
   displayInActivity: boolean;
+  /**
+   * Auto-collapse the chat history when the Stage shows a content page (file /
+   * diff / terminal / report). Off (the default) keeps the chat exactly as the
+   * user left it, so switching pages never hides the conversation.
+   */
+  collapseChatOnContent: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -42,6 +48,7 @@ const DEFAULTS: Settings = {
   railOrder: ["agent", "folder", "eggs"],
   leftOrder: ["files", "history", "activity"],
   displayInActivity: false,
+  collapseChatOnContent: false,
 };
 
 function load(): Settings {
@@ -55,6 +62,7 @@ function load(): Settings {
       railOrder: normalizeIds(parsed.railOrder, RAIL_PANEL_IDS) as RailPanelId[],
       leftOrder: normalizeIds(parsed.leftOrder, LEFT_PANEL_IDS) as LeftPanelId[],
       displayInActivity: parsed.displayInActivity ?? DEFAULTS.displayInActivity,
+      collapseChatOnContent: parsed.collapseChatOnContent ?? DEFAULTS.collapseChatOnContent,
     };
   } catch {
     return DEFAULTS;
@@ -82,6 +90,7 @@ interface SettingsStore extends Settings {
   setLeftOrder: (order: LeftPanelId[]) => void;
   moveLeftPanel: (id: LeftPanelId, dir: "up" | "down") => void;
   setDisplayInActivity: (value: boolean) => void;
+  setCollapseChatOnContent: (value: boolean) => void;
   reset: () => void;
 }
 
@@ -96,6 +105,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     set((s) => persistIt(s, { leftOrder: normalizeIds(leftOrder, LEFT_PANEL_IDS) as LeftPanelId[] })),
   moveLeftPanel: (id, dir) => set((s) => ({ leftOrder: movePanel(s.leftOrder, id, dir) })),
   setDisplayInActivity: (value) => set((s) => persistIt(s, { displayInActivity: value })),
+  setCollapseChatOnContent: (value) => set((s) => persistIt(s, { collapseChatOnContent: value })),
   reset: () => set((s) => persistIt(s, DEFAULTS)),
 }));
 
@@ -117,6 +127,7 @@ function persistIt(state: Settings, patch: Partial<Settings>): Partial<SettingsS
     railOrder: next.railOrder,
     leftOrder: next.leftOrder,
     displayInActivity: next.displayInActivity,
+    collapseChatOnContent: next.collapseChatOnContent,
   });
   return patch;
 }

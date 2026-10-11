@@ -15,15 +15,17 @@ import { COMMANDS, findCommand, type CommandSpec } from "../../lib/commands";
 import { useChatStore } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { ContextChip } from "./ContextChip";
 
 /**
  * Chat docked at the bottom of the Stage (read02 §30). It floats over the Stage
  * instead of taking layout space, so the middle never shrinks: it is always one
  * input row, and the history unfolds upward as a translucent layer — at most 30%
- * of the Stage by default, with an arrow to blow it up to full height. The
- * history only shows while the Stage is on its default page, and whether it is
- * unfolded is remembered, so it docks the way you left it every time you return.
+ * of the Stage by default, with an arrow to blow it up to full height. Whether
+ * it is unfolded is remembered, and by default it stays put across pages; the
+ * "collapse on content" setting (Settings → APPEARANCE) makes a content page
+ * fold it away instead.
  *
  * The input is also a small terminal: a `/` at the start switches to command
  * mode, where a `/` button and a filterable palette (above the input) run Pi
@@ -51,7 +53,11 @@ export function StageChat({ expanded }: { expanded: boolean }) {
 
   const historyOpen = useUiStore((s) => s.chatHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setChatHistoryOpen);
-  const showHistory = expanded && historyOpen;
+  const collapseChatOnContent = useSettingsStore((s) => s.collapseChatOnContent);
+  // `expanded` marks the Stage's default (desk) page. By default the chat stays
+  // put no matter which page is up; only the "collapse on content" setting makes
+  // a content page fold the history away.
+  const showHistory = historyOpen && (expanded || !collapseChatOnContent);
 
   // --- command-mode derivation ---------------------------------------------
   const commandMode = text.startsWith("/");
@@ -114,10 +120,10 @@ export function StageChat({ expanded }: { expanded: boolean }) {
   }, [paletteItems.length]);
 
   useEffect(() => {
-    // Leaving the default page resets the "full height" state; the remembered
-    // open/closed choice is kept.
-    if (!expanded) setFull(false);
-  }, [expanded]);
+    // A content page resets the "full height" state only when the setting asks
+    // the chat to make way for it; otherwise the dock is left untouched.
+    if (!expanded && collapseChatOnContent) setFull(false);
+  }, [expanded, collapseChatOnContent]);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -209,7 +215,7 @@ export function StageChat({ expanded }: { expanded: boolean }) {
   };
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-end">
+    <div className="pointer-events-none absolute inset-0 z-50 flex flex-col justify-end">
       <AnimatePresence initial={false}>
         {showHistory ? (
           <motion.div
@@ -338,13 +344,11 @@ export function StageChat({ expanded }: { expanded: boolean }) {
         <button
           type="button"
           onClick={() => setHistoryOpen(!historyOpen)}
-          disabled={!expanded}
+          disabled={!expanded && collapseChatOnContent}
           title={
-            expanded
-              ? historyOpen
-                ? "Hide the conversation — keep just the input row"
-                : "Show the conversation"
-              : "The conversation shows on the desk page"
+            historyOpen
+              ? "Hide the conversation — keep just the input row"
+              : "Show the conversation"
           }
           className="shrink-0 rounded border border-desk-line px-1.5 py-1 font-mono text-[10px] text-desk-dim transition-colors hover:border-desk-amber/60 hover:text-desk-amber disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-desk-line disabled:hover:text-desk-dim"
         >
