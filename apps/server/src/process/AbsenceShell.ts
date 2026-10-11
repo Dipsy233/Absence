@@ -27,15 +27,20 @@ export interface AbsenceShell {
  * identical from the outside, and that no pid probe can separate: Git Bash
  * reports `$PPID` as 1, and Pi's setup shell is gone before the first sample.
  *
- * Pi is imported lazily: a `mock` session should never pay for loading it.
+ * Pi is imported lazily: a `mock` session should never pay for loading it. The
+ * shell operations come from the same SDK instance the adapter loaded (the
+ * user's installed pi), so they always match the running Pi.
  */
-export async function createAbsenceShell(watcher: ProcessWatcher): Promise<AbsenceShell> {
-  const { createLocalBashOperations, createLocalPowerShellOperations } = await import(
-    "@earendil-works/pi-coding-agent"
-  );
+export async function createAbsenceShell(
+  watcher: ProcessWatcher,
+  operations: {
+    createLocalBashOperations: () => BashOperations;
+    createLocalPowerShellOperations: () => BashOperations;
+  },
+): Promise<AbsenceShell> {
   return {
-    bash: watch(createLocalBashOperations(), watcher),
-    powershell: watch(createLocalPowerShellOperations(), watcher),
+    bash: watch(operations.createLocalBashOperations(), watcher),
+    powershell: watch(operations.createLocalPowerShellOperations(), watcher),
   };
 }
 

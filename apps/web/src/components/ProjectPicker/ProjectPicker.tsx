@@ -37,7 +37,7 @@ export function ProjectPicker() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [runtimes, setRuntimes] = useState<RuntimeStatus[]>([]);
   // Paths the user is editing in the runtime config panel, keyed by kind.
-  const [pathEdits, setPathEdits] = useState<{ codex?: string; dsh?: string }>({});
+  const [pathEdits, setPathEdits] = useState<{ pi?: string; codex?: string; dsh?: string }>({});
   const [savingPaths, setSavingPaths] = useState(false);
 
   const refreshSessions = () => {
@@ -51,6 +51,7 @@ export function ProjectPicker() {
       .then((list) => {
         setRuntimes(list);
         setPathEdits((prev) => ({
+          pi: prev.pi ?? list.find((r) => r.kind === "pi")?.path ?? "",
           codex: prev.codex ?? list.find((r) => r.kind === "codex")?.path ?? "",
           dsh: prev.dsh ?? list.find((r) => r.kind === "dsh")?.path ?? "",
         }));
@@ -95,7 +96,11 @@ export function ProjectPicker() {
     setSavingPaths(true);
     setError(undefined);
     try {
-      const list = await saveRuntimePaths({ codexBin: pathEdits.codex, dshBin: pathEdits.dsh });
+      const list = await saveRuntimePaths({
+        piBin: pathEdits.pi,
+        codexBin: pathEdits.codex,
+        dshBin: pathEdits.dsh,
+      });
       setRuntimes(list);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -258,7 +263,7 @@ export function ProjectPicker() {
               {runtimes
                 .filter((rt) => rt.configurable)
                 .map((rt) => {
-                  const key = rt.kind as "codex" | "dsh";
+                  const key = rt.kind as "pi" | "codex" | "dsh";
                   return (
                     <div key={rt.kind}>
                       <div className="mb-0.5 flex items-center gap-1.5 text-[10px]">

@@ -11,6 +11,8 @@ import {
   type SessionStatsInfo,
 } from "@absence/core";
 import { BaseAdapter, type AdapterOptions, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
+import { loadPiSdk } from "./PiBin";
+import { config } from "../config";
 import { createAbsenceShell } from "../process/AbsenceShell";
 import { readFileSafe, scanCodeFiles } from "../filesystem/FileTree";
 import { unifiedDiff } from "../util/diff";
@@ -120,11 +122,16 @@ export class MockAdapter extends BaseAdapter {
   /** Absence's shell when a watcher is present, else Pi's plain local shell. */
   private async shellOperations(): Promise<BashOperations> {
     if (this.shell) return this.shell;
+    const { sdk } = await loadPiSdk(config.piBin);
     if (this.options.processWatcher) {
-      this.shell = (await createAbsenceShell(this.options.processWatcher)).bash;
+      this.shell = (
+        await createAbsenceShell(this.options.processWatcher, {
+          createLocalBashOperations: sdk.createLocalBashOperations,
+          createLocalPowerShellOperations: sdk.createLocalPowerShellOperations,
+        })
+      ).bash;
     } else {
-      const { createLocalBashOperations } = await import("@earendil-works/pi-coding-agent");
-      this.shell = createLocalBashOperations();
+      this.shell = sdk.createLocalBashOperations();
     }
     return this.shell;
   }

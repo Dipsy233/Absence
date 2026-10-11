@@ -37,6 +37,7 @@ export async function fetchRuntimes(): Promise<RuntimeStatus[]> {
 
 /** Save codex / dsh binary paths; an empty string clears the override. */
 export async function saveRuntimePaths(patch: {
+  piBin?: string;
   codexBin?: string;
   dshBin?: string;
 }): Promise<RuntimeStatus[]> {

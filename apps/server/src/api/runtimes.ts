@@ -12,11 +12,12 @@ export async function runtimeRoutes(app: FastifyInstance): Promise<void> {
     return { runtimes: runtimeStatuses() };
   });
 
-  /** Save binary paths (codex / dsh). Empty string clears an override. */
+  /** Save binary paths (pi / codex / dsh). Empty string clears an override. */
   app.post("/api/runtimes", async (request, reply) => {
-    const body = request.body as { codexBin?: string; dshBin?: string } | undefined;
+    const body = request.body as { piBin?: string; codexBin?: string; dshBin?: string } | undefined;
     try {
       setRuntimePaths({
+        ...(typeof body?.piBin === "string" ? { piBin: body.piBin } : {}),
         ...(typeof body?.codexBin === "string" ? { codexBin: body.codexBin } : {}),
         ...(typeof body?.dshBin === "string" ? { dshBin: body.dshBin } : {}),
       });

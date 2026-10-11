@@ -16,6 +16,14 @@ export interface AbsenceConfig {
   /** Model for the Pi session, if pinned. */
   piModel?: string;
   /**
+   * The `@earendil-works/pi-coding-agent` package to embed (its directory, or
+   * the dist/index.js entry). Unset means Absence resolves it: a global npm
+   * install the user has > the package resolved from Absence's own tree. Set
+   * from the Project Picker (persisted to ~/.absence/runtimes.json) or via
+   * ABSENCE_PI_BIN. See agents/PiBin.ts.
+   */
+  piBin?: string;
+  /**
    * Codex sandbox for a thread: `read-only`, `workspace-write` or
    * `danger-full-access`. Defaults to `workspace-write` so the agent can edit
    * its project the way the Codex TUI does; without it the app-server's own
@@ -129,6 +137,7 @@ export const config: AbsenceConfig = {
     .map((t) => t.trim())
     .filter(Boolean),
   piModel: process.env.ABSENCE_PI_MODEL,
+  piBin: process.env.ABSENCE_PI_BIN,
   codexSandbox: normalizeCodexSandbox(process.env.ABSENCE_CODEX_SANDBOX),
   codexApproval: normalizeCodexApproval(process.env.ABSENCE_CODEX_APPROVAL),
   codexApprovalDecision: normalizeApprovalDecision(process.env.ABSENCE_CODEX_APPROVAL_DECISION),

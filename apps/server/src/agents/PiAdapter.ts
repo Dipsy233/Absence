@@ -10,6 +10,8 @@ import {
 } from "@absence/core";
 import type { AgentSession, AgentSessionEvent, CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import { BaseAdapter, type AdapterOptions, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
+import { loadPiSdk } from "./PiBin";
+import { config } from "../config";
 import { createAbsenceShell } from "../process/AbsenceShell";
 import { readFileSafe } from "../filesystem/FileTree";
 import { languageFromPath } from "../util/language";
@@ -47,13 +49,17 @@ export class PiAdapter extends BaseAdapter {
     this.sessionId = ctx.sessionId;
     this.cwd = ctx.cwd;
 
-    // Loaded lazily so the mock runtime never pays Pi's import cost.
+    // Loaded lazily so the mock runtime never pays Pi's import cost. The SDK is
+    // loaded from the *user's* installed package when one is found (global
+    // install > bundled > configured path), so Absence embeds whichever pi the
+    // user has, not a copy of its own (see agents/PiBin.ts).
+    const { sdk } = await loadPiSdk(config.piBin);
     const {
       createAgentSession,
       SessionManager,
       createBashToolDefinition,
       createPowerShellToolDefinition,
-    } = await import("@earendil-works/pi-coding-agent");
+    } = sdk;
 
     // Pi persists a conversation to ~/.pi/agent/sessions/<cwd>/ by default. A
     // resumed session reopens that file; a fresh one creates it. (ABSENCE used to
@@ -66,7 +72,12 @@ export class PiAdapter extends BaseAdapter {
     // Pi's built-in one (Pi's registry keys by name), so the allowlist in
     // ABSENCE_PI_TOOLS is untouched. Pi still executes the command — Absence just owns
     // the boundary, which is what lets it see the processes the agent lays.
-    const shell = this.options.processWatcher ? await createAbsenceShell(this.options.processWatcher) : undefined;
+    const shell = this.options.processWatcher
+      ? await createAbsenceShell(this.options.processWatcher, {
+          createLocalBashOperations: sdk.createLocalBashOperations,
+          createLocalPowerShellOperations: sdk.createLocalPowerShellOperations,
+        })
+      : undefined;
     // The cast is Pi's own typing wart: a tool definition is typed with the
     // schema it was built for, while the registry wants the widened form.
     const customTools = shell

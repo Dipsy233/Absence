@@ -4,6 +4,7 @@ import path from "node:path";
 import { config, configure } from "../config";
 import { resolveDshBin } from "../agents/DshClient";
 import { resolveCodexBinDetailed } from "../agents/CodexBin";
+import { resolvePiDetailed } from "../agents/PiBin";
 
 /* ══════════════════════════════════════════════════════════════════════════
    Runtime configuration — the binary paths the agent runtimes need, editable
@@ -22,6 +23,8 @@ const DIR = path.join(os.homedir(), ".absence");
 const FILE = path.join(DIR, "runtimes.json");
 
 export interface RuntimePaths {
+  /** Pi coding-agent package directory (or its dist/index.js entry). */
+  piBin?: string;
   /** Codex CLI entry (the JS shim or a real executable). */
   codexBin?: string;
   /** dsh (DeepSeek Harness) CLI entry. */
@@ -47,6 +50,7 @@ function read(): RuntimePaths {
     const raw = fs.readFileSync(FILE, "utf8");
     const parsed = JSON.parse(raw) as RuntimePaths;
     return {
+      piBin: typeof parsed.piBin === "string" ? parsed.piBin : undefined,
       codexBin: typeof parsed.codexBin === "string" ? parsed.codexBin : undefined,
       dshBin: typeof parsed.dshBin === "string" ? parsed.dshBin : undefined,
     };
@@ -76,6 +80,7 @@ export function runtimePaths(): RuntimePaths {
  */
 export function applyRuntimePaths(): void {
   const saved = read();
+  if (saved.piBin !== undefined) configure({ piBin: saved.piBin });
   if (saved.codexBin !== undefined) configure({ codexBin: saved.codexBin });
   if (saved.dshBin !== undefined) configure({ dshBin: saved.dshBin });
 }
@@ -84,6 +89,10 @@ export function applyRuntimePaths(): void {
 export function setRuntimePaths(patch: RuntimePaths): RuntimePaths {
   const next = { ...read(), ...patch };
   // Empty string clears the override (falls back to probing / PATH).
+  if (patch.piBin !== undefined) {
+    next.piBin = patch.piBin.trim() || undefined;
+    configure({ piBin: next.piBin });
+  }
   if (patch.codexBin !== undefined) {
     next.codexBin = patch.codexBin.trim() || undefined;
     configure({ codexBin: next.codexBin });
@@ -99,6 +108,8 @@ export function setRuntimePaths(patch: RuntimePaths): RuntimePaths {
 /** Every runtime, with an availability verdict for the picker. */
 export function runtimeStatuses(): RuntimeStatus[] {
   const saved = read();
+  const pi = resolvePiDetailed(config.piBin ?? saved.piBin);
+  const piAvailable = pi.source !== "none";
   const codex = resolveCodexBinDetailed(config.codexBin ?? saved.codexBin);
   const codexAvailable = codex.source !== "none";
   const dshResolved = resolveDshBin(config.dshBin ?? saved.dshBin);
@@ -111,9 +122,12 @@ export function runtimeStatuses(): RuntimeStatus[] {
     {
       kind: "pi",
       label: "Pi",
-      available: true,
-      configurable: false,
-      note: "in-process SDK — provided by the installed @earendil-works/pi-coding-agent package",
+      available: piAvailable,
+      configurable: true,
+      path: pi.dir,
+      note: piAvailable
+        ? `package path${pi.version ? ` (v${pi.version})` : ""} (${pi.source})`
+        : "not found — install @earendil-works/pi-coding-agent or set its path below",
     },
     {
       kind: "codex",
