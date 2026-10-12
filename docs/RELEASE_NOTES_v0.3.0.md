@@ -1,14 +1,13 @@
 # Release v0.3.0 — Codex Support / 兼容 Codex
 
-**OpenAI Codex joins Pi as a first-class runtime · shell takeover via the
-exec-server protocol · real PTY support · approval prompts as activities**
+**Three runtimes: OpenAI Codex and DSH join Pi · shell takeover via the
+exec-server protocol · real PTY support · approvals as activities ·
+configurable report warnings · custom sound sets**
 
-> 中文说明见下方的“后续提交（post-v0.3.0，未发版）”一节，覆盖 DSH 运行时、
-> 可配置报告警告、音效集等 v0.3.0 之后的全部变更。
-
-Absence could already watch Pi run. v0.3.0 makes it watch **Codex** too — and it
-does not just read Codex's event stream, it *takes over Codex's shell* so the
-process observer sees exactly what the agent spawns, on Windows and Linux alike.
+Absence could already watch Pi run. v0.3.0 makes it watch **Codex** and
+**DSH** too — and it does not just read their event streams, it *takes over
+each runtime's shell* so the process observer sees exactly what the agents
+spawn, on Windows and Linux alike.
 
 ---
 
@@ -24,6 +23,26 @@ Everything the UI already does works unchanged: the Stage, Activity, Replay, the
 Absence Report, Agent Eggs, Agent Folder, the chat commands (`/model`,
 `/thinking`, `/permission`, …). The web app never learns that Codex exists — it
 still speaks only `AbsenceEvent`.
+
+### 🐳 DSH — the third runtime (DeepSeek Harness over ACP)
+
+`dsh` joins Pi and Codex as a first-class runtime. Absence spawns
+`dsh --profile acp` — DSH's automation-only Agent Client Protocol server — and
+drives it over JSON-RPC/NDJSON stdio (`DshClient` is the transport,
+`DshAdapter` maps `session/update` notifications to `AbsenceEvent`s).
+
+- Message / thinking / tool / file / command / search events all map, and
+  `usage_update` becomes context usage.
+- DSH's read results are unwrapped: the `<path>…<content>NN: line…` wrapper is
+  stripped so a `file_read` looks exactly like Pi's plain-text shape.
+- Every shell tool call opens a `ProcessWatcher` window (`begin` on
+  `tool_call`, `end` on `tool_call_update`), so Agent Eggs sees the processes
+  the agent lays.
+- `session/request_permission` surfaces as an `approval` event; the chosen ACP
+  option id is sent back.
+- Location order: `ABSENCE_DSH_BIN` / saved path → DSH Desktop install →
+  `dsh` on PATH. Config: `ABSENCE_DSH_BIN` / `_PROFILE` / `_HOME` /
+  `_PROVIDER` / `_MODEL`.
 
 ### 🐚 Absence takes over Codex's shell
 Pi's shell is Absence's own (`AbsenceShell`), which is what lets Absence see
@@ -46,47 +65,6 @@ That fixes the two things that made Codex observation unreliable:
 Set `ABSENCE_CODEX_EXEC_SERVER=0` to roll back to Codex's own executor (the
 observer still runs, just with the old limits).
 
-### 🖥️ Real PTY, exactly like Codex
-Codex allocates a PTY only when the model asks for `tty: true`; otherwise it uses
-plain pipes. Absence does the same — a real PTY through **node-pty (ConPTY on
-Windows)** for `tty: true`, plain pipes otherwise. A PTY merges stdout and stderr
-into one stream and delivers Ctrl+C written to it, so an interactive command
-behaves exactly as it would natively.
-
-### ⛔ Ctrl+C now works
-Codex never writes Ctrl+C to a non-PTY stdin — it calls `process.interrupt()`,
-which arrives as `process/signal { signal: "interrupt" }`. Absence answers with a
-process-tree kill, which is what Ctrl+C means to a command in a real console.
-Before this, the request fell through and the agent reported "Ctrl+C did
-nothing".
-
-### 🌱 The command's environment is Codex's environment
-Codex sends an `env_policy` (inherit / exclude / set / include-only) plus a sparse
-`env`; Absence runs that policy over its own environment exactly as Codex's
-`shell_environment::create_env` does, then lets the request's `env` win. This is
-what keeps `PATH` and `PATHEXT` present, so `node ticker.mjs` resolves `node` the
-same way it does natively. (Taking the environment from the sparse `env` alone
-was the early bug where `node` was "not recognized".)
-
-### 🪟 Linux parity
-The takeover is what makes Codex observation work on Linux too. There the
-observer is eBPF and reports no environment marker, so a process is attributed by
-its ancestry alone — which the takeover makes complete by construction. Both
-platforms now capture the same eggs the same way.
-
-### 🔔 Approval prompts are activities
-An approval prompt is no longer forced onto the Stage. It arrives as an ordinary
-`APPROVE?` activity row (with a chime, because the agent is blocked on you), and
-opening it shows the request verbatim with the runtime's own options. Nothing is
-pushed in front of what you were already looking at.
-
-### 🧹 The panel shows *your* command, not the wrapper
-The egg panel and command events show the command the model wrote, not Codex's
-shell wrapper. `pwsh.exe -Command "try { … } catch {}\nnode ticker.mjs"` is
-displayed as `node ticker.mjs`, and the same for `bash -lc "…"`.
-
----
-
 ## 🔧 Also in this release
 
 - **Agent Eggs exit fix (Windows):** the Job-Object completion port can drop an
@@ -98,33 +76,6 @@ displayed as `node ticker.mjs`, and the same for `bash -lc "…"`.
   made Linux capture work.
 - **More checks:** `check-codex`, `check-execserver`, `check-shellenv`,
   `check-codexshell`, `check-fsdiff`, plus new eBPF/agentwatch regressions.
-
----
-
-# 后续提交（post-v0.3.0，未发版）/ Changes after v0.3.0
-
-以下是 v0.3.0 文档写成之后合入的全部变更（提交 `791d4e5` → `772430a`），
-发版时此节应拆成 v0.4.0 的 release notes。
-
-## 🐳 DSH — the third runtime (DeepSeek Harness over ACP)
-
-`dsh` joins Pi and Codex as a first-class runtime. Absence spawns
-`dsh --profile acp` — DSH's automation-only Agent Client Protocol server — and
-drives it over JSON-RPC/NDJSON stdio (`DshClient` is the transport,
-`DshAdapter` maps `session/update` notifications to `AbsenceEvent`s).
-
-- Message / thinking / tool / file / command / search events all map, and
-  `usage_update` becomes context usage.
-- DSH's read results are unwrapped: the `<path>…<content>NN: line…` wrapper is
-  stripped so a `file_read` looks exactly like Pi's plain-text shape.
-- Every shell tool call opens a `ProcessWatcher` window (`begin` on
-  `tool_call`, `end` on `tool_call_update`), so Agent Eggs sees the processes
-  the agent lays.
-- `session/request_permission` surfaces as an `approval` event; the chosen ACP
-  option id is sent back.
-- Location order: `ABSENCE_DSH_BIN` / saved path → DSH Desktop install →
-  `dsh` on PATH. Config: `ABSENCE_DSH_BIN` / `_PROFILE` / `_HOME` /
-  `_PROVIDER` / `_MODEL`.
 
 ## 🔔 Report attention is configurable
 
@@ -221,7 +172,13 @@ scripts do the same.
 
 ## 📡 New HTTP API
 
-None. v0.3.0 is a runtime addition; the existing API is unchanged.
+- `GET` / `POST /api/runtimes`, persisted in `~/.absence/runtimes.json` —
+  runtime binary paths with an availability probe.
+- `GET` / `PUT` / `POST` / `DELETE /api/egg-filter[...]` — Agent Eggs filter
+  profiles.
+- `GET` / `POST` / `PUT` / `DELETE /api/avatar-skins[...]`, `GET /avatar/:status`
+  — avatar skins.
+- `GET` / `POST /api/sounds[...]`, `GET /sound/:event` — custom sound sets.
 
 ## 📦 Upgrade notes
 
@@ -230,11 +187,17 @@ None. v0.3.0 is a runtime addition; the existing API is unchanged.
   picker or set `ABSENCE_AGENT=codex`. `ABSENCE_CODEX_SANDBOX`,
   `ABSENCE_CODEX_APPROVAL` and `ABSENCE_CODEX_APPROVAL_DECISION` tune the sandbox,
   the approval policy and how prompts are answered.
+- To use DSH: have `dsh` (DSH Desktop or on PATH), pick it in the picker or set
+  `ABSENCE_AGENT=dsh`; `ABSENCE_DSH_BIN` / `_PROFILE` / `_HOME` / `_PROVIDER` /
+  `_MODEL` tune it.
+- **Node ≥ 22.19 required** (matches `engines.node`; CI now runs Node 22).
 - New dependency: `node-pty` (native, ships prebuilt binaries) for `tty: true`.
 - Linux: rebuild the eBPF observer if you build from source; the committed
-  prebuilt is unchanged by Codex support.
+  prebuilt is unchanged.
+- Linux packages: `desktop:dist` now emits an **AppImage** and a **tar.gz**
+  (unpack and run, no FUSE) alongside the Windows NSIS installer.
 
-## 📚 Docs
+## 📚 Related docs
 
 - [README](../README.md) — new runtime and Codex sections
 - [docs/ARCHITECTURE.md](ARCHITECTURE.md) — the exec-server takeover and the
@@ -245,4 +208,4 @@ None. v0.3.0 is a runtime addition; the existing API is unchanged.
 
 ---
 
-**Codex, watched the same way Pi is.**
+**Three runtimes, watched the same way: Pi, Codex and DSH.**
