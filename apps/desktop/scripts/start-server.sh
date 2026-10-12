@@ -28,6 +28,9 @@ export ELECTRON_RUN_AS_NODE=1
 # path heuristic assumes a checkout layout, so point it there explicitly.
 export ABSENCE_AGENTWATCH_LINUX="$PWD/resources/native/agentwatch-linux/agentwatch-linux"
 export ABSENCE_AGENTWATCH="$PWD/resources/native/agentwatch/agentwatch.exe"
+# tar extraction does not preserve the committed exec bits on every system.
+chmod +x "$ABSENCE_AGENTWATCH_LINUX" 2>/dev/null || true
+chmod +x "$BIN" 2>/dev/null || true
 
 start_foreground() {
 	if [ -n "${ABSENCE_SUDO:-}" ]; then
