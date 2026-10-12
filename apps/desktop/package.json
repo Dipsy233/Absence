@@ -68,7 +68,7 @@
       "category": "Development",
       "executableName": "absence",
       "artifactName": "Absence-${version}.${ext}",
-      "desktopName": "absence.desktop"
+      "syncDesktopName": true
     },
     "mac": {
       "target": ["dmg"],
