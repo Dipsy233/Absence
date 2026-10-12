@@ -30,8 +30,13 @@ const DIR = path.join(
 const ACTIVE_FILE = path.join(DIR, "active.json");
 const BUILTIN = "Default";
 
-/** The events that ring a chime (see apps/web/src/lib/sounds.ts). */
-const EVENTS = ["attention", "complete", "approval"] as const;
+/** The events that ring a chime (see apps/web/src/lib/sounds.ts).
+ *
+ *  `attention` comes in two levels: a set can carry `attention-medium` and
+ *  `attention-high` files. The bare `attention` name stays legal so sets
+ *  uploaded before the split keep working — it plays for both levels.
+ */
+const EVENTS = ["attention", "attention-medium", "attention-high", "complete", "approval"] as const;
 
 export type SoundEvent = (typeof EVENTS)[number];
 

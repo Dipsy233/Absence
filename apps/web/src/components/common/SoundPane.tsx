@@ -9,8 +9,18 @@ import {
   type SoundSetMeta,
 } from "../../lib/api";
 
-/** The events the app rings a chime for (see lib/sounds.ts). */
-const EVENTS = ["attention", "complete", "approval"] as const;
+/** The events the app rings a chime for (see lib/sounds.ts).
+ *
+ *  `attention` takes two level-specific files: `attention-medium` and
+ *  `attention-high`. Upload either (or both); a level without its own file
+ *  falls back to the other level's file, then to the synthesised tone.
+ */
+const EVENTS = ["attention-medium", "attention-high", "complete", "approval"] as const;
+
+const EVENT_LABELS: Record<string, string> = {
+  "attention-medium": "attention · med",
+  "attention-high": "attention · high",
+};
 
 const AUDIO_RE = /\.(mp3|wav|ogg|oga|m4a|aac|flac|webm|mp4)$/i;
 
@@ -280,7 +290,9 @@ export function SoundPane() {
               const file = files[event];
               return (
                 <li key={event} className="flex items-center gap-1.5 rounded border border-desk-line bg-desk-panel2 px-2 py-1">
-                  <span className="w-16 shrink-0 font-mono text-[10px] text-desk-ink">{event}</span>
+                  <span className="w-16 shrink-0 font-mono text-[10px] text-desk-ink">
+                    {EVENT_LABELS[event] ?? event}
+                  </span>
                   <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-desk-dim" title={file}>
                     {uploading === event ? "uploading…" : file ?? "—"}
                   </span>

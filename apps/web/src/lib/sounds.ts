@@ -56,6 +56,27 @@ function tone(at: AudioContext, start: number, frequency: number, duration: numb
 
 export type SoundEvent = "attention" | "complete" | "approval";
 
+/** What the active set holds: stored file names, not just the three events. */
+type StoredFiles = Partial<Record<string, string>>;
+
+/** The stored file names an attention level can map to, most specific first. */
+const ATTENTION_FILES = ["attention-high", "attention-medium", "attention"] as const;
+
+/**
+ * The stored event name for an attention chime: the level's own file when the
+ * active set has one, then the other level's, then the legacy bare
+ * `attention` file (sets uploaded before the split) — undefined when none.
+ */
+function attentionFileFor(level: "medium" | "high"): string | undefined {
+  const files: Partial<Record<string, string>> = coverage?.files ?? {};
+  const order: readonly string[] =
+    level === "high" ? ATTENTION_FILES : (["attention-medium", "attention"] as const);
+  for (const name of order) {
+    if (files[name]) return name;
+  }
+  return undefined;
+}
+
 interface SoundCoverage {
   active: string;
   /** Event → stored file name (presence means a custom file exists). */
@@ -89,23 +110,24 @@ export function startSoundCoveragePolling(): void {
   pollTimer = setInterval(tick, POLL_MS);
 }
 
-/** A custom file exists for this event in the active set. */
-function customFileFor(event: SoundEvent): boolean {
-  return Boolean(coverage?.active && coverage.files[event]);
+/** A custom file exists for this stored name in the active set. */
+function customFileFor(event: string): boolean {
+  const files: Partial<Record<string, string>> = coverage?.files ?? {};
+  return Boolean(coverage?.active && files[event]);
 }
 
 /**
- * Play the active set's uploaded chime for an event. Returns false when there
- * is none (the caller then falls back to the synthesised tone).
+ * Play the active set's stored chime by its file name. Returns false when
+ * there is none (the caller then falls back to the synthesised tone).
  */
-function playCustom(event: SoundEvent): boolean {
+function playStored(event: string): boolean {
   if (!customFileFor(event)) return false;
   try {
     const el = new Audio(`/sound/${event}?v=${encodeURIComponent(coverage!.active)}`);
     el.volume = 1;
     void el.play().catch(() => {
       // Autoplay blocked or decode error — fall back to the synth chime.
-      synthPlay(event);
+      playAttentionSynth("medium");
     });
     return true;
   } catch {
@@ -113,24 +135,18 @@ function playCustom(event: SoundEvent): boolean {
   }
 }
 
-/** Dispatch to the synth implementation of an event. */
-function synthPlay(event: SoundEvent): void {
-  if (event === "attention") playAttentionSynth("medium");
-  else if (event === "complete") playCompleteSynth();
-  else playApprovalSynth();
-}
-
 /* ── Public entry points (custom file first, synth fallback) ──────────────── */
 
 /** Human attention changed level — urgent when it reached high. */
 export function playAttention(level: "medium" | "high"): void {
-  if (playCustom("attention")) return;
+  const file = attentionFileFor(level);
+  if (file && playStored(file)) return;
   playAttentionSynth(level);
 }
 
 /** The run finished — a resolved, descending third. */
 export function playComplete(): void {
-  if (playCustom("complete")) return;
+  if (playStored("complete")) return;
   playCompleteSynth();
 }
 
@@ -142,7 +158,7 @@ export function playComplete(): void {
  * so a blocked agent announces itself even when the user is looking elsewhere.
  */
 export function playApproval(): void {
-  if (playCustom("approval")) return;
+  if (playStored("approval")) return;
   playApprovalSynth();
 }
 
