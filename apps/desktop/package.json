@@ -65,7 +65,10 @@
     "linux": {
       "target": ["AppImage", "tar.gz"],
       "icon": "assets/icon.png",
-      "category": "Development"
+      "category": "Development",
+      "executableName": "absence",
+      "artifactName": "Absence-${version}.${ext}",
+      "desktopName": "absence.desktop"
     },
     "mac": {
       "target": ["dmg"],
