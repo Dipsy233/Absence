@@ -16,10 +16,43 @@ function countChanges(diff: string): { added: number; removed: number } {
   let removed = 0;
   for (const line of diff.split("\n")) {
     if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("@@")) continue;
     if (line.startsWith("+")) added++;
     else if (line.startsWith("-")) removed++;
   }
   return { added, removed };
+}
+
+/**
+ * The old/new line numbers a diff line belongs to, from the `@@ -a,b +c,d @@`
+ * headers (both real GNU hunks and Pi's annotated diff). Returns the pair to
+ * show in the gutter: a context line shows both, an edit shows one side only.
+ */
+function gutterNumbers(lines: string[]): Array<{ old?: number; new?: number }> {
+  const out: Array<{ old?: number; new?: number }> = [];
+  let oldLine = 0;
+  let newLine = 0;
+  for (const line of lines) {
+    const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (hunk) {
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[3]);
+      out.push({});
+      continue;
+    }
+    if (line.startsWith("---") || line.startsWith("+++")) {
+      out.push({});
+      continue;
+    }
+    if (line.startsWith("+")) {
+      out.push({ new: newLine++ });
+    } else if (line.startsWith("-")) {
+      out.push({ old: oldLine++ });
+    } else {
+      out.push({ old: oldLine++, new: newLine++ });
+    }
+  }
+  return out;
 }
 
 /** Colour one line of a unified diff. */
@@ -46,6 +79,7 @@ export function DiffStage({ path, before, after, diff, emptied = false }: DiffSt
   const text = (diff ?? "").trim().length > 0 ? (diff as string) : unifiedDiff(before, after, path, path);
   const { added, removed } = countChanges(text);
   const lines = text.split("\n");
+  const gutters = gutterNumbers(lines);
 
   return (
     <motion.div
@@ -79,11 +113,26 @@ export function DiffStage({ path, before, after, diff, emptied = false }: DiffSt
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto bg-desk-deep/40 py-2 font-mono text-xs leading-relaxed">
-        {lines.map((line, index) => (
-          <div key={index} className={`whitespace-pre px-3 ${diffLineClass(line)}`}>
-            {line || " "}
-          </div>
-        ))}
+        {lines.map((line, index) => {
+          const gutter = gutters[index];
+          return (
+            <div key={index} className={`flex ${line.startsWith("@@") ? "justify-center" : ""} whitespace-pre ${diffLineClass(line)}`}>
+              {line.startsWith("@@") ? (
+                <span className="px-3">{line}</span>
+              ) : (
+                <>
+                  <span className="w-10 shrink-0 select-none pr-2 text-right text-desk-dim/60">
+                    {gutter?.old ?? ""}
+                  </span>
+                  <span className="w-10 shrink-0 select-none pr-2 text-right text-desk-dim/60">
+                    {gutter?.new ?? ""}
+                  </span>
+                  <span className="min-w-0 flex-1">{line || " "}</span>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="shrink-0 border-t border-desk-line px-3 py-1.5 text-center text-xs italic text-desk-dim">

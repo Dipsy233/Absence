@@ -22,8 +22,11 @@ export interface DiffOp {
 }
 
 export function diffLines(before: string, after: string): DiffOp[] {
-  const a = before.split("\n");
-  const b = after.split("\n");
+  // Normalise line endings before comparing: a Windows write (Set-Content,
+  // apply_patch) lands as CRLF while the remembered version may be LF, and
+  // without this every line of the file would compare as changed.
+  const a = normalizeEol(before).split("\n");
+  const b = normalizeEol(after).split("\n");
   const dp = lcs(a, b);
   const ops: DiffOp[] = [];
   let i = 0;
@@ -46,10 +49,61 @@ export function diffLines(before: string, after: string): DiffOp[] {
   return ops;
 }
 
+/** Treat CRLF and LF as the same line break, and drop a lone trailing CR. */
+function normalizeEol(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+const CONTEXT = 3;
+
+/**
+ * A standard unified diff: real `@@ -a,b +c,d @@` hunks with GNU-style line
+ * numbers and CONTEXT lines of context, so the Stage gutter can show line
+ * numbers (matching the web-side generator in apps/web/src/lib/diff.ts).
+ */
 export function unifiedDiff(before: string, after: string, from = "a", to = "b"): string {
   const ops = diffLines(before, after);
-  const body = ops
-    .map((op) => (op.kind === "add" ? `+${op.line}` : op.kind === "remove" ? `-${op.line}` : ` ${op.line}`))
-    .join("\n");
-  return `--- ${from}\n+++ ${to}\n@@\n${body}`;
+  const lines: string[] = [`--- ${from}`, `+++ ${to}`];
+
+  // Group runs of edits separated by more than 2*CONTEXT equal lines into hunks.
+  let index = 0;
+  while (index < ops.length) {
+    if (ops[index]!.kind === "context") {
+      index++;
+      continue;
+    }
+    const start = Math.max(0, index - CONTEXT);
+    let end = index;
+    let run = 0;
+    for (let k = index; k < ops.length; k++) {
+      if (ops[k]!.kind === "context") {
+        run++;
+        if (run > CONTEXT * 2) break;
+      } else {
+        run = 0;
+        end = k + 1;
+      }
+    }
+    const hunkEnd = Math.min(ops.length, end + CONTEXT);
+
+    let aStart = 1;
+    let aLines = 0;
+    let bStart = 1;
+    let bLines = 0;
+    for (let k = 0; k < start; k++) {
+      if (ops[k]!.kind !== "add") aStart++;
+      if (ops[k]!.kind !== "remove") bStart++;
+    }
+    for (let k = start; k < hunkEnd; k++) {
+      if (ops[k]!.kind !== "add") aLines++;
+      if (ops[k]!.kind !== "remove") bLines++;
+    }
+    lines.push(`@@ -${aStart},${aLines} +${bStart},${bLines} @@`);
+    for (let k = start; k < hunkEnd; k++) {
+      const op = ops[k]!;
+      lines.push(op.kind === "add" ? `+${op.line}` : op.kind === "remove" ? `-${op.line}` : ` ${op.line}`);
+    }
+    index = hunkEnd;
+  }
+  return lines.join("\n");
 }

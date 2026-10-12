@@ -613,6 +613,10 @@ export class CodexAdapter extends BaseAdapter {
           }
           case "fileChange": {
             this.stats.toolCalls += 1;
+            // Snapshot the files before the patch lands on disk, so the
+            // file_edit event can carry a real before/after pair (and the
+            // Stage can render a diff with line numbers, as Pi's does).
+            this.captureFilesBefore(item.id, item.changes);
             emit("tool_start", { toolCallId: item.id, toolName: "edit", args: { changes: item.changes } });
             break;
           }
@@ -721,7 +725,8 @@ export class CodexAdapter extends BaseAdapter {
   /**
    * A finished patch becomes file_write / file_edit events. Codex reports
    * which files changed and how (add/delete/update), not the contents, so the
-   * result is read back from disk.
+   * result is read back from disk — and the previous version comes from the
+   * snapshot taken at item/started (see captureFilesBefore).
    */
   private async mapFileChange(item: any): Promise<void> {
     if (item.status !== "completed") return;
@@ -730,16 +735,44 @@ export class CodexAdapter extends BaseAdapter {
       if (change.kind === "delete") continue; // FileWatcher reports removals
       const abs = path.isAbsolute(change.path) ? change.path : path.join(this.cwd, change.path);
       const display = this.display(change.path);
+      const before = this.pendingBefore.get(beforeKey(item.id, change.path)) ?? "";
+      this.pendingBefore.delete(beforeKey(item.id, change.path));
       try {
         const content = (await readFileSafe(abs)) ?? "";
         if (change.kind === "add") {
           this.emitAbsence("file_write", { path: display, content });
         } else {
-          this.emitAbsence("file_edit", { path: display, before: "", after: content, diff: "" });
+          // diff is left empty on purpose: the Stage generates a unified diff
+          // with real line-number hunks from the before/after pair.
+          this.emitAbsence("file_edit", { path: display, before, after: content, diff: "" });
         }
       } catch (error) {
         this.emitAbsence("error", { message: errorMessage(error) });
       }
+    }
+  }
+
+  /** File contents snapshotted before a patch applies, keyed per item+path. */
+  private pendingBefore = new Map<string, string>();
+
+  /**
+   * Read each file a patch is about to touch, before Codex writes it. The
+   * item/completed handler fires after the write, so disk already holds the
+   * new content there — the before side must be captured here.
+   */
+  private captureFilesBefore(itemId: unknown, changes: unknown): void {
+    const list = Array.isArray(changes) ? changes : [];
+    for (const change of list) {
+      const changePath = (change as { path?: unknown } | undefined)?.path;
+      if (typeof changePath !== "string" || changePath.length === 0) continue;
+      const abs = path.isAbsolute(changePath) ? changePath : path.join(this.cwd, changePath);
+      void readFileSafe(abs)
+        .then((content) => {
+          if (content) this.pendingBefore.set(beforeKey(itemId, changePath), content);
+        })
+        .catch(() => {
+          /* unreadable before the patch: the diff falls back to additions-only */
+        });
     }
   }
 
@@ -836,6 +869,11 @@ export class CodexAdapter extends BaseAdapter {
     const rel = path.relative(this.cwd, absolute);
     return rel && !rel.startsWith("..") ? toPosix(rel) : p;
   }
+}
+
+/** The snapshot key for one file of one patch item. */
+function beforeKey(itemId: unknown, changePath: string): string {
+  return `${String(itemId)}\u0000${changePath}`;
 }
 
 function toNumber(value: unknown): number {

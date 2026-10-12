@@ -921,11 +921,23 @@ function computeAttention(input: {
   }
   if (input.unresolved > 0) {
     const needsYou = input.ended || input.busy === false;
-    level = needsYou ? "high" : level === "high" ? "high" : "medium";
-    reasons.push(needsYou ? "unresolved_error" : "command_failed");
-    // "waiting" only makes sense live — the event stream cannot say it ended there.
-    if (!input.ended && input.busy === false) reasons.push("agent_waiting");
-    evidence = input.unresolvedIds;
+    // Unresolved failures honour the user's own thresholds: a run whose
+    // failure count stays under the configured per-run threshold (or whose
+    // attention level is set to "none") is not worth interrupting for — the
+    // total-count branch below would not have fired either, so neither does
+    // this one. The one exception is a run that has already ended (or is
+    // waiting on the user): an unresolved failure at rest always needs a
+    // look, regardless of thresholds.
+    const failLevel = normalizeFailLevel(input.attentionOptions?.commandFailLevel);
+    const underThreshold = !failedOverThreshold(input);
+    if (!needsYou && (failLevel === "none" || underThreshold)) {
+      // below the user's bar: no attention from this branch (the streak and
+      // stall checks below still apply on their own terms)
+    } else {
+      level = needsYou ? "high" : level === "high" ? "high" : failLevel === "none" ? "medium" : failLevel;
+      reasons.push(needsYou ? "unresolved_error" : "command_failed");
+      evidence = input.unresolvedIds;
+    }
   } else if (failedOverThreshold(input)) {
     const failLevel = normalizeFailLevel(input.attentionOptions?.commandFailLevel);
     if (failLevel !== "none" && (level === "none" || rank(failLevel) > rank(level))) level = failLevel;
