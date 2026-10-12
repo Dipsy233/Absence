@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
 # ABSENCE server launcher — headless, no GUI, no Electron window.
-#
-#   ./start-server.sh            start the server (foreground)
-#   ./start-server.sh daemon     start in the background (log: server.log)
-#   ./start-server.sh stop       stop the background daemon
-#
-# Works inside the unpacked tar.gz release (Absence-<version>/) — it runs the
-# bundled server on the Electron binary itself, so Node.js does not need to be
-# installed. The UI is served from the same origin on port 8848.
+#   ./start-server.sh run | daemon | stop
+# Wrap me: resources/start-server.sh (as packed). Resolve the app root.
 set -euo pipefail
 cd "$(dirname "$0")"
-# In the tar.gz the script sits in resources/; some users move it up a level.
-# Resolve the app directory from wherever the script is.
+# In the tar.gz the script sits in resources/; resolve the app directory from
+# wherever the script is.
 [ -d resources ] || cd ..
+# tar extraction drops exec bits on some systems.
+chmod +x resources/start-server.sh "$( [ -x ./absence ] && echo ./absence || echo true )" 2>/dev/null || true
 
 BIN=./absence
 BUNDLE=resources/apps/server-bundle.cjs
