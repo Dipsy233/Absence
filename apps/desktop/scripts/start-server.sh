@@ -10,6 +10,9 @@
 # installed. The UI is served from the same origin on port 8848.
 set -euo pipefail
 cd "$(dirname "$0")"
+# In the tar.gz the script sits in resources/; some users move it up a level.
+# Resolve the app directory from wherever the script is.
+[ -d resources ] || cd ..
 
 BIN=./absence
 BUNDLE=resources/apps/server-bundle.cjs
