@@ -8,18 +8,10 @@
  * show the model's own command, not that wrapper. These pin both the argv path
  * (exact, used by the exec-server) and the text path (used for observer lines).
  */
+import { check, finish } from "./harness";
 import { unwrapArgv, unwrapCommandText, UTF8_OUTPUT_PREFIX } from "../../apps/server/src/process/CodexShell";
 
-let failures = 0;
-let checks = 0;
-function check(label: string, condition: boolean, detail = ""): void {
-  checks++;
-  if (condition) console.log(`  ok   ${label}`);
-  else {
-    failures++;
-    console.error(`  FAIL ${label}${detail ? `  — ${detail}` : ""}`);
-  }
-}
+
 
 const P = UTF8_OUTPUT_PREFIX; // ends with a newline
 
@@ -85,5 +77,4 @@ const P = UTF8_OUTPUT_PREFIX; // ends with a newline
   check("a shell without -Command is untouched", unwrapCommandText("pwsh.exe") === "pwsh.exe");
 }
 
-console.log(`\n${checks - failures}/${checks} checks passed.`);
-process.exit(failures === 0 ? 0 : 1);
+finish();

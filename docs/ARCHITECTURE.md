@@ -83,9 +83,9 @@ absence/                     npm workspaces: packages/*  apps/server  apps/web
   start-absence.sh           the code it launches, not at the root)
   scripts/
     browser/start-absence.bat  browser launcher (Windows)
-    browser/start-absence.sh   browser launcher (Linux / WSL)
-    checks/               check-*.ts acceptance scripts
-    wsl-pi-config.sh      point WSL pi at the Windows host's model services
+    browser/start-absence.sh   browser launcher (Linux)
+    checks/               check-*.ts acceptance scripts (harness.ts shared,
+    run-offline.ts        run-offline.ts runs every offline check)
 
 apps/desktop/             Electron shell (not a workspace; own node_modules)
   main.cjs                runs the server in-process, opens the window, tray
@@ -118,7 +118,7 @@ apps/server/src/
   sessions/               SessionStore.ts  archive.ts (~/.absence/sessions)
   filesystem/             FileTree.ts  FileWatcher.ts (chokidar)
   events/                 EventBus.ts
-  websocket/ws.ts   api/{projects,sessions,runtimes,sounds,avatarSkins}.ts
+  websocket/ws.ts   api/{projects,sessions,runtimes,sounds,avatarSkins,eggFilter}.ts
                     util/{diff,ids,language,paths}.ts
   config.ts  index.ts
 
@@ -128,16 +128,17 @@ apps/web/src/
     layout/               the shell: SessionBar  LeftRail  Stage  RightRail
     stage/                where content goes: DeskStage  FileStage  DiffStage
                           TerminalStage  ThoughtStage  ProcessStage
-                          StageWorld (the desk)  StageToolbar  ReplayBar
-                          StageItemView.tsx  ReportOverlay.tsx (the Absence Report)
+                          ApprovalStage  StageWorld (the desk)  StageToolbar
+                          ReplayBar  StageItemView.tsx  ReportOverlay.tsx (the Absence Report)
     agent/                Avatar.tsx (the WhaleBun character)  AgentPanel.tsx
                           AgentFolder.tsx  MediaAvatar.tsx (uploaded skins)
                           whalebun.css (generated)
     eggs/                 AgentEggsPanel.tsx (primaries; tools folded; running /
                           dead / all)
     files/  history/  activity/  chat/  ProjectPicker/  common/  Panel.tsx
-  stores/                 session  file  stage  replay  chat  ui  reset
+  stores/                 session  file  stage  replay  chat  ui  settings  reset
   hooks/                  useSessionSocket  useStage  useReplay  useNow
+                          useSounds
   lib/                    events (event → Stage item / Activity row)
                           report (the Absence Report engine)   eggs (process → eggs)
                           replay  history  context  commands  agent  format  …
@@ -155,10 +156,13 @@ apps/server/src/process/
                           files named <status>.<ext>; active.json) — managed
                           from the Settings dialog, served at /avatar/<status>
 
-scripts/                  make-demo.mjs  wsl-pi-config.sh
+scripts/                  make-demo.mjs
   browser/                start-absence.bat  start-absence.sh (browser launchers)
   checks/                 check-history.ts  check-report.ts  check-eggs.ts
                           check-classify.ts  check-agentwatch.ts  check-ebpf.ts
+                          check-codex.ts  check-codexshell.ts  check-shellenv.ts
+                          check-execserver.ts  check-fsdiff.ts
+                          harness.ts  run-offline.ts (shared harness + runner)
                           gen-whalebun-css.mjs (regenerates whalebun.css)
 ```
 
@@ -369,8 +373,8 @@ desktop-only):
 - **`stage-desktop.mjs`** runs that bundle and installs the server's
   production dependencies (`npm install --omit=dev`) into
   `dist/desktop/build/node_modules`. It installs fresh rather than filtering the
-  root `node_modules`, which mixes platforms when the checkout is used from both
-  WSL and Windows. The result is what electron-builder copies to
+  root `node_modules`, which mixes platforms when one checkout is shared
+  between platforms. The result is what electron-builder copies to
   `resources/node_modules`.
 - **`make-icons.mjs`** draws `icon.png` / `icon.ico` / `tray.png` into
   `apps/desktop/assets/` — no image library, no committed binary. The generated

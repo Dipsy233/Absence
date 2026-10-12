@@ -7,8 +7,8 @@
 //   native/agentwatch*                   the process-observer helpers
 //
 // We install the production dependencies into the staging directory rather
-// than filtering the repo's 360 MB root node_modules, which mixes platforms
-// (this checkout is used from both WSL and Windows). A clean `npm install
+// than filtering the repo's root node_modules, which mixes platforms when one
+// checkout is shared between platforms. A clean `npm install
 // --omit=dev` gets exactly the server's runtime closure for the *host* the
 // package is built on, which is the platform the package runs on.
 import { execFileSync } from "node:child_process";

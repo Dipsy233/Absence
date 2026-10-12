@@ -10,18 +10,10 @@
  * the PATH-missing bug that made `pwsh -Command "node …"` fail was exactly this
  * step diverging.
  */
+import { check, finish } from "./harness";
 import { createCommandEnv } from "../../apps/server/src/process/ShellEnvironment";
 
-let failures = 0;
-let checks = 0;
-function check(label: string, condition: boolean, detail = ""): void {
-  checks++;
-  if (condition) console.log(`  ok   ${label}`);
-  else {
-    failures++;
-    console.error(`  FAIL ${label}${detail ? `  — ${detail}` : ""}`);
-  }
-}
+
 
 const isWindows = process.platform === "win32";
 
@@ -114,5 +106,4 @@ const BASE: NodeJS.ProcessEnv = {
   check("custom excludes are honoured", env.CODEX_VERSION === undefined);
 }
 
-console.log(`\n${checks - failures}/${checks} checks passed.`);
-process.exit(failures === 0 ? 0 : 1);
+finish();

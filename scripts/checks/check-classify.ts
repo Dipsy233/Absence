@@ -8,19 +8,11 @@
  * signals — the command's own subjects, where the code came from, whether it
  * survived its command — and treat the name list as the prior it is.
  */
+import { check, finish } from "./harness";
 import { parseCommandIntent } from "../../apps/server/src/process/CommandIntent";
 import { classifyProcess, type ClassifyInput } from "../../apps/server/src/process/classify";
 
-let failures = 0;
-let checks = 0;
-function check(label: string, condition: boolean, detail = ""): void {
-  checks++;
-  if (condition) console.log(`  ok   ${label}`);
-  else {
-    failures++;
-    console.error(`  FAIL ${label}${detail ? `  — ${detail}` : ""}`);
-  }
-}
+
 
 const INTENT = parseCommandIntent("");
 void INTENT;
@@ -164,5 +156,4 @@ function input(over: Partial<ClassifyInput> & { name: string }): ClassifyInput {
   check("a named subject is not demoted for being brief", namedBrief.kind === "primary", namedBrief.reason);
 }
 
-console.log(`\n${checks - failures}/${checks} checks passed.`);
-process.exit(failures === 0 ? 0 : 1);
+finish();

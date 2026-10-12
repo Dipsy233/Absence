@@ -47,7 +47,6 @@ echo ============================================================
 echo   ABSENCE
 echo ------------------------------------------------------------
 echo   repo   : %REPO%
-echo   agent  : %ABSENCE_AGENT%
 echo   absence   : port %ABSENCE_PORT%
 if "%DRY%"=="1" echo   mode   : dry run - nothing will be started
 echo ============================================================
@@ -112,7 +111,7 @@ rem --------------------------------------------------------------- server
 call :http_ok "%ABSENCE_URL%"
 if not errorlevel 1 goto absence_ready
 
-echo [run] starting ABSENCE server ... agent=%ABSENCE_AGENT%
+echo [run] starting ABSENCE server ...
 if "%DRY%"=="1" (
   echo       dry run: would run npm start with ABSENCE_AGENT=%ABSENCE_AGENT%
   goto absence_done

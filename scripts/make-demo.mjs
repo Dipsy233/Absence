@@ -11,7 +11,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const target = path.resolve(process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : "E:/0down/absence-demo");
+const target = path.resolve(process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : "absence-demo");
 const force = process.argv.includes("--force");
 
 const files = {

@@ -18,8 +18,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // This script is apps/desktop/scripts → the repo root is two levels up.
 const repoRoot = path.resolve(here, "..", "..", "..");
 
-// The root node_modules may hold a foreign-platform esbuild binary (this repo
-// is routinely used from WSL and Windows against the same checkout). esbuild
+// The root node_modules may hold a foreign-platform esbuild binary (a checkout
+// shared between platforms). esbuild
 // reads ESBUILD_BINARY_PATH once, when its module loads, so this must run
 // *before* the import below.
 const platformPkg = { win32: "win32-x64", darwin: "darwin-x64", linux: "linux-x64" }[process.platform];

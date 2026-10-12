@@ -63,7 +63,7 @@
       "icon": "assets/icon.ico"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": ["AppImage", "tar.gz"],
       "icon": "assets/icon.png",
       "category": "Development"
     },

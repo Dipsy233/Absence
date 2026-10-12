@@ -69,9 +69,8 @@ absence/                     npm workspaces: packages/*  apps/server  apps/web
   start-absence.sh            不在根目录）
   scripts/
     browser/start-absence.bat  Windows 浏览器启动器
-    browser/start-absence.sh   Linux / WSL 浏览器启动器
+    browser/start-absence.sh   Linux 浏览器启动器
     checks/               check-*.ts 验收脚本
-    wsl-pi-config.sh      让 WSL 里的 pi 指向 Windows 宿主的模型服务
 
 apps/desktop/             Electron 外壳（不是 workspace；自己的 node_modules）
   main.cjs                在进程内跑 server，开窗口，托盘
@@ -104,7 +103,7 @@ apps/server/src/
   sessions/               SessionStore.ts  archive.ts（~/.absence/sessions）
   filesystem/             FileTree.ts  FileWatcher.ts（chokidar）
   events/                 EventBus.ts
-  websocket/ws.ts   api/{projects,sessions,runtimes,sounds,avatarSkins}.ts
+  websocket/ws.ts   api/{projects,sessions,runtimes,sounds,avatarSkins,eggFilter}.ts
                     util/{diff,ids,language,paths}.ts
   config.ts  index.ts
 
@@ -114,16 +113,17 @@ apps/web/src/
     layout/               外壳：SessionBar  LeftRail  Stage  RightRail
     stage/                内容的去处：DeskStage  FileStage  DiffStage
                           TerminalStage  ThoughtStage  ProcessStage
-                          StageWorld（桌子）  StageToolbar  ReplayBar
-                          StageItemView.tsx  ReportOverlay.tsx（Absence Report）
+                          ApprovalStage  StageWorld（桌子）  StageToolbar
+                          ReplayBar  StageItemView.tsx  ReportOverlay.tsx（Absence Report）
     agent/                Avatar.tsx（WhaleBun 角色）  AgentPanel.tsx
                           AgentFolder.tsx  MediaAvatar.tsx（上传的皮肤）
                           whalebun.css（生成）
     eggs/                 AgentEggsPanel.tsx（primary；tool 折叠；running /
                           dead / all）
     files/  history/  activity/  chat/  ProjectPicker/  common/  Panel.tsx
-  stores/                 session  file  stage  replay  chat  ui  reset
+  stores/                 session  file  stage  replay  chat  ui  settings  reset
   hooks/                  useSessionSocket  useStage  useReplay  useNow
+                          useSounds
   lib/                    events（事件 → Stage 项 / Activity 行）
                           report（Absence Report 引擎）   eggs（进程 → eggs）
                           replay  history  context  commands  agent  format  …
@@ -142,10 +142,13 @@ apps/server/src/process/
                           <状态>.<扩展名>；active.json）——在设置弹窗管理，
                           通过 /avatar/<状态> 提供
 
-scripts/                  make-demo.mjs  wsl-pi-config.sh
+scripts/                  make-demo.mjs
   browser/                start-absence.bat  start-absence.sh（浏览器启动器）
   checks/                 check-history.ts  check-report.ts  check-eggs.ts
                           check-classify.ts  check-agentwatch.ts  check-ebpf.ts
+                          check-codex.ts  check-codexshell.ts  check-shellenv.ts
+                          check-execserver.ts  check-fsdiff.ts
+                          harness.ts  run-offline.ts（共享 harness + 统一 runner）
                           gen-whalebun-css.mjs（重新生成头像样式表）
 ```
 
@@ -166,7 +169,7 @@ npm run desktop:dev     # DevTools 开；Vite dev server 在时就用它
 在 Windows 上，仓库根目录的 **`start-absence-app.bat`** 一键完成所有事
 （构建 → 缺外壳就装 → 开窗口）；加 `check` 是干跑。它只有一行，转发到
 `apps/desktop/start-absence-app.bat`，桌面启动器真正住在那里。浏览器启动器
-不变，对 WSL / eBPF 工作流仍然是正确的选择。
+不变，仍然是浏览器使用场景的正确选择。
 
 外壳比浏览器多出的东西：一个没有地址栏和标签页的单窗口、没有原生标题栏——
 窗口由 `frame: false` 打开，最小化 / 最大化 / 关闭由页面自绘（`WindowControls`，
@@ -186,8 +189,8 @@ npm run desktop:dev     # DevTools 开；Vite dev server 在时就用它
   说明里捆绑的 Node，别只看版本号。
 - **Electron 单独安装**，装进 `apps/desktop/node_modules`（故意*不是*
   workspace 成员）。它带自己的 `tsx` + esbuild，这样 Windows 外壳永远不会捡
-  到根 `node_modules` 里 Linux 构建的 esbuild——正是下面 WSL 一节警告的平台
-  分裂。
+  到根 `node_modules` 里别的平台构建的 esbuild——正是跨平台共用
+  checkout 时的平台分裂。
 - **桌面外壳和浏览器是同一个应用。** 浏览器里成立的（Replay、Absence Report、
   Agent Eggs）在窗口里都成立，因为是同一个 web 构建、通过同样的 `/api` 和
   `/ws` 对话同一个 server。
@@ -228,8 +231,8 @@ macOS 是 DMG。有三件生成的产物值得知道（都在 `apps/desktop/scri
   加载自己的部分，打包它会弄坏它。
 - **`stage-desktop.mjs`** 运行那个 bundle，并把 server 的生产依赖
   （`npm install --omit=dev`）装进 `dist/desktop/build/node_modules`。它是
-  全新安装而不是过滤根 `node_modules`——后者在 checkout 同时被 WSL 和
-  Windows 使用时会把平台混在一起。结果就是 electron-builder 拷贝到
+  全新安装而不是过滤根 `node_modules`——后者在跨平台共用 checkout 时会把
+  平台混在一起。结果就是 electron-builder 拷贝到
   `resources/node_modules` 的东西。
 - **`make-icons.mjs`** 往 `apps/desktop/assets/` 画 `icon.png` / `icon.ico` /
   `tray.png`——没有图像库，没有提交的二进制生成步骤。生成的图标还是提交的，

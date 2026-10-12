@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run typecheck --workspaces --if-present
@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       # Structural checks that do not need kernel observers, elevated rights, or
@@ -34,11 +34,7 @@ jobs:
       # (check:history and the observer checks need a live server / kernel
       # access, so they stay manual: `npm run check:process`, `npm run
       # check:history`.)
-      - run: npm run check:eggs
-      - run: npm run check:classify
-      - run: npm run check:report
-      - run: npm run check:codex
-      - run: npm run check:codexshell
-      - run: npm run check:shellenv
-      - run: npm run check:execserver
-      - run: npm run check:fsdiff
+      # check:offline spawns every offline check script in one go; the list of
+      # scripts lives in scripts/checks/run-offline.ts (a new check is
+      # registered in exactly one place).
+      - run: npm run check:offline

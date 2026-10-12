@@ -9,21 +9,13 @@
  *
  * Build the helper first:  native/agentwatch-linux/build.sh
  */
+import { check, finish } from "./harness";
 import { spawn } from "node:child_process";
 import type { ProcessPayload } from "@absence/core";
 import { JobMonitor } from "../../apps/server/src/process/JobMonitor";
 import { ProcessWatcher } from "../../apps/server/src/process/ProcessWatcher";
 
-let failures = 0;
-let checks = 0;
-function check(label: string, condition: boolean, detail = ""): void {
-  checks++;
-  if (condition) console.log(`  ok   ${label}`);
-  else {
-    failures++;
-    console.error(`  FAIL ${label}${detail ? `  — ${detail}` : ""}`);
-  }
-}
+
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -102,8 +94,7 @@ async function main(): Promise<void> {
   watcher.stop();
   monitor.dispose();
 
-  console.log(`\n${checks - failures}/${checks} checks passed.`);
-  process.exit(failures === 0 ? 0 : 1);
+  finish();
 }
 
 void main();

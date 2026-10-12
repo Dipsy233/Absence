@@ -74,7 +74,7 @@ start-absence.bat check      :: 干跑——报告会发生什么，什么都不
 ```
 
 ```sh
-./start-absence.sh           # Linux / WSL——eBPF 观察器缺失时还会构建它
+./start-absence.sh           # Linux——eBPF 观察器缺失时还会构建它
 ./start-absence.sh check     # 干跑
 ```
 
@@ -87,7 +87,7 @@ start-absence.bat check      :: 干跑——报告会发生什么，什么都不
 npm run build             # 外壳伺服 dist/web
 npm run desktop:install   # 一次——安装 Electron（自己的 node_modules）
 npm run desktop           # 打开原生窗口
-npm run desktop:dist      # 打包可分发版本（NSIS / AppImage / DMG）
+npm run desktop:dist      # 打包可分发版本（NSIS / AppImage + tar.gz / DMG）
 npm run desktop:pack      # 同样，但输出未打包目录（更快）
 ```
 
@@ -95,6 +95,26 @@ npm run desktop:pack      # 同样，但输出未打包目录（更快）
 托盘让观察继续跑，运行结束而窗口没聚焦时有原生通知。窗口和浏览器是同一个
 web 应用；没有任何分叉。Windows 上 **`start-absence-app.bat`** 一键完成
 构建 → 安装 → 打开。
+
+### Linux 下载即用
+
+Linux 版发布两个产物，都在 Linux 机器上构建（跑 `npm run desktop:dist`
+——electron-builder 不支持从 Windows 交叉打包）：
+
+- **`Absence-<version>.AppImage`**——单文件，`chmod +x` 后直接运行。宿主
+  需要 libfuse2。
+- **`Absence-<version>.tar.gz`**——解压到任意目录后运行 `absence`（在限制
+  非特权用户命名空间的发行版上用 `./absence --no-sandbox`）。不需要 FUSE，
+  适合服务器场景。
+
+```sh
+tar xzf Absence-0.3.0.tar.gz
+./absence
+```
+
+两个产物都带 server bundle、构建好的 UI 和 eBPF 观察器 helper。内核观察器
+另需 `cap_bpf,cap_perfmon`（见下面的服务器一节）；没有它观察器退回 `ps`
+快照。
 
 ### 在服务器上运行（Linux）
 
@@ -219,7 +239,8 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
   （例如 `node ticker.mjs` 里的 `node`）。**display in activity** 开关（默认关）
   会从 Activity 面板隐藏 LAID/DIED 进程行，同时 Agent Eggs 面板仍保留这些蛋。
 
-详见 [docs/AVATAR_SKIN.zh-CN.md](docs/AVATAR_SKIN.zh-CN.md)。
+详见 [docs/AVATAR_SKIN.zh-CN.md](docs/AVATAR_SKIN.zh-CN.md)
+（[英文版](docs/AVATAR_SKIN.md)）。
 
 ## 配置
 
@@ -334,19 +355,17 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
 - 会话**持久化到磁盘**，重启后还在。Pi 把模型的对话放在
   `~/.pi/agent/sessions/`；Absence 把 `AbsenceEvent` 流放在 `~/.absence/sessions/`
   （用 `ABSENCE_STATE_DIR` 覆盖）。选择器的 **History** 两种都能重开。Codex 会话
-  通过 `thread/resume` 恢复（Absence 保存 thread id）。因为
-  `~` 是平台的家目录，**Windows 和 WSL 保存各自的历史**；把
-  `ABSENCE_STATE_DIR` 指到同一个共享路径可以合并——但绝不要两边同时对同一个
-  文件跑。
+  通过 `thread/resume` 恢复（Absence 保存 thread id）。历史保存在各平台的
+  家目录下；把 `ABSENCE_STATE_DIR` 指到同一个共享路径可以合并——但绝不要
+  两边同时对同一个文件跑。
 - Pi **没有删除工具**——删除必须走 `bash rm`。当 agent 改为写入空内容时，
   文件是*被截断，不是被删除*，Absence 会标 **EMPTIED** 加字节数，让假删除一眼
   可见。
 - 有内核观察器（Job Object / eBPF）时没有采样下限——20 ms 的进程和任何
   进程一样被看见。快照回退有 ~0.5 秒的下限，从命令孤立的进程
   （命令返回后的 `npm run dev &`）不会被归属，agent *绕过* shell 启动的
-  进程（WMI、计划任务、别的 pid namespace）暂时看不见。在 **WSL2** 下，eBPF
-  观察器上报的是内核的 pid，与 WSL 呈现的 `/proc` 视图不一致（一个固定偏移）；
-  在原生 Linux 内核上两者一致。
+  进程（WMI、计划任务、别的 pid namespace）暂时看不见。在原生 Linux 内核上，
+  eBPF 观察器上报的 pid 与 `/proc` 视图一致。
 - 桌子世界的 `DeskState` / `DeskItem` 存在但尚未被事件驱动。
 
 ## 文档
@@ -357,7 +376,8 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
 - [docs/TESTING.zh-CN.md](docs/TESTING.zh-CN.md) — 验收检查脚本及各自钉住的
   规则。
 - [docs/RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md) — v0.3.0 带来了
-  什么：Codex 支持、shell 接管、PTY、审批即 activity。
+  什么：Codex 支持、shell 接管、PTY、审批即 activity；以及 v0.3.0 之后的变更
+  （DSH 运行时、可配置报告警告、音效集、检查 harness 重构）。
 - [docs/RELEASE_NOTES_v0.2.0.md](docs/RELEASE_NOTES_v0.2.0.md) — v0.2.0 带来了
   什么：形象皮肤、Eggs 过滤配置文件、设置弹窗。
 

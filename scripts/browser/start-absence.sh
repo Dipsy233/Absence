@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ABSENCE one-click launcher for Linux and WSL.
+# ABSENCE one-click launcher for Linux.
 #
 #   scripts/browser/start-absence.sh            build and start
 #   scripts/browser/start-absence.sh check      dry run: report what would happen, start nothing
@@ -31,7 +31,6 @@ echo "============================================================"
 echo "  ABSENCE"
 echo "------------------------------------------------------------"
 echo "  repo   : $(pwd)"
-echo "  agent  : ${ABSENCE_AGENT}"
 echo "  absence   : port ${ABSENCE_PORT}"
 [ "$DRY" = "1" ] && echo "  mode   : dry run - nothing will be started"
 echo "============================================================"
@@ -50,13 +49,8 @@ if [ ! -x native/agentwatch-linux/agentwatch-linux ]; then
 fi
 
 # --------------------------------------------------------------- pi providers
-# In WSL, point pi at the model services on the Windows host. Their loopback is
-# not WSL's loopback, and the host address changes when WSL restarts, so this
-# runs on every launch.
-if grep -qi microsoft /proc/version 2>/dev/null; then
-	echo "[pi] configuring WSL pi providers ..."
-	[ "$DRY" = "1" ] || bash scripts/wsl-pi-config.sh
-fi
+# No provider rewriting happens here: pi is configured in ~/.pi/agent as on any
+# Linux machine.
 
 # ------------------------------------------------------------------- install
 if [ ! -d node_modules ]; then
@@ -91,7 +85,7 @@ fi
 if curl -fsS -m 3 -o /dev/null "$ABSENCE_URL" 2>/dev/null; then
 	echo "[run] ABSENCE already running on port ${ABSENCE_PORT}"
 else
-	echo "[run] starting ABSENCE server ... agent=${ABSENCE_AGENT}"
+	echo "[run] starting ABSENCE server ..."
 	if [ "$DRY" = "1" ]; then
 		echo "      dry run: would run npm start with ABSENCE_AGENT=${ABSENCE_AGENT}"
 	else
@@ -112,10 +106,8 @@ echo
 
 [ "$DRY" = "1" ] && { echo "Dry run complete."; exit 0; }
 
-# Open a browser when one is available (WSL: the Windows browser via wslview).
-if command -v wslview >/dev/null 2>&1; then
-	wslview "http://localhost:${ABSENCE_PORT}" >/dev/null 2>&1 || true
-elif command -v xdg-open >/dev/null 2>&1; then
+# Open a browser when one is available.
+if command -v xdg-open >/dev/null 2>&1; then
 	xdg-open "http://localhost:${ABSENCE_PORT}" >/dev/null 2>&1 || true
 else
 	echo "Open http://localhost:${ABSENCE_PORT} in a browser."

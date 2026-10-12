@@ -8,6 +8,7 @@
  * `file_write`/`file_edit` a first-class write tool would have sent. This check
  * drives that path against a real temp project and the mock runtime.
  */
+import { check, finish } from "./harness";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -15,16 +16,7 @@ import type { AbsenceEvent } from "@absence/core";
 import { AbsenceSession } from "../../apps/server/src/sessions/SessionStore";
 import { eventToStageItem } from "../../apps/web/src/lib/events";
 
-let failures = 0;
-let checks = 0;
-function check(label: string, condition: boolean, detail = ""): void {
-  checks++;
-  if (condition) console.log(`  ok   ${label}`);
-  else {
-    failures++;
-    console.error(`  FAIL ${label}${detail ? `  — ${detail}` : ""}`);
-  }
-}
+
 
 const waitFor = async (predicate: () => boolean, timeoutMs = 4000): Promise<boolean> => {
   const deadline = Date.now() + timeoutMs;
@@ -90,5 +82,4 @@ check("an identical rewrite emits no diff", edits().length === settled, `${settl
 await session.dispose?.();
 await fs.rm(root, { recursive: true, force: true });
 
-console.log(`\n${checks - failures}/${checks} checks passed.`);
-process.exit(failures === 0 ? 0 : 1);
+finish();

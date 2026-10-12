@@ -8,22 +8,13 @@
  * pinned here — the command window, the ancestor chain, the marker Absence puts on
  * its own shells, and the orphan it refuses to guess about.
  */
+import { check, finish } from "./harness";
 import { createEvent, type AbsenceEvent } from "@absence/core";
 import { attributeProcesses, candidatePids } from "../../apps/server/src/process/ProcessWatcher";
 import type { ProcessTable } from "../../apps/server/src/process/ProcessTable";
 import { buildEggs, countEggs, filterEggs } from "../../apps/web/src/lib/eggs";
 
-let failures = 0;
-let checks = 0;
-function check(label: string, condition: boolean, detail = ""): void {
-  checks++;
-  if (condition) {
-    console.log(`  ok   ${label}`);
-  } else {
-    failures++;
-    console.error(`  FAIL ${label}${detail ? `  — ${detail}` : ""}`);
-  }
-}
+
 
 const SERVER = 1000;
 const MARK = new Set(["absence-test"]);
@@ -210,5 +201,4 @@ function table(rows: [number, number, string, string?][], startedAt = 0): Proces
   check("non-process events are ignored", buildEggs(nonProcess).length === 0);
 }
 
-console.log(`\n${checks - failures}/${checks} checks passed.`);
-process.exit(failures === 0 ? 0 : 1);
+finish();

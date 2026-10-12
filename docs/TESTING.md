@@ -6,7 +6,8 @@ that are easy to get silently wrong. For architecture background, see
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```bash
-node scripts/make-demo.mjs [dir] [--force]   # scaffold a demo project
+node scripts/make-demo.mjs [dir] [--force]   # scaffold a demo project (default: ./absence-demo)
+npm run check:offline                        # run every offline check in one go
 npm run check:report                         # Absence Report engine (no server needed)
 npm run check:eggs                           # process detection (no server, nothing spawned)
 npm run check:classify                       # command intent + primary/tool split
@@ -16,15 +17,24 @@ npm run check:shellenv                       # Codex env_policy → command env 
 npm run check:execserver                     # Codex exec-server over a real WebSocket
 npm run check:fsdiff                         # the file-diff engine (pure)
 npm run check:process                        # every process harness together
+                                             # (observer checks self-skip off-platform)
 npm run check:history                        # needs the Absence server running
 npx tsx scripts/checks/check-agentwatch.ts   # kernel process observer (Windows)
 npx tsx scripts/checks/check-ebpf.ts         # kernel process observer (Linux)
 node scripts/gen-whalebun-css.mjs            # regenerate the avatar's stylesheet
 ```
 
-The CI workflow (`.github/workflows/ci.yml`) runs the typecheck and the offline
-harnesses on every push and pull request. `check:history` and the two
-kernel-observer checks need a live server or kernel access, so they stay manual.
+All offline checks share `scripts/checks/harness.ts` (`check()` / `finish()` /
+`waitFor()`), and `npm run check:offline` runs them one by one — the list of
+offline scripts is registered in exactly one place,
+`scripts/checks/run-offline.ts`, so a new check script only needs to be written
+and added to that array; neither `package.json` nor the CI workflow changes.
+
+The CI workflow (`.github/workflows/ci.yml`) runs the typecheck and
+`npm run check:offline` (every offline harness, see `run-offline.ts`) on every
+push and pull request, on Node 22 to match `engines.node`. `check:history` and
+the two kernel-observer checks need a live server or kernel access, so they
+stay manual.
 
 `make-demo.mjs` writes a small project shaped so ordinary prompts exercise every
 panel: reads with line ranges, a runnable `npm test`, a `TODO.md` for the agent to
@@ -32,7 +42,7 @@ read, and `notes.txt` for the delete-vs-truncate case. The mock runtime runs its
 shell command for real, so a mock run also lays an egg — which is how the Agent
 Eggs panel is exercised without Pi credentials.
 
-`check-history.ts` runs **58 checks** against a live mock session: run grouping,
+`check-history.ts` runs **63 assertions** against a live mock session: run grouping,
 per-run activity scoping, deterministic stage item ids, snapshot seek, the Stage
 returning to its default page, search→terminal mapping, thinking capture (a
 streamed thought stays one Stage item, so replay does not re-mount it), the two

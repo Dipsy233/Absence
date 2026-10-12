@@ -7,6 +7,7 @@
  * here are the ones Codex actually emits on Windows and POSIX, plus the
  * near-misses that must stay plain commands.
  */
+import { check, finish } from "./harness";
 import { commandActionsFromItem, parseReadCommand } from "../../apps/server/src/agents/CodexCommands";
 import {
   approvalOptions,
@@ -15,33 +16,24 @@ import {
   PERMISSION_LEVELS,
 } from "../../apps/server/src/agents/CodexAdapter";
 
-let failures = 0;
-let checks = 0;
-function check(label: string, condition: boolean, detail = ""): void {
-  checks++;
-  if (condition) console.log(`  ok   ${label}`);
-  else {
-    failures++;
-    console.error(`  FAIL ${label}${detail ? `  — ${detail}` : ""}`);
-  }
-}
+
 
 // A. Codex's own declaration wins: `commandActions` off the item.
 {
   const item = {
-    command: 'powershell.exe -Command "Get-Content -Path \\"E:\\0down\\daze-demo\\notes.txt\\" -Raw"',
+    command: 'powershell.exe -Command "Get-Content -Path \\"C:\\demo-project\\notes.txt\\" -Raw"',
     commandActions: [
       {
         type: "read",
-        command: 'Get-Content -Path "E:\\0down\\daze-demo\\notes.txt" -Raw',
+        command: 'Get-Content -Path "C:\\demo-project\\notes.txt" -Raw',
         name: "notes.txt",
-        path: "E:\\0down\\daze-demo\\notes.txt",
+        path: "C:\\demo-project\\notes.txt",
       },
     ],
   };
   const actions = commandActionsFromItem(item);
   check("a read action is read from commandActions", actions?.reads.length === 1, JSON.stringify(actions));
-  check("with Codex's resolved path", actions?.reads[0]?.path === "E:\\0down\\daze-demo\\notes.txt", JSON.stringify(actions));
+  check("with Codex's resolved path", actions?.reads[0]?.path === "C:\\demo-project\\notes.txt", JSON.stringify(actions));
 }
 
 // A2. listFiles and search are recognised too.
@@ -66,9 +58,9 @@ function check(label: string, condition: boolean, detail = ""): void {
 
 // B. The command from the report, as a fallback (no commandActions).
 {
-  const read = parseReadCommand('Get-Content -Path "E:\\0down\\daze-demo\\notes.txt" -Raw');
+  const read = parseReadCommand('Get-Content -Path "C:\\demo-project\\notes.txt" -Raw');
   check("Get-Content -Path … -Raw is a read", read !== undefined, JSON.stringify(read));
-  check("with the path it names", read?.path === "E:\\0down\\daze-demo\\notes.txt", JSON.stringify(read));
+  check("with the path it names", read?.path === "C:\\demo-project\\notes.txt", JSON.stringify(read));
   check("and is whole-file", read?.whole === true, JSON.stringify(read));
 }
 
@@ -157,5 +149,4 @@ function check(label: string, condition: boolean, detail = ""): void {
   check("the permission levels are Codex's own slugs", PERMISSION_LEVELS.length === 3 && PERMISSION_LEVELS[1] === "workspace-write", JSON.stringify(PERMISSION_LEVELS));
 }
 
-console.log(`\n${checks - failures}/${checks} checks passed.`);
-process.exit(failures === 0 ? 0 : 1);
+finish();

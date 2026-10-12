@@ -14,20 +14,12 @@
  * It also asserts the watch window: the exec-server tells the ProcessWatcher a
  * command began and ended, so eggs are attributed to it exactly as for Pi.
  */
+import { check, finish } from "./harness";
 import { WebSocket } from "ws";
 import { CodexExecServer } from "../../apps/server/src/process/ExecServer";
 import type { ProcessWatcher } from "../../apps/server/src/process/ProcessWatcher";
 
-let failures = 0;
-let checks = 0;
-function check(label: string, condition: boolean, detail = ""): void {
-  checks++;
-  if (condition) console.log(`  ok   ${label}`);
-  else {
-    failures++;
-    console.error(`  FAIL ${label}${detail ? `  — ${detail}` : ""}`);
-  }
-}
+
 
 /** A watcher stub that records the begin/end calls the server makes. */
 interface WatcherSpy {
@@ -293,8 +285,7 @@ async function main(): Promise<void> {
   server.close();
   check("close() stops the server", true);
 
-  console.log(`\n${checks - failures}/${checks} checks passed.`);
-  process.exit(failures === 0 ? 0 : 1);
+  finish();
 }
 
 void main().catch((error) => {

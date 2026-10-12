@@ -86,7 +86,7 @@ start-absence.bat check      :: dry run — report what would happen, start noth
 ```
 
 ```sh
-./start-absence.sh           # Linux / WSL — also builds the eBPF observer if missing
+./start-absence.sh           # Linux — also builds the eBPF observer if missing
 ./start-absence.sh check     # dry run
 ```
 
@@ -100,7 +100,7 @@ and `ABSENCE_AGENT`.
 npm run build             # the shell serves dist/web
 npm run desktop:install   # once — installs Electron (its own node_modules)
 npm run desktop           # open the native window
-npm run desktop:dist      # package a distributable (NSIS / AppImage / DMG)
+npm run desktop:dist      # package a distributable (NSIS / AppImage + tar.gz / DMG)
 npm run desktop:pack      # same, but an unpacked folder (faster)
 ```
 
@@ -109,6 +109,27 @@ a tray icon, close-to-tray so observation keeps running, and a native
 notification when a run finishes unfocused. The window is the same web app as
 the browser; nothing is forked. On Windows, **`start-absence-app.bat`** does
 build → install → open in one click.
+
+### Download-and-run on Linux
+
+Releases ship two Linux artifacts, both built from a Linux machine
+(`npm run desktop:dist` — cross-building from Windows is not supported by
+electron-builder):
+
+- **`Absence-<version>.AppImage`** — one file, `chmod +x` and run. Needs
+  libfuse2 on the host.
+- **`Absence-<version>.tar.gz`** — unpack anywhere and run `absence` (or
+  `./absence --no-sandbox` on distros with strict unprivileged-user namespaces).
+  No FUSE required — the right choice for servers.
+
+```sh
+tar xzf Absence-0.3.0.tar.gz
+./absence
+```
+
+Both carry the server bundle, the built UI and the eBPF observer helper. The
+kernel observer additionally wants `cap_bpf,cap_perfmon` (see the server
+section below); without it the observer falls back to `ps` snapshots.
 
 ### Running on a server (Linux)
 
@@ -235,8 +256,9 @@ The `⚙ settings` button in the session bar opens a four-pane dialog:
   (off by default) hides the LAID/DIED process rows from the Activity panel
   while keeping the eggs in the Agent Eggs panel.
 
-See [docs/AVATAR_SKIN.zh-CN.md](docs/AVATAR_SKIN.zh-CN.md) for the avatar-skin
-details.
+See [docs/AVATAR_SKIN.md](docs/AVATAR_SKIN.md) (English) or
+[docs/AVATAR_SKIN.zh-CN.md](docs/AVATAR_SKIN.zh-CN.md) (中文) for the
+avatar-skin details.
 
 ## Configuration
 
@@ -370,9 +392,9 @@ port to the public internet.
   under `~/.absence/sessions/` (override with `ABSENCE_STATE_DIR`). The picker's
   **History** reopens either: Absence's archive restores the Stage, Activity,
   files and chat; Pi's restores the model's context. Codex sessions resume through
-  `thread/resume` (Absence stores the thread id). Windows and WSL keep
-  separate histories (`~` differs); point `ABSENCE_STATE_DIR` at one shared path
-  to merge them — but never run both platforms against one file at once.
+  `thread/resume` (Absence stores the thread id). Histories live under the
+  platform's home directory; point `ABSENCE_STATE_DIR` at a shared path to
+  merge them — but never run two platforms against one file at once.
 - Pi has **no delete tool** — deleting goes through `bash rm`. When an agent
   instead writes empty content the file is *truncated, not deleted*, and Absence
   labels it **EMPTIED** with a byte count so a fake deletion is obvious.
@@ -380,9 +402,8 @@ port to the public internet.
   20 ms process is seen like any other. The snapshot fallback has a ~0.5 s
   floor, an orphaned process (`npm run dev &` after the command returns) is not
   attributed, and processes started around the shell (WMI, a scheduled task, a
-  different pid namespace) are not seen yet. Under **WSL2** the eBPF observer's
-  pids are the kernel's and do not match the `/proc` view WSL presents (a fixed
-  offset); on a native Linux kernel the two agree.
+  different pid namespace) are not seen yet. On a native Linux kernel the
+  eBPF observer's pids agree with the `/proc` view.
 - The desk world's `DeskState` / `DeskItem` exist but are not yet driven by
   events.
 
@@ -395,7 +416,9 @@ port to the public internet.
 - [docs/TESTING.md](docs/TESTING.md) — the acceptance check scripts and what
   each one pins down.
 - [docs/RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md) — what v0.3.0
-  added: Codex support, shell takeover, PTY, approval activities.
+  added: Codex support, shell takeover, PTY, approval activities — plus the
+  post-v0.3.0 changes (DSH runtime, configurable report warnings, sound sets,
+  the check-harness rework).
 - [docs/RELEASE_NOTES_v0.2.0.md](docs/RELEASE_NOTES_v0.2.0.md) — what v0.2.0
   added: avatar skins, egg-filter profiles, the settings dialog.
 

@@ -6,21 +6,12 @@
  * `command` event, agent writes must not be double-counted as observed changes,
  * `created` is relative to earlier runs, and recovery must consume failures.
  */
+import { check, finish } from "./harness";
 import { createEvent, type AbsenceEvent } from "@absence/core";
 import { buildRunFacts, renderLive, renderRun } from "../../apps/web/src/lib/report";
 import type { HistoryRun } from "../../apps/web/src/types/history";
 
-let failures = 0;
-let checks = 0;
-function check(label: string, condition: boolean): void {
-  checks++;
-  if (condition) {
-    console.log(`  ok   ${label}`);
-  } else {
-    failures++;
-    console.error(`  FAIL ${label}`);
-  }
-}
+
 
 const SID = "sess_check";
 const ev = <K extends AbsenceEvent["type"]>(type: K, payload: Extract<AbsenceEvent, { type: K }>["payload"]): AbsenceEvent =>
@@ -505,5 +496,4 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   );
 }
 
-console.log(`\n${checks - failures}/${checks} checks passed.`);
-process.exit(failures === 0 ? 0 : 1);
+finish();

@@ -6,6 +6,7 @@ Absence 没有单元测试框架；它带一组**验收检查脚本**（`scripts
 
 ```bash
 node scripts/make-demo.mjs [dir] [--force]   # 搭一个 demo 项目
+npm run check:offline                        # 一次跑完全部离线检查
 npx tsx scripts/checks/check-history.ts      # 需要 server 在跑
 npx tsx scripts/checks/check-report.ts       # Absence Report 引擎（不需要 server）
 npx tsx scripts/checks/check-eggs.ts         # 进程检测（无 server，不 spawn）
@@ -20,17 +21,25 @@ npx tsx scripts/checks/check-ebpf.ts         # 内核进程观察器（Linux）
 node scripts/gen-whalebun-css.mjs            # 重新生成头像样式表
 ```
 
-`npm run check:process` 把全部进程相关 harness 一起跑。
+所有离线检查共享 `scripts/checks/harness.ts`（`check()` / `finish()` /
+`waitFor()`），并由 `npm run check:offline` 逐个 spawn 着跑——离线脚本清单
+只登记在 `scripts/checks/run-offline.ts` 一处，新增检查脚本只需写好文件
+并把它加进那个数组，CI 无需改动。
 
-CI workflow（`.github/workflows/ci.yml`）在每次 push / PR 上跑 typecheck 和离线
-harness。`check:history` 和两个内核观察器检查需要活 server 或内核权限，保持手动。
+`npm run check:process` 把全部进程相关 harness 一起跑（observer 检查在非本
+平台会自行跳过）。
+
+CI workflow（`.github/workflows/ci.yml`）在每次 push / PR 上跑 typecheck 和
+`npm run check:offline`（全部离线 harness，见 `run-offline.ts`），Node 版本为
+22，与 `engines.node` 一致。`check:history` 和两个内核观察器检查需要活
+server 或内核权限，保持手动。
 
 `make-demo.mjs` 写一个小项目，形状让普通 prompt 练到每个面板：带行区间的读、
 能跑的 `npm test`、给 agent 读的 `TODO.md`、以及留给删除 vs 截断情形的
 `notes.txt`。mock 运行时真的跑它的 shell 命令，所以一次 mock 运行也会下一只
 蛋——这就是没有 Pi 凭据也能练 Agent Eggs 面板的方法。
 
-`check-history.ts` 对一个 live mock 会话跑 **58 项检查**：运行分组、每运行的
+`check-history.ts` 对一个 live mock 会话跑 **63 项断言**：运行分组、每运行的
 Activity 范围、确定的 stage 项 id、快照 seek、Stage 回到默认页、搜索→终端
 映射、thinking 捕获（一条流式念头保持为一个 Stage 项，所以 replay 不会重新
 挂载它）、两个独立的 FILE 槽位、读累积与缺口标记、逐版本记录、新建文件计数。

@@ -23,7 +23,7 @@ import type {
 } from "../../types/report";
 
 /**
- * The Absence Report (E:\0down\absence-demo\read.md): a small tab at the top-centre of
+ * The Absence Report: a small tab at the top-centre of
  * the Stage that expands into a translucent layer over the Stage body. While a
  * run is live it reports the current phase; once it settles it summarises what
  * the run changed. Derived entirely from the AbsenceEvent stream.
