@@ -23,6 +23,14 @@ export type LeftPanelId = "files" | "history" | "activity";
 const RAIL_PANEL_IDS: RailPanelId[] = ["agent", "folder", "eggs"];
 const LEFT_PANEL_IDS: LeftPanelId[] = ["files", "history", "activity"];
 
+/**
+ * How loudly failed commands should ring the report's human-attention bell:
+ * the `command_failed` reason only fires once at least `commandFailThreshold`
+ * commands have failed in one run, and then at `commandFailLevel`. `none`
+ * keeps the reason off the report entirely.
+ */
+export type CommandFailLevel = "none" | "low" | "medium" | "high";
+
 export interface Settings {
   theme: "amber" | "blue" | "green";
   /** Right rail top → bottom. */
@@ -41,6 +49,18 @@ export interface Settings {
    * user left it, so switching pages never hides the conversation.
    */
   collapseChatOnContent: boolean;
+  /** Minimum failed commands in one run before the report warns (default 5). */
+  commandFailThreshold: number;
+  /** The attention level a command-failure warning raises (default "low"). */
+  commandFailLevel: CommandFailLevel;
+  /** Minimum back-to-back failures in one run before the streak warning fires (default 3). */
+  commandStreakThreshold: number;
+  /** The attention level a failure-streak warning raises (default "medium"). */
+  commandStreakLevel: CommandFailLevel;
+  /** Seconds without any activity before the stall warning fires (default 3600). */
+  activityStallThreshold: number;
+  /** The attention level a stall warning raises (default "medium"). */
+  activityStallLevel: CommandFailLevel;
 }
 
 const DEFAULTS: Settings = {
@@ -49,6 +69,12 @@ const DEFAULTS: Settings = {
   leftOrder: ["files", "history", "activity"],
   displayInActivity: false,
   collapseChatOnContent: false,
+  commandFailThreshold: 5,
+  commandFailLevel: "low",
+  commandStreakThreshold: 3,
+  commandStreakLevel: "medium",
+  activityStallThreshold: 3600,
+  activityStallLevel: "medium",
 };
 
 function load(): Settings {
@@ -63,10 +89,27 @@ function load(): Settings {
       leftOrder: normalizeIds(parsed.leftOrder, LEFT_PANEL_IDS) as LeftPanelId[],
       displayInActivity: parsed.displayInActivity ?? DEFAULTS.displayInActivity,
       collapseChatOnContent: parsed.collapseChatOnContent ?? DEFAULTS.collapseChatOnContent,
+      commandFailThreshold: normalizeThreshold(parsed.commandFailThreshold),
+      commandFailLevel: normalizeLevel(parsed.commandFailLevel),
+      commandStreakThreshold: normalizeThreshold(parsed.commandStreakThreshold),
+      commandStreakLevel: normalizeLevel(parsed.commandStreakLevel),
+      activityStallThreshold: normalizeThreshold(parsed.activityStallThreshold),
+      activityStallLevel: normalizeLevel(parsed.activityStallLevel),
     };
   } catch {
     return DEFAULTS;
   }
+}
+
+function normalizeThreshold(value: unknown): number {
+  const n = typeof value === "number" ? Math.floor(value) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULTS.commandFailThreshold;
+}
+
+const FAIL_LEVELS: CommandFailLevel[] = ["none", "low", "medium", "high"];
+
+function normalizeLevel(value: unknown): CommandFailLevel {
+  return FAIL_LEVELS.includes(value as CommandFailLevel) ? (value as CommandFailLevel) : DEFAULTS.commandFailLevel;
 }
 
 function normalizeIds(order: unknown, ids: string[]): string[] {
@@ -91,6 +134,12 @@ interface SettingsStore extends Settings {
   moveLeftPanel: (id: LeftPanelId, dir: "up" | "down") => void;
   setDisplayInActivity: (value: boolean) => void;
   setCollapseChatOnContent: (value: boolean) => void;
+  setCommandFailThreshold: (value: number) => void;
+  setCommandFailLevel: (value: CommandFailLevel) => void;
+  setCommandStreakThreshold: (value: number) => void;
+  setCommandStreakLevel: (value: CommandFailLevel) => void;
+  setActivityStallThreshold: (value: number) => void;
+  setActivityStallLevel: (value: CommandFailLevel) => void;
   reset: () => void;
 }
 
@@ -106,6 +155,14 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   moveLeftPanel: (id, dir) => set((s) => ({ leftOrder: movePanel(s.leftOrder, id, dir) })),
   setDisplayInActivity: (value) => set((s) => persistIt(s, { displayInActivity: value })),
   setCollapseChatOnContent: (value) => set((s) => persistIt(s, { collapseChatOnContent: value })),
+  setCommandFailThreshold: (value) => set((s) => persistIt(s, { commandFailThreshold: normalizeThreshold(value) })),
+  setCommandFailLevel: (value) => set((s) => persistIt(s, { commandFailLevel: normalizeLevel(value) })),
+  setCommandStreakThreshold: (value) =>
+    set((s) => persistIt(s, { commandStreakThreshold: normalizeThreshold(value) })),
+  setCommandStreakLevel: (value) => set((s) => persistIt(s, { commandStreakLevel: normalizeLevel(value) })),
+  setActivityStallThreshold: (value) =>
+    set((s) => persistIt(s, { activityStallThreshold: normalizeThreshold(value) })),
+  setActivityStallLevel: (value) => set((s) => persistIt(s, { activityStallLevel: normalizeLevel(value) })),
   reset: () => set((s) => persistIt(s, DEFAULTS)),
 }));
 
@@ -128,6 +185,12 @@ function persistIt(state: Settings, patch: Partial<Settings>): Partial<SettingsS
     leftOrder: next.leftOrder,
     displayInActivity: next.displayInActivity,
     collapseChatOnContent: next.collapseChatOnContent,
+    commandFailThreshold: next.commandFailThreshold,
+    commandFailLevel: next.commandFailLevel,
+    commandStreakThreshold: next.commandStreakThreshold,
+    commandStreakLevel: next.commandStreakLevel,
+    activityStallThreshold: next.activityStallThreshold,
+    activityStallLevel: next.activityStallLevel,
   });
   return patch;
 }

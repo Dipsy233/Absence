@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { isAgentBusy, type AbsenceEvent } from "@absence/core";
+import { useNow } from "../../hooks/useNow";
 import { memoBuildHistory, pickRun } from "../../lib/history";
 import { eventToStageItem } from "../../lib/events";
 import { buildRunFacts, renderLive, renderRun } from "../../lib/report";
 import { formatOffset } from "../../lib/format";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { StageItemView } from "./StageItemView";
 import type { HistoryRun } from "../../types/history";
@@ -31,6 +33,12 @@ export function ReportOverlay() {
   const status = useSessionStore((s) => s.agent.status);
   const selectedRunId = useUiStore((s) => s.selectedRunId);
   const reportOpen = useUiStore((s) => s.reportOpen);
+  const commandFailThreshold = useSettingsStore((s) => s.commandFailThreshold);
+  const commandFailLevel = useSettingsStore((s) => s.commandFailLevel);
+  const commandStreakThreshold = useSettingsStore((s) => s.commandStreakThreshold);
+  const commandStreakLevel = useSettingsStore((s) => s.commandStreakLevel);
+  const activityStallThreshold = useSettingsStore((s) => s.activityStallThreshold);
+  const activityStallLevel = useSettingsStore((s) => s.activityStallLevel);
   const toggleReport = useUiStore((s) => s.toggleReport);
   const selectRun = useUiStore((s) => s.selectRun);
   const focusEvent = useUiStore((s) => s.focusEvent);
@@ -39,11 +47,30 @@ export function ReportOverlay() {
   const run = pickRun(runs, selectedRunId);
 
   // Skip the reduction while the layer is closed so live events stay cheap.
-  const facts = useMemo(() => (reportOpen && run ? buildRunFacts(events, run) : undefined), [reportOpen, events, run]);
+  const attentionOptions = useMemo(
+    () => ({
+      commandFailThreshold,
+      commandFailLevel,
+      commandStreakThreshold,
+      commandStreakLevel,
+      activityStallThreshold,
+      activityStallLevel,
+    }),
+    [commandFailThreshold, commandFailLevel, commandStreakThreshold, commandStreakLevel, activityStallThreshold, activityStallLevel],
+  );
+  const facts = useMemo(
+    () => (reportOpen && run ? buildRunFacts(events, run, attentionOptions) : undefined),
+    [reportOpen, events, run, attentionOptions],
+  );
   const running = run?.status === "running";
+  // Ticks once a second so a stalled run re-renders and can cross the threshold.
+  const nowMs = useNow(1000);
   const live = useMemo(
-    () => (facts && running ? renderLive(facts, { busy: isAgentBusy(status), status }) : undefined),
-    [facts, running, status],
+    () =>
+      facts && running
+        ? renderLive(facts, { busy: isAgentBusy(status), status, nowMs }, attentionOptions)
+        : undefined,
+    [facts, running, status, attentionOptions, nowMs],
   );
   const report = useMemo(() => (facts && !running ? renderRun(facts) : undefined), [facts, running]);
 
@@ -545,6 +572,8 @@ const ATTENTION_TONE: Record<Attention["level"], string> = {
 
 const REASON_TEXT: Record<AttentionReason, string> = {
   command_failed: "A command failed",
+  command_failure_streak: "Commands failed back-to-back — the agent may be flailing",
+  activity_stalled: "No activity for a long time — something may be stuck",
   unresolved_error: "Unresolved error — no successful recovery detected",
   agent_waiting: "Agent is waiting",
   agent_stopped: "Agent stopped",

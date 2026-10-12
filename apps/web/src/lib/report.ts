@@ -15,6 +15,7 @@ import type {
   ReadKnowledge,
   Recovery,
   RenderLiveOptions,
+  ReportAttentionOptions,
   RunFacts,
   RunOutcome,
   RunReport,
@@ -75,7 +76,11 @@ function orderedSet() {
   };
 }
 
-export function buildRunFacts(events: AbsenceEvent[], run: HistoryRun): RunFacts {
+export function buildRunFacts(
+  events: AbsenceEvent[],
+  run: HistoryRun,
+  attentionOptions: ReportAttentionOptions = {},
+): RunFacts {
   const slice = events.slice(run.fromIndex, run.toIndex + 1);
 
   // `created` means "new here": seed with every path seen before this run so a
@@ -149,6 +154,24 @@ export function buildRunFacts(events: AbsenceEvent[], run: HistoryRun): RunFacts
   const revertedPaths = new Map<string, { path: string; count: number; evidence: string[] }>();
   /** How many times each identical command has failed in this run. */
   const failedCommands = new Map<string, { count: number; command: string; evidence: string[] }>();
+  /** Longest run of back-to-back command failures, with its evidence. */
+  const worstStreak: { count: number; evidence: string[] } = { count: 0, evidence: [] };
+  /** The failure streak as the stream stands (reset by every success). */
+  const currentStreak: { count: number; evidence: string[] } = { count: 0, evidence: [] };
+  /** Record a failed command on the streak; a success resets it. */
+  const noteStreak = (failed: boolean, eventId: string): void => {
+    if (failed) {
+      currentStreak.count++;
+      currentStreak.evidence.push(eventId);
+      if (currentStreak.count > worstStreak.count) {
+        worstStreak.count = currentStreak.count;
+        worstStreak.evidence = [...currentStreak.evidence];
+      }
+    } else {
+      currentStreak.count = 0;
+      currentStreak.evidence = [];
+    }
+  };
   /** Watcher changes outside the project root, folded per path. */
   const outsideChanges = new Map<string, { count: number; evidence: string[] }>();
 
@@ -293,6 +316,7 @@ export function buildRunFacts(events: AbsenceEvent[], run: HistoryRun): RunFacts
             sliceIndex: i,
           });
           signals.push({ kind: "cmd-fail", eventId: event.id, at: event.timestamp });
+          noteStreak(true, event.id);
         } else {
           unclaimedEnds.push({
             eventId: event.id,
@@ -335,6 +359,7 @@ export function buildRunFacts(events: AbsenceEvent[], run: HistoryRun): RunFacts
               },
         );
         signals.push({ kind: status === "success" ? "cmd-success" : "cmd-fail", eventId: event.id, at: event.timestamp });
+        noteStreak(status === "failed", event.id);
         // A repeated failure is the loop signal: one failure may be bad luck,
         // the same command failing again and again is the agent stuck.
         if (status === "failed") {
@@ -475,6 +500,8 @@ export function buildRunFacts(events: AbsenceEvent[], run: HistoryRun): RunFacts
     runningProcessIds: runningAtEnd.map((fact) => fact.evidence[0] ?? ""),
     loopAttention,
     outsideChangeIds: outsideFacts.flatMap((fact) => fact.evidence),
+    attentionOptions,
+    failureStreak: worstStreak,
   });
 
   return {
@@ -516,6 +543,7 @@ export function buildRunFacts(events: AbsenceEvent[], run: HistoryRun): RunFacts
     currentPhase: phases.length > 0 ? phases[phases.length - 1]!.type : "investigating",
     recoveries,
     loops,
+    failureStreak: worstStreak,
     outsideChanges: outsideFacts,
     timeline: buildTimeline(slice, run, commandFacts, agentChanged, writeCreated),
     attention,
@@ -816,6 +844,47 @@ function outcomeFor(run: HistoryRun, unresolved: number, failed: number, noChang
   return "completed";
 }
 
+/** Default: warn only when at least this many commands failed in one run. */
+export const DEFAULT_COMMAND_FAIL_THRESHOLD = 5;
+
+/** Default: warn after this many commands failed back-to-back. */
+export const DEFAULT_COMMAND_STREAK_THRESHOLD = 3;
+
+/** Default: warn after the agent sat on one action this many seconds. */
+export const DEFAULT_ACTIVITY_STALL_THRESHOLD = 3600;
+
+/** Whether `command_failed` should fire for this many failures. */
+function failedOverThreshold(input: {
+  failed: number;
+  attentionOptions?: ReportAttentionOptions;
+}): boolean {
+  const raw = input.attentionOptions?.commandFailThreshold;
+  const threshold = typeof raw === "number" && raw > 0 ? Math.floor(raw) : DEFAULT_COMMAND_FAIL_THRESHOLD;
+  return input.failed >= threshold;
+}
+
+/** Whether `command_failure_streak` should fire for a streak of this length. */
+function streakOverThreshold(count: number, options?: ReportAttentionOptions): boolean {
+  const raw = options?.commandStreakThreshold;
+  const threshold = typeof raw === "number" && raw > 0 ? Math.floor(raw) : DEFAULT_COMMAND_STREAK_THRESHOLD;
+  return count >= threshold;
+}
+
+/** Whether `activity_stalled` should fire for a stall of this length. */
+function stallOverThreshold(seconds: number, options?: ReportAttentionOptions): boolean {
+  const raw = options?.activityStallThreshold;
+  const threshold = typeof raw === "number" && raw > 0 ? Math.floor(raw) : DEFAULT_ACTIVITY_STALL_THRESHOLD;
+  return seconds >= threshold;
+}
+
+const LEVEL_RANK: Record<AttentionLevel, number> = { none: -1, low: 0, medium: 1, high: 2 };
+
+const rank = (level: AttentionLevel): number => LEVEL_RANK[level];
+
+function normalizeFailLevel(level: AttentionLevel | undefined): AttentionLevel {
+  return level ?? "low";
+}
+
 function computeAttention(input: {
   unresolved: number;
   failed: number;
@@ -835,6 +904,12 @@ function computeAttention(input: {
   loopAttention?: { level: AttentionLevel; reasons: AttentionReason[]; evidence: string[] };
   /** Evidence for watcher changes outside the project root. */
   outsideChangeIds?: string[];
+  /** Threshold & level for the `command_failed` reason (see ReportAttentionOptions). */
+  attentionOptions?: ReportAttentionOptions;
+  /** The longest back-to-back failure streak observed in the run. */
+  failureStreak?: { count: number; evidence: string[] };
+  /** Live stall: seconds since the last activity, and its evidence. */
+  stalledFor?: { seconds: number; evidence: string[] };
 }): Attention {
   const reasons: AttentionReason[] = [];
   let level: AttentionLevel = "none";
@@ -851,14 +926,42 @@ function computeAttention(input: {
     // "waiting" only makes sense live — the event stream cannot say it ended there.
     if (!input.ended && input.busy === false) reasons.push("agent_waiting");
     evidence = input.unresolvedIds;
-  } else if (input.failed > 0) {
-    if (level === "none") level = "low";
+  } else if (failedOverThreshold(input)) {
+    const failLevel = normalizeFailLevel(input.attentionOptions?.commandFailLevel);
+    if (failLevel !== "none" && (level === "none" || rank(failLevel) > rank(level))) level = failLevel;
     reasons.push("command_failed");
     evidence = input.failedIds;
   } else if (input.errorCount > 0) {
     if (level === "none") level = "medium";
     reasons.push("unresolved_error");
     evidence = input.errorIds;
+  }
+
+  // A streak of back-to-back failures is its own signal: even when individual
+  // failures stay under the total threshold, N failures in a row with no
+  // success between them means the agent is flailing.
+  const streak = input.failureStreak;
+  if (streak && streakOverThreshold(streak.count, input.attentionOptions)) {
+    const streakLevel = normalizeFailLevel(input.attentionOptions?.commandStreakLevel);
+    if (streakLevel !== "none") {
+      if (level === "none" || rank(streakLevel) > rank(level)) level = streakLevel;
+      reasons.push("command_failure_streak");
+      evidence = [...evidence, ...streak.evidence];
+    }
+  }
+
+  // The agent sitting on one action for too long is its own signal: no event
+  // for N seconds while the run is still going means something is wedged —
+  // a hung command, an unbuffered prompt, a network stall. Only meaningful
+  // live (a settled run has no "now" to be stalled against).
+  const stall = input.stalledFor;
+  if (stall && stallOverThreshold(stall.seconds, input.attentionOptions)) {
+    const stallLevel = input.attentionOptions?.activityStallLevel ?? "medium";
+    if (stallLevel !== "none") {
+      if (level === "none" || rank(stallLevel) > rank(level)) level = stallLevel;
+      reasons.push("activity_stalled");
+      evidence = [...evidence, ...stall.evidence];
+    }
   }
 
   const leftRunning = input.runningProcessIds ?? [];
@@ -891,7 +994,11 @@ function computeAttention(input: {
 }
 
 /** The live view while a run is in flight (doc §12). */
-export function renderLive(facts: RunFacts, options: RenderLiveOptions = {}): LiveReport {
+export function renderLive(
+  facts: RunFacts,
+  options: RenderLiveOptions = {},
+  attentionOptions: ReportAttentionOptions = {},
+): LiveReport {
   const changed = facts.files.created.length + facts.files.modified.length;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   let headline: string;
@@ -932,6 +1039,20 @@ export function renderLive(facts: RunFacts, options: RenderLiveOptions = {}): Li
   const unresolvedIds = failedIds.filter((id) => !recoveredSet.has(id));
   const loopAttention = loopAttentionFor(facts.loops);
 
+  // Live stall: how long since the run's last event. Only meaningful while a
+  // clock was supplied (the live view); a settled run never passes nowMs.
+  const nowMs = options.nowMs;
+  const stalledFor =
+    nowMs !== undefined && facts.lastActivityAt < nowMs
+      ? {
+          seconds: Math.floor((nowMs - facts.lastActivityAt) / 1000),
+          evidence: facts.evidence.length > 0 ? [facts.evidence[facts.evidence.length - 1]!] : [],
+        }
+      : undefined;
+  if (stalledFor && stalledFor.seconds > 60) {
+    details = [...details, `no activity for ${Math.floor(stalledFor.seconds / 60)}m`];
+  }
+
   return {
     phase: facts.currentPhase,
     headline,
@@ -949,6 +1070,9 @@ export function renderLive(facts: RunFacts, options: RenderLiveOptions = {}): Li
       errorIds: facts.errors.evidence,
       loopAttention,
       outsideChangeIds: facts.outsideChanges.flatMap((fact) => fact.evidence),
+      attentionOptions,
+      failureStreak: facts.failureStreak,
+      stalledFor,
     }),
   };
 }
@@ -1009,6 +1133,7 @@ export function renderRun(facts: RunFacts): RunReport {
     recoveries: facts.recoveries,
     outsideChanges: facts.outsideChanges,
     loops: facts.loops,
+    failureStreak: facts.failureStreak,
     attention: facts.attention,
     timeline: facts.timeline,
     response: facts.response,

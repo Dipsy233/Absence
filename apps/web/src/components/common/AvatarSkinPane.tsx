@@ -183,19 +183,20 @@ export function AvatarSkinPane() {
   };
 
   return (
-    <div className="flex min-w-0 flex-1 basis-0 flex-col overflow-y-auto p-4">
+    <div className="flex h-full min-w-0 flex-1 basis-0 flex-col p-4">
       <h2 className="mb-1 font-mono text-sm tracking-widest text-desk-ink">AVATAR SKIN</h2>
-      <p className="mb-3 text-[11px] leading-snug text-desk-dim">
+      <p className="mb-3 shrink-0 text-[11px] leading-snug text-desk-dim">
         Pick a status, upload a file (mp4 / gif / png / webp / svg) and it becomes that status's
         animation. Files are stored in
         <span className="mx-1 break-all font-mono text-[10px] text-desk-ink/70">{dir || "…"}</span>
       </p>
 
+      {/* The status list scrolls; the header above and the Apply row below stay put. */}
       <div className="flex min-h-0 flex-1 gap-2">
         {/* Sidebar: skins + new-skin input. */}
         <div className="flex w-36 shrink-0 flex-col">
           <p className="mb-1 font-mono text-[10px] uppercase tracking-wide text-desk-dim">skins</p>
-          <ul className="mb-2 max-h-40 space-y-0.5 overflow-y-auto">
+          <ul className="mb-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
             <li>
               <button
                 type="button"
@@ -262,8 +263,9 @@ export function AvatarSkinPane() {
           </div>
         </div>
 
-        {/* Main: one upload row per status. */}
-        <div className="min-w-0 flex-1">
+        {/* Main: one upload row per status. Scrollable so the Apply button below
+            is never pushed out of view by a tall list. */}
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <p className="mb-1 font-mono text-[10px] uppercase tracking-wide text-desk-dim">
             editing: <span className="text-desk-amber">{loadedName}</span>
           </p>
@@ -310,7 +312,7 @@ export function AvatarSkinPane() {
         onChange={(e) => void onFileChosen(e.target.files?.[0])}
       />
 
-      <div className="mt-3 flex items-center justify-end gap-2">
+      <div className="mt-3 flex shrink-0 items-center justify-end gap-2">
         {message ? (
           <span
             className={["font-mono text-[10px]", message.ok ? "text-desk-teal" : "text-desk-ember"].join(" ")}

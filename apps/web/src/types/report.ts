@@ -14,6 +14,8 @@ export type AttentionLevel = "none" | "low" | "medium" | "high";
 
 export type AttentionReason =
   | "command_failed"
+  | "command_failure_streak"
+  | "activity_stalled"
   | "unresolved_error"
   | "agent_waiting"
   | "agent_stopped"
@@ -206,6 +208,9 @@ export interface RunFacts {
   /** Repeated self-defeating activity: reverted file versions, retried failures. */
   loops: LoopFact[];
 
+  /** The longest run of back-to-back command failures (the streak warning). */
+  failureStreak: { count: number; evidence: string[] };
+
   /** Watcher changes outside the project root (folded per path). */
   outsideChanges: OutsideChangeFact[];
 
@@ -285,6 +290,7 @@ export interface RunReport {
   /** Watcher changes outside the project root. */
   outsideChanges: OutsideChangeFact[];
   loops: LoopFact[];
+  failureStreak: { count: number; evidence: string[] };
   attention: Attention;
   /** The run as an ordered world line — the Activity order, with effects. */
   timeline: TimelineNode[];
@@ -297,4 +303,25 @@ export interface RunReport {
 export interface RenderLiveOptions {
   busy?: boolean;
   status?: AgentStatus;
+  /** The current clock, so the live view can flag a stalled run. */
+  nowMs?: number;
+}
+
+/**
+ * How loudly failed commands should ring the human-attention bell. The report
+ * only raises the `command_failed` reason once at least `commandFailThreshold`
+ * commands have failed in the run, and then only to `commandFailLevel`.
+ * Defaults live in the settings store (5, "low"); "none" silences the reason.
+ */
+export interface ReportAttentionOptions {
+  commandFailThreshold?: number;
+  commandFailLevel?: AttentionLevel;
+  /** How many commands must fail *in a row* before the streak warning fires. */
+  commandStreakThreshold?: number;
+  /** The attention level a failure-streak warning raises. */
+  commandStreakLevel?: AttentionLevel;
+  /** How long (seconds) the agent may sit on one action before the stall warning fires. */
+  activityStallThreshold?: number;
+  /** The attention level a stall warning raises. */
+  activityStallLevel?: AttentionLevel;
 }

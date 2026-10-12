@@ -189,19 +189,20 @@ export function SoundPane() {
   };
 
   return (
-    <div className="flex min-w-0 flex-1 basis-0 flex-col overflow-y-auto p-4">
+    <div className="flex h-full min-w-0 flex-1 basis-0 flex-col p-4">
       <h2 className="mb-1 font-mono text-sm tracking-widest text-desk-ink">SOUND SETS</h2>
-      <p className="mb-3 text-[11px] leading-snug text-desk-dim">
+      <p className="mb-3 shrink-0 text-[11px] leading-snug text-desk-dim">
         Pick an event, upload an audio file (mp3 / wav / ogg / m4a) and it replaces that chime.
         Events without a file keep the built-in tone. Files are stored in
         <span className="mx-1 break-all font-mono text-[10px] text-desk-ink/70">{dir || "…"}</span>
       </p>
 
+      {/* The event list scrolls; the header above and the Apply row below stay put. */}
       <div className="flex min-h-0 flex-1 gap-2">
         {/* Sidebar: sound sets + new-set input. */}
         <div className="flex w-32 shrink-0 flex-col">
           <p className="mb-1 font-mono text-[10px] uppercase tracking-wide text-desk-dim">sets</p>
-          <ul className="mb-2 max-h-40 space-y-0.5 overflow-y-auto">
+          <ul className="mb-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
             <li>
               <button
                 type="button"
@@ -268,8 +269,9 @@ export function SoundPane() {
           </div>
         </div>
 
-        {/* Main: one upload row per event. */}
-        <div className="min-w-0 flex-1">
+        {/* Main: one upload row per event. Scrollable so the Apply button below
+            is never pushed out of view. */}
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <p className="mb-1 font-mono text-[10px] uppercase tracking-wide text-desk-dim">
             editing: <span className="text-desk-amber">{loadedName}</span>
           </p>
@@ -326,7 +328,7 @@ export function SoundPane() {
         onChange={(e) => void onFileChosen(e.target.files?.[0])}
       />
 
-      <div className="mt-3 flex items-center justify-end gap-2">
+      <div className="mt-3 flex shrink-0 items-center justify-end gap-2">
         {message ? (
           <span
             className={["font-mono text-[10px]", message.ok ? "text-desk-teal" : "text-desk-ember"].join(" ")}

@@ -4,25 +4,28 @@ Absence 内部实现的深入文档。介绍与使用方法见 [README](../READM
 
 ```
 Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
-   ▲                                                              └─▶ Codex (app-server, JSON-RPC)
-   │                                                                     │
+   ▲                                                              ├─▶ Codex (app-server, JSON-RPC)
+   │                                                              └─▶ DSH (dsh --profile acp, ACP/JSON-RPC)
    └──────────── AbsenceEvent stream (file_read / file_edit / command / …) ─┘
 ```
 
 - `packages/core` — 共享的 `AbsenceEvent` + 领域类型。UI 认识的唯一词汇表；它
-  永远不会知道 Pi 或 Codex 的存在。
+  永远不会知道 Pi、Codex 或 DSH 的存在。
 - `apps/server` — Fastify + WebSocket。每个运行时是一个 `AgentAdapter`：
   `PiAdapter` 在进程内包装 Pi SDK，把 `AgentSessionEvent` 映射成
   `AbsenceEvent`；`CodexAdapter` 用 JSON-RPC 驱动 `codex app-server`，同样方式
   映射它的通知（`AppServerClient` 是传输层——选它而非 `codex exec --json`，因为
-  app-server 带真实的 item id、call id 和时间戳）；`MockAdapter` 不需要凭据就能
-  回放一段脚本化的运行；`chokidar` 监视项目的带外改动。**两个真实运行时里
-  Absence 都拥有 shell。** 对 Pi，`process/AbsenceShell` 包装 Pi 自己的本地
-  shell 操作，注册成自定义 `bash` / `powershell` 工具（自定义工具按名字遮蔽
-  内建的，所以 `ABSENCE_PI_TOOLS` 不受影响）。对 Codex，`process/ExecServer`
+  app-server 带真实的 item id、call id 和时间戳）；`DshAdapter` 用 JSON-RPC/NDJSON
+  驱动 `dsh --profile acp`（DSH 的自动化专用 Agent Client Protocol server，
+  `DshClient` 是传输层）并映射它的 `session/update` 通知；`MockAdapter` 不需要
+  凭据就能回放一段脚本化的运行；`chokidar` 监视项目的带外改动。**每个真实
+  运行时里 Absence 都拥有 shell。** 对 Pi，`process/AbsenceShell` 包装 Pi 自己的
+  本地 shell 操作，注册成自定义 `bash` / `powershell` 工具（自定义工具按名字
+  遮蔽内建的，所以 `ABSENCE_PI_TOOLS` 不受影响）。对 Codex，`process/ExecServer`
   *就是* executor：Absence 起一个 loopback exec-server，用 `environment/add`
   注册并把 thread 固定到它，于是 Codex 把每条命令作为 `process/start` 交给
-  Absence 去 spawn。无论哪种，Absence 都拥有命令边界，正是这个边界告诉
+  Absence 去 spawn。对 DSH，每个 shell 工具调用打开一个 `ProcessWatcher` 窗口。
+  无论哪种，Absence 都拥有命令边界，正是这个边界告诉
   `ProcessWatcher` 一条命令何时运行。Pi 用 `#` 注释给命令打标记；Codex 仅靠
   祖先链归因，而接管让这条链天然完整。`ProcessWatcher` 然后观察进程表。
   在 **Windows** 上它完全不采样：
@@ -84,7 +87,10 @@ packages/core/src/        events.ts（AbsenceEvent + payload map）  types.ts  i
 apps/server/src/
   agents/                 AgentAdapter.ts（运行时无关的边界）
                           PiAdapter.ts  CodexAdapter.ts  CodexCommands.ts
+                          DshAdapter.ts（DeepSeek Harness over ACP）
                           AppServerClient.ts（codex app-server JSON-RPC）
+                          DshClient.ts（dsh ACP JSON-RPC/NDJSON）
+                          PiBin.ts  CodexBin.ts（定位用户的运行时）
                           MockAdapter.ts  createAdapter.ts
   process/                AbsenceShell.ts（拥有 Pi 的 shell）  ProcessWatcher.ts（eggs）
                           ExecServer.ts（拥有 Codex 的 shell：exec-server）
@@ -94,10 +100,12 @@ apps/server/src/
                           JobMonitor.ts + JobSidecar.ts（Windows 内核事件）
                           EbpfObserver.ts（Linux 内核事件）
                           CommandIntent.ts + classify.ts + priors.ts（primary/tool）
+  runtimes/config.ts      运行时路径（~/.absence/runtimes.json）
   sessions/               SessionStore.ts  archive.ts（~/.absence/sessions）
   filesystem/             FileTree.ts  FileWatcher.ts（chokidar）
   events/                 EventBus.ts
-  websocket/ws.ts   api/{projects,sessions}.ts   util/{diff,ids,language,paths}.ts
+  websocket/ws.ts   api/{projects,sessions,runtimes,sounds,avatarSkins}.ts
+                    util/{diff,ids,language,paths}.ts
   config.ts  index.ts
 
 apps/web/src/
@@ -127,7 +135,9 @@ apps/web/public/whalebun/     头像的 PNG 部件（16：body, head, hair, ahog
 
 apps/server/src/process/
   egg-filters/            Agent Eggs 过滤配置文件（命名的 JSON 文件；分类器读
-                          激活的那份；active.json 指向它）——在设置弹窗管理
+                          激活的那份；active.json 指向它）——在设置弹窗管理：
+                          侧栏 `+` 新建空 profile（PUT 空名单，不改变激活项），
+                          编辑后 Apply（PUT）保存并激活
   avatar-skins/           用户上传的形象皮肤（每个形象一个文件夹，文件名
                           <状态>.<扩展名>；active.json）——在设置弹窗管理，
                           通过 /avatar/<状态> 提供
@@ -169,8 +179,9 @@ npm run desktop:dev     # DevTools 开；Vite dev server 在时就用它
 - **Electron 必须捆绑 Node ≥ 22.19。** Electron 带自己的 Node，被拥有的
   运行时才是跑进程内 server 和 Pi 的东西——不是 `PATH` 上的 `node`。Pi 的包
   声明 `engines.node >= 22.19`，并从 `node:fs` 导入 `globSync`，这只在
-  Node 22 之后存在。在旧的 Electron 上外壳能加载，然后静默退回 mock 运行时，
-  显示 `Pi runtime unavailable`。截至撰写，Electron **37.x 捆绑 Node
+  Node 22 之后存在。在旧的 Electron 上外壳能加载，然后会话以
+  `pi runtime could not start` 失败（不再静默退回 mock），提示运行时不可用。
+  截至撰写，Electron **37.x 捆绑 Node
   22.21.1**（Electron 33 捆绑 Node 20.18，太老）。升级 Electron 时，看发行
   说明里捆绑的 Node，别只看版本号。
 - **Electron 单独安装**，装进 `apps/desktop/node_modules`（故意*不是*
@@ -186,7 +197,14 @@ npm run desktop:dev     # DevTools 开；Vite dev server 在时就用它
 焦点时，一条原生通知说明这件事。托盘 tooltip 显示有几个会话在跑。浏览器（和
 窗口）里 Absence 还会发声：两声铃，WebAudio API 合成，页面被交互过之前静音。
 **完成铃**在运行带着活动结束时响（中止不响）；**关注铃**在实时人工关注等级
-跨入或跨出 medium/high 时响——high 是急促的三声，medium 是柔和的两声。
+跨入或跨出 medium/high 时响——high 是急促的三声，medium 是柔和的两声。Report
+的**命令失败警告**（`command_failed`）默认在单次运行里失败命令达到 5 条时才
+提升关注等级（等级 `low`）；**连续失败串**（`command_failure_streak`）在命令
+一条接一条失败、中间没有成功、达到默认 3 条时触发（等级 `medium`）；
+**activity time 告警**（`activity_stalled`）在运行中的会话超过默认 3600 秒
+没有任何事件时触发（等级 `medium`）。阈值与警告等级（none / low / medium /
+high）在设置弹窗的 REPORT WARN 栏可自定义，未恢复的失败始终是 *high*，
+不受阈值影响。
 
 ### 打包可分发的应用
 
@@ -260,6 +278,46 @@ AgentAdapter
 - **审批** — Codex 的 `item/…/requestApproval` 服务端向客户端请求被呈现为
   `approval` 事件，由 `respondApproval` 应答（或按
   `ABSENCE_CODEX_APPROVAL_DECISION` 自动应答）。
+
+## DSH（`DshAdapter`）
+
+DSH（DeepSeek Harness）像 Codex 一样是独立进程，但它暴露的通道不同：一个
+**自动化专用的 Agent Client Protocol server**，通过运行 `dsh --profile acp` 接入。
+
+```
+AgentAdapter
+  └─ DshAdapter ── DshClient ──(stdio NDJSON, JSON-RPC)── dsh --profile acp
+        │                                                      │
+        │  session/update 通知 ───────────────────────────────┘
+        │  session/request_permission（客户端回调）
+        ▼
+  AbsenceEvents (message / thinking / tool_* / file_* / command / process / approval)
+```
+
+- **传输** — `DshClient` 通过子进程 stdio 收发换行分隔的 JSON-RPC。ACP（Agent
+  Client Protocol，Zed SDK 用的同一种线格式）把整个 turn 作为 `session/update`
+  通知交出；stdout 完全属于 ACP，没有 TUI 可抓。
+- **映射** — `agent_message_chunk` → `message`（流式），`agent_thought_chunk` →
+  `thinking`，`tool_call`/`tool_call_update` → `tool_start`/`tool_end`，并根据
+  工具名和参数派生出 `file_read`/`file_write`/`file_edit`/`command`/`search`，
+  `usage_update` → 上下文用量。DSH 把 read 结果包在 `<path>…<content>NN: line…`
+  里；适配器把它剥掉，让 `file_read` 像 Pi 一样只带纯文本。
+- **Agent Eggs** — 每个 shell 工具调用（`pwsh` 等）打开一个 `ProcessWatcher` 窗口
+  （`tool_call` 时 `begin`，`tool_call_update` 时 `end`），于是命令拉起的进程
+  折叠成一个归给该命令的蛋。
+- **审批** — DSH 的 `session/request_permission` 请求被呈现为 `approval` 事件；
+  选中的 ACP option id 被回送。
+- **定位 dsh** — `ABSENCE_DSH_BIN` / 保存的路径优先，然后是 DSH Desktop 安装，
+  最后是 PATH 里的 `dsh`。`.cmd`/`.bat` 外壳会走 shell 执行（Windows 无法直接
+  spawn）。
+
+## 运行时路径（客户端，不是供应商）
+
+Absence 不打包任何运行时。`agents/PiBin.ts` 和 `agents/CodexBin.ts` 解析要运行
+什么并报告来源（`configured` / `env` / `global` / `path` / `bundled` / `none`）；
+`runtimes/config.ts` 把覆盖持久化到 `~/.absence/runtimes.json`，可在项目选择器里
+编辑。选中的运行时启动不了时（未安装、路径错），会话以清晰的错误失败——**不回退
+到 mock 运行时**。
 
 ## AbsenceEvent
 

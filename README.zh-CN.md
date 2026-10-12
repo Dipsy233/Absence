@@ -10,10 +10,10 @@
 > Absence 帮你观察 AI 干活，理解发生的一切，最后臣服于 AI 的支配。
 
 Absence 是一个面向 AI agent 的实时可视化观察器。它不试图让 agent 更聪明——
-它让人*看见* agent 正在做什么。**Pi** 和 **OpenAI Codex** 都是一等运行时。
+它让人*看见* agent 正在做什么。**Pi**、**OpenAI Codex** 和 **DSH**（DeepSeek Harness）都是一等运行时。
 
 ```
-Pi 或 Codex 运行 agent。
+Pi、Codex 或 DSH 运行 agent。
 Absence 观察事件。
 Stage 把事件变成人可以看的东西。
 ```
@@ -47,9 +47,10 @@ Stage 把事件变成人可以看的东西。
 
 ## 快速开始
 
-环境要求：Node.js **22.19+**（测过 24）和 npm。需要一个运行时：配置好的
-**Pi**（跑一次 `pi` 并登录）或已登录的 **Codex**（`codex`）。两者都没有时，
-Absence 退回一段脚本化的 mock 运行时并明说。
+环境要求：Node.js **22.19+**（测过 24）和 npm。需要一个运行时，Absence 用你**已安装的那个**：配置好的
+**Pi**（`npm i -g @earendil-works/pi-coding-agent`，跑一次 `pi` 并登录）、已登录的 **Codex**（PATH 里有 `codex`），
+或 **DSH**（DeepSeek Harness，如 DSH Desktop）。Absence 不内嵌任何一个——它是你装的那个运行时的客户端。
+选中却启动不了时会**直接报错**，不会静默回退；另有一个脚本化的 **mock** 运行时，无需任何凭据就能试看。
 
 ```bash
 npm install
@@ -59,10 +60,11 @@ npm run build     # 构建 web 应用
 npm start         # 单源——server 在 :8848 上伺服构建好的应用
 ```
 
-然后打开 `http://127.0.0.1:8848`，输入或选择项目路径，选运行时（**Pi** 或
-**Codex**），点 **Open**，在 Stage 底部的聊天框里给 agent 发任务。路径框下面的
-**History** 列表展开保存的会话——Absence 自己的归档合并运行时的，最新在前；
-点一行重新打开那段对话。
+然后打开 `http://127.0.0.1:8848`，输入或选择项目路径，选运行时（**Pi**、**Codex** 或
+**DSH**——绿点表示已找到），点 **Open**，在 Stage 底部的聊天框里给 agent 发任务。
+运行时显示红点时，在紧下方的 **runtime paths** 面板里设置它的二进制/包路径（见
+[Runtimes](#runtimes)）。路径框下面的 **History** 列表展开保存的会话——Absence 自己的
+归档合并运行时的，最新在前；点一行重新打开那段对话。
 
 ### 一键启动器
 
@@ -106,23 +108,6 @@ sudo setcap cap_bpf,cap_perfmon+ep native/agentwatch-linux/agentwatch-linux
 ```
 
 没有观察器时，watcher 退回 `ps` 快照，短命进程可能漏掉。
-
-#### WSL 里的 pi
-
-Absence 把 pi 嵌在自己的进程里，所以 WSL 需要 **Linux 的 pi**（不是
-`/mnt/c/…` 下的 Windows 安装）：
-
-```sh
-npm install -g @earendil-works/pi-coding-agent
-```
-
-并且要把 provider 指向 Windows 宿主（绑定在 Windows 回环上的模型 server
-从 WSL 里以 `127.0.0.1` 是够不到的）。`scripts/wsl-pi-config.sh` 拷贝
-Windows 的 `models.json` 并把主机改写成默认路由网关；`start-absence.sh` 每次
-启动都跑它，因为 WSL 重启后网关地址会变。
-
-> **与 Windows 共用 checkout：** `node_modules` 是平台相关的（esbuild 每个
-> 平台带一个原生二进制）。每个平台留一个 checkout，或者切换时重装。
 
 ## 界面
 
@@ -169,10 +154,12 @@ Windows 的 `models.json` 并把主机改写成默认路由网关；`start-absen
   短命帮手（`cat`、`grep`、`docker ps`）折成计数。所以 `docker compose up -d`
   显示的是容器而不是客户端；`nohup node ticker.mjs` 显示的是
   `node ticker.mjs` 而不是 `nohup`。可编辑的**过滤配置文件**（记录帮手命令名
-  的命名文件）在设置弹窗右栏管理——同名覆盖、异名新建，保存立即生效。
+  的命名文件）在设置弹窗右栏管理——侧栏 `+` 新建、content 编辑、`Apply` 保存
+  并激活。
 - **Session bar** — 会话 id、项目、模型、上下文用量、live/offline，以及一个
-  `⚙ settings` 按钮，打开三栏设置弹窗：左是形象皮肤，中是配色 + 面板排序，
-  右是 Agent Eggs 过滤配置文件。
+  `⚙ settings` 按钮，打开四栏设置弹窗：外观（配色、面板排序、聊天 collapse
+  on content 开关）、Report（命令失败警告）、个性化（形象皮肤 + 音效集）、
+  Agent Eggs 过滤配置文件。
 
 ## Absence Report
 
@@ -190,26 +177,47 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
 
 人工关注盯着 agent 自我挫败：**文件版本环路**（新版本与更早版本逐字节相同
 ——一次被撤销的修改）和**命令重试环路**（同一条命令失败两次以上）把关注
-抬到 *medium*；**项目外改动**到 *low*；运行结束后**还在跑的蛋**到 *high*。
-实时关注等级跨入/跨出 medium/high 时有一声关注铃，运行结束有完成铃。
+抬到 *medium*；**连续失败串**（命令一条接一条地失败，中间没有任何成功，
+默认 ≥3 条）触发 `command_failure_streak`；**项目外改动**到 *low*；运行结束后
+**还在跑的蛋**到 *high*。**命令失败警告**默认在单次运行里失败命令达到 **5 条**
+时才提升关注等级，触发阈值和警告等级（none / low / medium / high）都可在设置
+弹窗的 REPORT WARN 栏自定义，连续失败串与 **activity time** 告警（agent 在一个
+动作上停留超过默认 **3600 秒**无任何事件，触发 `activity_stalled`）的阈值与
+等级同样可配；未恢复的失败
+始终是 *high*，不受阈值影响。实时关注等级跨入/跨出 medium/high 时有一声关注
+铃，运行结束有完成铃。
 
 ## 个性化
 
-顶栏的 `⚙ settings` 按钮打开一个三栏设置弹窗：
+顶栏的 `⚙ settings` 按钮打开一个四栏设置弹窗：
 
-- **形象皮肤（左）**——不上传代码、不写 URL，直接用自己的动画替换内置的
+- **外观（左）**——配色主题（`amber` / `blue` / `green`）、左右两栏面板的堆叠
+  顺序，以及聊天 **collapse on content** 开关（默认关：对话在所有页面之间保持
+  不动；开启：file / diff / terminal / report 页面会把它收起）。
+- **Report（左二）**——Absence Report 的**命令失败警告**（command failed per
+  run：默认 ≥5 条时提醒，等级 `low`）、**连续失败串警告**（failure streak：
+  默认连续失败 ≥3 条时提醒，等级 `medium`）和 **activity time 告警**（agent
+  停留超过默认 3600 秒无任何事件时提醒，等级 `medium`）；阈值与等级均可调，
+  `silent` 可完全关掉对应提醒。
+- **个性化（中，形象皮肤 + 音效集同栏堆叠）**——
+  - **形象皮肤**——不上传代码、不写 URL，直接用自己的动画替换内置的
   WhaleBun 角色：创建一个形象（名称 = `apps/server/src/process/avatar-skins/`
   下的一个文件夹），选一个状态（`default` / `listening` / `thinking` / … /
   `error`），上传 mp4 / gif / png / webp / svg 文件，它就成为该状态的动画。
   没上传文件的状态回退到该形象的 `default`；仍缺的显示内置角色。上传的视频
   会用 ffmpeg 自动转码（H.264、faststart、去除数据轨道），保证浏览器一定能
   播。`Apply` 启用该形象；切回 WhaleBun 恢复内置角色。更新实时生效，无需刷新。
-- **设置（中）**——配色主题（`amber` / `blue` / `green`）和左右两栏面板的
-  堆叠顺序。
-- **Agent Eggs 过滤配置文件（右）**——一个小型文件管理器，管理记录帮手命令名
-  的命名配置文件；分类器把名单里的名字当作工具（`force` 选项可扩展到命令的
-  声明主体，例如 `node ticker.mjs` 里的 `node`）。同名覆盖、异名新建，保存
-  立即生效。
+  - **音效集**——按事件（`attention` / `complete` / `approval`）上传音频来替换
+  合成铃；没上传文件的事件保留内置音调。`Apply` 启用该音效集；`Default`
+  恢复合成铃。
+- **Agent Eggs 过滤配置文件（右）**——一个小型配置文件管理器，布局与形象皮肤
+  一致：左侧 **saved** 列表列出已保存的 profile（`●` 标记当前激活的，高亮的是
+  正在编辑的），侧栏底部的 **new name + `+`** 新建一个空 profile 并载入编辑器
+  （不改变激活项）；右侧 `editing:` 显示正在编辑的 profile，下方整个 content
+  文本域一行一个帮手命令名。**Apply** 保存当前编辑的 profile 并激活（同名
+  覆盖）；分类器把名单里的名字当作工具，**force** 选项可扩展到命令的声明主体
+  （例如 `node ticker.mjs` 里的 `node`）。**display in activity** 开关（默认关）
+  会从 Activity 面板隐藏 LAID/DIED 进程行，同时 Agent Eggs 面板仍保留这些蛋。
 
 详见 [docs/AVATAR_SKIN.zh-CN.md](docs/AVATAR_SKIN.zh-CN.md)。
 
@@ -219,13 +227,19 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
 |---|---|---|
 | `PORT` | `8848` | Server 端口 |
 | `HOST` | `127.0.0.1` | Server 主机 |
-| `ABSENCE_AGENT` | `pi` | 默认运行时：`pi`、`codex` 或 `mock`。项目选择器可按会话选；这是回退值 |
+| `ABSENCE_AGENT` | `pi` | 默认运行时：`pi`、`codex`、`dsh` 或 `mock`。项目选择器可按会话选；这是回退值 |
 | `ABSENCE_PROJECTS_ROOT` | `~/projects` | 项目选择器列出的目录 |
+| `ABSENCE_PI_BIN` | （探测） | Pi coding-agent 包目录或其 `dist/index.js`。不设置：先用全局安装，再用 Absence 旁的副本。可在选择器里设置，持久化到 `~/.absence/runtimes.json` |
 | `ABSENCE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | 启用的 Pi 内建工具。`bash` / `powershell` 由 Absence 自己的 shell 提供，这正是进程可被观察的原因 |
 | `ABSENCE_CODEX_SANDBOX` | `workspace-write` | Codex 沙箱：`read-only`、`workspace-write` 或 `danger-full-access`。不设置时 app-server 默认只读，每次写入都会卡在审批上 |
 | `ABSENCE_CODEX_APPROVAL` | `on-request` | Codex 审批策略：`untrusted`、`on-request`、`on-failure` 或 `never` |
 | `ABSENCE_CODEX_APPROVAL_DECISION` | `ask` | Absence 如何处理 Codex 的审批提示：`ask`（记为一条 activity 并等用户点选），或自动 `accept` / `accept-for-session` / `decline` |
 | `ABSENCE_CODEX_EXEC_SERVER` | 开 | 通过 Codex 的 exec-server 协议接管其 shell（见下）。设为 `0` 则让 Codex 自己跑命令，仅依赖 Job Object 观察器 |
+| `ABSENCE_CODEX_BIN` | （PATH） | Codex 入口：`codex.js` 或 `codex` 可执行文件。不设置：用 PATH 里的 `codex`。可在选择器里设置，持久化到 `~/.absence/runtimes.json` |
+| `ABSENCE_DSH_BIN` | （探测） | dsh 入口（`.../dsh/lib/bin.js`）。不设置：探测 DSH Desktop 安装目录，再用 PATH 里的 `dsh`。可在选择器里设置 |
+| `ABSENCE_DSH_PROFILE` | `acp` | dsh 启动的 profile（`dsh --profile acp`） |
+| `ABSENCE_DSH_HOME` | `~/.dsh` | 给 spawn 的 dsh 进程的 `DSH_HOME` |
+| `ABSENCE_DSH_PROVIDER` / `ABSENCE_DSH_MODEL` | （profile 默认） | ACP 会话启动时的 provider / model |
 | `ABSENCE_LOG_LEVEL` | `info` | Fastify 日志级别 |
 | `ABSENCE_STATE_DIR` | `~/.absence` | Absence 归档会话历史的位置 |
 | `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | 仓库 `native/` | 覆盖原生观察器二进制路径 |
@@ -236,24 +250,38 @@ chat dock 兼作小终端：以 `/` 开头的行是命令，其他都是 prompt�
 `/thinking`、`/permission`、`/compact`、`/name`、`/session`、`/export [html|jsonl]`。
 `/permission` 设置 agent 运行的沙箱（`read-only`、`workspace-write`、
 `danger-full-access`）。切换模型是会话级的；结果随会话归档，恢复时会回来。命令经
-运行时无关的适配器分发，所以在 Pi 和 Codex 上行为一致。
+运行时无关的适配器分发，所以在 Pi、Codex 和 DSH 上行为一致。
 
 ### 运行时
 
-Absence 驱动两个 agent 运行时；项目选择器（和 `ABSENCE_AGENT`）决定用哪个。
+Absence 驱动三个 agent 运行时；项目选择器（和 `ABSENCE_AGENT`）决定用哪个。它是
+*客户端*：调用你装的运行时，不内嵌任何一个，所以选择器会显示每个运行时的位置，
+探测不到时还能手动设置路径。
 
-- **Pi** — SDK 在进程内运行（`PiAdapter`）。Absence 包住 Pi 自己的 shell
-  操作（`AbsenceShell`），从而拥有命令边界。
+- **Pi** — 是库不是 CLI：Absence 在进程内加载 `@earendil-works/pi-coding-agent`
+  SDK（`PiAdapter`），有全局安装就用全局的，并包住 Pi 自己的 shell 操作
+  （`AbsenceShell`），从而拥有命令边界。可在选择器里设置包路径或用
+  `ABSENCE_PI_BIN`。
 - **Codex** — Absence 驱动 `codex app-server`，这是 Codex 为观察者定义的
   JSON-RPC 通道（`CodexAdapter`）。不同于 `codex exec --json`，app-server 带有
   真实的 item id、call id 和时间戳，所以命令的生命周期能与它拉起的进程精确配对。
-  Absence 随后**接管 Codex 的 shell**，在那里也拥有命令边界。
+  Absence 随后**接管 Codex 的 shell**，在那里也拥有命令边界。用的 `codex` 是
+  PATH 里的（或你设置的路径）；Absence 不自带。
+- **DSH**（DeepSeek Harness）— Absence spawn `dsh --profile acp`，即 DSH 自带的
+  自动化专用 Agent Client Protocol server（`DshAdapter`）：JSON-RPC over stdio，
+  stdout 完全属于 ACP。它的 `session/update` 通知变成 AbsenceEvent，每个 shell
+  工具调用打开一个进程窗口，让 Agent Eggs 看到 agent 拉起了什么。
+
+当选中的运行时启动不了（未安装或路径不对），Absence **报错且不回退**——选择器
+显示错误，让你去修运行时，而不是不知情地跑别的。**mock** 运行时始终可用，会为
+观察器拉起真实进程。
 
 无论哪种，Absence 其余部分只看得到 `AbsenceEvent`；Stage、Replay、Report 和
 聊天命令从不需要知道是哪个运行时在跑。
 
-当运行时（如 Codex）请求提权时，Absence 会发一个 `approval` 事件：Activity 记
-一行 `APPROVE?`，agent 停在那里等你的决定。和其他 activity 一样，点这一行才会
+当运行时请求提权时（Codex，或 DSH 的 ACP permission 请求），Absence 会发一个
+`approval` 事件：Activity 记一行 `APPROVE?`，agent 停在那里等你的决定。和其他
+activity 一样，点这一行才会
 在 Stage 打开原文和可选项——不会有任何东西被强制推到 Stage 上。
 
 ### 接管 Codex 的 shell

@@ -11,11 +11,11 @@ English | [中文](README.zh-CN.md)
 > surrender to AI domination.
 
 Absence is a real-time visualization observer for AI agents. It does not try to make
-an agent smarter — it lets a human *see* what the agent is doing. **Pi** and
-**OpenAI Codex** are both first-class runtimes.
+an agent smarter — it lets a human *see* what the agent is doing. **Pi**,
+**OpenAI Codex** and **DSH** (DeepSeek Harness) are all first-class runtimes.
 
 ```
-Pi or Codex runs the agent.
+Pi, Codex or DSH runs the agent.
 Absence observes the events.
 The Stage turns events into something humans can watch.
 ```
@@ -53,10 +53,14 @@ avatar settling back to *listening*:
 
 ## Quick start
 
-Requirements: Node.js **22.19+** (24 tested) and npm. A runtime is required: a
-configured **Pi** (run `pi` once and log in) or a logged-in **Codex**
-(`codex`). Without either, Absence falls back to a scripted mock runtime and
-says so.
+Requirements: Node.js **22.19+** (24 tested) and npm. A runtime is required and
+Absence uses whichever you have installed — a configured **Pi** (`npm i -g
+@earendil-works/pi-coding-agent`, then run `pi` once and log in), a logged-in
+**Codex** (`codex` on your PATH), or **DSH** (DeepSeek Harness, e.g. DSH
+Desktop). Absence bundles none of them: it is a client for the runtime you
+installed. If the one you pick cannot start, Absence says so instead of silently
+falling back — a scripted **mock** runtime is still available for a look with no
+credentials at all.
 
 ```bash
 npm install
@@ -67,10 +71,12 @@ npm start         # single origin — server serves the built app on :8848
 ```
 
 Then open `http://127.0.0.1:8848`, enter or pick a project path, choose a
-runtime (**Pi** or **Codex**), hit **Open**, and send the agent a task in the chat
-box at the bottom of the Stage. The **History** list under the path box unfolds
-saved sessions — Absence's own archives merged with the runtime's — newest
-first; clicking a row reopens that conversation.
+runtime (**Pi**, **Codex** or **DSH** — a green dot means it was found), hit
+**Open**, and send the agent a task in the chat box at the bottom of the Stage.
+If a runtime shows a red dot, set its binary/package path in the **runtime
+paths** panel right below (see [Runtimes](#runtimes)). The **History** list under
+the path box unfolds saved sessions — Absence's own archives merged with the
+runtime's — newest first; clicking a row reopens that conversation.
 
 ### One-click launchers
 
@@ -118,25 +124,6 @@ sudo setcap cap_bpf,cap_perfmon+ep native/agentwatch-linux/agentwatch-linux
 
 Without the observer the watcher falls back to `ps` snapshots and short-lived
 processes may be missed.
-
-#### pi inside WSL
-
-Absence embeds pi in its own process, so WSL needs a **Linux pi** (not the Windows
-one under `/mnt/c/…`):
-
-```sh
-npm install -g @earendil-works/pi-coding-agent
-```
-
-and its providers pointed at the Windows host (a loopback server on Windows is
-not reachable as `127.0.0.1` from inside WSL). `scripts/wsl-pi-config.sh`
-copies the Windows `models.json` and rewrites hosts to the default-route
-gateway; `start-absence.sh` runs it on every launch because the gateway address
-changes when WSL restarts.
-
-> **Sharing the checkout with Windows:** `node_modules` is platform-specific
-> (esbuild ships a native binary per platform). Keep one checkout per platform,
-> or reinstall when switching.
 
 ## The interface
 
@@ -190,8 +177,9 @@ bridged; unread lines in between become explicit `⋯` markers.
   into a count. So `docker compose up -d` shows the containers, not the client;
   `nohup node ticker.mjs` shows `node ticker.mjs`, not `nohup`.
 - **Session bar** — session id, project, model, context usage, live/offline,
-  and a `⚙ settings` button opening a three-pane dialog: avatar skins (left),
-  color theme + panel order (middle), Agent Eggs filter profiles (right).
+  and a `⚙ settings` button opening a four-pane dialog: appearance (theme, rail
+  order, a chat "collapse on content" toggle), avatar skins, custom sound sets,
+  and Agent Eggs filter profiles.
 
 ## Absence Report
 
@@ -220,9 +208,13 @@ decision, and a run-complete chime sounds when a run finishes.
 
 ## Personalization
 
-The `⚙ settings` button in the session bar opens a three-pane dialog:
+The `⚙ settings` button in the session bar opens a four-pane dialog:
 
-- **Avatar skin (left)** — replace the built-in WhaleBun character with your own
+- **Appearance (left)** — the color theme (`amber` / `blue` / `green`), the
+  stacking order of both side rails' panels, and a chat **collapse on content**
+  toggle (off by default: the conversation stays put across pages; on: a file /
+  diff / terminal / report page folds it away).
+- **Avatar skin** — replace the built-in WhaleBun character with your own
   animations, no URLs and no code. Create a skin (a name = a folder under
   `apps/server/src/process/avatar-skins/`), pick a status
   (`default` / `listening` / `thinking` / … / `error`), upload an
@@ -232,13 +224,16 @@ The `⚙ settings` button in the session bar opens a three-pane dialog:
   re-encoded with ffmpeg (H.264, faststart, data tracks stripped) so the
   browser can always play them. `Apply` activates the skin; switching back to
   WhaleBun restores the built-in character. Updates show up live — no reload.
-- **Settings (middle)** — the color theme (`amber` / `blue` / `green`) and the
-  stacking order of both side rails' panels.
+- **Sound sets** — upload an audio file per event (`attention` / `complete` /
+  `approval`) to replace the synthesised chime; events without a file keep the
+  built-in tone. `Apply` activates the set; `Default` restores the synth chimes.
 - **Agent Eggs filter profiles (right)** — a small file manager over named
   profiles of helper command names; the classifier treats a listed name as a
   tool (a `force` option extends this to the command's declared subject, e.g.
   `node` in `node ticker.mjs`). Same name overwrites, a new name creates, and
-  the saved profile is active immediately.
+  the saved profile is active immediately. A **display in activity** toggle
+  (off by default) hides the LAID/DIED process rows from the Activity panel
+  while keeping the eggs in the Agent Eggs panel.
 
 See [docs/AVATAR_SKIN.zh-CN.md](docs/AVATAR_SKIN.zh-CN.md) for the avatar-skin
 details.
@@ -249,13 +244,19 @@ details.
 |---|---|---|
 | `PORT` | `8848` | Server port |
 | `HOST` | `127.0.0.1` | Server host |
-| `ABSENCE_AGENT` | `pi` | Default runtime: `pi`, `codex` or `mock`. The project picker chooses per session; this is the fallback |
+| `ABSENCE_AGENT` | `pi` | Default runtime: `pi`, `codex`, `dsh` or `mock`. The project picker chooses per session; this is the fallback |
 | `ABSENCE_PROJECTS_ROOT` | `~/projects` | Directory listed in the project picker |
+| `ABSENCE_PI_BIN` | (probed) | Pi coding-agent package directory or its `dist/index.js`. Unset: the global install is used, then a copy next to Absence. Set from the picker; persisted to `~/.absence/runtimes.json` |
 | `ABSENCE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | Pi built-in tools to enable. `bash` / `powershell` are served by Absence's own shell, which is what makes processes observable |
 | `ABSENCE_CODEX_SANDBOX` | `workspace-write` | Codex sandbox: `read-only`, `workspace-write` or `danger-full-access`. Without it the app-server runs read-only and every write waits on an approval |
 | `ABSENCE_CODEX_APPROVAL` | `on-request` | Codex approval policy: `untrusted`, `on-request`, `on-failure` or `never` |
 | `ABSENCE_CODEX_APPROVAL_DECISION` | `ask` | How Absence handles a Codex approval prompt: `ask` (record it as an activity and wait for a click), or an automatic `accept` / `accept-for-session` / `decline` |
 | `ABSENCE_CODEX_EXEC_SERVER` | on | Take over Codex's shell through its exec-server protocol (see below). Set `0` to let Codex run commands itself and fall back to the Job Object observer |
+| `ABSENCE_CODEX_BIN` | (PATH) | Codex entry: `codex.js` or the `codex` executable. Unset: `codex` on PATH is used. Set from the picker; persisted to `~/.absence/runtimes.json` |
+| `ABSENCE_DSH_BIN` | (probed) | dsh entry (`.../dsh/lib/bin.js`). Unset: DSH Desktop's install is probed, then `dsh` on PATH. Set from the picker |
+| `ABSENCE_DSH_PROFILE` | `acp` | The dsh profile the ACP server boots (`dsh --profile acp`) |
+| `ABSENCE_DSH_HOME` | `~/.dsh` | `DSH_HOME` for the spawned dsh process |
+| `ABSENCE_DSH_PROVIDER` / `ABSENCE_DSH_MODEL` | (profile default) | Provider / model the ACP session starts on |
 | `ABSENCE_LOG_LEVEL` | `info` | Fastify log level |
 | `ABSENCE_STATE_DIR` | `~/.absence` | Where Absence archives session history (env-var prefix kept as `ABSENCE_` for compatibility) |
 | `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | repo `native/` | Override the native observer binary path |
@@ -268,28 +269,44 @@ command, anything else is a prompt. `/model`, `/thinking`, `/permission`,
 sandbox the agent runs in (`read-only`, `workspace-write`, `danger-full-access`).
 Model switching is session-scoped; results are archived with the session and
 come back on resume. The commands dispatch through the runtime-agnostic adapter,
-so they work the same on Pi and Codex.
+so they work the same on Pi, Codex and DSH.
 
 ### Runtimes
 
-Absence drives two agent runtimes; the project picker (and `ABSENCE_AGENT`)
-chooses which.
+Absence drives three agent runtimes; the project picker (and `ABSENCE_AGENT`)
+chooses which. It is a *client*: it calls whichever runtime you installed and
+bundles none of them, so the picker shows each one's location and lets you set
+the path when the probe misses.
 
-- **Pi** — the SDK runs in-process (`PiAdapter`). Absence wraps Pi's own shell
-  operations (`AbsenceShell`) so it owns the command boundary.
+- **Pi** — a library, not a CLI: Absence loads the `@earendil-works/pi-coding-agent`
+  SDK in-process (`PiAdapter`), from the global install when there is one, and
+  wraps Pi's own shell operations (`AbsenceShell`) so it owns the command
+  boundary. Set a package path in the picker or via `ABSENCE_PI_BIN`.
 - **Codex** — Absence drives `codex app-server`, the JSON-RPC channel Codex
   defines for observers (`CodexAdapter`). Unlike `codex exec --json`, the
   app-server carries real item ids, call ids and timestamps, so a command's
   lifecycle pairs exactly with the processes it lays. Absence then **takes over
-  Codex's shell** so it owns the command boundary there too.
+  Codex's shell** so it owns the command boundary there too. The `codex` used is
+  the one on your PATH (or a path you set); Absence does not ship one.
+- **DSH** (DeepSeek Harness) — Absence spawns `dsh --profile acp`, the
+  automation-only Agent Client Protocol server DSH ships (`DshAdapter`): JSON-RPC
+  over stdio, with stdout belonging entirely to ACP. Its `session/update`
+  notifications become AbsenceEvents, and each shell tool call opens a process
+  window so Agent Eggs sees what the agent lays.
+
+When a chosen runtime cannot start (not installed, or the path is wrong),
+Absence **reports the failure and does not fall back** — the picker shows the
+error, so you fix the runtime rather than unknowingly driving something else.
+The **mock** runtime is always available and lays real processes for the watcher.
 
 Either way the rest of Absence only ever sees `AbsenceEvent`; the Stage, Replay,
 the Report and the chat commands never learn which runtime ran.
 
-When the runtime (Codex) asks for permission, Absence raises an `approval`
-event: Activity records an `APPROVE?` row and the agent waits on the decision.
-Like any other activity, clicking the row opens the request verbatim and its
-options on the Stage — nothing is forced onto the Stage for you.
+When a runtime asks for permission (Codex, or DSH's ACP permission request),
+Absence raises an `approval` event: Activity records an `APPROVE?` row and the
+agent waits on the decision. Like any other activity, clicking the row opens the
+request verbatim and its options on the Stage — nothing is forced onto the Stage
+for you.
 
 ### Taking over Codex's shell
 

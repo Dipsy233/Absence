@@ -84,8 +84,114 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   check("the failure is recovered", facts.recoveries.length === 1);
   check("no unresolved failure", facts.errors.unresolved === 0);
   check("recovered run → completed_with_warnings", facts.outcome === "completed_with_warnings");
-  check("recovered run → attention low", facts.attention.level === "low");
+  // Default threshold is 5: a single recovered failure no longer raises the level.
+  check("recovered run → attention none at default threshold", facts.attention.level === "none");
+  check(
+    "recovered run → attention low with threshold 1",
+    buildRunFacts(events, runOf(events, 0), { commandFailThreshold: 1 }).attention.level === "low",
+  );
   check("executions list the commands that ran", renderRun(facts).executions.length === 3);
+}
+
+// B3. activity stall: a run with no recent events stalls (live only, via nowMs).
+{
+  const events = [cmd("w1", "sleep", 0)];
+  const run = runOf(events, 0, "running");
+  const facts = buildRunFacts(events, run, { activityStallThreshold: 60 });
+  // 120s after the last event: over a 60s threshold, live view.
+  const live = renderLive(
+    facts,
+    { busy: true, nowMs: facts.lastActivityAt + 120_000 },
+    { activityStallThreshold: 60 },
+  );
+  check("stall: fires past the threshold", live.attention.reasons.includes("activity_stalled"));
+  check("stall: level medium by default", live.attention.level === "medium");
+  check(
+    "stall: details mention the gap",
+    live.details.some((line) => line.includes("no activity for 2m")),
+  );
+  // 10s after the last event: under the threshold, silent.
+  const fresh = renderLive(
+    facts,
+    { busy: true, nowMs: facts.lastActivityAt + 10_000 },
+    { activityStallThreshold: 60 },
+  );
+  check("stall: fresh activity stays silent", !fresh.attention.reasons.includes("activity_stalled"));
+  // Silent level keeps the reason off even past the threshold.
+  const muted = renderLive(
+    facts,
+    { busy: true, nowMs: facts.lastActivityAt + 120_000 },
+    { activityStallThreshold: 60, activityStallLevel: "none" },
+  );
+  check("stall: silent level keeps the reason off", !muted.attention.reasons.includes("activity_stalled"));
+  // Settled runs (renderRun) never stall: no nowMs is passed.
+  check("stall: settled run never stalls", !renderRun(facts).attention.reasons.includes("activity_stalled"));
+}
+
+// B2. failure streak: back-to-back failures fire the streak warning.
+{
+  const events = [
+    bashStart("s1", "npm test"),
+    bashEnd("s1"),
+    cmd("s1", "npm test", 1),
+    bashStart("s2", "npm test"),
+    bashEnd("s2"),
+    cmd("s2", "npm test", 1),
+    bashStart("s3", "npm test"),
+    bashEnd("s3"),
+    cmd("s3", "npm test", 1),
+    bashStart("s4", "npm test"),
+    bashEnd("s4"),
+    cmd("s4", "npm test", 0),
+  ];
+  // Three consecutive failures: under the default total threshold (5) but at
+  // the default streak threshold (3).
+  const facts = buildRunFacts(events, runOf(events, 0));
+  check("streak: three failures in a row, one success", facts.commands.failed === 3);
+  check("streak: count is 3", facts.failureStreak?.count === 3);
+  check("streak: fires at default threshold", facts.attention.reasons.includes("command_failure_streak"));
+  // The run also ends with unresolved failures (no edit between them, so no
+  // recovery), which keeps the level high — the streak reason rides along.
+  check(
+    "streak: silent level drops the streak's own contribution",
+    buildRunFacts(events, runOf(events, 0), {
+      commandStreakLevel: "none",
+      commandStreakThreshold: 99, // silence everything the streak would add
+      commandFailLevel: "none",
+      commandFailThreshold: 99,
+    }).attention.level === "high" &&
+      !buildRunFacts(events, runOf(events, 0), { commandStreakLevel: "none" }).attention.reasons.includes(
+        "command_failure_streak",
+      ),
+  );
+  // Two failures stay under the streak threshold: no streak reason at all.
+  const two = buildRunFacts(events.slice(0, 6), runOf(events.slice(0, 6), 0));
+  check("streak: two failures stay silent", !two.attention.reasons.includes("command_failure_streak"));
+  // A success between failures breaks the streak.
+  const broken = [
+    bashStart("k1", "a"),
+    bashEnd("k1"),
+    cmd("k1", "a", 1),
+    bashStart("k2", "b"),
+    bashEnd("k2"),
+    cmd("k2", "b", 0),
+    bashStart("k3", "a"),
+    bashEnd("k3"),
+    cmd("k3", "a", 1),
+    bashStart("k4", "c"),
+    bashEnd("k4"),
+    cmd("k4", "c", 1),
+  ];
+  const brokenFacts = buildRunFacts(broken, runOf(broken, 0));
+  check("streak: a success breaks the streak", brokenFacts.failureStreak.count === 2);
+  check(
+    "streak: broken streak fires with threshold 2",
+    buildRunFacts(broken, runOf(broken, 0), { commandStreakThreshold: 2 }).attention.reasons.includes(
+      "command_failure_streak",
+    ),
+  );
+  // The streak can be silenced entirely.
+
 }
 
 // C. observed is reconciled: agent writes are never also counted as observed.

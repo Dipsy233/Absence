@@ -7,29 +7,34 @@ guide, see the [README](../README.md).
 
 ```
 Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
-   ▲                                                              └─▶ Codex (app-server, JSON-RPC)
-   │                                                                     │
+   ▲                                                              ├─▶ Codex (app-server, JSON-RPC)
+   │                                                              └─▶ DSH (dsh --profile acp, ACP/JSON-RPC)
    └────────────── AbsenceEvent stream (file_read / file_edit / command / …) ┘
 ```
 
 - `packages/core` — the shared `AbsenceEvent` + domain types. The only vocabulary
-  the UI knows; it never learns that Pi or Codex exists.
+  the UI knows; it never learns that Pi, Codex or DSH exists.
 - `apps/server` — Fastify + WebSocket. Each runtime is one `AgentAdapter`:
   `PiAdapter` wraps the Pi SDK in-process and maps `AgentSessionEvent` →
   `AbsenceEvent`; `CodexAdapter` drives `codex app-server` over JSON-RPC and maps
   its notifications the same way (`AppServerClient` is the transport — chosen over
   `codex exec --json` because the app-server carries real item ids, call ids and
-  timestamps); `MockAdapter` replays a scripted run with no credentials;
+  timestamps); `DshAdapter` drives `dsh --profile acp`, DSH's automation-only
+  Agent Client Protocol server, over JSON-RPC/NDJSON stdio (`DshClient` is the
+  transport) and maps its `session/update` notifications; `MockAdapter` replays a
+  scripted run with no credentials;
   `chokidar` watches the project for out-of-band changes. **Absence owns the
-  shell in both real runtimes.** For Pi, `process/AbsenceShell` wraps Pi's own
+  shell in every real runtime.** For Pi, `process/AbsenceShell` wraps Pi's own
   local shell operations and registers them as custom `bash` / `powershell` tools
   (a custom tool shadows the built-in one by name, so `ABSENCE_PI_TOOLS` is
   untouched). For Codex, `process/ExecServer` *is* the executor: Absence starts a
   loopback exec-server, registers it with `environment/add` and pins the thread to
-  it, so Codex hands every command to Absence as a `process/start` to spawn. Either
+  it, so Codex hands every command to Absence as a `process/start` to spawn. For
+  DSH, each shell tool call opens a `ProcessWatcher` window. Either
   way Absence owns the command boundary, which is what tells `ProcessWatcher` when
   a command ran. Pi marks the command with a `#` comment; Codex is attributed by
-  ancestry alone, which the takeover makes complete.
+  ancestry alone, which the takeover makes complete; DSH is attributed by the
+  window.
   `ProcessWatcher` then observes the process table. On **Windows** it does not
   sample it at all: `native/agentwatch` is a small helper that puts the server
   into a **Job Object**, and the kernel then reports every creation and exit as
@@ -96,7 +101,10 @@ packages/core/src/        events.ts (AbsenceEvent + payload map)  types.ts  inde
 apps/server/src/
   agents/                 AgentAdapter.ts (the runtime-agnostic boundary)
                           PiAdapter.ts  CodexAdapter.ts  CodexCommands.ts
+                          DshAdapter.ts (DeepSeek Harness over ACP)
                           AppServerClient.ts (codex app-server JSON-RPC)
+                          DshClient.ts (dsh ACP JSON-RPC/NDJSON)
+                          PiBin.ts  CodexBin.ts (locate the user's runtime)
                           MockAdapter.ts  createAdapter.ts
   process/                AbsenceShell.ts (owns Pi's shell)  ProcessWatcher.ts (eggs)
                           ExecServer.ts (owns Codex's shell: the exec-server)
@@ -106,10 +114,12 @@ apps/server/src/
                           JobMonitor.ts + JobSidecar.ts (Windows kernel events)
                           EbpfObserver.ts (Linux kernel events)
                           CommandIntent.ts + classify.ts + priors.ts (primary vs tool)
+  runtimes/config.ts      runtime paths (~/.absence/runtimes.json)
   sessions/               SessionStore.ts  archive.ts (~/.absence/sessions)
   filesystem/             FileTree.ts  FileWatcher.ts (chokidar)
   events/                 EventBus.ts
-  websocket/ws.ts   api/{projects,sessions}.ts   util/{diff,ids,language,paths}.ts
+  websocket/ws.ts   api/{projects,sessions,runtimes,sounds,avatarSkins}.ts
+                    util/{diff,ids,language,paths}.ts
   config.ts  index.ts
 
 apps/web/src/
@@ -194,6 +204,50 @@ AgentAdapter
 - **Approvals** — Codex's `item/…/requestApproval` server-to-client requests are
   surfaced as `approval` events and answered by `respondApproval` (or
   automatically, per `ABSENCE_CODEX_APPROVAL_DECISION`).
+
+## DSH (`DshAdapter`)
+
+DSH (DeepSeek Harness) is a separate process like Codex, but it exposes a
+different channel: an **automation-only Agent Client Protocol server** reached by
+running `dsh --profile acp`.
+
+```
+AgentAdapter
+  └─ DshAdapter ── DshClient ──(stdio NDJSON, JSON-RPC)── dsh --profile acp
+        │                                                      │
+        │  session/update notifications ──────────────────────┘
+        │  session/request_permission (client callback)
+        ▼
+  AbsenceEvents (message / thinking / tool_* / file_* / command / process / approval)
+```
+
+- **Transport** — `DshClient` speaks newline-delimited JSON-RPC over the child's
+  stdio. ACP (the Agent Client Protocol, the same wire format Zed's SDK uses)
+  hands the whole turn over as `session/update` notifications; stdout belongs
+  entirely to ACP, so there is no TUI to scrape.
+- **Mapping** — `agent_message_chunk` → `message` (streamed), `agent_thought_chunk`
+  → `thinking`, `tool_call`/`tool_call_update` → `tool_start`/`tool_end` plus the
+  first-class `file_read`/`file_write`/`file_edit`/`command`/`search` derived from
+  the tool name and its arguments, `usage_update` → context usage. DSH wraps read
+  results in `<path>…<content>NN: line…`; the adapter unwraps them so `file_read`
+  carries plain text like Pi's.
+- **Agent Eggs** — each shell tool call (`pwsh` etc.) opens a `ProcessWatcher`
+  window (`begin` on `tool_call`, `end` on `tool_call_update`), so the processes
+  the command lays fold into one egg attributed to that command.
+- **Approvals** — DSH's `session/request_permission` request is surfaced as an
+  `approval` event; the chosen ACP option id is sent back.
+- **Locating dsh** — `ABSENCE_DSH_BIN` / a saved path wins, then the DSH Desktop
+  install, then a `dsh` on PATH. A `.cmd`/`.bat` wrapper is run through the shell
+  (Windows cannot spawn it directly).
+
+## Runtime paths (client, not vendor)
+
+Absence bundles no runtime. `agents/PiBin.ts` and `agents/CodexBin.ts` resolve
+what to run and report the source (`configured` / `env` / `global` / `path` /
+`bundled` / `none`); `runtimes/config.ts` persists overrides to
+`~/.absence/runtimes.json`, editable from the project picker. When a chosen
+runtime cannot start (not installed, wrong path), the session fails with a clear
+message — there is **no fallback to the mock runtime**.
 
 ## AbsenceEvent
 
@@ -288,8 +342,9 @@ What the Electron shell adds over the browser, and what packaging produces:
   owned runtime is what runs the in-process server and Pi — not the `node` on
   `PATH`. Pi's package declares `engines.node >= 22.19` and imports `globSync`
   from `node:fs`, which only exists from Node 22. On an older Electron the shell
-  loads, then silently falls back to the mock runtime with `Pi runtime
-  unavailable`. As of writing, Electron **37.x bundles Node 22.21.1** (Electron
+  loads, then the session fails with `pi runtime could not start` (it no longer
+  silently falls back to the mock runtime). As of writing, Electron **37.x
+  bundles Node 22.21.1** (Electron
   33 bundles Node 20.18, which is too old). If you bump Electron, check the
   bundled Node in the release notes, not just the version number.
 - **Electron is installed separately**, into `apps/desktop/node_modules` (it is

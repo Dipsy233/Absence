@@ -6,6 +6,7 @@ import { useSessionStore } from "../stores/sessionStore";
 import { playApproval, playAttention, playComplete, startSoundCoveragePolling } from "../lib/sounds";
 import { memoBuildHistory } from "../lib/history";
 import { buildRunFacts, renderLive } from "../lib/report";
+import { useSettingsStore } from "../stores/settingsStore";
 
 /**
  * Absence's voice, such as it is: three chimes hooked onto the event stream.
@@ -81,5 +82,18 @@ function liveAttentionLevel(events: AbsenceEvent[]): AttentionLevel {
   if (!run || run.status !== "running") return "none";
   const facts = buildRunFacts(events, run);
   const busy = isAgentBusy(useSessionStore.getState().agent.status);
-  return renderLive(facts, { busy }).attention.level;
+  const { commandFailThreshold, commandFailLevel, commandStreakThreshold, commandStreakLevel, activityStallThreshold, activityStallLevel } =
+    useSettingsStore.getState();
+  return renderLive(
+    facts,
+    { busy },
+    {
+      commandFailThreshold,
+      commandFailLevel,
+      commandStreakThreshold,
+      commandStreakLevel,
+      activityStallThreshold,
+      activityStallLevel,
+    },
+  ).attention.level;
 }
