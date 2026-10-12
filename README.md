@@ -53,98 +53,49 @@ avatar settling back to *listening*:
 
 ## Quick start
 
-Requirements: Node.js **22.19+** (24 tested) and npm. A runtime is required and
-Absence uses whichever you have installed — a configured **Pi** (`npm i -g
-@earendil-works/pi-coding-agent`, then run `pi` once and log in), a logged-in
-**Codex** (`codex` on your PATH), or **DSH** (DeepSeek Harness, e.g. DSH
-Desktop). Absence bundles none of them: it is a client for the runtime you
-installed. If the one you pick cannot start, Absence says so instead of silently
-falling back — a scripted **mock** runtime is still available for a look with no
-credentials at all.
+**Run from source** (needs Node.js >= 22.19 and npm, plus one installed and
+logged-in runtime: Pi / Codex / DSH):
 
 ```bash
+git clone https://github.com/Dipsy233/Absence.git
+cd Absence
 npm install
-
-npm run dev       # dev: web on :5173 (proxies /api and /ws), server on :8848
-npm run build     # build the web app
-npm start         # single origin — server serves the built app on :8848
+npm run build
+npm start
 ```
 
-Then open `http://127.0.0.1:8848`, enter or pick a project path, choose a
-runtime (**Pi**, **Codex** or **DSH** — a green dot means it was found), hit
-**Open**, and send the agent a task in the chat box at the bottom of the Stage.
-If a runtime shows a red dot, set its binary/package path in the **runtime
-paths** panel right below (see [Runtimes](#runtimes)). The **History** list under
-the path box unfolds saved sessions — Absence's own archives merged with the
-runtime's — newest first; clicking a row reopens that conversation.
+Open `http://127.0.0.1:8848`, enter a project path, pick a runtime, hit
+**Open**, and send the agent a task in the chat box at the bottom.
 
-### One-click launchers
+**One-click launch** (inside a checkout, builds automatically):
 
 ```bat
-start-absence.bat            :: Windows — build, start the server, open the UI
-start-absence.bat check      :: dry run — report what would happen, start nothing
+start-absence.bat            :: Windows
+./start-absence.sh           :: Linux
+```
+
+**Download and run** (grab the package for your platform from Releases):
+
+```bat
+:: Windows: run the installer
+Absence-Setup-0.3.0.exe
 ```
 
 ```sh
-./start-absence.sh           # Linux — also builds the eBPF observer if missing
-./start-absence.sh check     # dry run
+# Linux desktop: AppImage or tar.gz
+chmod +x Absence-0.3.0.AppImage && ./Absence-0.3.0.AppImage
+# or
+tar xzf Absence-0.3.0.tar.gz && cd Absence-0.3.0 && ./absence
+
+# Headless Linux server: serve the UI on :8848 only
+tar xzf Absence-0.3.0.tar.gz && cd Absence-0.3.0
+bash resources/start-server.sh daemon
 ```
 
-Both are idempotent (a running server is left alone) and forward to the real
-launchers under `scripts/browser/`. Override the port/runtime with `ABSENCE_PORT`
-and `ABSENCE_AGENT`.
-
-### Desktop app (Electron)
-
-```bash
-npm run build             # the shell serves dist/web
-npm run desktop:install   # once — installs Electron (its own node_modules)
-npm run desktop           # open the native window
-npm run desktop:dist      # package a distributable (NSIS / AppImage + tar.gz / DMG)
-npm run desktop:pack      # same, but an unpacked folder (faster)
-```
-
-The desktop shell runs the server in-process — no console window, `port: 0`,
-a tray icon, close-to-tray so observation keeps running, and a native
-notification when a run finishes unfocused. The window is the same web app as
-the browser; nothing is forked. On Windows, **`start-absence-app.bat`** does
-build → install → open in one click.
-
-### Download-and-run on Linux
-
-Releases ship two Linux artifacts, both built from a Linux machine
-(`npm run desktop:dist` — cross-building from Windows is not supported by
-electron-builder):
-
-- **`Absence-<version>.AppImage`** — one file, `chmod +x` and run. Needs
-  libfuse2 on the host.
-- **`Absence-<version>.tar.gz`** — unpack anywhere and run `absence` (or
-  `./absence --no-sandbox` on distros with strict unprivileged-user namespaces).
-  No FUSE required — the right choice for servers.
-
-```sh
-tar xzf Absence-0.3.0.tar.gz
-./absence
-```
-
-Both carry the server bundle, the built UI and the eBPF observer helper. The
-kernel observer additionally wants `cap_bpf,cap_perfmon` (see the server
-section below); without it the observer falls back to `ps` snapshots.
-
-### Running on a server (Linux)
-
-The same `npm run build && npm start` serves the whole UI from one origin. For
-the kernel-level process observer, build the eBPF helper and run the server
-with permission to load it:
-
-```bash
-bash native/agentwatch-linux/build.sh        # needs clang + kernel headers
-sudo ./start-absence.sh                          # root, or grant capabilities:
-sudo setcap cap_bpf,cap_perfmon+ep native/agentwatch-linux/agentwatch-linux
-```
-
-Without the observer the watcher falls back to `ps` snapshots and short-lived
-processes may be missed.
+> The agent runtime is not bundled: Absence uses whichever you have installed.
+> With no Pi/Codex/DSH installed, pick the **mock** runtime for a look at the
+> UI. Details: [ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+> [RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md).
 
 ## The interface
 

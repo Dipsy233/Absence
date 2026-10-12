@@ -47,87 +47,48 @@ Stage 把事件变成人可以看的东西。
 
 ## 快速开始
 
-环境要求：Node.js **22.19+**（测过 24）和 npm。需要一个运行时，Absence 用你**已安装的那个**：配置好的
-**Pi**（`npm i -g @earendil-works/pi-coding-agent`，跑一次 `pi` 并登录）、已登录的 **Codex**（PATH 里有 `codex`），
-或 **DSH**（DeepSeek Harness，如 DSH Desktop）。Absence 不内嵌任何一个——它是你装的那个运行时的客户端。
-选中却启动不了时会**直接报错**，不会静默回退；另有一个脚本化的 **mock** 运行时，无需任何凭据就能试看。
+**从源码运行**（需要 Node.js ≥ 22.19 和 npm，以及一个已安装并登录的运行时：
+Pi / Codex / DSH）：
 
 ```bash
+git clone https://github.com/Dipsy233/Absence.git
+cd Absence
 npm install
-
-npm run dev       # dev：web 在 :5173（代理 /api 和 /ws），server 在 :8848
-npm run build     # 构建 web 应用
-npm start         # 单源——server 在 :8848 上伺服构建好的应用
+npm run build
+npm start
 ```
 
-然后打开 `http://127.0.0.1:8848`，输入或选择项目路径，选运行时（**Pi**、**Codex** 或
-**DSH**——绿点表示已找到），点 **Open**，在 Stage 底部的聊天框里给 agent 发任务。
-运行时显示红点时，在紧下方的 **runtime paths** 面板里设置它的二进制/包路径（见
-[Runtimes](#runtimes)）。路径框下面的 **History** 列表展开保存的会话——Absence 自己的
-归档合并运行时的，最新在前；点一行重新打开那段对话。
+打开 `http://127.0.0.1:8848`，输入项目路径，选运行时，点 **Open**，
+在底部聊天框给 agent 发任务。
 
-### 一键启动器
+**一键启动**（源码目录内，自动构建）：
 
 ```bat
-start-absence.bat            :: Windows——构建、启动 server、打开 UI
-start-absence.bat check      :: 干跑——报告会发生什么，什么都不启动
+start-absence.bat            :: Windows
+./start-absence.sh           :: Linux
+```
+
+**下载即用**（Release 下载对应平台的包）：
+
+```bat
+:: Windows：运行安装器
+Absence-Setup-0.3.0.exe
 ```
 
 ```sh
-./start-absence.sh           # Linux——eBPF 观察器缺失时还会构建它
-./start-absence.sh check     # 干跑
+# Linux 桌面：AppImage 或 tar.gz
+chmod +x Absence-0.3.0.AppImage && ./Absence-0.3.0.AppImage
+# 或
+tar xzf Absence-0.3.0.tar.gz && cd Absence-0.3.0 && ./absence
+
+# Linux 无头服务器：只起 server，浏览器远程访问 8848
+tar xzf Absence-0.3.0.tar.gz && cd Absence-0.3.0
+bash resources/start-server.sh daemon
 ```
 
-两者都是幂等的（已在监听的 server 不动），转发到 `scripts/browser/` 下的
-真正启动器。用 `ABSENCE_PORT` 和 `ABSENCE_AGENT` 覆盖端口/运行时。
-
-### 桌面应用（Electron）
-
-```bash
-npm run build             # 外壳伺服 dist/web
-npm run desktop:install   # 一次——安装 Electron（自己的 node_modules）
-npm run desktop           # 打开原生窗口
-npm run desktop:dist      # 打包可分发版本（NSIS / AppImage + tar.gz / DMG）
-npm run desktop:pack      # 同样，但输出未打包目录（更快）
-```
-
-桌面外壳在进程内运行 server——没有控制台窗口、`port: 0`、托盘图标、关到
-托盘让观察继续跑，运行结束而窗口没聚焦时有原生通知。窗口和浏览器是同一个
-web 应用；没有任何分叉。Windows 上 **`start-absence-app.bat`** 一键完成
-构建 → 安装 → 打开。
-
-### Linux 下载即用
-
-Linux 版发布两个产物，都在 Linux 机器上构建（跑 `npm run desktop:dist`
-——electron-builder 不支持从 Windows 交叉打包）：
-
-- **`Absence-<version>.AppImage`**——单文件，`chmod +x` 后直接运行。宿主
-  需要 libfuse2。
-- **`Absence-<version>.tar.gz`**——解压到任意目录后运行 `absence`（在限制
-  非特权用户命名空间的发行版上用 `./absence --no-sandbox`）。不需要 FUSE，
-  适合服务器场景。
-
-```sh
-tar xzf Absence-0.3.0.tar.gz
-./absence
-```
-
-两个产物都带 server bundle、构建好的 UI 和 eBPF 观察器 helper。内核观察器
-另需 `cap_bpf,cap_perfmon`（见下面的服务器一节）；没有它观察器退回 `ps`
-快照。
-
-### 在服务器上运行（Linux）
-
-同样的 `npm run build && npm start` 从一个源伺服整个 UI。要用内核级进程
-观察器，先编译 eBPF helper，并以能加载它的权限运行 server：
-
-```bash
-bash native/agentwatch-linux/build.sh        # 需要 clang + 内核头文件
-sudo ./start-absence.sh                          # root，或授予 capability：
-sudo setcap cap_bpf,cap_perfmon+ep native/agentwatch-linux/agentwatch-linux
-```
-
-没有观察器时，watcher 退回 `ps` 快照，短命进程可能漏掉。
+> 运行时（agent）不在包里：Absence 用你已装的那个。没装 Pi/Codex/DSH 时可先选
+> **mock** 运行时试看界面。细节见 [ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md)
+> 与 [RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md)。
 
 ## 界面
 
