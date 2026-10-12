@@ -36,6 +36,10 @@
     ],
     "extraResources": [
       {
+        "from": "scripts/start-server.sh",
+        "to": "start-server.sh"
+      },
+      {
         "from": "../../dist/desktop/build/server.cjs",
         "to": "apps/server-bundle.cjs"
       },
