@@ -52,19 +52,17 @@
         "from": "../../dist/web",
         "to": "dist/web",
         "filter": ["**/*"]
-      },
-      {
-        "from": "../../native/agentwatch/agentwatch.exe",
-        "to": "native/agentwatch/agentwatch.exe"
-      },
-      {
-        "from": "../../native/agentwatch-linux/agentwatch-linux",
-        "to": "native/agentwatch-linux/agentwatch-linux"
       }
     ],
     "win": {
       "target": ["nsis"],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "../../native/agentwatch/agentwatch.exe",
+          "to": "native/agentwatch/agentwatch.exe"
+        }
+      ]
     },
     "linux": {
       "target": ["AppImage", "tar.gz"],
@@ -72,7 +70,13 @@
       "category": "Development",
       "executableName": "absence",
       "artifactName": "Absence-${version}.${ext}",
-      "syncDesktopName": true
+      "syncDesktopName": true,
+      "extraResources": [
+        {
+          "from": "../../native/agentwatch-linux/agentwatch-linux",
+          "to": "native/agentwatch-linux/agentwatch-linux"
+        }
+      ]
     },
     "mac": {
       "target": ["dmg"],
