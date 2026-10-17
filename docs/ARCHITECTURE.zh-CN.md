@@ -328,9 +328,9 @@ AgentAdapter
 
 `capabilities/discover.ts` 读这些文件，返回 `skills` + `mcpServers` + 诊断。
 它不执行任何东西。`AgentAdapter.getCapabilities()` 把结果作为 `CapabilityState`
-返回，随 `session_state` 推到前端。设置弹窗里的 **Skills & MCP** 栏把它和同一批
-文件的可编辑视图（`capabilities/manage.ts` + `api/capabilities.ts`）放在一起，也是
-新建 / 导入 / 启停 / 删除 skill 和 server 的地方。
+返回，随 `session_state` 推到前端。可写的那一半在 `capabilities/manage.ts`，通过
+聊天输入框的 `/skill` 和 `/mcp` 命令访问（和 Pi、Codex 同一位置），详见
+"Chat commands"。
 
 各适配器怎么用：
 

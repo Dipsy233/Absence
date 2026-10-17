@@ -3,6 +3,7 @@ import {
   createEvent,
   MAX_SESSION_EVENTS,
   type AgentStatus,
+  type CapabilityState,
   type ChatMessage,
   type CommandOption,
   type ContextState,
@@ -26,6 +27,8 @@ import { JobMonitor } from "../process/JobMonitor";
 import { unifiedDiff } from "../util/diff";
 import { newId } from "../util/ids";
 import { toPosix } from "../util/paths";
+import { discoverCapabilities } from "../capabilities/discover";
+import { capabilityPaths } from "../capabilities/manage";
 
 /**
  * The in-memory event window. Shared with the web client so both trim at the
@@ -33,6 +36,9 @@ import { toPosix } from "../util/paths";
  * on disk; only the live window is bounded.
  */
 const MAX_EVENTS = MAX_SESSION_EVENTS;
+
+/** Newline, kept as a constant so multi-line notices read the same on Windows. */
+const NL = String.fromCharCode(10);
 
 /**
  * Thrown when the requested agent runtime cannot start — not installed, the
@@ -271,9 +277,27 @@ export class AbsenceSession {
           active: level === permission.level,
         }));
       }
+      // `/skill <name>` and `/mcp <action> [server]` complete from what the
+      // session actually has, so the palette lists real skills and servers.
+      case "skill":
+        return this.discoveredSkills().map((skill) => ({
+          value: skill.name,
+          label: skill.name,
+          description: `${skill.scope} · ${skill.description}`.slice(0, 120),
+        }));
+      case "mcp":
+        return [
+          { value: "list", label: "list", description: "servers and whether they connected" },
+          { value: "reconnect", label: "reconnect", description: "reconnect a server in this session" },
+        ];
       default:
         return [];
     }
+  }
+
+  /** Skills found on disk for this project (shared by the command surface). */
+  private discoveredSkills() {
+    return discoverCapabilities({ cwd: this.session.projectPath }).skills;
   }
 
   /**
@@ -285,7 +309,18 @@ export class AbsenceSession {
     const adapter = this.adapter;
     const notice = (content: string): void =>
       this.handleEvent(createEvent(this.id, "message", { role: "system", content, streaming: false }));
-    const mutating = name === "model" || name === "thinking" || name === "compact" || name === "permission";
+    // `/skill <name>` prompts the agent, so it counts as mutating too — but a
+    // bare `/skill` only lists, and `/mcp` is allowed while a run is going,
+    // because someone watching a stuck run needs to see why a server is not
+    // answering.
+    const mutating =
+      name === "model" ||
+      name === "thinking" ||
+      name === "compact" ||
+      name === "permission" ||
+      (name === "skill" && (this.adapter.getCapabilities?.()?.skills ?? []).some((skill) =>
+        skill.name.toLowerCase() === args.trim().split(/\s+/)[0]?.toLowerCase(),
+      ));
     if (mutating && (adapter.isBusy?.() ?? false)) {
       notice(`Cannot run /${name} while the agent is working — stop it first.`);
       return;
@@ -364,12 +399,149 @@ export class AbsenceSession {
           notice(`Exported session (${format}) to ${file}`);
           break;
         }
+        case "skill":
+          notice(await this.runSkillCommand(args));
+          break;
+        case "mcp":
+          notice(await this.runMcpCommand(args));
+          break;
         default:
           notice(`Unknown command: /${name}`);
       }
     } catch (error) {
       notice(`/${name} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /**
+   * `/skill` — the skills the session can load, and how to use them.
+   *
+   * Pi expands `/skill:<name> [args]` into the skill's instructions before the
+   * prompt reaches the model, so `/skill` here is the discovery half: it prints
+   * what exists and the exact line to type. `/skill <name>` narrows the list.
+   */
+  private async runSkillCommand(args: string): Promise<string> {
+    const skills = this.discoveredSkills();
+    if (skills.length === 0) {
+      return [
+        "No skills found. A skill is a folder with a SKILL.md; Absence looks in",
+        "  ~/.agents/skills  ~/.pi/agent/skills  ~/.codex/skills  ~/.dsh/skills",
+        `  ${this.session.projectPath}/.agents/skills  ${this.session.projectPath}/.pi/skills`,
+        "Drop one there and run /skill again.",
+      ].join(NL);
+    }
+    const query = args.trim().toLowerCase();
+    // `/skill <name> [request]` is an invocation, not a filter: hand the skill
+    // to the runtime the way Pi and Codex do, as `/skill:<name> request`.
+    const exact = skills.find((skill) => skill.name.toLowerCase() === query.split(/\s+/)[0]);
+    if (exact) {
+      const request = args.trim().slice(exact.name.length).trim();
+      const line = `/skill:${exact.name}${request ? ` ${request}` : ""}`;
+      await this.adapter.prompt(line);
+      return `Loaded skill "${exact.name}"${request ? ` with: ${request}` : ""}.`;
+    }
+    const shown = query ? skills.filter((skill) => skill.name.toLowerCase().includes(query)) : skills;
+    if (shown.length === 0) {
+      return `No skill matches "${args.trim()}". Known: ${skills.map((skill) => skill.name).join(", ")}`;
+    }
+    const first = shown[0]!.name;
+    const lines = shown.map((skill) => {
+      const where = skill.scope === "project" ? "project" : "user";
+      return `  ${skill.name}  (${where})\n      ${skill.description}`;
+    });
+    const header = query
+      ? `Skill "${first}" — load it with:`
+      : `${skills.length} skill${skills.length === 1 ? "" : "s"} — load one with:`;
+    const usage = query ? `  /skill:${first} [request]` : `  /skill:<name> [request]   — e.g. /skill:${first}`;
+    return [header, usage, "", ...lines].join(NL);
+  }
+
+  /**
+   * `/mcp` — the MCP command surface, shaped like Pi's own `/mcp`:
+   *
+   *   /mcp                     list servers: state, tools, exposure, errors
+   *   /mcp reconnect [server]  reconnect one in this session
+   *   /mcp enable|disable <s>  flip `enabled` in mcp.json
+   *   /mcp add <name> -- <cmd> [args…]   add a stdio server
+   *   /mcp add <name> --url <url>        add an HTTP server
+   *   /mcp remove <name>                 remove it from mcp.json
+   *
+   * Reconnecting is Absence asking the runtime to re-read its MCP state: the
+   * transport belongs to the runtime, so Absence reloads the session and
+   * reports the state that follows instead of pretending to dial.
+   */
+  private async runMcpCommand(args: string): Promise<string> {
+    const [action, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+
+    // Session-scoped only, matching Pi's own `/mcp` (login / logout / reconnect).
+    // Adding, removing, enabling or disabling a server edits the shared
+    // `mcp.json`, which every runtime deliberately keeps outside the session —
+    // use `pi mcp add …`, `codex mcp add …`, or edit the file; `/mcp reconnect`
+    // then applies it here.
+    const usage = [
+      "Usage:",
+      "  /mcp                     list servers and their state",
+      "  /mcp reconnect [server]  reconnect in this session",
+      "",
+      "Adding or removing a server is a config change, not a session action:",
+      "  pi mcp add <name> -- <command> [args…]      (or: codex mcp add …)",
+      `  then edit ${capabilityPaths(this.session.projectPath).mcpConfig} directly,`,
+      "  and run /mcp reconnect to apply it.",
+    ].join(NL);
+
+    if (action === undefined || action === "list") return this.formatMcpStatus();
+
+    if (action === "reconnect") {
+      const name = rest[0];
+      const before = this.mcpStatusFor(name);
+      if (before === undefined) {
+        return name ? `No MCP server named "${name}".` : "No enabled MCP server to reconnect.";
+      }
+      await this.reloadExtensions();
+      const after = this.mcpStatusFor(before.name);
+      return after === undefined
+        ? `Server "${before.name}" is no longer configured.`
+        : `Reconnected "${before.name}": ${describeMcpState(after)}`;
+    }
+
+    return usage;
+  }
+
+  /** One server's live state from the adapter, or undefined when absent. */
+  private mcpStatusFor(name?: string): CapabilityState["mcp"][number] | undefined {
+    const servers = this.adapter.getCapabilities?.()?.mcp ?? [];
+    if (name) return servers.find((server) => server.name === name);
+    return servers.find((server) => server.enabled);
+  }
+
+  /**
+   * Apply mcp.json / skill edits to the running session. A runtime that can
+   * reload its extensions does so (Pi re-reads mcp.json on `session.reload()`);
+   * otherwise the edit still applies to the next session.
+   */
+  private async reloadExtensions(): Promise<void> {
+    const adapter = this.adapter as AgentAdapter & { reloadExtensions?(): Promise<void> };
+    if (adapter.reloadExtensions) await adapter.reloadExtensions();
+  }
+
+  /** `/mcp` with no arguments: the list, in Pi's own wording. */
+  private formatMcpStatus(): string {
+    const state = this.adapter.getCapabilities?.();
+    if (!state) return "This runtime cannot report MCP servers.";
+    if (state.mcp.length === 0) {
+      return [
+        "No MCP servers configured. Add one outside the session, as every runtime expects:",
+        "  pi mcp add <name> -- <command> [args…]",
+        "  codex mcp add <name> --url <https://…>",
+        `or edit ${capabilityPaths(this.session.projectPath).mcpConfig}`,
+        "then run /mcp reconnect here to pick it up.",
+      ].join(NL);
+    }
+    const lines = state.mcp.map((server) => `${server.name}: ${describeMcpState(server)}`);
+    for (const diagnostic of state.diagnostics.slice(0, 5)) {
+      lines.push(`config warning: ${diagnostic.message}${diagnostic.path ? ` (${diagnostic.path})` : ""}`);
+    }
+    return lines.join(NL);
   }
 
   history(): AbsenceEvent[] {
@@ -862,3 +1034,19 @@ export class SessionStore {
 export const sessionStore = new SessionStore();
 
 export { readFileSafe };
+
+/** One MCP server as `/mcp` reads it: state, tools, exposure, reason. */
+function describeMcpState(server: CapabilityState["mcp"][number]): string {
+  if (!server.enabled) return "disabled";
+  if (server.connected === undefined) return server.exposure ? `configured (${server.exposure})` : "configured";
+  if (!server.connected) return "not connected, reconnects on next call";
+  const tools =
+    server.toolCount !== undefined ? `, ${server.toolCount} tool${server.toolCount === 1 ? "" : "s"}` : "";
+  const exposure = server.exposure ? ` (${server.exposure})` : "";
+  const indirect = server.declared === false ? " — reachable via codemode/tool_search" : "";
+  return `connected${tools}${exposure}${indirect}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

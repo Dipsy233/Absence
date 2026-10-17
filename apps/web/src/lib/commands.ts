@@ -32,6 +32,22 @@ export const COMMANDS: CommandSpec[] = [
   { name: "name", description: "Set the session name", argHint: "<name>", kind: "text" },
   { name: "session", description: "Show session info and stats", kind: "none" },
   {
+    name: "skill",
+    description: "List skills — load one with /skill:<name>",
+    argHint: "[name]",
+    kind: "text",
+  },
+  {
+    name: "mcp",
+    description: "MCP servers: list, reconnect (config edits belong to pi mcp / codex mcp)",
+    argHint: "[list|reconnect] [server]",
+    kind: "choice",
+    staticOptions: [
+      { value: "list", label: "list", description: "servers and whether they connected" },
+      { value: "reconnect", label: "reconnect", description: "reconnect one in this session" },
+    ],
+  },
+  {
     name: "export",
     description: "Export the session",
     argHint: "<html|jsonl>",
@@ -44,5 +60,14 @@ export const COMMANDS: CommandSpec[] = [
 ];
 
 export function findCommand(name: string): CommandSpec | undefined {
-  return COMMANDS.find((command) => command.name === name.toLowerCase());
+  return COMMANDS.find((command) => command.name.toLowerCase() === name.toLowerCase());
+}
+
+/**
+ * `/skill:<name> [request]` is a skill *invocation*, not a command: Pi expands
+ * it into the skill's instructions before the prompt reaches the model. The
+ * palette offers the names, so the exact spelling is discoverable.
+ */
+export function isSkillInvocation(text: string): boolean {
+  return text.startsWith("/skill:");
 }

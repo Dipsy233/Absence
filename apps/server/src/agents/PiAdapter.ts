@@ -52,6 +52,8 @@ export class PiAdapter extends BaseAdapter {
   private declaredTools: () => string[] = () => [];
   /** Every registered tool, including MCP/codemode ones not declared to the model. */
   private registeredTools: () => string[] = () => [];
+  /** The agent dir this session resolved, so a reload scans the same place. */
+  private piAgentDir?: string;
   /** Skill / MCP discovery for this session (see capabilities/discover.ts). */
   private capabilities?: DiscoveredCapabilities;
 
@@ -85,6 +87,7 @@ export class PiAdapter extends BaseAdapter {
       agentDir: piAgentDirFromSdk(sdk as { getAgentDir?: () => string }),
     });
     const agentDir = piAgentDirFromSdk(sdk as { getAgentDir?: () => string });
+    this.piAgentDir = agentDir;
     if (this.capabilities.diagnostics.length > 0) {
       // Surface a broken SKILL.md or mcp.json entry once, instead of leaving
       // the user wondering why a server or skill they added never appears.
@@ -179,9 +182,21 @@ export class PiAdapter extends BaseAdapter {
     // The MCP extension connects its servers on `session_start`, which only
     // fires once extension bindings exist. Without this call the servers are
     // configured but never dialled.
+    //
+    // The bindings are kept for the life of the session: `session.reload()`
+    // only re-emits `session_start` when bindings exist, and that is what makes
+    // `/mcp reconnect` (and a newly added server) take effect. The error sink
+    // is not cosmetic — Pi reports extension problems through `ui.notify` and
+    // an embedded session has no UI, so without it "MCP tools cannot be called"
+    // would disappear silently.
     if (extensionsBound) {
       try {
-        await session.bindExtensions({});
+        await session.bindExtensions({
+          onError: (error) =>
+            this.emitAbsence("error", {
+              message: `Pi extension error (${error.extensionPath}): ${error.error}`,
+            }),
+        });
       } catch (error) {
         this.emitAbsence("error", { message: `Pi extensions failed to start: ${errorMessage(error)}` });
       }
@@ -201,9 +216,40 @@ export class PiAdapter extends BaseAdapter {
     return { model: this.model };
   }
 
+  /**
+   * Re-read the session's resources and MCP configuration (`/mcp reconnect`).
+   *
+   * Pi re-runs its resource loader on `session.reload()`, which re-connects the
+   * MCP extension's servers — that is what makes an edited `mcp.json` take
+   * effect without a new session. Absence also re-scans capabilities so the
+   * command's answer and the panel describe the state that really followed.
+   */
+  async reloadExtensions(): Promise<void> {
+    const session = this.session;
+    if (!session) return;
+    try {
+      // The bindings from `start()` are what make `reload()` emit
+      // `session_start`; the MCP extension reconnects on that event, so a newly
+      // added or re-enabled server takes effect without a new session.
+      await session.reload();
+    } catch (error) {
+      this.emitAbsence("error", { message: `Reloading Pi extensions failed: ${errorMessage(error)}` });
+    }
+    this.capabilities = discoverCapabilities({
+      cwd: this.cwd,
+      agentDir: this.piAgentDir,
+    });
+  }
+
   getCapabilities(): CapabilityState | undefined {
-    const discovered = this.capabilities;
-    if (!discovered) return undefined;
+    if (!this.capabilities) return undefined;
+    // Re-read the files, not a snapshot from `start`: `/mcp add` and
+    // `/mcp enable` edit mcp.json while the session runs, and the answer must
+    // describe the configuration as it is now. Connection state below still
+    // comes from the session's own tool registry, so "configured" and
+    // "connected" stay two different facts.
+    const discovered = discoverCapabilities({ cwd: this.cwd, agentDir: this.piAgentDir });
+    this.capabilities = discovered;
     const declared = new Set(this.declaredTools());
     const mcpAvailable = typeof this.session?.getAllTools === "function";
     const registered = mcpAvailable ? this.registeredTools() : [];

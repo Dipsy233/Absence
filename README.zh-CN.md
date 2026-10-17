@@ -141,12 +141,12 @@ bash resources/start-server.sh daemon
   出现在 Activity，并接管 Stage 显示为终端卡片（`mcp <server> › <tool>`、参数、
   输出，以及 `text/json` 切换查看 server 的结构化 JSON）。Absence Report 按
   server 汇总，所以只跟 MCP 打交道的运行不会再显得"什么都没干"。
-- **Skills & MCP**（设置 → 第 4 栏）— agent 在内置工具之外还能做什么，以及
-  在哪管理：用名字 + 描述新建 skill、拖入（或选择）已有的 skill 文件夹、删除；
-  新增 / 启用停用 / 删除 MCP server。两者都是**跨 runtime 的格式**——Pi、
-  Codex、DSH 读的是同一批文件——所以改动对哪个 runtime 都成立；这一栏同时显示
-  **正在运行的会话**报告的状态（真正连上了几个 server）。之后 MCP / skill 的
-  工具调用就会像其他工具一样出现在 Activity 和 Stage 上。
+- **Skills & MCP，以命令形式** — `/skill` 列出会话可加载的 skill，
+  `/skill <name> [request]` 直接加载一个（Pi 原生的 `/skill:<name>` 也能直接
+  在输入框里用）。`/mcp` 与 Pi 原生一样只管会话内：列出 server 的状态、工具数
+  和 exposure，以及重连。新增 / 删除 / 启停属于配置变更，留给
+  `pi mcp add …` / `codex mcp add …`；改完后 `/mcp reconnect` 即可生效。之后
+  MCP / skill 的工具调用就会像其他工具一样出现在 Activity 和 Stage 上。
 - **Session bar** — 会话 id、项目、模型、上下文用量、live/offline，以及一个
   `⚙ settings` 按钮，打开四栏设置弹窗：外观（配色、面板排序、聊天 collapse
   on content 开关）、Report（命令失败警告）、个性化（形象皮肤 + 音效集）、

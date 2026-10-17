@@ -220,16 +220,16 @@ try {
   });
   check("no factories when MCP is off", disabled.extensionFactories.length === 0);
   check("no loaders skipped when MCP is off", typeof disabled.createLoader === "function");
-section("manage: writes land in the shared files, and refuse to escape");
+section("manage: the writable half (used by the runtime's own config tools)");
 {
   const cwd = project;
   // A created skill is templated, discoverable, and reported where it landed.
-  const created = createSkill({ name: "new-skill", description: "Created by the settings pane" }, cwd);
+  const created = createSkill({ name: "new-skill", description: "Created from the chat dock" }, cwd);
   check("skill folder is the user-level one", created.dir === path.join(home, ".agents", "skills", "new-skill"));
   const createdText = fs.readFileSync(created.filePath, "utf8");
   check(
     "frontmatter carries name + description",
-    createdText.includes("name: new-skill") && createdText.includes("description: Created by the settings pane"),
+    createdText.includes("name: new-skill") && createdText.includes("description: Created from the chat dock"),
   );
   check(
     "created skill is discovered",

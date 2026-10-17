@@ -139,8 +139,8 @@ apps/web/src/
     eggs/                 AgentEggsPanel.tsx (primaries; tools folded; running /
                           dead / all)
     files/  history/  activity/  chat/  ProjectPicker/  Panel.tsx
-    common/               SettingsDialog.tsx (the five-pane dialog)  AvatarSkinPane
-                          SoundPane  CapabilitiesPane (skills + MCP)  EggFilterPane
+    common/               SettingsDialog.tsx (the four-pane dialog)  AvatarSkinPane
+                          SoundPane  EggFilterPane
   stores/                 session  file  stage  replay  chat  ui  settings  reset
   hooks/                  useSessionSocket  useStage  useReplay  useNow
                           useSounds
@@ -262,10 +262,9 @@ discovery once and each adapter consumes it:
 `capabilities/discover.ts` reads those files and returns `skills` + `mcpServers`
 + diagnostics. It executes nothing. `AgentAdapter.getCapabilities()` returns the
 result as `CapabilityState`, which rides `session_state` to the web app.
-`capabilities/manage.ts` is the writable half: the **Skills & MCP** pane in the
-Settings dialog shows both — the files on disk and what the running session
-reports — and is where skills and servers are created, imported, toggled and
-deleted.
+`capabilities/manage.ts` is the writable half, reached from the chat dock as
+`/skill` and `/mcp` (where Pi and Codex also put them) rather than from a
+Settings pane — see "Chat commands".
 
 What each adapter does with it:
 
@@ -385,25 +384,9 @@ Context usage, status, model and the file tree ride a separate
 | `GET` | `/avatar/:status` | The active skin's media for a status (206 Range supported; 404 = no upload) |
 | `WS` | `/ws/sessions/:id` | `{type:"snapshot"}` then `{type:"event"}` / `{type:"session_state"}` |
 
-`session_state` also carries `capabilities` (skills + MCP servers), so the
-Skills & MCP pane's "running session" line updates live as servers connect.
-
-Capability management (`api/capabilities.ts`, backed by
-`capabilities/manage.ts`) — every write goes to the shared cross-runtime files:
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/capabilities` | Discovered skills + diagnostics, editable MCP entries, and the directories used (`?cwd=` for project scope) |
-| `POST` | `/api/capabilities/skills` | `{ name, description, scope?, cwd? }` → create a templated SKILL.md |
-| `POST` | `/api/capabilities/skills/import` | `{ files: [{path, content}], scope?, cwd? }` → import a skill folder (paths confined to the destination) |
-| `PUT` | `/api/capabilities/skills/import` | Raw SKILL.md bytes → import one file |
-| `DELETE` | `/api/capabilities/skills?path=` | Delete a skill folder (refused outside the known skill roots) |
-| `POST` | `/api/capabilities/mcp` | Add/replace a user-level `mcpServers` entry |
-| `PUT` | `/api/capabilities/mcp/:name/enabled` | `{ enabled }` → flip `enabled` (mcp.json only) |
-| `DELETE` | `/api/capabilities/mcp/:name` | Remove a server (mcp.json only) |
-
-Codex's `config.toml` servers are listed but read-only: rewriting a user's TOML
-is not a JSON editor's job.
+`session_state` also carries `capabilities` (skills + MCP servers), which is
+what `/skill` completes from and what `/mcp list` reports; it updates live as
+servers connect.
 
 The file endpoint refuses paths outside the project, refuses non-files, caps size
 at 512 KB and rejects binaries.
@@ -423,6 +406,19 @@ move, Enter or click to run, Esc to clear.
 | `/name [name]` | Set the session display name |
 | `/session` | Show session info and stats |
 | `/export [html\|jsonl]` | Export the session under `~/.absence/exports/` |
+| `/skill [name]` | List the skills the session can load; `/skill <name> [request]` loads one. Pi adds `/skill:<name>`, which the input passes straight through as a prompt |
+| `/mcp [subcommand]` | `list` (default) · `reconnect [server]` — the session-scoped surface only |
+
+`/skill` and `/mcp` match the runtimes' own commands. A skill is *loaded* by
+naming it (`/skill:demo-skill fix the flaky test`), not configured in a dialog.
+`/mcp` is session-scoped exactly like Pi's: list and reconnect. Adding,
+removing, enabling or disabling a server edits the shared `mcp.json`, which
+every runtime deliberately keeps outside the session — `pi mcp add …`,
+`codex mcp add …`, or a file edit, then `/mcp reconnect` here applies it (the
+transport belongs to Pi's MCP extension, so Absence reloads the session's
+extensions — which re-emits `session_start` and makes the extension redial —
+and reports the state that follows). The input completes skill names after
+`/skill:`.
 
 Switching the model is **session-scoped** — Pi's global default is left alone.
 Results are printed back into the chat as system messages and archived with the

@@ -225,6 +225,17 @@ export class CodexAdapter extends BaseAdapter {
     this.capabilities = { skills, mcp, diagnostics };
   }
 
+  /**
+   * Re-read skills and MCP server state (`/mcp reconnect`).
+   *
+   * Codex owns its MCP connections, so Absence asks the app-server again rather
+   * than touching a transport it does not hold; a server Codex marked failed is
+   * dialled on the next call, which is also how Codex itself behaves.
+   */
+  async reloadExtensions(): Promise<void> {
+    await this.warmCapabilities();
+  }
+
   getCapabilities(): CapabilityState | undefined {
     return this.capabilities;
   }

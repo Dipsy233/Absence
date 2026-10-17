@@ -153,14 +153,13 @@ bridged; unread lines in between become explicit `⋯` markers.
   (`mcp <server> › <tool>`, its arguments, its output, and the server's
   structured JSON behind a `text/json` toggle). The Absence Report counts them
   per server, so a run that only talked to MCP servers no longer looks idle.
-- **Skills & MCP** (Settings → pane 4) — what the agent can do beyond its
-  built-in tools, and where you manage it: create a skill from a name +
-  description, drop in (or pick) an existing skill folder, delete one; add,
-  enable/disable or remove MCP servers. Both are cross-runtime formats — the
-  same files Pi, Codex and DSH read — so a change means the same thing
-  whichever runtime is running, and the pane also shows what the *running*
-  session reports (how many servers actually connected). An MCP or skill tool
-  call then shows up in Activity and on the Stage like any other tool.
+- **Skills & MCP, as commands** — `/skill` lists the skills the session can
+  load and `/skill <name> [request]` loads one (Pi's own `/skill:<name>` works
+  too, straight from the input). `/mcp` is session-scoped like Pi's own: list
+  the servers with their state, tools and exposure, and reconnect one. Adding
+  or removing a server is a config change, so it stays with `pi mcp add …` /
+  `codex mcp add …`; `/mcp reconnect` then picks it up. An MCP or skill tool
+  call shows up in Activity and on the Stage like any other tool.
 - **Session bar** — session id, project, model, context usage, live/offline,
   and a `⚙ settings` button opening a four-pane dialog: appearance (theme, rail
   order, a chat "collapse on content" toggle), avatar skins, custom sound sets,

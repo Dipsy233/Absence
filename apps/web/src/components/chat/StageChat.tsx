@@ -11,7 +11,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { isAgentBusy, type CommandOption } from "@absence/core";
 import { buildPrompt } from "../../lib/context";
 import * as api from "../../lib/api";
-import { COMMANDS, findCommand, type CommandSpec } from "../../lib/commands";
+import { COMMANDS, findCommand, isSkillInvocation, type CommandSpec } from "../../lib/commands";
 import { useChatStore } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
@@ -67,24 +67,49 @@ export function StageChat({ expanded }: { expanded: boolean }) {
   const argText = spaceAt === -1 ? "" : body.slice(spaceAt + 1);
   const phase: "name" | "arg" = spaceAt === -1 ? "name" : "arg";
   const command = commandMode ? findCommand(cmdName) : undefined;
+  // `/skill:` completes skill names, not command names: the palette needs the
+  // session's skills, which the server reports with the capability state.
+  const skills = useSessionStore((s) => s.capabilities?.skills);
+  const skillPrefix = commandMode && body.startsWith("skill:") ? body.slice("skill:".length) : undefined;
 
   const nameMatches = useMemo(
-    () => (commandMode && phase === "name" ? COMMANDS.filter((c) => c.name.startsWith(cmdName)) : []),
+    () =>
+      commandMode && phase === "name"
+        ? COMMANDS.filter((c) => c.name.startsWith(cmdName))
+        : [],
     [commandMode, phase, cmdName],
   );
+
+  const skillMatches: CommandOption[] = useMemo(() => {
+    if (skillPrefix === undefined) return [];
+    const q = skillPrefix.toLowerCase();
+    return (skills ?? [])
+      .filter((skill) => skill.name.toLowerCase().includes(q))
+      .map((skill) => ({
+        value: `/skill:${skill.name} `,
+        label: `/skill:${skill.name}`,
+        description: skill.description,
+      }));
+  }, [skillPrefix, skills]);
 
   const activeOptions: CommandOption[] =
     phase === "arg" && command?.kind === "choice" ? (command.staticOptions ?? options) : [];
 
   const paletteItems: CommandOption[] =
-    phase === "name"
-      ? nameMatches.map((spec) => ({ value: spec.name, label: `/${spec.name}`, description: spec.description }))
-      : activeOptions;
+    skillPrefix !== undefined
+      ? skillMatches
+      : phase === "name"
+        ? nameMatches.map((spec) => ({ value: spec.name, label: `/${spec.name}`, description: spec.description }))
+        : activeOptions;
 
   const showPalette =
     paletteOpen &&
     commandMode &&
-    (phase === "name" ? nameMatches.length > 0 : command?.kind === "choice" || command?.kind === "text");
+    (skillPrefix !== undefined
+      ? skillMatches.length > 0
+      : phase === "name"
+        ? nameMatches.length > 0
+        : command?.kind === "choice" || command?.kind === "text");
 
   // Fetch the choice list for server-backed commands (/model, /thinking) when
   // the argument phase opens.
@@ -153,6 +178,12 @@ export function StageChat({ expanded }: { expanded: boolean }) {
   };
 
   const chooseItem = (value: string) => {
+    if (value.startsWith("/skill:")) {
+      setText(value);
+      setPaletteOpen(false);
+      inputRef.current?.focus();
+      return;
+    }
     if (phase === "name") {
       const spec = findCommand(value);
       if (!spec) return;
@@ -165,6 +196,16 @@ export function StageChat({ expanded }: { expanded: boolean }) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    // `/skill:<name> [request]` is a skill invocation: it belongs in the prompt,
+    // where the runtime expands it into the skill's instructions. Turns it into
+    // one instead of dispatching an unknown command.
+    if (isSkillInvocation(text.trim())) {
+      const prompt = text.trim();
+      setText("");
+      closePalette();
+      await sendPrompt(prompt);
+      return;
+    }
     if (!commandMode) {
       const value = text.trim();
       if (!value && pending.length === 0) return;
@@ -183,6 +224,14 @@ export function StageChat({ expanded }: { expanded: boolean }) {
     if (command.kind === "choice") {
       const item = activeOptions[highlight];
       if (!item) return;
+      // `/mcp reconnect` takes an optional server name, so choosing it keeps
+      // the line open instead of running half a command.
+      if (command.name === "mcp" && item.value !== "list") {
+        setText(`/${command.name} ${item.value} `);
+        setPaletteOpen(false);
+        inputRef.current?.focus();
+        return;
+      }
       void execute(command.name, item.value);
     } else {
       void execute(command.name, argText.trim());
