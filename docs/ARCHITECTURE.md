@@ -99,6 +99,9 @@ apps/desktop/             Electron shell (not a workspace; own node_modules)
 packages/core/src/        events.ts (AbsenceEvent + payload map)  types.ts  index.ts
 
 apps/server/src/
+  capabilities/           discover.ts (skills + MCP, one scan for every runtime)
+                          piResources.ts (skills → Pi's loader, MCP → Pi's extension)
+                          manage.ts (create/import/delete skills, edit mcp.json)
   agents/                 AgentAdapter.ts (the runtime-agnostic boundary)
                           PiAdapter.ts  CodexAdapter.ts  CodexCommands.ts
                           DshAdapter.ts (DeepSeek Harness over ACP)
@@ -135,7 +138,9 @@ apps/web/src/
                           whalebun.css (generated)
     eggs/                 AgentEggsPanel.tsx (primaries; tools folded; running /
                           dead / all)
-    files/  history/  activity/  chat/  ProjectPicker/  common/  Panel.tsx
+    files/  history/  activity/  chat/  ProjectPicker/  Panel.tsx
+    common/               SettingsDialog.tsx (the five-pane dialog)  AvatarSkinPane
+                          SoundPane  CapabilitiesPane (skills + MCP)  EggFilterPane
   stores/                 session  file  stage  replay  chat  ui  settings  reset
   hooks/                  useSessionSocket  useStage  useReplay  useNow
                           useSounds
@@ -244,6 +249,65 @@ AgentAdapter
   install, then a `dsh` on PATH. A `.cmd`/`.bat` wrapper is run through the shell
   (Windows cannot spawn it directly).
 
+## Skills and MCP (`capabilities/`)
+
+Both are **cross-runtime formats**, not vendor features, so Absence owns
+discovery once and each adapter consumes it:
+
+| | Format | Where every runtime looks |
+|---|---|---|
+| Skill | a directory with `SKILL.md` (`name` + `description` frontmatter, the [Agent Skills](https://agentskills.io) spec) | `~/.agents/skills`, `~/.pi/agent/skills`, `~/.codex/skills`, `~/.dsh/skills`, `<project>/.agents/skills` (ancestors up to the repo root), `<project>/.pi/skills` |
+| MCP | an `mcpServers` entry (`command`/`args`/`env`, or `url`/`headers`) | `~/.pi/agent/mcp.json`, `<project>/.pi/mcp.json`; Codex's `~/.codex/config.toml` `[mcp_servers.*]` (converted by a small TOML reader) |
+
+`capabilities/discover.ts` reads those files and returns `skills` + `mcpServers`
++ diagnostics. It executes nothing. `AgentAdapter.getCapabilities()` returns the
+result as `CapabilityState`, which rides `session_state` to the web app.
+`capabilities/manage.ts` is the writable half: the **Skills & MCP** pane in the
+Settings dialog shows both — the files on disk and what the running session
+reports — and is where skills and servers are created, imported, toggled and
+deleted.
+
+What each adapter does with it:
+
+- **Pi** — the deciding detail: **`createAgentSession` does not load the CLI's
+  built-in extensions.** A naive embedding therefore loses `mcp`, `codemode` and
+  `tool_search` (so `mcp.json` is never read and no `mcp__<server>__<tool>` ever
+  exists), and the `~/.agents/skills` locations are only reached by the CLI's
+  package manager. `capabilities/piResources.ts` supplies them:
+  `DefaultResourceLoader.extensionFactories` gets `createCodemodeExtension()`,
+  `createToolSearchExtension()` and `createMcpExtension()`; discovered skills are
+  injected through `skillsOverride`; Codex-only servers are registered with
+  `pi.registerMcpServer`. The adapter then calls **`session.bindExtensions({})`**
+  — the MCP extension connects on `session_start`, which only fires once bindings
+  exist. Every member is probed, so an older or newer installed Pi degrades to
+  the previous behaviour instead of failing to start. `ABSENCE_MCP=0` skips the
+  MCP half.
+- **Codex** — reads the same files itself and exposes both over the app-server it
+  already speaks: `skills/list` and `mcpServerStatus/list`. Those requests win
+  when they work (Codex resolves plugin skills and layered config); the file scan
+  is the fallback for older app-server builds.
+- **DSH** — discovery over `<DSH_HOME>/skills`; its tool calls (MCP-backed or not)
+  already arrive as `tool_call`, so they render on the Stage unchanged.
+
+One trap is worth recording, because it looks like "Absence cannot connect to
+MCP". Pi's `_isActivatable` keeps an MCP tool that a session's allowlist does not
+name registered — but only lets it become *active* (declared to the model) for
+non-`direct` exposure. `ABSENCE_PI_TOOLS` used to default to
+`read,bash,edit,write,grep,find,ls`, so every session carried an allowlist: a
+`direct` server connected, registered its tools, and was never declared. The
+variable is now unset by default and `createAgentSession` receives no `tools`,
+so Pi's own `defaultTools` selection applies and `direct` works as documented.
+`scripts/dev/probe-absence-mcp.ts` reproduces the end-to-end check against a
+live server.
+
+MCP tool calls need **no new event type**: Pi's `createMcpExtension` registers
+its tools through the normal pipeline, so a call arrives as
+`tool_execution_start` / `tool_execution_end` with the tool named
+`mcp__<server>__<tool>` and lands in the Activity stream like `read` or `bash`.
+A connected server's tools are counted from the runtime's own registry
+(`getAllTools`), which is why the panel's "connected / tools" figures can change
+during a run.
+
 ## Runtime paths (client, not vendor)
 
 Absence bundles no runtime. `agents/PiBin.ts` and `agents/CodexBin.ts` resolve
@@ -263,7 +327,7 @@ type AbsenceEventType =
   | "agent_start" | "agent_end" | "message"   | "thinking"
   | "tool_start"  | "tool_update" | "tool_end"
   | "file_read"   | "file_write"  | "file_edit" | "file_change"
-  | "command"     | "search"      | "process"   | "approval" | "error";
+  | "command"     | "search"      | "process"   | "approval" | "mcp" | "error";
 ```
 
 Extensions over the original v0.1 spec:
@@ -276,6 +340,19 @@ Extensions over the original v0.1 spec:
   (see Agent Eggs).
 - **`approval`** — the runtime (Codex) asking the user for permission; recorded as
   an `APPROVE?` activity and answered from the Stage.
+- **`mcp`** — a call into an MCP server, reported *in addition to* its
+  `tool_start`/`tool_end` pair. Those carry no result and no notion of a server,
+  so a person watching could not tell an MCP call from a built-in one. The event
+  splits `mcp__<server>__<tool>` back apart and carries the arguments, the
+  result text, the server's `structuredContent` and how it ended. Activity shows
+  `MCP  filesystem › list_directory` (and `MCP!` when the server said no); the
+  Stage renders it through the terminal view — `mcp <server> › <tool>` with an
+  `mcp` chip, the arguments, the output, and a text/json toggle when the server
+  returned structured content. Pi (`tool_execution_end` for `mcp__*`), Codex
+  (`McpToolCall` items) and DSH (a `mcp__*` tool name) all emit it, so the run
+  looks the same whichever runtime produced it. The Absence Report folds them per
+  server — calls, failures, tools — because an MCP-heavy run would otherwise
+  look idle: it changed no files and ran no shell commands.
 
 Context usage, status, model and the file tree ride a separate
 `session_state` websocket message, so the event union stays clean.
@@ -307,6 +384,26 @@ Context usage, status, model and the file tree ride a separate
 | `POST` | `/api/avatar-skins/:name/activate` | Activate a skin (empty name = built-in WhaleBun) |
 | `GET` | `/avatar/:status` | The active skin's media for a status (206 Range supported; 404 = no upload) |
 | `WS` | `/ws/sessions/:id` | `{type:"snapshot"}` then `{type:"event"}` / `{type:"session_state"}` |
+
+`session_state` also carries `capabilities` (skills + MCP servers), so the
+Skills & MCP pane's "running session" line updates live as servers connect.
+
+Capability management (`api/capabilities.ts`, backed by
+`capabilities/manage.ts`) — every write goes to the shared cross-runtime files:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/capabilities` | Discovered skills + diagnostics, editable MCP entries, and the directories used (`?cwd=` for project scope) |
+| `POST` | `/api/capabilities/skills` | `{ name, description, scope?, cwd? }` → create a templated SKILL.md |
+| `POST` | `/api/capabilities/skills/import` | `{ files: [{path, content}], scope?, cwd? }` → import a skill folder (paths confined to the destination) |
+| `PUT` | `/api/capabilities/skills/import` | Raw SKILL.md bytes → import one file |
+| `DELETE` | `/api/capabilities/skills?path=` | Delete a skill folder (refused outside the known skill roots) |
+| `POST` | `/api/capabilities/mcp` | Add/replace a user-level `mcpServers` entry |
+| `PUT` | `/api/capabilities/mcp/:name/enabled` | `{ enabled }` → flip `enabled` (mcp.json only) |
+| `DELETE` | `/api/capabilities/mcp/:name` | Remove a server (mcp.json only) |
+
+Codex's `config.toml` servers are listed but read-only: rewriting a user's TOML
+is not a JSON editor's job.
 
 The file endpoint refuses paths outside the project, refuses non-files, caps size
 at 512 KB and rejects binaries.

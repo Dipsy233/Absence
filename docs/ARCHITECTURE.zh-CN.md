@@ -310,9 +310,52 @@ AgentAdapter
   折叠成一个归给该命令的蛋。
 - **审批** — DSH 的 `session/request_permission` 请求被呈现为 `approval` 事件；
   选中的 ACP option id 被回送。
+- **MCP 调用** — 若工具名是 `mcp__<server>__<tool>` 形式，会额外发出 `mcp` 事件，
+  在 Activity 和 Stage 上像其他运行一样显示（与 Pi、Codex 的呈现一致）。
 - **定位 dsh** — `ABSENCE_DSH_BIN` / 保存的路径优先，然后是 DSH Desktop 安装，
   最后是 PATH 里的 `dsh`。`.cmd`/`.bat` 外壳会走 shell 执行（Windows 无法直接
   spawn）。
+
+## Skills 与 MCP（`capabilities/`）
+
+两者都是**跨运行时的格式**，不是某个厂商的功能，所以 Absence 统一做一次发现，
+各适配器各自消费：
+
+| | 格式 | 各运行时共同查找的位置 |
+|---|---|---|
+| Skill | 含 `SKILL.md` 的目录（`name` + `description` frontmatter，[Agent Skills](https://agentskills.io) 规范） | `~/.agents/skills`、`~/.pi/agent/skills`、`~/.codex/skills`、`~/.dsh/skills`、`<project>/.agents/skills`（向上直到 git 仓库根）、`<project>/.pi/skills` |
+| MCP | 一个 `mcpServers` 条目（`command`/`args`/`env`，或 `url`/`headers`） | `~/.pi/agent/mcp.json`、`<project>/.pi/mcp.json`；Codex 的 `~/.codex/config.toml` `[mcp_servers.*]`（由一个小 TOML 读取器转换） |
+
+`capabilities/discover.ts` 读这些文件，返回 `skills` + `mcpServers` + 诊断。
+它不执行任何东西。`AgentAdapter.getCapabilities()` 把结果作为 `CapabilityState`
+返回，随 `session_state` 推到前端。设置弹窗里的 **Skills & MCP** 栏把它和同一批
+文件的可编辑视图（`capabilities/manage.ts` + `api/capabilities.ts`）放在一起，也是
+新建 / 导入 / 启停 / 删除 skill 和 server 的地方。
+
+各适配器怎么用：
+
+- **Pi** — 关键细节：**`createAgentSession` 不会加载 CLI 的内置扩展。** 朴素地
+  嵌入会丢掉 `mcp`、`codemode`、`tool_search`（于是 `mcp.json` 永远不会被读，
+  `mcp__<server>__<tool>` 也永远不会存在），而 `~/.agents/skills` 这些位置只有
+  CLI 的 package manager 才会走到。`capabilities/piResources.ts` 把它们补上：
+  `DefaultResourceLoader.extensionFactories` 里放
+  `createCodemodeExtension()`、`createToolSearchExtension()`、`createMcpExtension()`；
+  发现的 skill 通过 `skillsOverride` 注入；只有 Codex 有的 server 用
+  `pi.registerMcpServer` 注册。随后适配器调用 **`session.bindExtensions({})`**——
+  MCP 扩展在 `session_start` 时才连接，而这个事件只有绑定了扩展才会触发。每个
+  成员都做了探测，所以用户装的是更旧/更新的 Pi 时会退回原有行为，而不是启动失败。
+  `ABSENCE_MCP=0` 可跳过 MCP 部分。
+- **Codex** — Codex 自己读同样的文件，并通过它已经在说的 app-server 暴露两者：
+  `skills/list` 与 `mcpServerStatus/list`。这两个请求成功时以它们为准（Codex 能
+  解析 plugin skill 与分层配置）；文件扫描是旧版 app-server 的回退。
+- **DSH** — 对 `<DSH_HOME>/skills` 做发现；它的工具调用（无论是否由 MCP 支撑）
+  本来就以 `tool_call` 到来，照常渲染。
+
+MCP 工具调用**不需要新的事件类型**：Pi 的 `createMcpExtension` 走正常的工具管线
+注册工具，所以一次调用就是 `tool_execution_start` / `tool_execution_end`，工具名
+为 `mcp__<server>__<tool>`，像 `read`、`bash` 一样进入 Activity。已连接 server 的
+工具数来自运行时自己的注册表（`getAllTools`），所以面板上的 "connected / tools"
+数字可以在一次运行中变化。
 
 ## 运行时路径（客户端，不是供应商）
 

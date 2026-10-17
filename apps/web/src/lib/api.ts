@@ -305,3 +305,145 @@ export async function deleteSoundSet(name: string): Promise<void> {
 export async function activateSoundSet(name: string): Promise<{ active: string }> {
   return json(await fetch(`/api/sounds/${encodeURIComponent(name)}/activate`, { method: "POST" }));
 }
+
+/* ── capabilities (skills + MCP, managed from Settings) ─────────────────── */
+
+/** One skill as GET /api/capabilities returns it. */
+export interface CapabilitySkill {
+  name: string;
+  description: string;
+  filePath: string;
+  baseDir: string;
+  scope: string;
+  id: string;
+}
+
+/** One MCP server as the editable view returns it. */
+export interface CapabilityMcp {
+  name: string;
+  type: string;
+  command?: string;
+  args?: string[];
+  url?: string;
+  exposure?: string;
+  description?: string;
+  enabled: boolean;
+  scope: "user" | "project" | "codex";
+  editable: boolean;
+}
+
+export interface CapabilityState {
+  dirs: {
+    skills: string[];
+    userSkills: string;
+    mcp: string;
+    projectMcp?: string;
+    codexConfig: string;
+  };
+  skills: CapabilitySkill[];
+  mcp: CapabilityMcp[];
+  diagnostics: Array<{ type: string; message: string; path?: string }>;
+}
+
+function withCwd(url: string, cwd?: string): string {
+  return cwd ? `${url}${url.includes("?") ? "&" : "?"}cwd=${encodeURIComponent(cwd)}` : url;
+}
+
+export async function fetchCapabilities(cwd?: string): Promise<CapabilityState> {
+  return json<CapabilityState>(await fetch(withCwd("/api/capabilities", cwd)));
+}
+
+export async function createSkill(input: {
+  name: string;
+  description: string;
+  scope?: "user" | "project";
+  cwd?: string;
+}): Promise<{ dir: string; filePath: string }> {
+  return json(
+    await fetch("/api/capabilities/skills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+/** Import a skill folder as text files (path → content), as dropped/picked. */
+export async function importSkillFiles(input: {
+  files: Array<{ path: string; content: string }>;
+  scope?: "user" | "project";
+  cwd?: string;
+  overwrite?: boolean;
+}): Promise<{ dir: string; filePath: string }> {
+  return json(
+    await fetch("/api/capabilities/skills/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+/** Import one bare SKILL.md picked from the file system (raw bytes). */
+export async function importSkillFile(input: {
+  file: File;
+  scope?: "user" | "project";
+  cwd?: string;
+  overwrite?: boolean;
+}): Promise<{ dir: string; filePath: string }> {
+  const query = new URLSearchParams({ scope: input.scope ?? "user" });
+  if (input.cwd) query.set("cwd", input.cwd);
+  if (input.overwrite) query.set("overwrite", "1");
+  return json(
+    await fetch(`/api/capabilities/skills/import?${query.toString()}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: await input.file.arrayBuffer(),
+    }),
+  );
+}
+
+export async function deleteSkill(filePath: string, cwd?: string): Promise<void> {
+  await json(await fetch(withCwd(`/api/capabilities/skills?path=${encodeURIComponent(filePath)}`, cwd), { method: "DELETE" }));
+}
+
+export async function saveMcpServer(input: {
+  name: string;
+  type: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  exposure?: string;
+  description?: string;
+  enabled?: boolean;
+}): Promise<void> {
+  await json(
+    await fetch("/api/capabilities/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function setMcpServerEnabled(
+  name: string,
+  enabled: boolean,
+  cwd?: string,
+): Promise<void> {
+  await json(
+    await fetch(`/api/capabilities/mcp/${encodeURIComponent(name)}/enabled`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled, cwd }),
+    }),
+  );
+}
+
+export async function deleteMcpServer(name: string, cwd?: string): Promise<void> {
+  await json(
+    await fetch(withCwd(`/api/capabilities/mcp/${encodeURIComponent(name)}`, cwd), { method: "DELETE" }),
+  );
+}

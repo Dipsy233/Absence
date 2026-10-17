@@ -8,6 +8,7 @@ import {
   type RailPanelId,
 } from "../../stores/settingsStore";
 import { AvatarSkinPane } from "./AvatarSkinPane";
+import { CapabilitiesPane } from "./CapabilitiesPane";
 import { SoundPane } from "./SoundPane";
 import {
   activateEggFilter,
@@ -41,13 +42,15 @@ const FAIL_LEVEL_TEXT: Record<CommandFailLevel, string> = {
 };
 
 /**
- * The Settings dialog, opened from the gear button in the session bar. Four
+ * The Settings dialog, opened from the gear button in the session bar. Five
  * panes:
  *
- *   left    — appearance & layout (theme, rail orders, report warnings)
- *   left-2  — report: failed-command warning threshold & level
- *   middle  — personalization: avatar skin + sound sets stacked in one pane
- *   right   — Agent Eggs filter profiles: a small file manager over the
+ *   p1      — appearance & layout (theme, rail orders, chat)
+ *   p2      — report: failed-command warning threshold & level
+ *   p3      — personalization: avatar skin + sound sets stacked in one pane
+ *   p4      — skills & MCP: the cross-runtime capability manager (create /
+ *             import / delete skills, add / toggle / remove MCP servers)
+ *   p5      — Agent Eggs filter profiles: a small file manager over the
  *             server's profile directory
  *
  * Rendered through a portal so the session bar's overflow/drag rules cannot
@@ -63,7 +66,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex h-[85vh] w-[1500px] max-w-[96vw] overflow-hidden rounded-lg border border-desk-line bg-desk-panel shadow-[0_8px_40px_rgba(0,0,0,.5)]">
+      <div className="flex h-[85vh] w-[1720px] max-w-[97vw] overflow-hidden rounded-lg border border-desk-line bg-desk-panel shadow-[0_8px_40px_rgba(0,0,0,.5)]">
         {/* ════ Left: appearance & layout ═══════════════════ */}
         <AppearancePane />
 
@@ -76,6 +79,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
         {/* ════ Personalization: avatar skin + sound sets ══ */}
         <PersonalizationPane />
+
+        <div className="w-px shrink-0 bg-desk-line" />
+
+        {/* ════ Skills & MCP: capability manager ════════════ */}
+        <CapabilitiesPane />
 
         <div className="w-px shrink-0 bg-desk-line" />
 

@@ -148,6 +148,19 @@ bridged; unread lines in between become explicit `⋯` markers.
   the workspace; short-lived helpers (`cat`, `grep`, `docker ps`) are folded
   into a count. So `docker compose up -d` shows the containers, not the client;
   `nohup node ticker.mjs` shows `node ticker.mjs`, not `nohup`.
+- **MCP calls are visible** — a call into an MCP server reaches Activity as
+  `MCP  filesystem › list_directory` and owns the Stage as a terminal card
+  (`mcp <server> › <tool>`, its arguments, its output, and the server's
+  structured JSON behind a `text/json` toggle). The Absence Report counts them
+  per server, so a run that only talked to MCP servers no longer looks idle.
+- **Skills & MCP** (Settings → pane 4) — what the agent can do beyond its
+  built-in tools, and where you manage it: create a skill from a name +
+  description, drop in (or pick) an existing skill folder, delete one; add,
+  enable/disable or remove MCP servers. Both are cross-runtime formats — the
+  same files Pi, Codex and DSH read — so a change means the same thing
+  whichever runtime is running, and the pane also shows what the *running*
+  session reports (how many servers actually connected). An MCP or skill tool
+  call then shows up in Activity and on the Stage like any other tool.
 - **Session bar** — session id, project, model, context usage, live/offline,
   and a `⚙ settings` button opening a four-pane dialog: appearance (theme, rail
   order, a chat "collapse on content" toggle), avatar skins, custom sound sets,
@@ -220,11 +233,13 @@ avatar-skin details.
 | `ABSENCE_AGENT` | `pi` | Default runtime: `pi`, `codex`, `dsh` or `mock`. The project picker chooses per session; this is the fallback |
 | `ABSENCE_PROJECTS_ROOT` | `~/projects` | Directory listed in the project picker |
 | `ABSENCE_PI_BIN` | (probed) | Pi coding-agent package directory or its `dist/index.js`. Unset: the global install is used, then a copy next to Absence. Set from the picker; persisted to `~/.absence/runtimes.json` |
-| `ABSENCE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | Pi built-in tools to enable. `bash` / `powershell` are served by Absence's own shell, which is what makes processes observable |
+| `ABSENCE_PI_TOOLS` | (unset) | Pi tool **allowlist**. Unset: Pi uses its own `defaultTools` setting — leave it that way unless you want to restrict tools. Setting it makes Pi treat MCP tools as "kept for codemode/tool_search only", so a server with `exposure: "direct"` connects but is silently never declared to the model. `bash` / `powershell` are served by Absence's own shell, which is what makes processes observable |
 | `ABSENCE_CODEX_SANDBOX` | `workspace-write` | Codex sandbox: `read-only`, `workspace-write` or `danger-full-access`. Without it the app-server runs read-only and every write waits on an approval |
 | `ABSENCE_CODEX_APPROVAL` | `on-request` | Codex approval policy: `untrusted`, `on-request`, `on-failure` or `never` |
 | `ABSENCE_CODEX_APPROVAL_DECISION` | `ask` | How Absence handles a Codex approval prompt: `ask` (record it as an activity and wait for a click), or an automatic `accept` / `accept-for-session` / `decline` |
 | `ABSENCE_CODEX_EXEC_SERVER` | on | Take over Codex's shell through its exec-server protocol (see below). Set `0` to let Codex run commands itself and fall back to the Job Object observer |
+| `ABSENCE_MCP` | on | Load MCP servers (and skills) for a session. Set `0` to skip the MCP half — useful when a server launcher hangs on this machine. Skills are always discovered |
+| `CODEX_HOME` | `~/.codex` | Codex's home. Absence reads its `config.toml` `[mcp_servers.*]` tables and `skills/` from here |
 | `ABSENCE_CODEX_BIN` | (PATH) | Codex entry: `codex.js` or the `codex` executable. Unset: `codex` on PATH is used. Set from the picker; persisted to `~/.absence/runtimes.json` |
 | `ABSENCE_DSH_BIN` | (probed) | dsh entry (`.../dsh/lib/bin.js`). Unset: DSH Desktop's install is probed, then `dsh` on PATH. Set from the picker |
 | `ABSENCE_DSH_PROFILE` | `acp` | The dsh profile the ACP server boots (`dsh --profile acp`) |

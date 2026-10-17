@@ -137,6 +137,16 @@ bash resources/start-server.sh daemon
   `node ticker.mjs` 而不是 `nohup`。可编辑的**过滤配置文件**（记录帮手命令名
   的命名文件）在设置弹窗右栏管理——侧栏 `+` 新建、content 编辑、`Apply` 保存
   并激活。
+- **MCP 调用可见** — 对 MCP server 的调用会以 `MCP  filesystem › list_directory`
+  出现在 Activity，并接管 Stage 显示为终端卡片（`mcp <server> › <tool>`、参数、
+  输出，以及 `text/json` 切换查看 server 的结构化 JSON）。Absence Report 按
+  server 汇总，所以只跟 MCP 打交道的运行不会再显得"什么都没干"。
+- **Skills & MCP**（设置 → 第 4 栏）— agent 在内置工具之外还能做什么，以及
+  在哪管理：用名字 + 描述新建 skill、拖入（或选择）已有的 skill 文件夹、删除；
+  新增 / 启用停用 / 删除 MCP server。两者都是**跨 runtime 的格式**——Pi、
+  Codex、DSH 读的是同一批文件——所以改动对哪个 runtime 都成立；这一栏同时显示
+  **正在运行的会话**报告的状态（真正连上了几个 server）。之后 MCP / skill 的
+  工具调用就会像其他工具一样出现在 Activity 和 Stage 上。
 - **Session bar** — 会话 id、项目、模型、上下文用量、live/offline，以及一个
   `⚙ settings` 按钮，打开四栏设置弹窗：外观（配色、面板排序、聊天 collapse
   on content 开关）、Report（命令失败警告）、个性化（形象皮肤 + 音效集）、
@@ -212,11 +222,13 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
 | `ABSENCE_AGENT` | `pi` | 默认运行时：`pi`、`codex`、`dsh` 或 `mock`。项目选择器可按会话选；这是回退值 |
 | `ABSENCE_PROJECTS_ROOT` | `~/projects` | 项目选择器列出的目录 |
 | `ABSENCE_PI_BIN` | （探测） | Pi coding-agent 包目录或其 `dist/index.js`。不设置：先用全局安装，再用 Absence 旁的副本。可在选择器里设置，持久化到 `~/.absence/runtimes.json` |
-| `ABSENCE_PI_TOOLS` | `read,bash,edit,write,grep,find,ls` | 启用的 Pi 内建工具。`bash` / `powershell` 由 Absence 自己的 shell 提供，这正是进程可被观察的原因 |
+| `ABSENCE_PI_TOOLS` | （不设置） | Pi 工具**白名单**。不设置时用 Pi 自己的 `defaultTools` 设置——除非你要限制工具，否则保持不设置。一旦设置，Pi 会把 MCP 工具视作"仅供 codemode/tool_search"，于是 `exposure: "direct"` 的 server 会连上但静默地从不声明给模型。 启用的 Pi 内建工具。`bash` / `powershell` 由 Absence 自己的 shell 提供，这正是进程可被观察的原因 |
 | `ABSENCE_CODEX_SANDBOX` | `workspace-write` | Codex 沙箱：`read-only`、`workspace-write` 或 `danger-full-access`。不设置时 app-server 默认只读，每次写入都会卡在审批上 |
 | `ABSENCE_CODEX_APPROVAL` | `on-request` | Codex 审批策略：`untrusted`、`on-request`、`on-failure` 或 `never` |
 | `ABSENCE_CODEX_APPROVAL_DECISION` | `ask` | Absence 如何处理 Codex 的审批提示：`ask`（记为一条 activity 并等用户点选），或自动 `accept` / `accept-for-session` / `decline` |
 | `ABSENCE_CODEX_EXEC_SERVER` | 开 | 通过 Codex 的 exec-server 协议接管其 shell（见下）。设为 `0` 则让 Codex 自己跑命令，仅依赖 Job Object 观察器 |
+| `ABSENCE_MCP` | 开 | 为会话加载 MCP server（以及 skill）。设 `0` 可跳过 MCP 部分——某台机器上 server 启动器卡死时用得上。skill 始终会扫描 |
+| `CODEX_HOME` | `~/.codex` | Codex 的主目录。Absence 从这里读 `config.toml` 的 `[mcp_servers.*]` 表和 `skills/` |
 | `ABSENCE_CODEX_BIN` | （PATH） | Codex 入口：`codex.js` 或 `codex` 可执行文件。不设置：用 PATH 里的 `codex`。可在选择器里设置，持久化到 `~/.absence/runtimes.json` |
 | `ABSENCE_DSH_BIN` | （探测） | dsh 入口（`.../dsh/lib/bin.js`）。不设置：探测 DSH Desktop 安装目录，再用 PATH 里的 `dsh`。可在选择器里设置 |
 | `ABSENCE_DSH_PROFILE` | `acp` | dsh 启动的 profile（`dsh --profile acp`） |
