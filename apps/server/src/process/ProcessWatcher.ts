@@ -112,6 +112,32 @@ interface Egg {
   namedSubject: boolean;
 }
 
+/**
+ * Which eggs to retire to keep the finished set bounded.
+ *
+ * Running eggs are never candidates: they are live state the panel must show,
+ * and there can only be as many as are actually running. Among finished ones,
+ * the oldest exits go first (`exitedAt`, falling back to `startedAt`), so the
+ * panel keeps the most recent history. `limit` 0 means keep everything.
+ *
+ * Pure and exported so the policy is pinned by a check without spawning a
+ * process or driving the watcher's timers.
+ */
+export function retiredPids(
+  eggs: Iterable<{ pid: number; status: "running" | "exited"; startedAt: number; exitedAt?: number }>,
+  limit: number,
+): number[] {
+  if (limit <= 0) return [];
+  const finished: { pid: number; status: "running" | "exited"; startedAt: number; exitedAt?: number }[] = [];
+  for (const egg of eggs) {
+    if (egg.status === "exited") finished.push(egg);
+  }
+  const excess = finished.length - limit;
+  if (excess <= 0) return [];
+  finished.sort((a, b) => (a.exitedAt ?? a.startedAt) - (b.exitedAt ?? b.startedAt));
+  return finished.slice(0, excess).map((egg) => egg.pid);
+}
+
 export interface ProcessWatcherOptions {
   /** Every egg state change, ready to become a `process` AbsenceEvent. */
   onProcess: (payload: ProcessPayload) => void;
@@ -123,6 +149,13 @@ export interface ProcessWatcherOptions {
   /** Injectable for tests. */
   snapshot?: () => Promise<ProcessTable>;
   now?: () => number;
+  /**
+   * How many *finished* eggs to keep. Running eggs are always kept, however
+   * many there are. Beyond this, the oldest exit is retired (removed and
+   * reported with `retired: true`) so a session that lays a process per step
+   * cannot grow the set without bound. 0 or undefined keeps everything.
+   */
+  maxFinishedEggs?: number;
 }
 
 /**
@@ -147,6 +180,7 @@ export class ProcessWatcher {
   private readonly rootPid: number;
   private readonly snapshot: () => Promise<ProcessTable>;
   private readonly now: () => number;
+  private readonly maxFinishedEggs: number;
   private readonly eggs = new Map<number, Egg>();
   /** Every pid we have ever claimed — a re-parented child must still read as ours. */
   private readonly seen = new Set<number>();
@@ -215,6 +249,7 @@ export class ProcessWatcher {
     this.rootPid = options.rootPid ?? process.pid;
     this.snapshot = options.snapshot ?? snapshotProcesses;
     this.now = options.now ?? Date.now;
+    this.maxFinishedEggs = Math.max(0, options.maxFinishedEggs ?? 0);
     this.attachJobObserver();
   }
 
@@ -607,6 +642,7 @@ export class ProcessWatcher {
       egg.kindReason = verdict.reason;
     }
     this.emit(egg);
+    this.retireOverflow();
   }
 
   /**
@@ -687,6 +723,7 @@ export class ProcessWatcher {
       egg.status = "exited";
       egg.exitedAt = at;
       this.emit(egg);
+      this.retireOverflow();
     }
     if (live > 0) this.startAliveTick();
   }
@@ -714,6 +751,51 @@ export class ProcessWatcher {
       kind: egg.kind,
       kindReason: egg.kindReason,
     });
+  }
+
+  /**
+   * Keep the finished eggs bounded.
+   *
+   * Only `exited` eggs are candidates: a running one is live state the panel
+   * must show, and the most recent exits are the ones a user is still looking
+   * at. The oldest exits beyond `maxFinishedEggs` are removed from the map and
+   * reported with `retired: true` — the recipient drops the pid instead of
+   * updating it. Retirement touches only this live view; the `process` events
+   * already written to the archive are untouched, so the Report still counts
+   * every process the agent laid.
+   *
+   * Called after each exit, not per pointer move: at most one egg can exceed
+   * the limit at a time, so the scan is a full pass only when it is needed.
+   */
+  private retireOverflow(): void {
+    const retired = retiredPids(
+      [...this.eggs.values()].map((egg) => ({
+        pid: egg.info.pid,
+        status: egg.status,
+        startedAt: egg.startedAt,
+        exitedAt: egg.exitedAt,
+      })),
+      this.maxFinishedEggs,
+    );
+    if (retired.length === 0) return;
+    for (const pid of retired) {
+      const egg = this.eggs.get(pid)!;
+      this.eggs.delete(egg.info.pid);
+      this.options.onProcess({
+        pid: egg.info.pid,
+        ppid: egg.info.ppid,
+        name: egg.info.name,
+        commandLine: unwrapCommandText(egg.info.commandLine),
+        status: egg.status,
+        startedAt: egg.startedAt,
+        exitedAt: egg.exitedAt,
+        children: egg.children,
+        command: egg.command,
+        kind: egg.kind,
+        kindReason: egg.kindReason,
+        retired: true,
+      });
+    }
   }
 
   /** What was already running when the session opened — never an egg. */

@@ -10,9 +10,9 @@
  */
 import { check, finish } from "./harness";
 import { createEvent, type AbsenceEvent } from "@absence/core";
-import { attributeProcesses, candidatePids } from "../../apps/server/src/process/ProcessWatcher";
+import { attributeProcesses, candidatePids, retiredPids } from "../../apps/server/src/process/ProcessWatcher";
 import type { ProcessTable } from "../../apps/server/src/process/ProcessTable";
-import { buildEggs, countEggs, filterEggs } from "../../apps/web/src/lib/eggs";
+import { applyProcessEvent, buildEggs, countEggs, filterEggs } from "../../apps/web/src/lib/eggs";
 
 
 
@@ -199,6 +199,73 @@ function table(rows: [number, number, string, string?][], startedAt = 0): Proces
 
   const nonProcess: AbsenceEvent[] = [createEvent(SID, "message", { role: "assistant", content: "hi" })];
   check("non-process events are ignored", buildEggs(nonProcess).length === 0);
+}
+
+// E. retirement: the finished set is bounded, running eggs never are.
+{
+  const mk = (pid: number, status: "running" | "exited", startedAt: number, exitedAt?: number) => ({
+    pid,
+    status,
+    startedAt,
+    exitedAt,
+  });
+
+  const eggs = [
+    mk(1, "exited", 100, 110),
+    mk(2, "exited", 200, 210),
+    mk(3, "exited", 300, 310),
+    mk(4, "running", 400),
+    mk(5, "exited", 500, 510),
+  ];
+
+  check("under the limit nothing is retired", retiredPids(eggs, 5).length === 0);
+  check("limit 0 keeps everything", retiredPids(eggs, 0).length === 0);
+  check(
+    "over the limit the oldest exits go first",
+    JSON.stringify(retiredPids(eggs, 2)) === JSON.stringify([1, 2]),
+    JSON.stringify(retiredPids(eggs, 2)),
+  );
+  check("a running egg is never retired", !retiredPids(eggs, 1).includes(4));
+  check(
+    "only as many as overflow are retired",
+    retiredPids(eggs, 3).length === 1 && retiredPids(eggs, 3)[0] === 1,
+  );
+
+  // Two exits at the same instant: order must still be deterministic.
+  const tied = [mk(7, "exited", 100, 500), mk(8, "exited", 200, 500), mk(9, "exited", 300, 500)];
+  const retired = retiredPids(tied, 1);
+  check("ties fall back to start time", retired.length === 2 && retired[0] === 7);
+
+  // A retired egg is dropped from the live fold, not turned into a new one.
+  const live = new Map<number, ReturnType<typeof buildEggs>[number]>();
+  const SID2 = "retire";
+  const running = createEvent(SID2, "process", {
+    pid: 900,
+    ppid: 1,
+    name: "node",
+    commandLine: "node server.js",
+    status: "exited",
+    startedAt: 1000,
+    exitedAt: 1100,
+    children: 0,
+    kind: "primary",
+  });
+  const retireEvent = createEvent(SID2, "process", {
+    pid: 900,
+    ppid: 1,
+    name: "node",
+    commandLine: "node server.js",
+    status: "exited",
+    startedAt: 1000,
+    exitedAt: 1100,
+    children: 0,
+    kind: "primary",
+    retired: true,
+  });
+  applyProcessEvent(live, running);
+  check("an egg is present before it is retired", live.has(900));
+  applyProcessEvent(live, retireEvent);
+  check("a retired egg is dropped from the live view", !live.has(900));
 }
 
 finish();

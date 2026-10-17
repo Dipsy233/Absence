@@ -37,8 +37,15 @@ export interface Egg {
  */
 export function applyProcessEvent(byPid: Map<number, Egg>, event: AbsenceEvent): boolean {
   if (event.type !== "process") return false;
-  const { pid, ppid, name, commandLine, status, startedAt, exitedAt, children, command, kind, kindReason } =
+  const { pid, ppid, name, commandLine, status, startedAt, exitedAt, children, command, kind, kindReason, retired } =
     event.payload;
+  // The watcher retired this pid to keep the finished set bounded: drop it
+  // rather than update it. It is not lost data — the event stream and the
+  // Report still have every record; this is only the live view.
+  if (retired) {
+    byPid.delete(pid);
+    return true;
+  }
   byPid.set(pid, {
     pid,
     ppid,

@@ -128,6 +128,14 @@ export interface ProcessPayload {
   kind?: "primary" | "tool";
   /** Why it was classified that way, for a tooltip. */
   kindReason?: string;
+  /**
+   * The egg is being retired from the live view: it exited, and the watcher
+   * keeps only the most recent finished eggs so a long computer-use session
+   * cannot grow the set without bound. Recipients should drop the pid rather
+   * than update it. The raw record stays in the archive, and the Report still
+   * counts it.
+   */
+  retired?: true;
 }
 
 export interface ErrorPayload {

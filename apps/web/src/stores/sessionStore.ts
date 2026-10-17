@@ -38,6 +38,13 @@ export interface EggStateHandle {
   eggs: Map<number, Egg>;
   /** Incremented whenever `eggs` changes. */
   version: number;
+  /**
+   * How many finished eggs the watcher has retired so far (see
+   * `ProcessWatcher.retireOverflow`). Shown in the panel so a number that stops
+   * at the cap reads as "200 shown, more folded" rather than "data went
+   * missing".
+   */
+  retired: number;
 }
 
 interface SessionStore {
@@ -82,7 +89,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   agent: { status: "listening" },
   events: [],
   eventsVersion: 0,
-  eggState: { eggs: new Map(), version: 0 },
+  eggState: { eggs: new Map(), version: 0, retired: 0 },
   currentAction: undefined,
   context: undefined,
   connected: false,
@@ -142,7 +149,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       agent: { status: "listening" },
       events: [],
       eventsVersion: 0,
-      eggState: { eggs: new Map(), version: 0 },
+      eggState: { eggs: new Map(), version: 0, retired: 0 },
       currentAction: undefined,
       context: undefined,
       connected: false,
@@ -161,7 +168,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       context: snapshot.context,
       events: snapshot.events,
       eventsVersion: get().eventsVersion + 1,
-      eggState: { eggs, version: (get().eggState.version ?? 0) + 1 },
+      eggState: { eggs, version: get().eggState.version + 1, retired: 0 },
       currentAction: lastStageAction(snapshot.events),
     });
   },
@@ -189,7 +196,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (event.type === "process") {
       const current = get().eggState;
       applyProcessEvent(current.eggs, event);
-      patch.eggState = { eggs: current.eggs, version: current.version + 1 };
+      patch.eggState = {
+        eggs: current.eggs,
+        version: current.version + 1,
+        retired: current.retired + (event.payload.retired ? 1 : 0),
+      };
     }
     if (clearsStage(event)) {
       // A run ended, or a new one just started: back to the default Stage page.

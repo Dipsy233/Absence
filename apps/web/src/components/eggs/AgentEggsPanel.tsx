@@ -35,6 +35,7 @@ export function AgentEggsPanel() {
   // may have dropped a process's first sighting. The map is mutated in place,
   // so we subscribe to its version and derive from the map through that.
   const eggVersion = useSessionStore((s) => s.eggState.version);
+  const retired = useSessionStore((s) => s.eggState.retired);
   const eggMap = useSessionStore.getState().eggState.eggs;
   const openStage = useStageStore((s) => s.openStage);
   const activeItemId = useStageStore((s) => s.activeItem?.id);
@@ -166,14 +167,30 @@ export function AgentEggsPanel() {
         </ul>
       )}
 
-      {tools.count > 0 ? (
-        <p
-          className="mt-2 border-t border-desk-line/60 pt-1.5 font-mono text-[10px] text-desk-dim"
-          title={tools.names.join(", ")}
-        >
-          folded {tools.count} helper{tools.count === 1 ? "" : "s"}
-          {tools.names.length > 0 ? `: ${tools.names.join(", ")}` : ""}
-          {tools.running > 0 ? ` (${tools.running} still running)` : ""}
+      {tools.count > 0 || retired > 0 ? (
+        <p className="mt-2 space-y-0.5 border-t border-desk-line/60 pt-1.5 font-mono text-[10px] text-desk-dim">
+          {tools.count > 0 ? (
+            <span className="block" title={tools.names.join(", ")}>
+              folded {tools.count} helper{tools.count === 1 ? "" : "s"}
+              {tools.names.length > 0 ? `: ${tools.names.join(", ")}` : ""}
+              {tools.running > 0 ? ` (${tools.running} still running)` : ""}
+            </span>
+          ) : null}
+          {/*
+            The watcher keeps only the most recent finished eggs (running ones
+            are never retired), so the panel stays bounded in a session that
+            lays a process per step. This line makes that visible: the count is
+            not "everything ever", and the records are still in the archive and
+            the Report.
+          */}
+          {retired > 0 ? (
+            <span
+              className="block"
+              title="Older finished processes were retired from this list to keep it bounded. Running ones are always shown. They remain in the session archive and the Report."
+            >
+              {retired} older finished process{retired === 1 ? "" : "es"} folded
+            </span>
+          ) : null}
         </p>
       ) : null}
     </Panel>

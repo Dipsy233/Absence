@@ -135,6 +135,9 @@ export class AbsenceSession {
     // here — the watcher's default root pid is us.
     this.processWatcher = new ProcessWatcher({
       onProcess: (payload) => this.handleEvent(createEvent(this.id, "process", payload)),
+      // Bound the live egg view: running eggs always stay, only the oldest
+      // exits beyond the cap are retired. See ProcessWatcher.retireOverflow.
+      maxFinishedEggs: config.maxEggs,
     });
     // Say how precise process watching is, so the UI can be honest about it.
     this.session.processPrecision = JobMonitor.get().available ? "exact" : "sampled";

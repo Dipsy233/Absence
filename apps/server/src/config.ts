@@ -87,6 +87,14 @@ export interface AbsenceConfig {
    */
   dshProvider?: string;
   dshModel?: string;
+  /**
+   * How many finished eggs the watcher keeps. Eggs that are still running are
+   * always kept; beyond this many finished ones the oldest exit and are
+   * reported as `retired`, so a computer-use session that lays a process per
+   * step cannot grow the Agent Eggs panel (or the watcher's memory) without
+   * bound. Override with ABSENCE_MAX_EGGS; 0 means keep every finished egg.
+   */
+  maxEggs: number;
   /** Serve the built web app from this directory when present. */
   webDist: string;
 }
@@ -148,6 +156,9 @@ export const config: AbsenceConfig = {
   dshHome: process.env.ABSENCE_DSH_HOME,
   dshProvider: process.env.ABSENCE_DSH_PROVIDER,
   dshModel: process.env.ABSENCE_DSH_MODEL,
+  maxEggs: Number.isFinite(Number(process.env.ABSENCE_MAX_EGGS))
+    ? Math.max(0, Math.floor(Number(process.env.ABSENCE_MAX_EGGS)))
+    : 200,
   // Built UI lives at the repo root under dist/web (see apps/web/vite.config.ts
   // and the desktop staging script). Override with ABSENCE_WEB_DIST if hosting
   // elsewhere.
