@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import type { BashOperations } from "@earendil-works/pi-coding-agent";
 import {
+  type CapabilityState,
   type CommandOption,
   type ContextState,
   type AbsenceEvent,
@@ -13,6 +14,7 @@ import {
 import { BaseAdapter, type AdapterOptions, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
 import { loadPiSdk } from "./PiBin";
 import { config } from "../config";
+import { discoverCapabilities } from "../capabilities/discover";
 import { createAbsenceShell } from "../process/AbsenceShell";
 import { readFileSafe, scanCodeFiles } from "../filesystem/FileTree";
 import { unifiedDiff } from "../util/diff";
@@ -49,6 +51,29 @@ export class MockAdapter extends BaseAdapter {
     this.cwd = ctx.cwd;
     this.model = ctx.model ?? "mock/agent";
     return { model: this.model };
+  }
+
+  getCapabilities(): CapabilityState | undefined {
+    // Even the scripted runtime shows what the project actually has, so the
+    // capability panels can be developed without credentials.
+    const discovered = discoverCapabilities({ cwd: this.cwd });
+    return {
+      skills: discovered.skills.map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        filePath: skill.filePath,
+        scope: skill.scope,
+      })),
+      mcp: discovered.mcpServers.map((server) => ({
+        name: server.name,
+        type: server.type,
+        source: server.source,
+        exposure: server.exposure,
+        enabled: server.enabled !== false,
+        description: server.description,
+      })),
+      diagnostics: [...discovered.diagnostics],
+    };
   }
 
   getContextUsage(): ContextState | undefined {

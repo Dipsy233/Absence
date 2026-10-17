@@ -2,6 +2,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import os from "node:os";
 import {
+  type CapabilityState,
   type CommandOption,
   type ContextState,
   type AbsenceEventPayloadMap,
@@ -12,6 +13,8 @@ import type { AgentSession, AgentSessionEvent, CreateAgentSessionOptions } from 
 import { BaseAdapter, type AdapterOptions, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
 import { loadPiSdk } from "./PiBin";
 import { config } from "../config";
+import { discoverCapabilities, type DiscoveredCapabilities } from "../capabilities/discover";
+import { piAgentDirFromSdk, planPiCapabilities } from "../capabilities/piResources";
 import { createAbsenceShell } from "../process/AbsenceShell";
 import { readFileSafe } from "../filesystem/FileTree";
 import { languageFromPath } from "../util/language";
@@ -40,6 +43,17 @@ export class PiAdapter extends BaseAdapter {
   private assistantAcc = "";
   private thinkingAcc = "";
   private aborted = false;
+  /**
+   * The tool names this session declares to the model, from
+   * `session.getActiveToolNames()`. MCP tools are registered by an extension
+   * after the session starts, so they appear here later — the set is a live
+   * probe, not a snapshot, and is what `getCapabilities()` reports.
+   */
+  private declaredTools: () => string[] = () => [];
+  /** Every registered tool, including MCP/codemode ones not declared to the model. */
+  private registeredTools: () => string[] = () => [];
+  /** Skill / MCP discovery for this session (see capabilities/discover.ts). */
+  private capabilities?: DiscoveredCapabilities;
 
   constructor(private readonly options: AdapterOptions) {
     super();
@@ -60,6 +74,54 @@ export class PiAdapter extends BaseAdapter {
       createBashToolDefinition,
       createPowerShellToolDefinition,
     } = sdk;
+
+    // Discover MCP servers and skills once, from the same files every runtime
+    // uses, then hand the result to Pi's resource loader. The SDK's own
+    // `createAgentSession` does not load the CLI's built-in extensions (mcp,
+    // codemode, tool_search) nor the `~/.agents/skills` locations — see
+    // capabilities/piResources.ts for why and what is supplied instead.
+    this.capabilities = discoverCapabilities({
+      cwd: ctx.cwd,
+      agentDir: piAgentDirFromSdk(sdk as { getAgentDir?: () => string }),
+    });
+    const agentDir = piAgentDirFromSdk(sdk as { getAgentDir?: () => string });
+    if (this.capabilities.diagnostics.length > 0) {
+      // Surface a broken SKILL.md or mcp.json entry once, instead of leaving
+      // the user wondering why a server or skill they added never appears.
+      const first = this.capabilities.diagnostics[0]!;
+      this.emitAbsence("error", {
+        message:
+          this.capabilities.diagnostics.length === 1
+            ? `${first.message}${first.path ? ` (${first.path})` : ""}`
+            : `${first.message} (${this.capabilities.diagnostics.length} capability problems)`,
+      });
+    }
+    const capabilities = planPiCapabilities(sdk, {
+      cwd: ctx.cwd,
+      agentDir: agentDir ?? "",
+      mcp: config.mcpEnabled,
+      skills: this.capabilities.skills,
+      mcpServers: this.capabilities.mcpServers,
+    });
+    // A DefaultResourceLoader is what carries extensions and skills into the
+    // session. Older SDKs without one keep their previous behaviour (plain
+    // createAgentSession discovery) rather than failing to start.
+    let resourceLoader: NonNullable<CreateAgentSessionOptions["resourceLoader"]> | undefined;
+    let extensionsBound = false;
+    if (capabilities.createLoader) {
+      try {
+        const loader = capabilities.createLoader({ cwd: ctx.cwd, agentDir });
+        await loader.reload();
+        resourceLoader = loader;
+        extensionsBound = true;
+      } catch (error) {
+        // Extensions are an enhancement, not the run: a broken one must not
+        // cost the user their session.
+        this.emitAbsence("error", {
+          message: `Pi extensions could not load; MCP and skill features are off for this session. (${errorMessage(error)})`,
+        });
+      }
+    }
 
     // Pi persists a conversation to ~/.pi/agent/sessions/<cwd>/ by default. A
     // resumed session reopens that file; a fresh one creates it. (ABSENCE used to
@@ -89,12 +151,41 @@ export class PiAdapter extends BaseAdapter {
 
     const { session } = await createAgentSession({
       cwd: ctx.cwd,
-      tools: this.options.tools,
+      ...(this.options.tools ? { tools: this.options.tools } : {}),
       sessionManager: manager,
       customTools,
+      ...(resourceLoader ? { resourceLoader } : {}),
     });
 
     this.session = session;
+    this.declaredTools = () => {
+      try {
+        return session.getActiveToolNames();
+      } catch {
+        return [];
+      }
+    };
+    // `getAllTools` is also declared separately: an MCP server registers its
+    // tools *after* the session starts (and `getActiveToolNames` only lists the
+    // ones declared to the model), so the capability panel asks this for the
+    // registered set.
+    this.registeredTools = () => {
+      try {
+        return session.getAllTools().map((tool) => tool.name);
+      } catch {
+        return [];
+      }
+    };
+    // The MCP extension connects its servers on `session_start`, which only
+    // fires once extension bindings exist. Without this call the servers are
+    // configured but never dialled.
+    if (extensionsBound) {
+      try {
+        await session.bindExtensions({});
+      } catch (error) {
+        this.emitAbsence("error", { message: `Pi extensions failed to start: ${errorMessage(error)}` });
+      }
+    }
     this.piSessionFile = manager.getSessionFile();
     this.piSessionId = manager.getSessionId();
     const model = session.model;
@@ -108,6 +199,36 @@ export class PiAdapter extends BaseAdapter {
     this.model = `${model.provider}/${model.id}`;
     this.unsubscribe = session.subscribe((event) => this.onEvent(event));
     return { model: this.model };
+  }
+
+  getCapabilities(): CapabilityState | undefined {
+    const discovered = this.capabilities;
+    if (!discovered) return undefined;
+    const declared = new Set(this.declaredTools());
+    const mcpAvailable = typeof this.session?.getAllTools === "function";
+    const registered = mcpAvailable ? this.registeredTools() : [];
+    return {
+      skills: discovered.skills.map((skill) => ({ ...skill })),
+      mcp: discovered.mcpServers.map((server) => ({
+        name: server.name,
+        type: server.type,
+        source: server.source,
+        exposure: server.exposure,
+        enabled: server.enabled !== false,
+        description: server.description,
+        // A server's tools are `mcp__<server>__<tool>`. A registered tool with
+        // that prefix means the extension connected the server; a *declared*
+        // one means the model can see it directly (exposure `direct`). A
+        // `codemode`/`deferred` server registers tools the model reaches
+        // indirectly, so it is connected without being declared.
+        connected: !mcpAvailable ? undefined : registered.some((tool) => tool.startsWith(`mcp__${server.namespace}__`)),
+        toolCount: mcpAvailable ? registered.filter((tool) => tool.startsWith(`mcp__${server.namespace}__`)).length : undefined,
+        declared: mcpAvailable
+          ? [...declared].some((tool) => tool.startsWith(`mcp__${server.namespace}__`))
+          : undefined,
+      })),
+      diagnostics: [...discovered.diagnostics],
+    };
   }
 
   getContextUsage(): ContextState | undefined {
@@ -341,7 +462,7 @@ export class PiAdapter extends BaseAdapter {
         this.toolArgs.delete(event.toolCallId);
         const startedAt = this.toolStartedAt.get(event.toolCallId);
         this.toolStartedAt.delete(event.toolCallId);
-        void this.mapToolResult(event.toolName, args, event.result, event.isError, startedAt);
+        void this.mapToolResult(event.toolName, args, event.result, event.isError, startedAt, event.toolCallId);
         break;
       }
 
@@ -365,7 +486,16 @@ export class PiAdapter extends BaseAdapter {
     result: unknown,
     isError: boolean,
     startedAt?: number,
+    toolCallId?: string,
   ): Promise<void> {
+    // MCP calls are reported whether or not they failed: "the server said no"
+    // is exactly what a person watching needs to see, and the error text is
+    // the evidence. Built-in tools keep the older rule (a failed read/edit
+    // carries no content worth showing and already produced a `tool_end`).
+    if (isMcpToolName(toolName)) {
+      this.emitMcp(toolName, rawArgs, result, isError, startedAt, toolCallId);
+      return;
+    }
     if (isError) return;
     const args = (rawArgs ?? {}) as Record<string, unknown>;
     try {
@@ -466,6 +596,49 @@ export class PiAdapter extends BaseAdapter {
     }
   }
 
+  /**
+   * `toolName` is `mcp__<server>__<tool>` (Pi's naming, see `mcpNamespace`).
+   * The payload splits it back apart so the UI can say which server answered,
+   * and carries the result as text: Pi's tool result has `content` (what the
+   * model saw) plus optional `structuredContent`, and both are shown as-is.
+   */
+  private emitMcp(
+    toolName: string,
+    rawArgs: unknown,
+    result: unknown,
+    isError: boolean,
+    startedAt: number | undefined,
+    toolCallId: string | undefined,
+  ): void {
+    const { server, tool, namespace } = splitMcpToolName(toolName);
+    const details = result as { content?: unknown; structuredContent?: unknown } | undefined;
+    const text = textOfResult(result);
+    this.emitAbsence("mcp", {
+      server,
+      tool,
+      ...(namespace ? { namespace } : {}),
+      toolName,
+      toolCallId: toolCallId ?? toolName,
+      args: safeJson(rawArgs ?? {}),
+      result: text.slice(0, 20_000),
+      ...(details?.structuredContent !== undefined
+        ? { structured: safeJson(details.structuredContent).slice(0, 20_000) }
+        : {}),
+      isError,
+      durationMs: startedAt !== undefined ? Date.now() - startedAt : undefined,
+      exposure: this.mcpExposure(toolName),
+    });
+  }
+
+  /** The exposure the session registered the tool with, when it can tell. */
+  private mcpExposure(toolName: string): string | undefined {
+    try {
+      return this.session?.getAllTools().find((tool) => tool.name === toolName)?.exposure;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** Merge a read slice into what we know about a file. */
   private mergeSlice(abs: string, startLine: number, content: string): void {
     if (content.length === 0) return;
@@ -507,6 +680,34 @@ export class PiAdapter extends BaseAdapter {
     const absolute = this.abs(value);
     const rel = path.relative(this.cwd, absolute);
     return rel && !rel.startsWith("..") ? toPosix(rel) : value;
+  }
+}
+
+/** Pi names MCP tools `mcp__<server>__<tool>`; the server part is sanitized. */
+function isMcpToolName(toolName: string): boolean {
+  return toolName.startsWith("mcp__");
+}
+
+/**
+ * `mcp__filesystem__read_file` → { server: "filesystem", tool: "read_file" }.
+ * A server with `__` in its name is ambiguous by construction; Pi resolves it
+ * the same way (first segment after the prefix), so Absence matches Pi rather
+ * than inventing a different split.
+ */
+function splitMcpToolName(toolName: string): { server: string; tool: string; namespace?: string } {
+  const withoutPrefix = toolName.startsWith("mcp__") ? toolName.slice("mcp__".length) : toolName;
+  const separator = withoutPrefix.indexOf("__");
+  if (separator === -1) return { server: withoutPrefix, tool: "" };
+  const server = withoutPrefix.slice(0, separator);
+  const tool = withoutPrefix.slice(separator + 2);
+  return { server, tool };
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    return String(value);
   }
 }
 

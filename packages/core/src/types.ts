@@ -165,6 +165,53 @@ export interface SessionRuntimeState {
   };
   context?: ContextState;
   tree?: FileTreeNode;
+  /**
+   * The MCP servers and skills the runtime has (or could have). Optional:
+   * a runtime that reports neither omits it, and the UI hides the panel.
+   */
+  capabilities?: CapabilityState;
+}
+
+/** One skill the runtime can load (a directory with a SKILL.md). */
+export interface SkillInfo {
+  name: string;
+  description: string;
+  /** Absolute path to the SKILL.md. */
+  filePath: string;
+  /** `user` (home) or `project` (inside the session's workspace). */
+  scope: string;
+}
+
+/** One MCP server, however the runtime reaches it. */
+export interface McpServerInfo {
+  name: string;
+  /** `stdio` (a spawned process) or `http` (streamable HTTP). */
+  type: string;
+  /** Which config defined it: user, project, or another runtime's own file. */
+  source?: string;
+  /** How its tools reach the model (`codemode` / `deferred` / `direct` / `hidden`). */
+  exposure?: string;
+  enabled: boolean;
+  description?: string;
+  /** True once the runtime connected the server and registered its tools. */
+  connected?: boolean;
+  /** How many `mcp__<server>__*` tools the runtime registered. */
+  toolCount?: number;
+  /**
+   * True when those tools are declared to the model directly (exposure
+   * `direct`). A connected server with `declared: false` is reachable through
+   * codemode or tool_search instead — connected, but not in the model's tool
+   * list. Undefined when the runtime does not distinguish the two.
+   */
+  declared?: boolean;
+}
+
+/** What a session *can* do beyond its built-in tools: MCP servers and skills. */
+export interface CapabilityState {
+  skills: SkillInfo[];
+  mcp: McpServerInfo[];
+  /** Config problems worth telling the user about (bad entry, unreadable skill). */
+  diagnostics: Array<{ type: string; message: string; path?: string }>;
 }
 
 /** Response body of GET /api/sessions/:id. */

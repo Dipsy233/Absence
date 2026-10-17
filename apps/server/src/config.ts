@@ -11,10 +11,26 @@ export interface AbsenceConfig {
   projectsRoot: string;
   /** Default agent runtime to use when creating sessions. */
   defaultAgent: AgentKind;
-  /** Built-in Pi tools to enable (comma separated in env). */
-  piTools: string[];
+  /**
+   * Pi's tool allowlist, from `ABSENCE_PI_TOOLS` — or **undefined** when the
+   * variable is unset, which is the normal case.
+   *
+   * Undefined matters: passing a list makes Pi treat it as an allowlist, and a
+   * list that does not mention `mcp__*` marks MCP tools "kept but only for
+   * codemode/tool_search" (see Pi's `_isActivatable`). A server configured with
+   * `exposure: "direct"` then connects, registers its tools, and is silently
+   * never declared to the model. Leaving `tools` unset lets Pi use its own
+   * `defaultTools` setting, where a `direct` server works as documented.
+   */
+  piTools?: string[];
   /** Model for the Pi session, if pinned. */
   piModel?: string;
+  /**
+   * Load MCP servers and skills (see capabilities/discover.ts). On by default;
+   * `ABSENCE_MCP=0` turns MCP off for a session, which is what a broken server
+   * launcher on a locked-down machine needs. Skills are always discovered.
+   */
+  mcpEnabled: boolean;
   /**
    * The `@earendil-works/pi-coding-agent` package to embed (its directory, or
    * the dist/index.js entry). Unset means Absence resolves it: a global npm
@@ -54,6 +70,11 @@ export interface AbsenceConfig {
    * that would otherwise escape the Job Object.
    */
   codexExecServer: boolean;
+  /**
+   * Codex's home directory (`$CODEX_HOME`), where `config.toml` (its
+   * `[mcp_servers.*]` tables) and `skills/` live. Unset means ~/.codex.
+   */
+  codexHome?: string;
   /**
    * The Codex CLI entry to run (the JS shim `@openai/codex/bin/codex.js`, or a
    * real executable). Unset means Absence resolves it from the installed
@@ -99,6 +120,17 @@ export interface AbsenceConfig {
   webDist: string;
 }
 
+/** `read,bash` → ["read","bash"]; unset / blank → undefined (Pi's own defaults). */
+function parseToolList(value: string | undefined): string[] | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const list = trimmed
+    .split(",")
+    .map((tool) => tool.trim())
+    .filter(Boolean);
+  return list.length > 0 ? list : undefined;
+}
+
 function envAgent(): AgentKind {
   const value = (process.env.ABSENCE_AGENT ?? "pi").toLowerCase();
   return value === "mock" || value === "codex" || value === "dsh" ? value : "pi";
@@ -140,16 +172,17 @@ export const config: AbsenceConfig = {
   host: process.env.HOST ?? "127.0.0.1",
   projectsRoot: process.env.ABSENCE_PROJECTS_ROOT ?? path.join(os.homedir(), "projects"),
   defaultAgent: envAgent(),
-  piTools: (process.env.ABSENCE_PI_TOOLS ?? "read,bash,edit,write,grep,find,ls")
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean),
+  // Unset stays unset: an empty array would be an allowlist that filters every
+  // MCP tool too (Pi reads length 0 as "no tools at all").
+  piTools: parseToolList(process.env.ABSENCE_PI_TOOLS),
   piModel: process.env.ABSENCE_PI_MODEL,
+  mcpEnabled: envFlag(process.env.ABSENCE_MCP, true),
   piBin: process.env.ABSENCE_PI_BIN,
   codexSandbox: normalizeCodexSandbox(process.env.ABSENCE_CODEX_SANDBOX),
   codexApproval: normalizeCodexApproval(process.env.ABSENCE_CODEX_APPROVAL),
   codexApprovalDecision: normalizeApprovalDecision(process.env.ABSENCE_CODEX_APPROVAL_DECISION),
   codexExecServer: envFlag(process.env.ABSENCE_CODEX_EXEC_SERVER, true),
+  codexHome: process.env.CODEX_HOME,
   codexBin: process.env.ABSENCE_CODEX_BIN,
   dshBin: process.env.ABSENCE_DSH_BIN,
   dshProfile: process.env.ABSENCE_DSH_PROFILE ?? "acp",

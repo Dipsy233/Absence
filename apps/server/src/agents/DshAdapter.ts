@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   type ApprovalOption,
+  type CapabilityState,
   type CommandOption,
   type ContextState,
   type AbsenceEventPayloadMap,
@@ -11,6 +12,7 @@ import { DshClient, type AcpConfigOption } from "./DshClient";
 import { BaseAdapter, type AdapterOptions, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
 import { readFileSafe } from "../filesystem/FileTree";
 import { config } from "../config";
+import { discoverCapabilities } from "../capabilities/discover";
 import { languageFromPath } from "../util/language";
 import { toPosix } from "../util/paths";
 
@@ -41,6 +43,8 @@ export class DshAdapter extends BaseAdapter {
   private aborted = false;
   private busy = false;
   private usage?: { used: number; total?: number };
+  /** Skills / MCP servers this session can use (see capabilities/discover.ts). */
+  private capabilities?: CapabilityState;
   /** Last configOptions payload, for the model list. */
   private configOptions?: AcpConfigOption[];
   /** Approval prompts waiting for a user decision, keyed by the event id. */
@@ -97,7 +101,33 @@ export class DshAdapter extends BaseAdapter {
       ? `${config.dshProvider}/${config.dshModel}`
       : "dsh");
     this.options.processWatcher?.beginSession(ctx.sessionId);
+    // DSH has no catalog request in ACP today; its skills live in
+    // `<DSH_HOME>/skills` and its MCP/tool plugins surface as `tool_call`s,
+    // which already become events. Discovery gives the panel the same list
+    // the other runtimes report (see capabilities/discover.ts).
+    const discovered = discoverCapabilities({ cwd: ctx.cwd, dshHome: config.dshHome });
+    this.capabilities = {
+      skills: discovered.skills.map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        filePath: skill.filePath,
+        scope: skill.scope,
+      })),
+      mcp: discovered.mcpServers.map((server) => ({
+        name: server.name,
+        type: server.type,
+        source: server.source,
+        exposure: server.exposure,
+        enabled: server.enabled !== false,
+        description: server.description,
+      })),
+      diagnostics: [...discovered.diagnostics],
+    };
     return { model: this.model };
+  }
+
+  getCapabilities(): CapabilityState | undefined {
+    return this.capabilities;
   }
 
   getContextUsage(): ContextState | undefined {
@@ -347,6 +377,23 @@ export class DshAdapter extends BaseAdapter {
     const lowered = name.toLowerCase();
     const content = textOfToolContent(update.content);
     try {
+      // DSH forwards whatever the tool is called upstream. An MCP-backed tool
+      // reaches it as `mcp__<server>__<tool>` (the naming every MCP client
+      // uses), so it is reported as an MCP call rather than as an unknown tool
+      // with no Stage output.
+      if (mcpParts(name)) {
+        const parts = mcpParts(name)!;
+        this.emitAbsence("mcp", {
+          server: parts.server,
+          tool: parts.tool,
+          toolName: name,
+          toolCallId: String(update.toolCallId ?? name),
+          args: JSON.stringify(update.rawInput ?? {}, null, 2),
+          result: content.slice(0, 20_000),
+          isError: update.status === "failed",
+        });
+        return;
+      }
       if (lowered === "read" || lowered === "file_read") {
         // DSH's read result is wrapped:
         //   <path>…</path>\n<type>file</type>\n<content>\nNN: line\n…
@@ -576,6 +623,15 @@ function textOfContentBlock(content: unknown): string {
   const block = content as { type?: string; text?: unknown };
   if (block.type === "text") return String(block.text ?? "");
   return "";
+}
+
+/** `mcp__filesystem__read_file` → the server and tool, or undefined. */
+function mcpParts(name: string): { server: string; tool: string } | undefined {
+  if (!name.startsWith("mcp__")) return undefined;
+  const rest = name.slice("mcp__".length);
+  const separator = rest.indexOf("__");
+  if (separator === -1) return { server: rest, tool: "" };
+  return { server: rest.slice(0, separator), tool: rest.slice(separator + 2) };
 }
 
 function textOfToolContent(content: unknown): string {

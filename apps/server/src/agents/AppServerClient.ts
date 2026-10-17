@@ -276,6 +276,16 @@ export class AppServerClient {
     });
   }
 
+  /**
+   * A general request, for observers that need a catalog the typed helpers do
+   * not cover: `skills/list`, `mcpServerStatus/list`, `model/list` with
+   * different params. A method an older app-server does not implement rejects
+   * with the server's own error — callers treat that as "not supported".
+   */
+  requestMethod(method: string, params: unknown): Promise<any> {
+    return this.request(method, params);
+  }
+
   isAlive(): boolean {
     return !this.closed && this.child !== undefined && this.child.exitCode === null;
   }

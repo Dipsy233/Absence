@@ -1,5 +1,6 @@
 import {
   createEvent,
+  type CapabilityState,
   type CommandOption,
   type ContextState,
   type AbsenceEvent,
@@ -31,8 +32,12 @@ export interface AgentStartResult {
 
 /** Everything an adapter needs from the session that owns it. */
 export interface AdapterOptions {
-  /** Pi's built-in tool allowlist (`ABSENCE_PI_TOOLS`). */
-  tools: string[];
+  /**
+   * Pi's tool allowlist (`ABSENCE_PI_TOOLS`), or undefined to use Pi's own
+   * `defaultTools` selection. See `AbsenceConfig.piTools` for why the
+   * difference matters to MCP servers with `exposure: "direct"`.
+   */
+  tools?: string[];
   /**
    * Present when Absence owns the shell (see process/AbsenceShell), so a process the
    * agent leaves running can be reported back as a `process` event.
@@ -49,6 +54,13 @@ export interface AgentAdapter {
   subscribe(fn: (event: AbsenceEvent) => void): () => void;
   /** Context window usage, or undefined when the runtime cannot report it. */
   getContextUsage(): ContextState | undefined;
+  /**
+   * The MCP servers and skills this session has. Optional: a runtime with no
+   * such concept omits it and the UI hides the panel. Pi reports it from
+   * Absence's own discovery (capabilities/discover.ts) plus the tools its
+   * extension registered; a live view, not a snapshot taken at start.
+   */
+  getCapabilities?(): CapabilityState | undefined;
   /** The runtime's own persisted session file, when it keeps one (Pi does). */
   getSessionFile?(): string | undefined;
   /** The runtime's own session id, when it has one. */

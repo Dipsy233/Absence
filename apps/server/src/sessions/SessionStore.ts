@@ -63,6 +63,7 @@ const STAGE_TYPES = new Set<AbsenceEvent["type"]>([
   "command",
   "search",
   "approval",
+  "mcp",
   "agent_start",
   "agent_end",
 ]);
@@ -376,11 +377,17 @@ export class AbsenceSession {
   }
 
   runtimeState(): SessionRuntimeState {
+    // Asked per push, not cached: an MCP tool appears when its server
+    // connects, which happens after the session started (see
+    // capabilities/piResources.ts). Absence re-reads the runtime's own list
+    // rather than guessing when it changed.
+    const capabilities = this.adapter.getCapabilities?.();
     return {
       session: this.session,
       agent: { status: this.session.status, model: this.session.model },
       context: this.context,
       tree: this.tree,
+      ...(capabilities ? { capabilities } : {}),
     };
   }
 
@@ -523,6 +530,13 @@ export class AbsenceSession {
 
       case "tool_start":
         this.setStatus(statusForTool(event.payload.toolName));
+        break;
+
+      // An MCP call is an action with an output, like a command: it holds the
+      // status until the agent moves on, so "running" stays visible while the
+      // server answers.
+      case "mcp":
+        this.setStatus("running");
         break;
 
       // These describe what is currently on the Stage, so they hold the status

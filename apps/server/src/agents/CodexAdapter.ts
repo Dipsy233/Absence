@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   type ApprovalOption,
+  type CapabilityState,
   type CommandOption,
   type ContextState,
   type AbsenceEventPayloadMap,
@@ -14,6 +15,7 @@ import { unwrapCommandText } from "../process/CodexShell";
 import { CodexExecServer } from "../process/ExecServer";
 import { readFileSafe } from "../filesystem/FileTree";
 import { config } from "../config";
+import { discoverCapabilities } from "../capabilities/discover";
 import { languageFromPath } from "../util/language";
 import { toPosix } from "../util/paths";
 
@@ -45,6 +47,8 @@ export class CodexAdapter extends BaseAdapter {
   private activeTurnId?: string;
   private usage?: { used: number };
   private threadName?: string;
+  /** Skills and MCP servers for this thread (see warmCapabilities). */
+  private capabilities?: CapabilityState;
   /**
    * The `effort` currently applied to this thread. Seeded from the configured
    * model's default, then kept in sync by setThinking.
@@ -130,7 +134,99 @@ export class CodexAdapter extends BaseAdapter {
     // advertised efforts without a round trip. A failure here is harmless:
     // getThinking falls back to the model's configured default.
     await this.warmModelCatalog();
+    // Skills and MCP servers: Codex reads the same two file formats Pi does
+    // (`~/.codex/skills`, `~/.agents/skills`, `config.toml`'s `mcp_servers`)
+    // and exposes both over the app-server it is already speaking. Asking
+    // Codex itself beats re-reading its config, because Codex resolves plugin
+    // skills and layered config that a file scan cannot see.
+    await this.warmCapabilities();
     return { model: this.model };
+  }
+
+  /**
+   * Ask the app-server for the session's skills (`skills/list`) and MCP
+   * servers (`mcpServerStatus/list`). Both requests are best effort: an older
+   * Codex that does not know a method answers with a JSON-RPC error, and the
+   * fallback is Absence's own discovery over the same files.
+   */
+  private async warmCapabilities(): Promise<void> {
+    if (!this.client) return;
+    const discovered = discoverCapabilities({ cwd: this.cwd, codexHome: config.codexHome });
+    const skills: CapabilityState["skills"] = discovered.skills.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      filePath: skill.filePath,
+      scope: skill.scope,
+    }));
+    const mcp: CapabilityState["mcp"] = discovered.mcpServers.map((server) => ({
+      name: server.name,
+      type: server.type,
+      source: server.source === "codex" ? "codex" : server.source,
+      exposure: server.exposure,
+      enabled: server.enabled !== false,
+      description: server.description,
+    }));
+    const diagnostics: CapabilityState["diagnostics"] = [...discovered.diagnostics];
+
+    try {
+      // `skills/list` wants cwds; the thread's own cwd is the one in play.
+      const result = await this.client.requestMethod("skills/list", { cwds: [this.cwd] });
+      const entry = Array.isArray(result?.data) ? result.data[0] : undefined;
+      if (entry && Array.isArray(entry.skills) && entry.skills.length > 0) {
+        skills.length = 0;
+        for (const skill of entry.skills as Array<Record<string, unknown>>) {
+          if (skill.enabled === false) continue;
+          skills.push({
+            name: String(skill.name ?? ""),
+            description: String(skill.description ?? skill.shortDescription ?? ""),
+            filePath: String(skill.path ?? ""),
+            scope: String(skill.scope ?? "codex"),
+          });
+        }
+      }
+      if (entry && Array.isArray(entry.errors)) {
+        for (const error of entry.errors as Array<Record<string, unknown>>) {
+          diagnostics.push({
+            type: "error",
+            message: String(error.message ?? "skill error"),
+            path: error.path !== undefined ? String(error.path) : undefined,
+          });
+        }
+      }
+    } catch {
+      // `skills/list` is newer than some app-server builds; discovery stands.
+    }
+
+    try {
+      const result = await this.client.requestMethod("mcpServerStatus/list", {
+        threadId: this.thread?.threadId,
+        detail: "toolsAndAuthOnly",
+      });
+      const servers = Array.isArray(result?.data) ? (result.data as Array<Record<string, unknown>>) : undefined;
+      if (servers && servers.length > 0) {
+        mcp.length = 0;
+        for (const server of servers) {
+          const tools = (server.tools ?? {}) as Record<string, unknown>;
+          const status = server.runtimeStatus as Record<string, unknown> | undefined;
+          mcp.push({
+            name: String(server.name ?? ""),
+            type: server.httpOrigin ? "http" : "stdio",
+            source: server.pluginId ? "plugin" : "codex",
+            enabled: true,
+            connected: status?.state === "ready" || status?.connected === true,
+            toolCount: Object.keys(tools).length,
+          });
+        }
+      }
+    } catch {
+      // Same: keep what the file scan found.
+    }
+
+    this.capabilities = { skills, mcp, diagnostics };
+  }
+
+  getCapabilities(): CapabilityState | undefined {
+    return this.capabilities;
   }
 
   /**
@@ -625,6 +721,18 @@ export class CodexAdapter extends BaseAdapter {
             emit("tool_start", { toolCallId: item.id, toolName: "web_search", args: { query: item.query } });
             break;
           }
+          case "mcpToolCall": {
+            this.stats.toolCalls += 1;
+            // Codex names the server and tool explicitly; the tool name the
+            // rest of Absence uses is Pi's `mcp__<server>__<tool>` form, so an
+            // MCP call looks the same whichever runtime produced it.
+            emit("tool_start", {
+              toolCallId: item.id,
+              toolName: mcpToolName(item.server, item.tool),
+              args: item.arguments ?? {},
+            });
+            break;
+          }
           default:
             break;
         }
@@ -674,6 +782,27 @@ export class CodexAdapter extends BaseAdapter {
               output: "",
             });
             emit("tool_end", { toolCallId: item.id, toolName: "web_search", isError: false });
+            break;
+          }
+          case "mcpToolCall": {
+            emit("tool_end", {
+              toolCallId: item.id,
+              toolName: mcpToolName(item.server, item.tool),
+              isError: item.status === "failed",
+            });
+            emit("mcp", {
+              server: String(item.server ?? ""),
+              tool: String(item.tool ?? ""),
+              toolName: mcpToolName(item.server, item.tool),
+              toolCallId: String(item.id ?? ""),
+              args: safeJson(item.arguments ?? {}),
+              result: mcpResultText(item.result),
+              isError: item.status === "failed",
+              durationMs: toNumber(item.durationMs) || undefined,
+            });
+            if (item.error) {
+              emit("error", { message: `MCP ${String(item.server)}/${String(item.tool)}: ${String(item.error)}` });
+            }
             break;
           }
           case "agentMessage": {
@@ -879,6 +1008,32 @@ function beforeKey(itemId: unknown, changePath: string): string {
 function toNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Pi's MCP tool naming, so every runtime reports the same tool name. */
+function mcpToolName(server: unknown, tool: unknown): string {
+  const namespace = String(server ?? "").replace(/[^A-Za-z0-9_-]/g, "_").replace(/-/g, "_");
+  return `mcp__${namespace}__${String(tool ?? "")}`;
+}
+
+/** Codex's `McpToolCallResult` → the text a person wants to read. */
+function mcpResultText(result: any): string {
+  if (!result) return "";
+  const content = Array.isArray(result.content) ? result.content : [];
+  const parts = content.map((block: any) =>
+    block && typeof block === "object" && typeof block.text === "string" ? block.text : safeJson(block),
+  );
+  if (parts.length > 0) return parts.join(String.fromCharCode(10));
+  if (result.structuredContent !== undefined) return safeJson(result.structuredContent);
+  return safeJson(result);
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    return String(value);
+  }
 }
 
 /** True when the configured policy refuses the action. */
