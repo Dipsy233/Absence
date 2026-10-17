@@ -496,4 +496,62 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   );
 }
 
+{
+  // MCP calls are facts about what the agent reached outside the project, so
+  // the Report must count them per server — a report that only listed reads
+  // and commands would call an MCP-heavy run "idle".
+  const events = [
+    stamp(ev("agent_start", { model: "p/m" })),
+    stamp(ev("tool_start", { toolCallId: "c1", toolName: "mcp__filesystem__list_directory", args: { path: "E:/x" } })),
+    stamp(
+      ev("mcp", {
+        server: "filesystem",
+        tool: "list_directory",
+        toolName: "mcp__filesystem__list_directory",
+        toolCallId: "c1",
+        args: '{"path":"E:/x"}',
+        result: "[DIR] y",
+        isError: false,
+      }),
+    ),
+    stamp(ev("tool_end", { toolCallId: "c1", toolName: "mcp__filesystem__list_directory", isError: false })),
+    stamp(
+      ev("mcp", {
+        server: "filesystem",
+        tool: "read_text_file",
+        toolName: "mcp__filesystem__read_text_file",
+        toolCallId: "c2",
+        args: "{}",
+        result: "denied",
+        isError: true,
+      }),
+    ),
+    stamp(
+      ev("mcp", {
+        server: "postgres",
+        tool: "query",
+        toolName: "mcp__postgres__query",
+        toolCallId: "c3",
+        args: "{}",
+        result: "1 row",
+        isError: false,
+      }),
+    ),
+    stamp(ev("agent_end", { reason: "completed" })),
+  ];
+  const facts = buildRunFacts(events, runOf(events, 0));
+  check("mcp call count", facts.mcp.calls === 3, String(facts.mcp.calls));
+  check("mcp failure count", facts.mcp.failed === 1, String(facts.mcp.failed));
+  check("mcp servers are folded", Object.keys(facts.mcp.servers).length === 2);
+  check(
+    "tools are deduped per server",
+    facts.mcp.servers.filesystem?.tools.join(",") === "list_directory,read_text_file",
+    facts.mcp.servers.filesystem?.tools.join(","),
+  );
+  check(
+    "evidence ids point at the calls",
+    facts.mcp.servers.postgres?.evidence.length === 1,
+  );
+}
+
 finish();

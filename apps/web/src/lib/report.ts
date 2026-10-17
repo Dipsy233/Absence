@@ -8,6 +8,7 @@ import type {
   FileFact,
   LiveReport,
   LoopFact,
+  McpUsageFact,
   OutsideChangeFact,
   Phase,
   PhaseType,
@@ -135,6 +136,13 @@ export function buildRunFacts(
   const errorEvidence: string[] = [];
   /** Eggs, folded per pid like the file facts: laid once, then updated. */
   const processByPid = new Map<number, ProcessFact>();
+  /**
+   * MCP calls, folded per server. An MCP call is a fact about what the agent
+   * reached *outside* the project, which no file or process fact covers: a
+   * report that only lists reads and commands would say the agent was idle
+   * while it was querying a database through a server.
+   */
+  const mcpByServer = new Map<string, McpUsageFact>();
 
   let reads = 0;
   let edits = 0;
@@ -333,6 +341,16 @@ export function buildRunFacts(
         }
         break;
       }
+      case "mcp": {
+        const { server, tool, isError } = event.payload;
+        const usage = mcpByServer.get(server) ?? { server, calls: 0, failed: 0, tools: [], evidence: [] };
+        usage.calls += 1;
+        if (isError) usage.failed += 1;
+        if (!usage.tools.includes(tool)) usage.tools.push(tool);
+        usage.evidence.push(event.id);
+        mcpByServer.set(server, usage);
+        break;
+      }
       case "command": {
         const exitCode = event.payload.exitCode;
         const status = exitCode === 0 ? "success" : "failed";
@@ -519,6 +537,11 @@ export function buildRunFacts(
     },
     commands: counts,
     commandFacts,
+    mcp: {
+      calls: [...mcpByServer.values()].reduce((sum, usage) => sum + usage.calls, 0),
+      failed: [...mcpByServer.values()].reduce((sum, usage) => sum + usage.failed, 0),
+      servers: Object.fromEntries(mcpByServer),
+    },
     processes: {
       laid: primaries.length,
       runningAtEnd: runningAtEnd.length,
@@ -1140,6 +1163,9 @@ export function renderRun(facts: RunFacts): RunReport {
       failed: facts.commands.failed,
       unknown: facts.commands.unknown,
     },
+    mcp: Object.values(facts.mcp.servers),
+    mcpCalls: facts.mcp.calls,
+    mcpFailed: facts.mcp.failed,
     processes: Object.values(facts.processes.byPid).sort((a, b) => a.startedAt - b.startedAt),
     processesRunning: facts.processes.runningAtEnd,
     recoveries: facts.recoveries,

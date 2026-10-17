@@ -88,6 +88,10 @@ export function summarizeEvent(event: AbsenceEvent): string {
       return `ran \`${event.payload.command}\` (exit ${event.payload.exitCode})`;
     case "search":
       return `searched "${event.payload.query}" — ${event.payload.matches} hits`;
+    case "mcp": {
+      const { server, tool, namespace, isError } = event.payload;
+      return `${isError ? "failed MCP call" : "MCP call"} ${server} › ${namespace ? `${namespace}/` : ""}${tool}`;
+    }
     case "message":
       return `${event.payload.role}: ${event.payload.content}`;
     case "error":

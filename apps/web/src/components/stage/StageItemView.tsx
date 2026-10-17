@@ -41,6 +41,7 @@ export function StageItemView({ item }: { item: StageItem }) {
           stdout={payload.stdout}
           stderr={payload.stderr}
           exitCode={payload.exitCode}
+          mcp={payload.mcp}
           event={item.event}
         />
       );

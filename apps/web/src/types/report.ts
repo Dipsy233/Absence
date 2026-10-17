@@ -167,6 +167,19 @@ export interface TimelineNode {
 }
 
 /** The fact layer: one run reduced to what is true, with no prose. */
+/** One MCP server and how the agent used it in a run. */
+export interface McpUsageFact {
+  server: string;
+  /** Calls made this run. */
+  calls: number;
+  /** Calls the server answered with an error. */
+  failed: number;
+  /** Tool names used (deduped, in first-use order). */
+  tools: string[];
+  /** Event ids for the server's calls, newest first ones last. */
+  evidence: string[];
+}
+
 export interface RunFacts {
   runId: string;
   startedAt: number;
@@ -188,6 +201,9 @@ export interface RunFacts {
 
   commands: { total: number; running: number; succeeded: number; failed: number; unknown: number };
   commandFacts: CommandFact[];
+
+  /** MCP servers the agent called this run, one entry per server. */
+  mcp: { calls: number; failed: number; servers: Record<string, McpUsageFact> };
 
   /** The processes the agent laid this run, and how many it left running. */
   processes: { laid: number; runningAtEnd: number; tools: number; byPid: Record<number, ProcessFact> };
@@ -282,6 +298,11 @@ export interface RunReport {
   /** The commands the agent executed, in order. */
   executions: CommandFact[];
   execution: { commands: number; succeeded: number; failed: number; unknown: number };
+  /** MCP servers the agent called, in first-use order. */
+  mcp: McpUsageFact[];
+  /** Total MCP calls (and how many the server rejected). */
+  mcpCalls: number;
+  mcpFailed: number;
   /** The processes the agent laid, in the order it laid them. */
   processes: ProcessFact[];
   /** How many of them were still running when the run ended. */

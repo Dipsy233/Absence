@@ -3,28 +3,70 @@ import { eventContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
 import type { AbsenceEvent } from "@absence/core";
 
+/** The MCP context a terminal card carries when it is an MCP call. */
+export interface McpTerminalContext {
+  server: string;
+  tool: string;
+  namespace?: string;
+  structured?: string;
+}
+
 interface TerminalStageProps {
   command: string;
   stdout: string;
   stderr: string;
   exitCode: number;
+  /** Present when this terminal shows an MCP call rather than a shell command. */
+  mcp?: McpTerminalContext;
   event?: AbsenceEvent;
 }
 
-export function TerminalStage({ command, stdout, stderr, exitCode, event }: TerminalStageProps) {
+export function TerminalStage({
+  command,
+  stdout,
+  stderr,
+  exitCode,
+  mcp,
+  event,
+}: TerminalStageProps) {
   const addContext = useChatStore((s) => s.addContext);
-  const output = [stdout, stderr].filter((part) => part.length > 0).join("\n");
+  const [showStructured, setShowStructured] = useState(false);
+  const output = [stdout, stderr].filter((part) => part.length > 0).join(String.fromCharCode(10));
+  const NL = String.fromCharCode(10);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-desk-deep/60">
       <div className="flex shrink-0 items-center gap-2 border-b border-desk-line px-3 py-2 font-mono text-xs">
-        <span className="text-desk-teal">$</span>
+        {mcp ? (
+          // An MCP call is not a shell: the prompt says so, and the server is
+          // named, so a person never mistakes one for the other.
+          <span className="chip shrink-0 text-desk-lavender" title={`MCP server ${mcp.server}`}>
+            mcp
+          </span>
+        ) : (
+          <span className="text-desk-teal">$</span>
+        )}
         <span className="truncate text-desk-ink" title={command}>
           {command}
         </span>
+        {mcp ? (
+          <span className="shrink-0 rounded border border-desk-line px-1 text-[9px] uppercase text-desk-dim">
+            {mcp.server}
+          </span>
+        ) : null}
         <span className="ml-auto flex shrink-0 items-center gap-2">
+          {mcp?.structured ? (
+            <button
+              type="button"
+              onClick={() => setShowStructured((on) => !on)}
+              className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
+              title="Toggle the server's structured (JSON) result"
+            >
+              {showStructured ? "text" : "json"}
+            </button>
+          ) : null}
           <span className={["chip", exitCode === 0 ? "text-desk-teal" : "text-desk-ember"].join(" ")}>
-            exit {exitCode}
+            {mcp ? (exitCode === 0 ? "ok" : "error") : `exit ${exitCode}`}
           </span>
           <CopyButton label="copy cmd" text={command} title="Copy the command" />
           <CopyButton label="copy out" text={output} title="Copy the output" disabled={output.length === 0} />

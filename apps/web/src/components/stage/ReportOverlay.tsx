@@ -413,6 +413,35 @@ function RunReportView({
         )}
       </Section>
 
+      {report.mcp.length > 0 ? (
+        <Section title="MCP">
+          <p className="mb-2 font-mono text-[11px] text-desk-dim">
+            {report.mcpCalls} call{report.mcpCalls === 1 ? "" : "s"} to {report.mcp.length} server
+            {report.mcp.length === 1 ? "" : "s"}
+            {report.mcpFailed ? ` · ${report.mcpFailed} failed` : ""}
+          </p>
+          <ul className="space-y-0.5">
+            {report.mcp.map((usage) => (
+              <li key={usage.server}>
+                <button
+                  type="button"
+                  onClick={() => onReveal(usage.evidence)}
+                  title="Show in Activity"
+                  className={`${LINK} hover:text-desk-amber`}
+                >
+                  <span className="text-desk-lavender">mcp</span>{" "}
+                  <span className="text-desk-ink/80">{usage.server}</span>
+                  <span className="ml-2 text-desk-dim">
+                    {usage.calls} call{usage.calls === 1 ? "" : "s"}
+                    {usage.failed ? ` · ${usage.failed} failed` : ""} · {usage.tools.join(", ")}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+
       {report.outsideChanges.length > 0 ? (
         <Section title="Outside the project">
           <ul className="space-y-0.5">

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   AgentStatus,
+  CapabilityState,
   ContextState,
   AbsenceEvent,
   Session,
@@ -65,6 +66,12 @@ interface SessionStore {
   /** The most recent event that owns the Stage (read02 §14). */
   currentAction?: AbsenceEvent;
   context?: ContextState;
+  /**
+   * What the runtime can do beyond its built-in tools — MCP servers and skills.
+   * Pushed with every `session_state` (see SessionRuntimeState), so it grows
+   * during a run as servers connect; undefined for a runtime that reports none.
+   */
+  capabilities?: CapabilityState;
   connected: boolean;
   error?: string;
 
@@ -92,6 +99,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   eggState: { eggs: new Map(), version: 0, retired: 0 },
   currentAction: undefined,
   context: undefined,
+  capabilities: undefined,
   connected: false,
   error: undefined,
 
@@ -152,6 +160,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       eggState: { eggs: new Map(), version: 0, retired: 0 },
       currentAction: undefined,
       context: undefined,
+      capabilities: undefined,
       connected: false,
       error: undefined,
     }),
@@ -166,6 +175,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       session: snapshot.session,
       agent: snapshot.agent,
       context: snapshot.context,
+      capabilities: snapshot.capabilities,
       events: snapshot.events,
       eventsVersion: get().eventsVersion + 1,
       eggState: { eggs, version: get().eggState.version + 1, retired: 0 },
@@ -178,6 +188,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       session: state.session,
       agent: state.agent,
       context: state.context,
+      capabilities: state.capabilities,
     }),
 
   ingestEvent: (event) => {

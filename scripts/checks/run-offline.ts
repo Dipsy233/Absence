@@ -26,6 +26,8 @@ const OFFLINE = [
   "check-shellenv.ts",
   "check-execserver.ts",
   "check-fsdiff.ts",
+  "check-capabilities.ts",
+  "check-mcp-events.ts",
 ];
 
 let failed = 0;

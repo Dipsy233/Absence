@@ -138,6 +138,44 @@ export interface ProcessPayload {
   retired?: true;
 }
 
+/**
+ * v0.4: a call into an MCP server (`mcp__<server>__<tool>`).
+ *
+ * MCP calls already arrive as `tool_start`/`tool_end`, but those carry no
+ * result and no notion of which server a tool belongs to — so a person watching
+ * could not tell an MCP call from a built-in one, nor see what came back. This
+ * event is the first-class form: the server and tool names split out, the
+ * arguments and result as text, and how it ended.
+ *
+ * It is emitted *in addition to* the tool events (never instead of them), so
+ * pairing, status and the existing Activity rows keep working unchanged.
+ */
+export interface McpPayload {
+  /** The MCP server's name, as configured (`filesystem`). */
+  server: string;
+  /**
+   * The tool as the server names it (`list_directory`), and `namespace` when
+   * the server groups its tools (`search_tools`).
+   */
+  tool: string;
+  namespace?: string;
+  /** The full tool name the model called: `mcp__<server>__<tool>`. */
+  toolName: string;
+  /** The call's id, so the Stage card can pair with the tool_start row. */
+  toolCallId: string;
+  /** The arguments the model passed, as JSON text. */
+  args: string;
+  /** What the server returned, as text (the model-facing content). */
+  result: string;
+  /** Structured content, when the server returned any, as JSON text. */
+  structured?: string;
+  /** False for a successful call; true when the tool reported an error. */
+  isError: boolean;
+  durationMs?: number;
+  /** How the model reached the tool (`direct` / `codemode` / `deferred`). */
+  exposure?: string;
+}
+
 export interface ErrorPayload {
   message: string;
 }
@@ -200,6 +238,7 @@ export interface AbsenceEventPayloadMap {
   search: SearchPayload;
   process: ProcessPayload;
   approval: ApprovalPayload;
+  mcp: McpPayload;
   error: ErrorPayload;
 }
 
@@ -221,6 +260,7 @@ export const ABSENCE_EVENT_TYPES = [
   "search",
   "process",
   "approval",
+  "mcp",
   "error",
 ] as const satisfies readonly AbsenceEventType[];
 

@@ -17,6 +17,7 @@ export const ACTIVITY_TYPES = new Set<AbsenceEvent["type"]>([
   "search",
   "process",
   "approval",
+  "mcp",
   "error",
 ]);
 
@@ -29,6 +30,7 @@ export const STAGE_EVENT_TYPES = new Set<AbsenceEvent["type"]>([
   "command",
   "search",
   "approval",
+  "mcp",
 ]);
 
 /**
@@ -52,6 +54,7 @@ export function lastStageAction(events: AbsenceEvent[]): AbsenceEvent | undefine
   return undefined;
 }
 
+const NL = String.fromCharCode(10);
 let itemCounter = 0;
 function nextItemId(): string {
   itemCounter = (itemCounter + 1) % 1_000_000;
@@ -254,6 +257,31 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
         event,
       };
     }
+    case "mcp": {
+      // An MCP call renders through the terminal view — the same surface as a
+      // command — because it is one: something ran and this is what came back.
+      // The header says which server answered, so it is never confused with a
+      // shell command. Keyed on the call id so re-deriving (every state push,
+      // every replay tick) does not re-mount the card.
+      const { server, tool, namespace, args, result, structured, isError, toolCallId } = event.payload;
+      return {
+        id: `mcp_${toolCallId}`,
+        type: "terminal",
+        title: `mcp://${server}/${namespace ? `${namespace}.` : ""}${tool}`,
+        source: { eventId: event.id },
+        payload: {
+          kind: "terminal",
+          command: `mcp ${server} › ${namespace ? `${namespace}/` : ""}${tool}`,
+          stdout: (args && args !== "{}" ? "# arguments" + NL + args + NL + NL : "") + (result || "(no output)"),
+          stderr: "",
+          exitCode: isError ? 1 : 0,
+          // Extra context the terminal header shows for an MCP call.
+          mcp: { server, tool, namespace, structured },
+        },
+        createdAt: event.timestamp,
+        event,
+      };
+    }
     case "approval": {
       // An approval is a prompt, not an action: it is keyed on the approval id
       // so re-deriving the item (every state push, every replay tick) does not
@@ -403,6 +431,22 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
         tone: "approval",
         stageItem,
       };
+    case "mcp": {
+      const { server, tool, namespace, result, args, isError } = event.payload;
+      const bytes = result.length;
+      return {
+        id,
+        event,
+        time,
+        action: isError ? "MCP!" : "MCP",
+        primary: `${server} › ${namespace ? `${namespace}/` : ""}${tool}`,
+        secondary: isError
+          ? "failed"
+          : `${bytes} B${args === "{}" ? "" : " · with args"}`,
+        tone: isError ? "error" : "run",
+        stageItem,
+      };
+    }
     case "search":
       return {
         id,
@@ -465,6 +509,9 @@ export function statusForTool(toolName: string): AgentStatus {
     case "powershell":
       return "running";
     default:
+      // An MCP tool (`mcp__<server>__<tool>`) is a call into another process
+      // or service, so it reads as "running" until its result arrives.
+      if (toolName.startsWith("mcp__")) return "running";
       return "running";
   }
 }
@@ -491,6 +538,8 @@ export function statusFromEvent(event: AbsenceEvent): AgentStatus | undefined {
       return "running";
     case "search":
       return "searching";
+    case "mcp":
+      return "running";
     case "approval":
       return "waiting";
     case "error":

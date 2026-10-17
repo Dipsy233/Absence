@@ -44,7 +44,25 @@ export type StagePayload =
       language: string;
       emptied?: boolean;
     }
-  | { kind: "terminal"; command: string; stdout: string; stderr: string; exitCode: number }
+  | {
+      kind: "terminal";
+      command: string;
+      stdout: string;
+      stderr: string;
+      exitCode: number;
+      /**
+       * Present when this terminal is an MCP call rather than a shell command:
+       * the terminal view is the right surface for "something ran, here is what
+       * came back", and these fields say which server answered.
+       */
+      mcp?: {
+        server: string;
+        tool: string;
+        namespace?: string;
+        /** The server's structured result, as JSON text, when it sent one. */
+        structured?: string;
+      };
+    }
   /** The agent's own reasoning, streamed as it arrives. */
   | { kind: "thought"; text: string; streaming?: boolean }
   /** An OS process the agent laid (an "egg"). */
