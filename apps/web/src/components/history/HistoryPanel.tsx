@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { HistoryRun } from "../../types/history";
 import { memoBuildHistory, runEvents } from "../../lib/history";
 import { formatClock, formatOffset } from "../../lib/format";
-import { useSessionStore } from "../../stores/sessionStore";
+import { useEvents, useSessionStore } from "../../stores/sessionStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useUiStore } from "../../stores/uiStore";
@@ -27,7 +27,7 @@ const STATUS_CLASS: Record<HistoryRun["status"], string> = {
  * Oldest first with the newest at the bottom, like a log.
  */
 export function HistoryPanel() {
-  const events = useSessionStore((s) => s.events);
+  const events = useEvents();
   const selectedRunId = useUiStore((s) => s.selectedRunId);
   const selectRun = useUiStore((s) => s.selectRun);
   const load = useReplayStore((s) => s.load);

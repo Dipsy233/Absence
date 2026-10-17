@@ -44,6 +44,15 @@ interface SessionStore {
   session?: Session;
   agent: { status: AgentStatus; model?: string };
   events: AbsenceEvent[];
+  /**
+   * Bumped every time `events` changes.
+   *
+   * `events` is appended to in place so the incremental caches (history, rows)
+   * can key on its identity. A selector like `(s) => s.events` compares with
+   * `Object.is` and would therefore never see the change — components must
+   * subscribe to this counter as well (see `useEvents`).
+   */
+  eventsVersion: number;
   /** Live egg state, maintained incrementally (see `EggStateHandle`). */
   eggState: EggStateHandle;
   /** The most recent event that owns the Stage (read02 §14). */
@@ -72,6 +81,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   session: undefined,
   agent: { status: "listening" },
   events: [],
+  eventsVersion: 0,
   eggState: { eggs: new Map(), version: 0 },
   currentAction: undefined,
   context: undefined,
@@ -131,6 +141,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       session: undefined,
       agent: { status: "listening" },
       events: [],
+      eventsVersion: 0,
       eggState: { eggs: new Map(), version: 0 },
       currentAction: undefined,
       context: undefined,
@@ -149,6 +160,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       agent: snapshot.agent,
       context: snapshot.context,
       events: snapshot.events,
+      eventsVersion: get().eventsVersion + 1,
       eggState: { eggs, version: (get().eggState.version ?? 0) + 1 },
       currentAction: lastStageAction(snapshot.events),
     });
@@ -162,19 +174,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }),
 
   ingestEvent: (event) => {
-    const events = get().events;
-    // Append in place and trim in place. The array identity is load-bearing:
-    // `memoBuildHistory` caches on it and folds only the new tail, so copying
-    // the whole window per event (up to MAX_SESSION_EVENTS) would defeat that.
-    events.push(event);
-    if (events.length > MAX_SESSION_EVENTS) {
-      const drop = events.length - MAX_SESSION_EVENTS;
-      events.splice(0, drop);
-      // Record how far the window slid so history can rebase its run indices.
-      markEventsBase(events, eventsBase(events) + drop);
-    }
+    const previous = get().events;
+    // A fresh array per change is what makes React's selector see the update
+    // (`Object.is` on the same reference would skip the render). A shallow copy
+    // of the window is a few microseconds; the incremental history / row caches
+    // no longer key on identity, so they still fold only the new tail.
+    const full = previous.length >= MAX_SESSION_EVENTS;
+    const events = full ? [...previous.slice(1), event] : [...previous, event];
+    // One event leaves the window when it was already full.
+    markEventsBase(events, eventsBase(previous) + (full ? 1 : 0));
 
-    const patch: Partial<SessionStore> = { events };
+    const patch: Partial<SessionStore> = { events, eventsVersion: get().eventsVersion + 1 };
     // Eggs update in place, O(1), and do not depend on the event window above.
     if (event.type === "process") {
       const current = get().eggState;
@@ -192,3 +202,20 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   setConnected: (connected) => set({ connected }),
 }));
+
+/**
+ * The session's event window, re-read whenever it changes.
+ *
+ * Components must not use `useSessionStore((s) => s.events)` directly: the
+ * store appends in place, so that selector's value keeps the same identity and
+ * zustand's `Object.is` check skips the re-render. Reading the version first
+ * gives this hook a dependency that does change, and the returned array is then
+ * the current one.
+ */
+export function useEvents(): AbsenceEvent[] {
+  return useSessionStore((s) => {
+    // Depend on the counter so a fresh snapshot is delivered on every append.
+    void s.eventsVersion;
+    return s.events;
+  });
+}

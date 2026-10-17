@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { AbsenceEvent } from "@absence/core";
 import { isAgentBusy } from "@absence/core";
 import type { AttentionLevel } from "../types/report";
-import { useSessionStore } from "../stores/sessionStore";
+import { useEvents, useSessionStore } from "../stores/sessionStore";
 import { playApproval, playAttention, playComplete, startSoundCoveragePolling } from "../lib/sounds";
 import { memoBuildHistory } from "../lib/history";
 import { buildRunFacts, renderLive } from "../lib/report";
@@ -25,7 +25,7 @@ import { useSettingsStore } from "../stores/settingsStore";
  * have already touched.
  */
 export function useSounds(): void {
-  const events = useSessionStore((s) => s.events);
+  const events = useEvents();
   const status = useSessionStore((s) => s.agent.status);
   const prevAttention = useRef<AttentionLevel>("none");
   const hadActivity = useRef(false);

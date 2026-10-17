@@ -6,7 +6,7 @@ import { memoBuildHistory, pickRun } from "../../lib/history";
 import { eventToStageItem } from "../../lib/events";
 import { buildRunFacts, renderLive, renderRun } from "../../lib/report";
 import { formatOffset } from "../../lib/format";
-import { useSessionStore } from "../../stores/sessionStore";
+import { useEvents, useSessionStore } from "../../stores/sessionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { StageItemView } from "./StageItemView";
@@ -29,7 +29,7 @@ import type {
  * the run changed. Derived entirely from the AbsenceEvent stream.
  */
 export function ReportOverlay() {
-  const events = useSessionStore((s) => s.events);
+  const events = useEvents();
   const status = useSessionStore((s) => s.agent.status);
   const selectedRunId = useUiStore((s) => s.selectedRunId);
   const reportOpen = useUiStore((s) => s.reportOpen);

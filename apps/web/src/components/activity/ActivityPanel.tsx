@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { memoBuildHistory, memoRunRows, pickRun, runEvents } from "../../lib/history";
-import { useSessionStore } from "../../stores/sessionStore";
+import { useEvents, useSessionStore } from "../../stores/sessionStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
@@ -10,7 +10,7 @@ import { ActivityItem } from "./ActivityItem";
 
 /** Bottom-left: the actions of the selected run, with a Replay button. */
 export function ActivityPanel() {
-  const events = useSessionStore((s) => s.events);
+  const events = useEvents();
   const selectedRunId = useUiStore((s) => s.selectedRunId);
   const selectRun = useUiStore((s) => s.selectRun);
   const mode = useStageStore((s) => s.mode);

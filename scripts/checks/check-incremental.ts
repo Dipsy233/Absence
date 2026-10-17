@@ -53,19 +53,22 @@ function ev<K extends AbsenceEventType>(
   return event;
 }
 
-/** A live window with the same shape the store keeps: one array, head-trimmed. */
+/**
+ * A live window with the same shape the store keeps: a *fresh* array per change
+ * (so React's selector sees it), head-trimmed once full.
+ */
 function makeWindow() {
-  const events: AbsenceEvent[] = [];
+  let events: AbsenceEvent[] = [];
   markEventsBase(events, 0);
   return {
-    events,
+    get events() {
+      return events;
+    },
     push(event: AbsenceEvent) {
-      events.push(event);
-      if (events.length > MAX_SESSION_EVENTS) {
-        const drop = events.length - MAX_SESSION_EVENTS;
-        events.splice(0, drop);
-        markEventsBase(events, eventsBase(events) + drop);
-      }
+      const full = events.length >= MAX_SESSION_EVENTS;
+      const next = full ? [...events.slice(1), event] : [...events, event];
+      markEventsBase(next, eventsBase(events) + (full ? 1 : 0));
+      events = next;
     },
   };
 }
@@ -227,15 +230,13 @@ console.log("history + activity vs a full rebuild");
 // ---------------------------------------------------------------------------
 console.log("incremental vs full, event by event");
 {
-  const events: AbsenceEvent[] = [];
+  let events: AbsenceEvent[] = [];
   markEventsBase(events, 0);
   const push = (event: AbsenceEvent) => {
-    events.push(event);
-    if (events.length > MAX_SESSION_EVENTS) {
-      const drop = events.length - MAX_SESSION_EVENTS;
-      events.splice(0, drop);
-      markEventsBase(events, eventsBase(events) + drop);
-    }
+    const full = events.length >= MAX_SESSION_EVENTS;
+    const next = full ? [...events.slice(1), event] : [...events, event];
+    markEventsBase(next, eventsBase(events) + (full ? 1 : 0));
+    events = next;
   };
   const snapshot = () => {
     const inc = memoBuildHistory(events);
@@ -299,6 +300,67 @@ console.log("per-event cost");
   // O(N) per event at N=1000 would be tens of ms/event; incremental folding
   // keeps it well under a millisecond in this harness.
   check("under 1 ms per event", perEvent < 1, `${perEvent.toFixed(3)} ms`);
+}
+
+
+// ---------------------------------------------------------------------------
+// 4. The store actually publishes changes (the "panels stopped updating" bug)
+// ---------------------------------------------------------------------------
+console.log("session store publishes each event");
+{
+  // Imported lazily so the store is only touched in this section.
+  const { useSessionStore } = await import("../../apps/web/src/stores/sessionStore");
+  const store = useSessionStore.getState();
+  store.reset();
+  store.hydrate({
+    session: { id: "check" } as never,
+    agent: { status: "listening" },
+    files: [],
+    chat: [],
+    events: [ev("message", { role: "user", content: "hi", streaming: false })],
+  });
+
+  // What React does: `useStore((s) => s.events)` compares with Object.is, so a
+  // subscriber only re-renders when the *reference* changes.
+  let seen = useSessionStore.getState().events;
+  let referenceChanges = 0;
+  const unsubscribe = useSessionStore.subscribe((state) => {
+    if (state.events !== seen) {
+      referenceChanges += 1;
+      seen = state.events;
+    }
+  });
+
+  const before = useSessionStore.getState().events;
+  for (let i = 0; i < 3; i++) {
+    useSessionStore.getState().ingestEvent(ev("thinking", { content: "x", streaming: true }));
+  }
+  unsubscribe();
+
+  check("events get a new reference per event", referenceChanges === 3, `${referenceChanges} changes`);
+  check("events grew", useSessionStore.getState().events.length === before.length + 3);
+  check(
+    "history sees the new run",
+    memoBuildHistory(useSessionStore.getState().events).length === 1,
+  );
+  check(
+    "activity rows are produced",
+    memoRunRows(
+      useSessionStore.getState().events,
+      memoBuildHistory(useSessionStore.getState().events)[0]!,
+      false,
+    ).length > 0,
+  );
+
+  // Rebuilding from a *copy* (as a re-render would) must agree — the caches
+  // must not depend on array identity.
+  const copy = [...useSessionStore.getState().events];
+  markEventsBase(copy, eventsBase(useSessionStore.getState().events));
+  check(
+    "caches survive a new array wrapper",
+    JSON.stringify(memoBuildHistory(copy).map((r) => [r.id, r.fromIndex, r.toIndex])) ===
+      JSON.stringify(memoBuildHistory(useSessionStore.getState().events).map((r) => [r.id, r.fromIndex, r.toIndex])),
+  );
 }
 
 console.log("");

@@ -132,6 +132,12 @@ interface OpenRun {
 }
 
 interface HistoryCache {
+  /**
+   * The array this cache last folded. The store hands out a fresh array on
+   * every change (so React re-renders), so identity cannot be the key; this is
+   * used only to tell "same window, new wrapper" from "different session".
+   */
+  source: AbsenceEvent[] | undefined;
   /** Absolute index of `events[0]` in the session: how many were dropped. */
   base: number;
   /** Events already folded into `runs`/`open`. */
@@ -149,7 +155,12 @@ interface HistoryCache {
   view: HistoryRun[];
 }
 
-const cache = new WeakMap<AbsenceEvent[], HistoryCache>();
+/**
+ * One cache per module is enough: there is exactly one live session store, and
+ * `hydrate`/`reset` are detected through the base/length check rather than the
+ * array identity (which changes on every append now).
+ */
+let cache: HistoryCache | undefined;
 
 /**
  * `buildHistory` memoised on the event array, incrementally.
@@ -186,38 +197,41 @@ export function eventsBase(events: AbsenceEvent[]): number {
 }
 export function memoBuildHistory(events: AbsenceEvent[]): HistoryRun[] {
   const base = eventsBase(events);
-  let entry = cache.get(events);
-  if (!entry) {
-    entry = fold(events, base);
-    cache.set(events, entry);
-    return entry.view;
-  }
+  const stored = cache;
 
-  if (entry.base > base || entry.consumed > base + events.length) {
-    // Hydrated in place or rewound: start over rather than trust stale counts.
+  // No cache, or the window is not the one we folded (a different session, a
+  // rewind, or fewer events than we had consumed): rebuild from scratch.
+  if (!stored || stored.base > base || stored.consumed > base + events.length) {
     const fresh = fold(events, base);
-    cache.set(events, fresh);
+    cache = fresh;
     return fresh.view;
   }
 
-  if (entry.base < base) {
-    // The window slid: drop runs that are fully behind the new base.
-    rebase(entry, base);
+  if (stored.source === events) {
+    // Same wrapper: the view is already correct.
+    return stored.view;
   }
 
-  const from = entry.consumed - base;
+  if (stored.base < base) {
+    // The window slid: drop runs whose start fell out of it.
+    rebase(stored, base);
+  }
+
+  const from = stored.consumed - base;
   if (from >= 0 && from < events.length) {
-    for (let i = from; i < events.length; i++) applyEvent(entry, events[i]!, base + i);
-    entry.consumed = base + events.length;
+    for (let i = from; i < events.length; i++) applyEvent(stored, events[i]!, base + i);
+    stored.consumed = base + events.length;
   }
 
+  stored.source = events;
   // Publish the open run (or clear it) without rebuilding the closed ones.
-  publishOpen(entry, base + events.length - 1);
-  return entry.view;
+  publishOpen(stored, base + events.length - 1);
+  return stored.view;
 }
 
 function fold(events: AbsenceEvent[], base: number): HistoryCache {
   const entry: HistoryCache = {
+    source: events,
     base,
     consumed: base,
     runs: [],
@@ -361,7 +375,12 @@ interface RowCache {
   rows: ActivityRow[];
 }
 
-const rowCache = new WeakMap<AbsenceEvent[], RowCache>();
+/**
+ * One row cache per module, for the same reason as the history cache: the store
+ * hands out a new array wrapper on every change, so identity says nothing. The
+ * scan position and the run/setting it was built for are the real key.
+ */
+let rowCache: RowCache | undefined;
 
 /** The rows currently shown for `run`, converting only the events not seen yet. */
 export function memoRunRows(
@@ -374,7 +393,7 @@ export function memoRunRows(
   const to = Math.min(events.length - 1, run.toIndex);
   if (to < from) return [];
 
-  let entry = rowCache.get(events);
+  let entry = rowCache;
   if (
     !entry ||
     entry.runId !== run.id ||
@@ -383,7 +402,7 @@ export function memoRunRows(
     entry.scanned < base + from
   ) {
     entry = { runId: run.id, displayInActivity, scanned: base + from, rows: [] };
-    rowCache.set(events, entry);
+    rowCache = entry;
   }
 
   for (let absolute = entry.scanned; absolute <= base + to; absolute++) {
