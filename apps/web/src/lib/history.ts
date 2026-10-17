@@ -1,16 +1,39 @@
 import type { AbsenceEvent } from "@absence/core";
+import type { ActivityRow } from "../types/stage";
+import { eventToActivityRow } from "./events";
 import type { HistoryRun, RunCounts } from "../types/history";
 
-/** The file a stage-ish event refers to, if any. */
-function touchedPath(event: AbsenceEvent): string | undefined {
+/** One event's contribution to a run's counts. */
+function applyCount(counts: RunCounts, event: AbsenceEvent, touched: Set<string>) {
   switch (event.type) {
     case "file_read":
-    case "file_write":
+      counts.read += 1;
+      touched.add(event.payload.path);
+      break;
     case "file_edit":
+      counts.edit += 1;
+      touched.add(event.payload.path);
+      break;
+    case "file_write": {
+      counts.edit += 1;
+      const path = event.payload.path;
+      // A write to a path nobody had seen before is a new file.
+      if (!touched.has(path)) counts.created += 1;
+      touched.add(path);
+      break;
+    }
     case "file_change":
-      return event.payload.path;
+      if (event.payload.kind === "created") counts.created += 1;
+      touched.add(event.payload.path);
+      break;
+    case "search":
+      counts.search += 1;
+      break;
+    case "command":
+      counts.run += 1;
+      break;
     default:
-      return undefined;
+      break;
   }
 }
 
@@ -18,12 +41,18 @@ function touchedPath(event: AbsenceEvent): string | undefined {
  * Group the event stream into runs (read02-style sessions split by user input).
  * A run starts at a user message and ends at `agent_end`; if a new user message
  * arrives first, the previous run was interrupted.
+ *
+ * `fromIndex`/`toIndex` are indices into the `events` array passed in. Callers
+ * that need them to survive the live window sliding should go through
+ * `memoBuildHistory`, which shifts them as the head is trimmed.
  */
 export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
   const runs: HistoryRun[] = [];
   /** Paths touched by earlier runs, so "created" means created *here*. */
   const touched = new Set<string>();
-  let start: { from: number; prompt: string; startedAt: number } | null = null;
+  let start:
+    | { from: number; prompt: string; startedAt: number; counts: RunCounts; touched: Set<string> }
+    | null = null;
 
   const flush = (toIndex: number, endedAt: number | undefined, status: HistoryRun["status"]) => {
     if (!start) return;
@@ -36,12 +65,9 @@ export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
       status,
       fromIndex: start.from,
       toIndex,
-      counts: countRange(events, start.from, toIndex, touched),
+      counts: { ...start.counts },
     });
-    for (let i = start.from; i <= toIndex && i < events.length; i++) {
-      const path = touchedPath(events[i]!);
-      if (path) touched.add(path);
-    }
+    for (const path of start.touched) touched.add(path);
     start = null;
   };
 
@@ -49,10 +75,18 @@ export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
     const event = events[i]!;
     if (event.type === "message" && event.payload.role === "user") {
       if (start) flush(i - 1, undefined, "interrupted");
-      start = { from: i, prompt: event.payload.content, startedAt: event.timestamp };
+      start = {
+        from: i,
+        prompt: event.payload.content,
+        startedAt: event.timestamp,
+        counts: { read: 0, search: 0, edit: 0, run: 0, created: 0 },
+        touched: new Set(),
+      };
     } else if (event.type === "agent_end" && start) {
       const reason = String(event.payload.reason);
       flush(i, event.timestamp, reason === "aborted" ? "interrupted" : reason === "error" ? "error" : "completed");
+    } else if (start) {
+      applyCount(start.counts, event, start.touched);
     }
   }
 
@@ -60,54 +94,13 @@ export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
   return runs;
 }
 
-function countRange(events: AbsenceEvent[], from: number, to: number, knownBefore: Set<string>): RunCounts {
-  const counts: RunCounts = { read: 0, search: 0, edit: 0, run: 0, created: 0 };
-  const touched = new Set(knownBefore);
-  const created = new Set<string>();
-
-  for (let i = from; i <= to && i < events.length; i++) {
-    const event = events[i]!;
-    switch (event.type) {
-      case "file_read":
-        counts.read += 1;
-        touched.add(event.payload.path);
-        break;
-      case "file_edit":
-        counts.edit += 1;
-        touched.add(event.payload.path);
-        break;
-      case "file_write": {
-        counts.edit += 1;
-        const path = event.payload.path;
-        // A write to a path nobody had seen before is a new file.
-        if (!touched.has(path)) created.add(path);
-        touched.add(path);
-        break;
-      }
-      case "file_change":
-        if (event.payload.kind === "created") {
-          created.add(event.payload.path);
-          touched.add(event.payload.path);
-        }
-        break;
-      case "search":
-        counts.search += 1;
-        break;
-      case "command":
-        counts.run += 1;
-        break;
-      default:
-        break;
-    }
-  }
-
-  counts.created = created.size;
-  return counts;
-}
-
-/** The events belonging to a run. */
+/** The events belonging to a run, clamped to the live window. */
 export function runEvents(events: AbsenceEvent[], run: HistoryRun): AbsenceEvent[] {
-  return events.slice(run.fromIndex, run.toIndex + 1);
+  // The window may have slid past this run's start since it was built.
+  const from = Math.max(0, run.fromIndex);
+  const to = Math.min(events.length - 1, run.toIndex);
+  if (to < from) return [];
+  return events.slice(from, to + 1);
 }
 
 /** The selected run, falling back to the newest one. */
@@ -119,18 +112,288 @@ export function pickRun(runs: HistoryRun[], selectedId: string | undefined): His
   return runs[runs.length - 1];
 }
 
-/**
- * `buildHistory` memoised on the event-array identity. The store replaces the
- * array on every event, so entries never go stale, and History / Activity / the
- * report all share one computation instead of each re-grouping the stream.
- */
-const historyCache = new WeakMap<AbsenceEvent[], HistoryRun[]>();
+// ---------------------------------------------------------------------------
+// Incremental memo
+// ---------------------------------------------------------------------------
 
+/**
+ * A run whose index range has to be rebased when the window slides. Runs hold
+ * indices into the live array, so when the store trims the head, every kept
+ * index shifts left by the same amount.
+ */
+interface OpenRun {
+  prompt: string;
+  startedAt: number;
+  /** Absolute index of the user message that opened the run. */
+  fromIndex: number;
+  counts: RunCounts;
+  /** Paths this run touched, for `created` being run-relative. */
+  touched: Set<string>;
+}
+
+interface HistoryCache {
+  /** Absolute index of `events[0]` in the session: how many were dropped. */
+  base: number;
+  /** Events already folded into `runs`/`open`. */
+  consumed: number;
+  /**
+   * Closed runs, in **absolute** indices. Relative indices are derived on
+   * publish, so a trim never has to rewrite what is already folded — and a run
+   * that has slid entirely out of the window can simply be dropped.
+   */
+  runs: HistoryRun[];
+  /** Paths touched by all *closed* runs. */
+  touched: Set<string>;
+  open?: OpenRun;
+  /** The runs array handed out, reused as long as it is not mutated in place. */
+  view: HistoryRun[];
+}
+
+const cache = new WeakMap<AbsenceEvent[], HistoryCache>();
+
+/**
+ * `buildHistory` memoised on the event array, incrementally.
+ *
+ * The store appends to one array and trims its head in place, so on each event
+ * only the new tail is folded — the previous O(N) re-group is gone. Two facts
+ * make that safe:
+ *
+ * - **Base offset.** The store records how many events it has dropped
+ *   (`eventsBase`). `fromIndex`/`toIndex` stay indices into the *current*
+ *   array: a run's absolute start minus the base. A run entirely behind the
+ *   base no longer has events to show and is dropped.
+ * - **Stable identity.** Hydrate and reset replace the array, which starts a
+ *   fresh cache; appends and trims keep the identity.
+ *
+ * `base` is read from the array itself (`eventsBase`) so the cache never needs
+ * the store. Declared as a non-enumerable symbol-keyed field by the store.
+ */
+const BASE = Symbol.for("absence.eventsBase");
+
+/** Attach the absolute index of `events[0]` (the trim count) to the array. */
+export function markEventsBase(events: AbsenceEvent[], base: number): void {
+  Object.defineProperty(events, BASE, {
+    value: base,
+    writable: true,
+    enumerable: false,
+    configurable: true,
+  });
+}
+
+export function eventsBase(events: AbsenceEvent[]): number {
+  const value = (events as unknown as Record<symbol, unknown>)[BASE];
+  return typeof value === "number" ? value : 0;
+}
 export function memoBuildHistory(events: AbsenceEvent[]): HistoryRun[] {
-  let runs = historyCache.get(events);
-  if (!runs) {
-    runs = buildHistory(events);
-    historyCache.set(events, runs);
+  const base = eventsBase(events);
+  let entry = cache.get(events);
+  if (!entry) {
+    entry = fold(events, base);
+    cache.set(events, entry);
+    return entry.view;
   }
-  return runs;
+
+  if (entry.base > base || entry.consumed > base + events.length) {
+    // Hydrated in place or rewound: start over rather than trust stale counts.
+    const fresh = fold(events, base);
+    cache.set(events, fresh);
+    return fresh.view;
+  }
+
+  if (entry.base < base) {
+    // The window slid: drop runs that are fully behind the new base.
+    rebase(entry, base);
+  }
+
+  const from = entry.consumed - base;
+  if (from >= 0 && from < events.length) {
+    for (let i = from; i < events.length; i++) applyEvent(entry, events[i]!, base + i);
+    entry.consumed = base + events.length;
+  }
+
+  // Publish the open run (or clear it) without rebuilding the closed ones.
+  publishOpen(entry, base + events.length - 1);
+  return entry.view;
+}
+
+function fold(events: AbsenceEvent[], base: number): HistoryCache {
+  const entry: HistoryCache = {
+    base,
+    consumed: base,
+    runs: [],
+    touched: new Set(),
+    view: [],
+  };
+  for (let i = 0; i < events.length; i++) applyEvent(entry, events[i]!, base + i);
+  entry.consumed = base + events.length;
+  publishOpen(entry, base + events.length - 1);
+  return entry;
+}
+
+/**
+ * Rebase a cache onto a newer base after a head trim.
+ *
+ * Runs are stored with absolute indices, so nothing has to be rewritten: a run
+ * whose start fell behind the base is dropped (see the filter below for why),
+ * and the rest keep their absolute indices until publish converts them.
+ */
+function rebase(entry: HistoryCache, base: number): void {
+  entry.base = base;
+  // A run is kept only while its *start* is still in the window. A partial run
+  // would under-count (`created` would miss files written by its own trimmed
+  // start) and a full rebuild, which only ever sees the window, would not list
+  // it either — so drop it to match. This is what makes the surviving runs
+  // exactly the ones a fresh `buildHistory` over the same array reports.
+  const kept = entry.runs.filter((run) => run.fromIndex >= base);
+  if (kept.length !== entry.runs.length) {
+    entry.runs = kept;
+    // Ids and `index` are positional: renumber so `#1` is the oldest kept run,
+    // exactly as a full rebuild would have it.
+    entry.runs = kept.map((run, i) => ({ ...run, id: `run_${i + 1}`, index: i + 1 }));
+  }
+  // The view is rebuilt on publish with the current base.
+  entry.view = [];
+}
+
+function applyEvent(entry: HistoryCache, event: AbsenceEvent, absoluteIndex: number) {
+  if (event.type === "message" && event.payload.role === "user") {
+    closeOpen(entry, undefined, "interrupted", absoluteIndex - 1);
+    entry.open = {
+      prompt: event.payload.content,
+      startedAt: event.timestamp,
+      fromIndex: absoluteIndex,
+      counts: { read: 0, search: 0, edit: 0, run: 0, created: 0 },
+      touched: new Set(),
+    };
+    return;
+  }
+  if (!entry.open) return;
+  if (event.type === "agent_end") {
+    const reason = String(event.payload.reason);
+    closeOpen(
+      entry,
+      event.timestamp,
+      reason === "aborted" ? "interrupted" : reason === "error" ? "error" : "completed",
+      absoluteIndex,
+    );
+    return;
+  }
+  applyCount(entry.open.counts, event, entry.open.touched);
+}
+
+function closeOpen(
+  entry: HistoryCache,
+  endedAt: number | undefined,
+  status: HistoryRun["status"],
+  absoluteTo: number,
+): void {
+  const open = entry.open;
+  if (!open) return;
+  for (const path of open.touched) entry.touched.add(path);
+  entry.runs.push({
+    id: `run_${entry.runs.length + 1}`,
+    index: entry.runs.length + 1,
+    prompt: open.prompt,
+    startedAt: open.startedAt,
+    endedAt,
+    status,
+    // Absolute; `publish` converts to indices into the current window.
+    fromIndex: open.fromIndex,
+    toIndex: absoluteTo,
+    counts: { ...open.counts },
+  });
+  entry.open = undefined;
+  entry.view = [];
+}
+
+/**
+ * Publish the closed runs plus, if one is open, a running run for it. The open
+ * run is rebuilt fresh each time rather than mutated, because consumers hold the
+ * array they were handed.
+ */
+function publishOpen(entry: HistoryCache, absoluteLast: number): void {
+  const base = entry.base;
+  const rel = (absolute: number) => Math.max(0, absolute - base);
+  const closed = entry.runs.map((run) => ({
+    ...run,
+    fromIndex: rel(run.fromIndex),
+    toIndex: rel(run.toIndex),
+  }));
+  if (!entry.open) {
+    entry.view = closed;
+    return;
+  }
+  const open = entry.open;
+  const running: HistoryRun = {
+    id: `run_${entry.runs.length + 1}`,
+    index: entry.runs.length + 1,
+    prompt: open.prompt,
+    startedAt: open.startedAt,
+    status: "running",
+    fromIndex: rel(open.fromIndex),
+    toIndex: rel(absoluteLast),
+    counts: { ...open.counts },
+  };
+  entry.view = [...closed, running];
+}
+
+// ---------------------------------------------------------------------------
+// Activity rows
+// ---------------------------------------------------------------------------
+
+/**
+ * Activity rows for one run, built incrementally.
+ *
+ * The panel used to `map` + `filter` the whole run on every event, which is
+ * O(run length) per token and allocates a new array each time. Here the rows
+ * are kept per (events array, run, visibility) and only the tail is converted:
+ * `eventToActivityRow` is pure, so a row never changes once created.
+ *
+ * The run only grows at its tail, so a running absolute index into the event
+ * stream is enough to resume the scan. A different run, or a toggled setting,
+ * starts a fresh cache; so does the window sliding past the run's start.
+ */
+interface RowCache {
+  runId: string;
+  displayInActivity: boolean;
+  /** Absolute index of the first source event not yet scanned. */
+  scanned: number;
+  rows: ActivityRow[];
+}
+
+const rowCache = new WeakMap<AbsenceEvent[], RowCache>();
+
+/** The rows currently shown for `run`, converting only the events not seen yet. */
+export function memoRunRows(
+  events: AbsenceEvent[],
+  run: HistoryRun,
+  displayInActivity: boolean,
+): ActivityRow[] {
+  const base = eventsBase(events);
+  const from = Math.max(0, run.fromIndex);
+  const to = Math.min(events.length - 1, run.toIndex);
+  if (to < from) return [];
+
+  let entry = rowCache.get(events);
+  if (
+    !entry ||
+    entry.runId !== run.id ||
+    entry.displayInActivity !== displayInActivity ||
+    entry.scanned > base + to + 1 ||
+    entry.scanned < base + from
+  ) {
+    entry = { runId: run.id, displayInActivity, scanned: base + from, rows: [] };
+    rowCache.set(events, entry);
+  }
+
+  for (let absolute = entry.scanned; absolute <= base + to; absolute++) {
+    const event = events[absolute - base];
+    if (!event) break;
+    const row = eventToActivityRow(event);
+    // The Setting can hide the LAID/DIED process rows (Agent Eggs) so the panel
+    // reads as actions only; the eggs stay in the Agent Eggs panel.
+    if (row && (displayInActivity || row.tone !== "process")) entry.rows.push(row);
+  }
+  entry.scanned = base + to + 1;
+  return entry.rows;
 }

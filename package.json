@@ -27,6 +27,8 @@
     "check:agentwatch": "tsx scripts/checks/check-agentwatch.ts",
     "check:ebpf": "tsx scripts/checks/check-ebpf.ts",
     "check:history": "tsx scripts/checks/check-history.ts",
+    "check:incremental": "tsx scripts/checks/check-incremental.ts",
+    "bench:incremental": "tsx scripts/checks/check-incremental-bench.ts",
     "check:offline": "tsx scripts/checks/run-offline.ts",
     "check:report": "tsx scripts/checks/check-report.ts",
     "check:process": "npm run check:eggs && npm run check:classify && npm run check:codex && npm run check:codexshell && npm run check:execserver && npm run check:shellenv && npm run check:fsdiff && npm run --if-present check:agentwatch && npm run --if-present check:ebpf",

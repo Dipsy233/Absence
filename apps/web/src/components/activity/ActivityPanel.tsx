@@ -1,7 +1,5 @@
 import { useMemo } from "react";
-import type { ActivityRow } from "../../types/stage";
-import { memoBuildHistory, pickRun, runEvents } from "../../lib/history";
-import { eventToActivityRow } from "../../lib/events";
+import { memoBuildHistory, memoRunRows, pickRun, runEvents } from "../../lib/history";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
@@ -23,16 +21,11 @@ export function ActivityPanel() {
 
   const runs = useMemo(() => memoBuildHistory(events), [events]);
   const run = pickRun(runs, selectedRunId);
-  const shown = useMemo(() => (run ? runEvents(events, run) : events), [events, run]);
+  // Rows are maintained incrementally (see `memoRunRows`): a streamed token
+  // converts one event, not the whole run.
   const rows = useMemo(
-    () =>
-      shown
-        .map(eventToActivityRow)
-        .filter((row): row is ActivityRow => row !== undefined)
-        // The Setting can hide the LAID/DIED process rows (Agent Eggs) so the
-        // panel reads as actions only; the eggs stay in the Agent Eggs panel.
-        .filter((row) => displayInActivity || row.tone !== "process"),
-    [shown, displayInActivity],
+    () => (run ? memoRunRows(events, run, displayInActivity) : []),
+    [events, run, displayInActivity],
   );
 
   // In replay the "current" row is the last one the cursor has passed: the

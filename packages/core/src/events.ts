@@ -256,3 +256,15 @@ export function createEvent<K extends AbsenceEventType>(
     payload,
   } as AbsenceEventOf<K>;
 }
+
+/**
+ * How many events one session keeps in memory. The server and the web client
+ * must agree: a larger client window than the server's is a lie — the client
+ * would cache the tail of an already-truncated stream and quietly show less
+ * history than it claims. One constant, one cut.
+ *
+ * Truncation drops the *oldest* events. Anything folded from the stream for
+ * display (the egg list, Activity rows) must therefore be maintained
+ * incrementally, or it shrinks as the window slides — see `sessionStore`.
+ */
+export const MAX_SESSION_EVENTS = 1000;

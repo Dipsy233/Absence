@@ -2,10 +2,10 @@ import { useMemo, useState } from "react";
 import { eventToStageItem } from "../../lib/events";
 import { formatOffset } from "../../lib/format";
 import {
-  buildEggs,
   countEggs,
   filterEggs,
   primaryEggs,
+  sortEggs,
   summarizeTools,
   type Egg,
   type EggFilter,
@@ -30,7 +30,12 @@ const FILTERS: EggFilter[] = ["running", "dead", "all"];
  * stay in the event stream for the Report.
  */
 export function AgentEggsPanel() {
-  const events = useSessionStore((s) => s.events);
+  // The store keeps eggs incrementally, so this panel never folds the event
+  // stream: the count is the live process set, not the tail of a window that
+  // may have dropped a process's first sighting. The map is mutated in place,
+  // so we subscribe to its version and derive from the map through that.
+  const eggVersion = useSessionStore((s) => s.eggState.version);
+  const eggMap = useSessionStore.getState().eggState.eggs;
   const openStage = useStageStore((s) => s.openStage);
   const activeItemId = useStageStore((s) => s.activeItem?.id);
   // Eggs describe what is running *now*, so this panel deliberately ignores
@@ -44,11 +49,9 @@ export function AgentEggsPanel() {
   // The deny-list lives on the server (process/egg-filter.json, edited from the
   // Settings dialog): the classifier marks those names as tools, so they are
   // already folded into the tool count and never appear in the primary list.
-  const eggs = useMemo(() => primaryEggs(buildEggs(events)), [events]);
-  const tools = useMemo(
-    () => summarizeTools(buildEggs(events)),
-    [events],
-  );
+  const sorted = useMemo(() => sortEggs(eggMap), [eggMap, eggVersion]);
+  const eggs = useMemo(() => primaryEggs(sorted), [sorted]);
+  const tools = useMemo(() => summarizeTools(sorted), [sorted]);
   const counts = countEggs(eggs);
   // The query narrows within the active tab: name, command line, the command
   // that laid it, or the pid — case-insensitive, substring.

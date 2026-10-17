@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   createEvent,
+  MAX_SESSION_EVENTS,
   type AgentStatus,
   type ChatMessage,
   type CommandOption,
@@ -26,7 +27,12 @@ import { unifiedDiff } from "../util/diff";
 import { newId } from "../util/ids";
 import { toPosix } from "../util/paths";
 
-const MAX_EVENTS = 1000;
+/**
+ * The in-memory event window. Shared with the web client so both trim at the
+ * same point — see `MAX_SESSION_EVENTS`. Older events still reach the archive
+ * on disk; only the live window is bounded.
+ */
+const MAX_EVENTS = MAX_SESSION_EVENTS;
 
 /**
  * Thrown when the requested agent runtime cannot start — not installed, the

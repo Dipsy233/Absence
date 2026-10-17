@@ -8,15 +8,44 @@ import type {
   SessionRuntimeState,
   SessionSnapshot,
 } from "@absence/core";
+import { MAX_SESSION_EVENTS } from "@absence/core";
 import * as api from "../lib/api";
 import { STAGE_EVENT_TYPES, clearsStage, isInstantSearch, lastStageAction } from "../lib/events";
+import { applyProcessEvent, sortEggs, type Egg } from "../lib/eggs";
+import { eventsBase, markEventsBase } from "../lib/history";
 
-const MAX_EVENTS = 2000;
+/**
+ * Eggs folded incrementally from `process` events.
+ *
+ * Deliberately *not* derived from `events` at render time. `process` events are
+ * state updates (a pid is overwritten as it changes), so the live set has to
+ * outlive the event window: folding the truncated stream again would drop any
+ * process whose first event had been cut, and the panel's count would shrink.
+ * One `Map.set` per event instead of a full rebuild per render.
+ */
+
+
+/**
+ * Mutable egg map plus a version counter.
+ *
+ * Copying the map per `process` event would make a busy session O(eggs) per
+ * update again — the same shape of cost we just removed. So the store mutates
+ * one map in place and bumps `eggVersion`; the panel selects the version to
+ * re-render and reads the map through it. React never sees the map itself, so
+ * its identity does not matter.
+ */
+export interface EggStateHandle {
+  eggs: Map<number, Egg>;
+  /** Incremented whenever `eggs` changes. */
+  version: number;
+}
 
 interface SessionStore {
   session?: Session;
   agent: { status: AgentStatus; model?: string };
   events: AbsenceEvent[];
+  /** Live egg state, maintained incrementally (see `EggStateHandle`). */
+  eggState: EggStateHandle;
   /** The most recent event that owns the Stage (read02 §14). */
   currentAction?: AbsenceEvent;
   context?: ContextState;
@@ -43,6 +72,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   session: undefined,
   agent: { status: "listening" },
   events: [],
+  eggState: { eggs: new Map(), version: 0 },
   currentAction: undefined,
   context: undefined,
   connected: false,
@@ -101,20 +131,28 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       session: undefined,
       agent: { status: "listening" },
       events: [],
+      eggState: { eggs: new Map(), version: 0 },
       currentAction: undefined,
       context: undefined,
       connected: false,
       error: undefined,
     }),
 
-  hydrate: (snapshot) =>
+  hydrate: (snapshot) => {
+    const eggs = new Map<number, Egg>();
+    for (const event of snapshot.events) applyProcessEvent(eggs, event);
+    // A hydrated snapshot is a fresh window: no events have been trimmed from
+    // it, so absolute indices start at 0 and the history cache rebuilds.
+    markEventsBase(snapshot.events, 0);
     set({
       session: snapshot.session,
       agent: snapshot.agent,
       context: snapshot.context,
       events: snapshot.events,
+      eggState: { eggs, version: (get().eggState.version ?? 0) + 1 },
       currentAction: lastStageAction(snapshot.events),
-    }),
+    });
+  },
 
   applyRuntimeState: (state) =>
     set({
@@ -124,9 +162,25 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }),
 
   ingestEvent: (event) => {
-    const events = [...get().events, event];
-    if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
+    const events = get().events;
+    // Append in place and trim in place. The array identity is load-bearing:
+    // `memoBuildHistory` caches on it and folds only the new tail, so copying
+    // the whole window per event (up to MAX_SESSION_EVENTS) would defeat that.
+    events.push(event);
+    if (events.length > MAX_SESSION_EVENTS) {
+      const drop = events.length - MAX_SESSION_EVENTS;
+      events.splice(0, drop);
+      // Record how far the window slid so history can rebase its run indices.
+      markEventsBase(events, eventsBase(events) + drop);
+    }
+
     const patch: Partial<SessionStore> = { events };
+    // Eggs update in place, O(1), and do not depend on the event window above.
+    if (event.type === "process") {
+      const current = get().eggState;
+      applyProcessEvent(current.eggs, event);
+      patch.eggState = { eggs: current.eggs, version: current.version + 1 };
+    }
     if (clearsStage(event)) {
       // A run ended, or a new one just started: back to the default Stage page.
       patch.currentAction = undefined;
