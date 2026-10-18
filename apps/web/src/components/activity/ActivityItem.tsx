@@ -68,15 +68,16 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
       seek(row.event.timestamp);
       return;
     }
-    // An MCP call opens in the Stage's docked inset, not as a Stage page: it must
-    // never cover what the agent was actually looking at. Pinned, so a click
-    // holds it open instead of it folding away mid-read.
-    const mcpInset = insetItem;
-    if (mcpInset) {
-      pinInset(mcpInset);
+    // An MCP call opens as a full Stage page, like any other action: the row
+    // is the user asking to *read* the call, and the docked inset (which still
+    // serves live calls) is too small for a long result. The dock itself keeps
+    // showing calls as they happen; this is the read-the-whole-thing path.
+    if (row.stageItem) {
+      openStage(row.stageItem);
       return;
     }
-    if (row.stageItem) openStage(row.stageItem);
+    const mcpInset = insetItem;
+    if (mcpInset) pinInset(mcpInset);
   };
 
   const handleContextMenu = (event: MouseEvent) => {
@@ -100,7 +101,7 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
         onClick={activate}
         onContextMenu={handleContextMenu}
         title={
-          inReplay ? "Scrub to this event" : insetItem ? "Show in the MCP dock" : canOpen ? "Open in Stage" : undefined
+          inReplay ? "Scrub to this event" : canOpen ? "Open in Stage" : undefined
         }
         aria-current={selected ? "true" : undefined}
         className={[

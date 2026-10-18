@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { eventContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useStageStore } from "../../stores/stageStore";
 import { useUiStore } from "../../stores/uiStore";
 import { EXIT_MS } from "../../lib/terminalInset";
 import { StageItemView } from "./StageItemView";
@@ -24,6 +25,7 @@ export function StageInset({ paused = false }: { paused?: boolean }) {
   const inset = useSessionStore((s) => s.inset);
   const retractInset = useSessionStore((s) => s.retractInset);
   const addContext = useChatStore((s) => s.addContext);
+  const openStage = useStageStore((s) => s.openStage);
   const reportOpen = useUiStore((s) => s.reportOpen);
   const item = inset.item;
   const mcp = item?.payload.kind === "terminal" ? item.payload.mcp : undefined;
@@ -73,6 +75,14 @@ export function StageInset({ paused = false }: { paused?: boolean }) {
                   + Chat
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={() => openStage(item)}
+                className="rounded border border-desk-line px-1.5 py-0.5 text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
+                title="Expand this call onto the Stage"
+              >
+                ⤢
+              </button>
               <button
                 type="button"
                 onClick={retractInset}
