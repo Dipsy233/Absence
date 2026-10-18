@@ -295,4 +295,52 @@ section("terminal mirror: bounded, coalesced, replayable");
   mirror.dispose();
 }
 
-finish("observer decoupling checks");
+
+// ---------------------------------------------------------------------------
+// 9. Commands come from the OS, not from a shell shim.
+//
+// docs/decoupling.md Layer 0: a process is created carrying its full command
+// line, so "what did the agent run" needs no configuration and no knowledge of
+// which agent it was. This is what replaces a per-agent shell shim for almost
+// every case, so the shapes that occur in practice are pinned here.
+// ---------------------------------------------------------------------------
+section("commands are read off the command line");
+{
+  const { detectCommand } = await import("../../apps/server/src/process/CodexShell");
+  const BS = String.fromCharCode(92);
+  const Q = String.fromCharCode(34);
+  const cmd = (line: string) => `C:${BS}WINDOWS${BS}system32${BS}cmd.exe ${line}`;
+
+  check(
+    "bash -lc wraps the command",
+    detectCommand("bash.exe", `bash -lc ${Q}npm test${Q}`).command === "npm test",
+  );
+  check(
+    "bash.exe is a POSIX shell too (Git Bash on Windows)",
+    detectCommand("bash.exe", `bash.exe -lc ${Q}npm run build${Q}`).wrapped === true,
+  );
+  check(
+    "cmd /c wraps the command",
+    detectCommand("cmd.exe", cmd(`/s /c ${Q}npm run dev${Q}`)).command === "npm run dev",
+  );
+  // Codex's PowerShell wrapper carries a UTF-8 preamble before the command;
+  // stripping it is what makes the reported text the model's own command.
+  const preamble = "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}";
+  check(
+    "PowerShell -Command wraps it, preamble stripped",
+    detectCommand(
+      "pwsh.exe",
+      `pwsh.exe -NoProfile -Command ${Q}${preamble}${String.fromCharCode(10)}node x.mjs${Q}`,
+    ).command === "node x.mjs",
+  );
+  // Windows nests wrappers: `execSync('cmd /c \"X\"')` spawns an outer cmd.exe
+  // whose line is `cmd.exe /d /s /c \"cmd /c \"X\"\"`.
+  check(
+    "nested wrappers are peeled to the command",
+    detectCommand("cmd.exe", cmd(`/d /s /c ${Q}cmd /c ${Q}echo hi${Q}${Q}`)).command === "echo hi",
+  );
+
+  // Not every shell is a command.
+  check("a bare shell is not a command", detectCommand("bash.exe", "bash").wrapped === false);
+  check("a program is not a command", detectCommand("node.exe", "node app.js").wrapped === false);
+}

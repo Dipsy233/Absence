@@ -578,10 +578,27 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
         stageItem,
       };
     case "process": {
-      const { name, pid, status, children, kind } = event.payload;
+      const { name, pid, status, children, kind, command } = event.payload;
       // Helpers are folded away here too: a run's `cat`, `grep` and `sleep` are
       // noise next to the daemon it started. The raw events remain in the stream.
       if (kind === "tool") return undefined;
+      // A process created by a shell wrapping a command IS that command (the
+      // server reads it off the command line — see `observedCommand`). Showing
+      // it as `bash.exe` would bury the one thing a person wants: what ran.
+      // The pid stays in the secondary line, because two runs of the same
+      // command are two processes.
+      if (command && !command.startsWith("<pid")) {
+        return {
+          id,
+          event,
+          time,
+          action: status === "running" ? "RUN" : "EXIT",
+          primary: command,
+          secondary: `${name} · pid ${pid}${children > 0 ? ` · +${children}` : ""}`,
+          tone: "run",
+          stageItem,
+        };
+      }
       return {
         id,
         event,

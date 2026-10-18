@@ -5,7 +5,7 @@ import { isTransparentLauncher } from "./priors";
 import { JobMonitor } from "./JobMonitor";
 import type { WatchExit, WatchStart } from "./observer";
 import { snapshotProcesses, type ProcessTable, type ProcInfo } from "./ProcessTable";
-import { unwrapCommandText } from "./CodexShell";
+import { detectCommand, unwrapCommandText } from "./CodexShell";
 
 /** How long after a command returns we take the final look. */
 const SETTLE_MS = 2500;
@@ -419,8 +419,12 @@ export class ProcessWatcher {
       });
       const egg: Egg = {
         info,
-        // No command is known in observe mode; the parent is the provenance.
-        command: `<pid ${info.ppid}>`,
+        // The command this process came from, read off its own command line.
+        // Layer 0 (docs/decoupling.md) is the OS: a process is created with a
+        // full command line, so "what did the agent run" needs no shell shim
+        // and no knowledge of which agent it was — just the shape of
+        // `bash -lc "…"` / `pwsh -Command "…"` / `cmd /c "…"`.
+        command: observedCommand(info.name, info.commandLine),
         startedAt: info.startedAt > 0 ? info.startedAt : this.now(),
         children: 0,
         status: "running",
@@ -998,8 +1002,10 @@ export class ProcessWatcher {
         commandLine: line,
         startedAt: event.createdAt ?? this.now(),
       },
-      // No command is known in observe mode; the parent is the provenance.
-      command: `<pid ${event.ppid}>`,
+      // The command this process came from, read off its own command line (see
+      // `observedCommand`). Falls back to the parent's pid when the process was
+      // started directly — a daemon, not a command.
+      command: observedCommand(name, line) || `<pid ${event.ppid}>`,
       startedAt: event.createdAt ?? this.now(),
       children: 0,
       status: "running",
@@ -1051,6 +1057,9 @@ export class ProcessWatcher {
   }
 
   private emit(egg: Egg): void {
+    if (process.env.ABSENCE_DEBUG_PROCESS && egg.command && !egg.command.startsWith("<pid")) {
+      process.stderr.write(`[egg] ${egg.info.name} cmd=${JSON.stringify(egg.command)} line=${JSON.stringify(egg.info.commandLine).slice(0, 90)}${String.fromCharCode(10)}`);
+    }
     this.options.onProcess({
       pid: egg.info.pid,
       ppid: egg.info.ppid,
@@ -1297,4 +1306,24 @@ function nameOf(event: WatchStart): string {
   // best thing, and the pid is all that is left after that.
   if (event.comm) return event.comm;
   return "?";
+}
+
+/**
+ * The command an observed process came from, or "" when it came from nothing.
+ *
+ * In observe mode there is no `begin()`/`end()` pair to name the command — the
+ * agent's own tool layer runs it and Absence is not in that loop. The OS still
+ * knows, because a process is created carrying its full command line. So the
+ * command is read from the line itself when it looks like a shell wrapping one
+ * (`bash -lc`, `pwsh -Command`, `cmd /c`, …), and is empty otherwise: a daemon
+ * started directly is a process, not a command.
+ *
+ * This is what replaces a shell shim for the overwhelming majority of agents.
+ * A shim would still be more precise (exact pairing and exit code under one
+ * command, stdout attribution); this needs no configuration at all and is right
+ * about which commands ran, which is the question the Stage is answering.
+ */
+function observedCommand(name: string, commandLine: string): string {
+  const { wrapped, command } = detectCommand(name, commandLine);
+  return wrapped ? command : "";
 }

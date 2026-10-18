@@ -42,8 +42,19 @@ function isCmd(base: string): boolean {
 }
 
 /** A POSIX shell (bash/sh/zsh), where the script is passed with `-lc`/`-c`. */
+/**
+ * A POSIX-ish shell, where the script is passed with `-lc` / `-c`.
+ *
+ * The `.exe` suffix matters: on Windows the shell is `bash.exe` (Git Bash,
+ * Cygwin, MSYS2), and `bash.exe !== "bash"` silently turned every one of those
+ * command lines into "no wrapper" — the wrapper stayed in the text, so the
+ * Stage showed `bash.exe -lc "npm test"` where the command was `npm test`.
+ * That is the shape Pi's bash tool produces on Windows, so it was every Pi
+ * command rather than an edge case.
+ */
 function isPosixShell(base: string): boolean {
-  return base === "bash" || base === "sh" || base === "zsh" || base === "dash" || base === "fish";
+  const name = base.endsWith(".exe") ? base.slice(0, -4) : base;
+  return name === "bash" || name === "sh" || name === "zsh" || name === "dash" || name === "fish";
 }
 
 function basename(token: string): string {
@@ -169,4 +180,58 @@ function stripOuterQuotes(text: string): string {
     return trimmed.slice(1, -1);
   }
   return trimmed;
+}
+
+/**
+ * Whether a process is a *command the agent ran*, and what that command was.
+ *
+ * Layer 0 of docs/decoupling.md is the OS: it knows a process was created and
+ * with what command line, but not which of those command lines are the agent's
+ * actual work. This answers that, from the shape of the line alone — no agent
+ * name, no version, no configuration:
+ *
+ *   `bash.exe -lc "npm test"`                       → `npm test`
+ *   `pwsh -Command "<preamble>\nnode x.mjs"`        → `node x.mjs`
+ *   `cmd.exe /c "dir /b"`                           → `dir /b`
+ *   `/bin/bash -c "ls -la"`                         → `ls -la`
+ *   `C:\nodejs\node.exe app.js`                     → `app.js` is the program, not a command
+ *
+ * A shell wrapper is the signal: an agent's tool call always goes through one,
+ * because that is the only way to run a command string. Everything else is a
+ * program starting (a daemon the command laid, the agent itself), which the
+ * eggs view already covers.
+ *
+ * `wrapped: false` means "not a command", not "we could not tell" — the caller
+ * shows a process card instead of a command card.
+ */
+export function detectCommand(
+  name: string,
+  commandLine: string,
+): { wrapped: boolean; command: string } {
+  const base = basename(name);
+  const shell = isPosixShell(base) || isCmd(base) || isPowerShell(base);
+  if (!shell) return { wrapped: false, command: commandLine };
+
+  // Peel repeatedly. Windows nests the wrappers: `cmd /d /s /c "cmd /c "X""`
+  // is what `execSync('cmd /c "X"')` actually spawns (the outer `cmd.exe` is
+  // the shell it was typed into, the inner one is the command). One pass left
+  // the inner wrapper in place, so the Stage showed a command whose text was
+  // itself a shell invocation.
+  let current = commandLine;
+  let peeled = 0;
+  for (;;) {
+    const next = unwrapCommandText(current);
+    // No match, or an unchanged result: this is as deep as the wrappers go.
+    if (next === current.trim()) break;
+    // A shell nested in a shell is unusual; a few levels is the whole story
+    // (`cmd` inside `cmd`, `bash -lc "bash -c …"`). Bounded so a pathological
+    // line cannot spin.
+    if (peeled > 8) break;
+    current = next;
+    peeled += 1;
+  }
+  // Nothing was peeled: a shell with no `-c`-style flag (a bare `bash`, an
+  // interactive shell) is not a command.
+  if (peeled === 0) return { wrapped: false, command: commandLine };
+  return { wrapped: true, command: current };
 }
