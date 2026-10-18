@@ -267,6 +267,15 @@ export class ProcessWatcher {
    * the thing it runs is the egg, not the runner.
    */
   private readonly observedRoot: boolean;
+  /**
+   * True when the observed root is one of *our* descendants (Absence started
+   * it), so the kernel Job Object reports its whole tree and nothing has to be
+   * sampled. False means the root is somebody else's process: the job cannot
+   * see it, and sampling the process table is the only option left.
+   *
+   * Decided once in `seedObservedAncestry`, before any attribution happens.
+   */
+  private observedInJob = false;
   /** True once the process table at attach time has been folded into `jobSeen`. */
   private observedSeeded = false;
 
@@ -285,12 +294,11 @@ export class ProcessWatcher {
    * miss. When it is not available the watcher falls back to snapshots.
    */
   private attachJobObserver(): void {
-    // Observe mode never uses the kernel events. The Windows observer is a Job
-    // Object placed on *our* process: it reports children we create, and a
-    // process that existed before us (the agent somebody started in another
-    // terminal) is not in that job and can never be reported. Polling the
-    // process table is what sees it — and sees its children, once they exist.
-    if (this.observedRoot) return;
+    // The Windows observer is a Job Object placed on *our* process: it reports
+    // every descendant we create, and nothing that existed before us or belongs
+    // to somebody else. Whether that covers the observed root cannot be known
+    // here (the walk needs an async snapshot), so observe mode subscribes
+    // either way and `warm()` decides — `observedInJob` is the answer.
     const monitor = JobMonitor.get();
     if (!monitor.available && monitor.status === "unavailable") {
       // The helper did not start (missing binary, no rights). Stay on polling.
@@ -301,8 +309,10 @@ export class ProcessWatcher {
 
   /** True while events, rather than snapshots, drive this watcher. */
   private get jobMode(): boolean {
-    // An observed tree is always polled: see attachJobObserver.
-    return this.jobUnsubscribe !== undefined && !this.observedRoot;
+    if (this.jobUnsubscribe === undefined) return false;
+    // An observed root rides on kernel events only when it is our descendant;
+    // otherwise the job sees nothing of it and sampling takes over.
+    return !this.observedRoot || this.observedInJob;
   }
 
   /**
@@ -320,8 +330,13 @@ export class ProcessWatcher {
     // pre-date us), without ever reporting them as eggs of their own.
     if (this.observedRoot) {
       void this.seedObservedAncestry().then(() => {
-        // Keep looking for as long as the session lives: in observe mode there
-        // is no command to bound the search, and the agent may run for hours.
+        if (this.observedInJob) {
+          // The kernel is already reporting this tree — the baseline above is
+          // all that is needed to attribute children that predate the attach.
+          return;
+        }
+        // The root is somebody else's process: no kernel source can see it, so
+        // sampling is the only option left (see `attachJobObserver`).
         this.startObservedPoll();
       });
     }
@@ -439,6 +454,10 @@ export class ProcessWatcher {
     try {
       const table = await this.table();
       if (this.disposed) return;
+      // Which source can report this tree? One ancestor walk decides:
+      //   our descendant → the job sees it, kernel events, no sampling
+      //   somebody else → the job never will, sample the table
+      this.observedInJob = this.descendsFromUs(table, this.rootPid) === true;
       // Walk down from the observed root. A single pass in parent-before-child
       // order is enough in principle, but the table is a Map keyed by pid and
       // not ordered by depth, so the walk repeats until it stops finding new
@@ -459,6 +478,27 @@ export class ProcessWatcher {
       // No table (no permission): attribution falls back to "direct child of
       // the observed root" only, which is still correct, just narrower.
     }
+  }
+
+  /**
+   * Whether `pid`'s ancestor chain reaches Absence's own process.
+   *
+   * `true` / `false` when the table can answer, `undefined` when the chain
+   * leaves the table (a reparented process, a pid we cannot see). Callers treat
+   * that as "not ours" — the safe direction: sampling still works, whereas
+   * claiming kernel coverage that does not exist would go silent.
+   */
+  private descendsFromUs(table: ProcessTable, pid: number): boolean | undefined {
+    const visited = new Set<number>();
+    let current = pid;
+    while (current > 0 && !visited.has(current)) {
+      if (current === process.pid) return true;
+      visited.add(current);
+      const info = table.get(current);
+      if (!info) return undefined;
+      current = info.ppid;
+    }
+    return false;
   }
 
   /** Absence put this marker at the head of a command it drove. */
@@ -924,11 +964,17 @@ export class ProcessWatcher {
     // the agent's own runner). A process reparented to the system (ppid 0, or a
     // pid we never saw) is not claimed — Absence reports what it can prove.
     const isDirectChild = event.ppid === this.rootPid;
-    const parentAlive = isDirectChild || this.jobSeen.has(event.ppid);
-    // Before the baseline has landed, only the observed root's own children are
-    // attributed; claiming more would credit the agent with the terminal's work.
-    if (!parentAlive) return;
-    if (!this.observedSeeded && !isDirectChild) return;
+    // Kernel events and sampling know "who have we already seen" differently, so
+    // each asks its own question:
+    //   · job path — the kernel already proved this event is in our job, so the
+    //     parent chain is trustworthy by construction: the root's own children,
+    //     or anything under an egg we already reported.
+    //   · sampled path — `jobSeen` was seeded from the table at attach time;
+    //     until that lands, only the root's direct children are attributed.
+    const anchored = this.observedInJob
+      ? isDirectChild || this.jobParent.has(event.ppid)
+      : this.jobSeen.has(event.ppid) && (this.observedSeeded || isDirectChild);
+    if (!anchored) return;
 
     this.jobSeen.add(pid);
     this.jobParent.set(pid, pid);

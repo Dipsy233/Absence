@@ -2,23 +2,19 @@
  * `absence` — the command-line way into Absence.
  *
  * The important subcommand is `watch`: open a session that only observes an
- * agent somebody else is running. That is Absence as an observer, and it needs
- * no adapter, no runtime version and no configuration format of the agent's —
- * just a pid and a project directory. See docs/decoupling.md.
+ * agent. That is Absence as an observer, and it needs no adapter, no runtime
+ * version and no configuration format of the agent's. See docs/decoupling.md.
  *
- * The other subcommands are the server's existing surfaces, given names:
- *
- *   absence                      start the server (same as before)
+ *   absence                      start the server
  *   absence serve                start it explicitly
- *   absence watch [--pid N]      observe a running agent
- *   absence watch -- <cmd> …     start an agent, then observe it (pass-through
- *                                stdin/stdout: the agent keeps the terminal)
+ *   absence watch --pid N        observe a process somebody else started
+ *   absence watch -- <cmd> …     start an agent, then observe it
  */
 import { spawn } from "node:child_process";
 import { parseWatchArgs, type WatchArgs } from "./cliArgs";
+import { startServer, type RunningServer } from "./index";
 
 export { parseWatchArgs, type WatchArgs };
-import { startServer } from "./index";
 
 const NL = String.fromCharCode(10);
 
@@ -28,7 +24,7 @@ const USAGE = [
   "  absence serve                 start the server",
   "  absence watch --pid <pid>     observe a running agent",
   "  absence watch [--project DIR] [--label NAME] -- <command> …",
-  "                                start an agent and observe it in place",
+  "                                start an agent and observe it",
   "",
   "  --project DIR   the directory the agent works in (default: cwd)",
   "  --pid PID       the process to watch (its whole subtree is the agent's work)",
@@ -41,27 +37,44 @@ const USAGE = [
  * stdin/stdout are inherited, so the agent keeps the terminal — its TUI, its
  * prompts, its keys. Absence only learns the pid and observes it, which is the
  * whole point: it never has to understand the agent to show what it does.
+ *
+ * **The server must be up before the agent is spawned.** On Windows the process
+ * observer is a Job Object placed on the server: everything the server creates
+ * *afterwards* joins that job, and the kernel then reports the whole tree with
+ * no sampling at all. A process that already existed when the job was assigned
+ * is not retroactively adopted, so spawning the agent first would silently fall
+ * back to sampling the process table — correct, but the slow path. Bringing the
+ * server up first is what makes `absence watch -- pi` exact.
  */
 async function watchCommand(command: string[], projectPath: string, label: string | undefined): Promise<void> {
+  // 1. Server first: it takes the job, so the agent below is born into it.
+  const server = await startServer();
+
+  // 2. Now the agent. The terminal stays its own: stdio is inherited.
+  //
+  // No `shell: true`. It would wrap the command in `cmd.exe`, and `child.pid`
+  // would then be the wrapper's pid, not the agent's — every observation is
+  // rooted at that pid, so watching the wrapper means watching the wrong tree.
   const child = spawn(command[0]!, command.slice(1), {
     stdio: "inherit",
     cwd: projectPath,
     // Its own group on POSIX, so a Ctrl-C reaches the agent (the terminal's job)
-    // rather than the watcher, and Absence keeps observing until it exits.
+    // rather than Absence, which keeps observing until the agent exits.
     detached: process.platform !== "win32",
-    shell: process.platform === "win32",
   });
-  if (child.pid === undefined) throw new Error(`could not start ${command.join(" ")}`);
-  await watchPid(child.pid, projectPath, label ?? command[0]!, () => {
-    child.kill();
-  });
+  if (child.pid === undefined) {
+    await server.close();
+    throw new Error(`could not start ${command.join(" ")}`);
+  }
+
+  await observeAndHold(server, child.pid, projectPath, label ?? command[0]!, () => child.kill());
   await new Promise<void>((resolve) => {
     if (child.exitCode !== null) return resolve();
     child.once("exit", () => resolve());
   });
 }
 
-/** Open an observe session for `pid` and keep the server up until Ctrl-C. */
+/** Open an observe session for `pid`, on a server we start, until Ctrl-C. */
 async function watchPid(
   pid: number,
   projectPath: string,
@@ -69,6 +82,23 @@ async function watchPid(
   onInterrupt?: () => void,
 ): Promise<void> {
   const server = await startServer();
+  await observeAndHold(server, pid, projectPath, label, onInterrupt);
+}
+
+/**
+ * POST the observe session and hold until Ctrl-C.
+ *
+ * Takes a running server rather than starting one: `watchCommand` needs the
+ * server (and its job) in place *before* it spawns the agent, so the two
+ * callers cannot share a "start the server" step in the wrong order.
+ */
+async function observeAndHold(
+  server: RunningServer,
+  pid: number,
+  projectPath: string,
+  label: string,
+  onInterrupt?: () => void,
+): Promise<void> {
   const response = await fetch(`${server.url}/api/sessions/observe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

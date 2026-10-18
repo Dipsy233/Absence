@@ -190,4 +190,71 @@ section("runs: an observed stream still forms runs");
   check("a driven run still needs a prompt", buildHistory(driven).length === 0);
 }
 
+
+// ---------------------------------------------------------------------------
+// 7. Watch-with-a-command: the server must be up before the agent is spawned.
+//
+// On Windows the observer is a Job Object on the server, so only processes the
+// server creates *after* the job is assigned are in it. Spawning the agent first
+// would silently fall back to sampling — correct output, the slow path — and
+// nothing in the output would say so. This pins the ordering, and the two other
+// facts that make kernel events usable for an observed root.
+// ---------------------------------------------------------------------------
+section("observe mode rides on kernel events when Absence started the agent");
+{
+  const { ProcessWatcher } = await import("../../apps/server/src/process/ProcessWatcher");
+  type ProcInfo = { pid: number; ppid: number; name: string; commandLine: string; startedAt: number };
+  const self = process.pid;
+
+  const makeTable = (rows: [number, number, string][]) => {
+    const table = new Map<number, ProcInfo>();
+    for (const [pid, ppid, name] of rows) {
+      table.set(pid, { pid, ppid, name, commandLine: name, startedAt: Date.now() });
+    }
+    return table;
+  };
+
+  // A descendant of ours: ours → agent → its future children.
+  {
+    const table = makeTable([
+      [self, 1, "node"],
+      [9001, self, "pi"],
+    ]);
+    const seen: number[] = [];
+    const watcher = new ProcessWatcher({
+      rootPid: 9001,
+      snapshot: async () => new Map(table),
+      onProcess: (payload) => seen.push(payload.pid),
+    });
+    watcher.warm();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const inJob = (watcher as unknown as { observedInJob: boolean }).observedInJob;
+    check("an agent Absence started is recognised as ours", inJob === true);
+    // Nothing is sampled: the kernel will report the tree.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    check("and nothing is reported by sampling", seen.length === 0, String(seen.length));
+    watcher.stop();
+  }
+
+  // Somebody else's process: not ours, so sampling takes over.
+  {
+    const table = makeTable([
+      [self, 1, "node"],
+      [9100, 1, "explorer.exe"],
+      [9101, 9100, "pi"],
+    ]);
+    const watcher = new ProcessWatcher({
+      rootPid: 9101,
+      snapshot: async () => new Map(table),
+      onProcess: () => undefined,
+    });
+    watcher.warm();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const inJob = (watcher as unknown as { observedInJob: boolean }).observedInJob;
+    check("an agent started elsewhere is not ours", inJob === false);
+    check("so it falls back to sampling", (watcher as unknown as { jobMode: boolean }).jobMode === false);
+    watcher.stop();
+  }
+}
+
 finish("observer decoupling checks");
