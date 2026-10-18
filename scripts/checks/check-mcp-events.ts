@@ -137,6 +137,13 @@ section("inset: an MCP call docks, then folds away by itself");
   const pinned = reduceInset(CLOSED_INSET, mcpEvent(), {});
   const held = { ...pinned, pinned: true };
   check("a pinned call never auto-retracts", !shouldAutoRetract(held));
+  const spoken = reduceInset(
+    held,
+    createEvent(session, "message", { role: "assistant", content: "done", streaming: false } as never),
+  );
+  check("a pinned call survives the agent speaking on", spoken.phase === "open", spoken.phase);
+  const ended = reduceInset(held, createEvent(session, "agent_end", { reason: "completed" } as never));
+  check("a pinned call survives the run ending", ended.phase === "open", ended.phase);
   const cleared = reduceInset(held, createEvent(session, "agent_start", { model: "pi", runtime: "pi", cwd: "/" } as never));
   check("a new run clears the dock", cleared.item === undefined);
 }

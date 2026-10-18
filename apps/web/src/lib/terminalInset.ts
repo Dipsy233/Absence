@@ -101,9 +101,11 @@ export function reduceInset(state: InsetState, event: AbsenceEvent, options: Ing
     return state.item ? { ...state, phase: "closing" } : state;
   }
 
-  // Any other activity retracts the call: it has been overtaken. `message` here
+  // Any other activity retracts the call: it has been overtaken — unless the
+  // user pinned it by hand (rule 3): a held card is a kept card, whatever else
+  // the agent does, until it is dismissed or a new run starts. `message` here
   // is the agent speaking — a system message is an Absence notice, not an action.
-  if (state.item && (event.type === "agent_end" || clearsStage(event))) {
+  if (!state.pinned && state.item && (event.type === "agent_end" || clearsStage(event))) {
     return { ...state, phase: "closing" };
   }
 

@@ -28,7 +28,7 @@ const TONE_CLASS: Record<ActivityRow["tone"], string> = {
 export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayCurrent?: boolean }) {
   const openStage = useStageStore((s) => s.openStage);
   const mode = useStageStore((s) => s.mode);
-  const activeItemId = useStageStore((s) => s.activeItem?.id);
+  const activeEventId = useStageStore((s) => s.activeItem?.source?.eventId);
   const openMenu = useUiStore((s) => s.openMenu);
   const focusedEventId = useUiStore((s) => s.focusedEventId);
   const addContext = useChatStore((s) => s.addContext);
@@ -46,13 +46,16 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
   const focused = row.id === focusedEventId;
   // "Selected" is not its own state: it means "this row is what the Stage is
   // showing". Live, that is the row whose Stage item is the active one — true
-  // however the Stage got there, so the hint cannot drift. In replay the Stage
-  // is showing whatever the cursor has reached, which the panel resolves to one
-  // row (`replayCurrent`); marking the active item would be wrong there, because
-  // replay pins its own view instead of opening Stage items.
+  // however the Stage got there, so the hint cannot drift. The comparison is on
+  // the source *event*, not the item id: a streamed thought's Stage card is one
+  // shared item (`think_<session>`), so matching on id would light up every
+  // THINK row at once. In replay the Stage is showing whatever the cursor has
+  // reached, which the panel resolves to one row (`replayCurrent`); marking the
+  // active item would be wrong there, because replay pins its own view instead
+  // of opening Stage items.
   const selected = inReplay
     ? replayCurrent === true
-    : (row.stageItem !== undefined && row.stageItem.id === activeItemId) ||
+    : (row.stageItem !== undefined && row.stageItem.source?.eventId !== undefined && row.stageItem.source.eventId === activeEventId) ||
       (insetItem !== undefined && insetItem.id === insetItemId);
 
   // Followed from a report link: bring the row into view.
