@@ -8,6 +8,7 @@ import { config } from "../config";
 import { listArchives } from "../sessions/archive";
 import { sessionStore, RuntimeUnavailableError } from "../sessions/SessionStore";
 import { toPosix } from "../util/paths";
+import { takeTerminalMirror } from "../sessions/terminalRegistry";
 
 async function isDirectory(candidate: string): Promise<boolean> {
   try {
@@ -97,7 +98,11 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: `not a directory: ${resolved}` });
     }
     try {
-      const session = await sessionStore.createObserved(resolved, pid, body?.label);
+      // A mirror registered by the same process (the CLI's `watch -- cmd`) is
+      // handed over here: the pid is the only shared key, and the HTTP body
+      // cannot carry an object. An agent somebody else started has none.
+      const terminal = takeTerminalMirror(pid);
+      const session = await sessionStore.createObserved(resolved, pid, body?.label, terminal);
       return session.snapshot();
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });

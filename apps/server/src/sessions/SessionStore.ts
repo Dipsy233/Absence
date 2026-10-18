@@ -20,6 +20,7 @@ import { config, type AgentKind } from "../config";
 import { appendEvents, drainArchive, readEvents, writeMeta } from "./archive";
 import { EventBus } from "../events";
 import type { AgentAdapter } from "../agents/AgentAdapter";
+import { TerminalMirror } from "./TerminalMirror";
 import { createAdapter } from "../agents/createAdapter";
 import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
@@ -102,6 +103,14 @@ export class AbsenceSession {
   readonly id: string;
   readonly bus = new EventBus<AbsenceEvent>();
   readonly stateBus = new EventBus<SessionRuntimeState>();
+  /**
+   * The agent's terminal output, mirrored. Present only when Absence started
+   * the agent under a PTY (see cli.ts `watchCommand`); an agent somebody else
+   * started has a terminal we can never see. Deliberately *not* part of the
+   * event stream — a redraw would flush the History window in seconds. See
+   * TerminalMirror.
+   */
+  readonly terminal?: TerminalMirror;
   readonly session: Session;
 
   private adapter: AgentAdapter | undefined;
@@ -143,13 +152,13 @@ export class AbsenceSession {
    * runtime is then unavailable by construction rather than by a guard that
    * someone will forget to add.
    */
-  private readonly observe?: { pid: number; label: string };
+  private readonly observe?: { pid: number; label: string; terminal?: TerminalMirror };
 
   constructor(
     projectPath: string,
     kind: AgentKind,
     private readonly resume?: AbsenceResume,
-    observe?: { pid: number; label: string },
+    observe?: { pid: number; label: string; terminal?: TerminalMirror },
   ) {
     this.id = resume?.absenceSessionId ?? newId("sess");
     this.session = {
@@ -165,6 +174,7 @@ export class AbsenceSession {
     // Pi and its tools run in this very process, so an egg's ancestor chain ends
     // here — the watcher's default root pid is us.
     this.observe = observe;
+    this.terminal = observe?.terminal;
     this.processWatcher = new ProcessWatcher({
       // In observe mode the agent is somebody else's child, so its subtree is
       // rooted at the agent's pid, not at ours (see ProcessWatcher.rootPid).
@@ -678,6 +688,7 @@ export class AbsenceSession {
     this.processWatcher.stop();
     this.unsubAdapter?.();
     this.adapter?.dispose();
+    this.terminal?.dispose();
     await this.watcher?.close();
     await this.flushMeta();
     await drainArchive();
@@ -1114,7 +1125,12 @@ export class SessionStore {
    * for file changes. Every agent is observable this way — see
    * docs/decoupling.md.
    */
-  async createObserved(projectPath: string, pid: number, label?: string): Promise<AbsenceSession> {
+  async createObserved(
+    projectPath: string,
+    pid: number,
+    label?: string,
+    terminal?: TerminalMirror,
+  ): Promise<AbsenceSession> {
     const target = await describeProcess(pid);
     if (!target) {
       throw new Error(`No process with pid ${pid} — it may already have exited.`);
@@ -1123,7 +1139,7 @@ export class SessionStore {
       projectPath,
       "observe" as unknown as AgentKind,
       undefined,
-      { pid, label: label?.trim() || target.name },
+      { pid, label: label?.trim() || target.name, terminal },
     );
     this.sessions.set(session.id, session);
     try {

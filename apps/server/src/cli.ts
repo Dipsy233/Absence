@@ -11,8 +11,12 @@
  *   absence watch -- <cmd> …     start an agent, then observe it
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { parseWatchArgs, type WatchArgs } from "./cliArgs";
 import { startServer, type RunningServer } from "./index";
+import { TerminalMirror } from "./sessions/TerminalMirror";
+import { registerTerminalMirror } from "./sessions/terminalRegistry";
 
 export { parseWatchArgs, type WatchArgs };
 
@@ -34,9 +38,23 @@ const USAGE = [
 /**
  * Watch an agent Absence starts itself.
  *
- * stdin/stdout are inherited, so the agent keeps the terminal — its TUI, its
- * prompts, its keys. Absence only learns the pid and observes it, which is the
- * whole point: it never has to understand the agent to show what it does.
+ * The agent runs under a **PTY**, and this process is a transparent bridge
+ * between that PTY and the real terminal:
+ *
+ *   your terminal ──stdin──► this bridge ──PTY──► agent
+ *   your terminal ◄─stdout── this bridge ◄─PTY─── agent
+ *
+ * Two reasons, both about not being intrusive:
+ *
+ *  · **The agent must see a TTY.** With piped stdio it detects "not a terminal",
+ *    drops its TUI and colour and switches to plain line output. A PTY is what
+ *    makes `absence watch -- pi` look and behave exactly like running `pi`.
+ *  · **The mirror needs the same bytes.** Everything the agent writes is copied
+ *    to a TerminalMirror on its way through, so the Stage can show it without
+ *    parsing, rewriting or re-rendering anything (docs/decoupling.md, Layer 1).
+ *
+ * Keys go through untouched, and a window resize is forwarded, so the agent's
+ * own layout stays correct. Absence never interprets the stream; it is a wire.
  *
  * **The server must be up before the agent is spawned.** On Windows the process
  * observer is a Job Object placed on the server: everything the server creates
@@ -50,28 +68,74 @@ async function watchCommand(command: string[], projectPath: string, label: strin
   // 1. Server first: it takes the job, so the agent below is born into it.
   const server = await startServer();
 
-  // 2. Now the agent. The terminal stays its own: stdio is inherited.
-  //
-  // No `shell: true`. It would wrap the command in `cmd.exe`, and `child.pid`
-  // would then be the wrapper's pid, not the agent's — every observation is
-  // rooted at that pid, so watching the wrapper means watching the wrong tree.
-  const child = spawn(command[0]!, command.slice(1), {
-    stdio: "inherit",
-    cwd: projectPath,
-    // Its own group on POSIX, so a Ctrl-C reaches the agent (the terminal's job)
-    // rather than Absence, which keeps observing until the agent exits.
-    detached: process.platform !== "win32",
-  });
-  if (child.pid === undefined) {
-    await server.close();
-    throw new Error(`could not start ${command.join(" ")}`);
-  }
+  // 2. The agent, under a PTY, with this process as the bridge.
+  const nodePty = (await import("node-pty")) as unknown as {
+    spawn: (
+      file: string,
+      args: string[],
+      options: { cwd: string; env: Record<string, string>; cols: number; rows: number; name: string },
+    ) => {
+      readonly pid: number;
+      onData(listener: (data: string) => void): void;
+      onExit(listener: (event: { exitCode: number }) => void): void;
+      write(data: string): void;
+      resize(cols: number, rows: number): void;
+      kill(signal?: string): void;
+    };
+  };
 
-  await observeAndHold(server, child.pid, projectPath, label ?? command[0]!, () => child.kill());
-  await new Promise<void>((resolve) => {
-    if (child.exitCode !== null) return resolve();
-    child.once("exit", () => resolve());
+  const env: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value !== undefined) env[name] = value;
+  }
+  // node-pty does not search PATH: `node` has to be an absolute path. A bare
+  // name is resolved here the way a shell would, so `absence watch -- pi`
+  // works with whatever the user would type at a prompt.
+  const file = resolveExecutable(command[0]!, env);
+  const pty = nodePty.spawn(file, command.slice(1), {
+    cwd: projectPath,
+    env,
+    cols: process.stdout.columns || 80,
+    rows: process.stdout.rows || 24,
+    name: "xterm-256color",
   });
+
+  const mirror = new TerminalMirror();
+  registerTerminalMirror(pty.pid, mirror);
+
+  // Everything the agent writes: to the real terminal, and to the mirror.
+  pty.onData((data) => {
+    process.stdout.write(data);
+    mirror.push(data);
+  });
+
+  // Everything the user types: straight through. Raw mode so keys arrive one at
+  // a time (arrow keys, Ctrl-C) rather than after a newline.
+  const stdin = process.stdin;
+  const wasRaw = stdin.isRaw === true;
+  if (stdin.isTTY) stdin.setRawMode(true);
+  stdin.resume();
+  const onInput = (data: Buffer) => pty.write(data.toString("utf8"));
+  stdin.on("data", onInput);
+
+  // A resize must reach the agent, or its layout drifts from the window's.
+  const onResize = () => pty.resize(process.stdout.columns || 80, process.stdout.rows || 24);
+  process.stdout.on("resize", onResize);
+
+  const restore = () => {
+    stdin.off("data", onInput);
+    process.stdout.off("resize", onResize);
+    if (stdin.isTTY) stdin.setRawMode(wasRaw);
+    stdin.pause();
+  };
+
+  try {
+    await observeAndHold(server, pty.pid, projectPath, label ?? command[0]!, () => pty.kill());
+    await new Promise<void>((resolve) => pty.onExit(() => resolve()));
+  } finally {
+    restore();
+    mirror.end();
+  }
 }
 
 /** Open an observe session for `pid`, on a server we start, until Ctrl-C. */
@@ -164,4 +228,43 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
   await watchPid(args.pid, args.projectPath, args.label ?? `pid ${args.pid}`);
+}
+
+/**
+ * Resolve a command name to an absolute path, the way a shell would.
+ *
+ * node-pty takes a file path, not a name: `spawn("node", …)` fails with "File
+ * not found" where `spawn` (child_process) would have searched PATH. Doing that
+ * search here keeps `absence watch -- pi` as natural to type as `pi`.
+ * An already-absolute path, or one with a separator, is taken as given.
+ */
+function resolveExecutable(name: string, env: Record<string, string>): string {
+  const exts =
+    process.platform === "win32"
+      ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)
+      : [""];
+  const hasSeparator = name.includes("/") || name.includes("\\");
+  const isAbsolute = /^[a-zA-Z]:[\/]/.test(name) || name.startsWith("/") || name.startsWith("\\");
+  const candidates = (base: string) =>
+    extnameOf(base) ? [base] : exts.map((ext) => base + ext);
+
+  if (isAbsolute || hasSeparator) {
+    for (const candidate of candidates(name)) {
+      if (existsSync(candidate)) return candidate;
+    }
+    return name;
+  }
+  for (const dir of (env.PATH ?? env.Path ?? "").split(process.platform === "win32" ? ";" : ":")) {
+    if (!dir) continue;
+    for (const candidate of candidates(join(dir, name))) {
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return name;
+}
+
+/** True when a path already carries an extension (so PATHEXT is not appended). */
+function extnameOf(file: string): boolean {
+  const base = file.slice(Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\")) + 1);
+  return base.includes(".");
 }

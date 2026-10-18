@@ -257,4 +257,42 @@ section("observe mode rides on kernel events when Absence started the agent");
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// 8. The terminal mirror: a copy of the agent's output that cannot hurt it.
+//
+// Layer 1 of docs/decoupling.md. Three promises, each of which is easy to break
+// and impossible to notice until something else fails:
+//   · a burst becomes few messages, not one per write
+//   · the buffer is bounded, so a long session cannot grow it without limit
+//   · a late subscriber is handed the tail instead of a blank screen
+// ---------------------------------------------------------------------------
+section("terminal mirror: bounded, coalesced, replayable");
+{
+  const { TerminalMirror } = await import("../../apps/server/src/sessions/TerminalMirror");
+  const mirror = new TerminalMirror();
+  const frames: string[] = [];
+  mirror.subscribe((chunk) => frames.push(chunk));
+
+  // A redraw: many small writes in one tick must arrive as one message.
+  for (let i = 0; i < 50; i++) mirror.push(`\rframe ${i}`);
+  check("a burst is coalesced, not one message per write", frames.length === 0, `${frames.length} early`);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  check("and then flushed as a single frame", frames.length === 1, `${frames.length} frames`);
+
+  const tail = mirror.tail();
+  const late: string[] = [];
+  mirror.subscribe((chunk) => late.push(chunk));
+  check("a late subscriber is handed the tail", late.join("") === tail, `${late.length} chunks`);
+
+  // Flood: the ring must stay bounded and report what it dropped.
+  for (let i = 0; i < 20_000; i++) mirror.push("x".repeat(100) + "\n");
+  check("the buffer stays bounded", mirror.tail().length <= 256 * 1024, String(mirror.tail().length));
+  check("and counts what it dropped", mirror.droppedBytes > 0, String(mirror.droppedBytes));
+
+  mirror.end();
+  check("end() marks it finished", mirror.finished === true);
+  mirror.dispose();
+}
+
 finish("observer decoupling checks");
