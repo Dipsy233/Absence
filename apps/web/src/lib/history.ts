@@ -96,10 +96,13 @@ export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
 
 /** The events belonging to a run, clamped to the live window. */
 export function runEvents(events: AbsenceEvent[], run: HistoryRun): AbsenceEvent[] {
-  // The window may have slid past this run's start since it was built.
+  // `fromIndex`/`toIndex` are relative to the *current* window, and a run the
+  // head has passed is clamped to the base, so `from` is already a valid index;
+  // only the end needs clamping to what is loaded. An empty run has
+  // `to < from`: nothing to show.
   const from = Math.max(0, run.fromIndex);
   const to = Math.min(events.length - 1, run.toIndex);
-  if (to < from) return [];
+  if (to < from || events.length === 0) return [];
   return events.slice(from, to + 1);
 }
 
@@ -172,7 +175,8 @@ let cache: HistoryCache | undefined;
  * - **Base offset.** The store records how many events it has dropped
  *   (`eventsBase`). `fromIndex`/`toIndex` stay indices into the *current*
  *   array: a run's absolute start minus the base. A run entirely behind the
- *   base no longer has events to show and is dropped.
+ *   base no longer has events to show; it is kept as a `partial` row with an
+ *   empty range (see `rebase`) rather than dropped.
  * - **Stable identity.** Hydrate and reset replace the array, which starts a
  *   fresh cache; appends and trims keep the identity.
  *
@@ -199,9 +203,20 @@ export function memoBuildHistory(events: AbsenceEvent[]): HistoryRun[] {
   const base = eventsBase(events);
   const stored = cache;
 
-  // No cache, or the window is not the one we folded (a different session, a
-  // rewind, or fewer events than we had consumed): rebuild from scratch.
-  if (!stored || stored.base > base || stored.consumed > base + events.length) {
+  // A *different* window (a rewind, a shorter array after a hydrate) is not a
+  // continuation: rebuild from scratch. Note the absent `stored.base > base`
+  // test — that case is a jump forward (a trimmed window delivered in one go),
+  // which `rebase` handles without losing the runs it has already folded.
+  if (!stored || base < stored.base || stored.consumed > base + events.length) {
+    const fresh = fold(events, base);
+    cache = fresh;
+    return fresh.view;
+  }
+
+  if (base > stored.consumed) {
+    // The head moved past events that were never folded (nothing rendered
+    // between the two calls). The runs in those events cannot be recovered
+    // from the stream, so a fresh fold is the honest answer.
     const fresh = fold(events, base);
     cache = fresh;
     return fresh.view;
@@ -253,18 +268,28 @@ function fold(events: AbsenceEvent[], base: number): HistoryCache {
  */
 function rebase(entry: HistoryCache, base: number): void {
   entry.base = base;
-  // A run is kept only while its *start* is still in the window. A partial run
-  // would under-count (`created` would miss files written by its own trimmed
-  // start) and a full rebuild, which only ever sees the window, would not list
-  // it either — so drop it to match. This is what makes the surviving runs
-  // exactly the ones a fresh `buildHistory` over the same array reports.
-  const kept = entry.runs.filter((run) => run.fromIndex >= base);
-  if (kept.length !== entry.runs.length) {
-    entry.runs = kept;
-    // Ids and `index` are positional: renumber so `#1` is the oldest kept run,
-    // exactly as a full rebuild would have it.
-    entry.runs = kept.map((run, i) => ({ ...run, id: `run_${i + 1}`, index: i + 1 }));
-  }
+  // Nothing is dropped for being old, not even a run the window has slid
+  // completely past: History is the record of what happened in this session,
+  // and losing a row whenever the oldest one was trimmed is why the panel came
+  // to show only the newest run. Such a run keeps its number and its prompt,
+  // with an empty range and `partial` set — its counts and Stage content are
+  // gone with its events, and saying so is better than a vanished row.
+  //
+  // A run the head has only partly passed starts at the base, also marked
+  // partial: its counts cover the part still loaded. A fresh fold over the same
+  // window cannot see either run — which is the reason this cache exists.
+  entry.runs = entry.runs.map((run) => {
+    const fromIndex = Math.max(run.fromIndex, base);
+    // An empty range is `toIndex === fromIndex - 1` whichever end ran out
+    // first — one shape for "no events left", so `runEvents` needs no special
+    // case beyond `to < from`.
+    const empty = run.toIndex < base || run.fromIndex > run.toIndex;
+    const toIndex = empty ? fromIndex - 1 : run.toIndex;
+    const partial = run.partial || run.fromIndex < base;
+    return partial === Boolean(run.partial) && fromIndex === run.fromIndex && toIndex === run.toIndex
+      ? run
+      : { ...run, fromIndex, toIndex, ...(partial ? { partial: true } : {}) };
+  });
   // The view is rebuilt on publish with the current base.
   entry.view = [];
 }
@@ -327,11 +352,15 @@ function closeOpen(
  */
 function publishOpen(entry: HistoryCache, absoluteLast: number): void {
   const base = entry.base;
-  const rel = (absolute: number) => Math.max(0, absolute - base);
+  // Deliberately not clamped at 0: an empty run's end is `fromIndex - 1`, and
+  // clamping would turn "no events" into a range containing the first one.
+  // Callers treat `to < from` as empty (see `runEvents`).
+  const rel = (absolute: number) => absolute - base;
   const closed = entry.runs.map((run) => ({
     ...run,
     fromIndex: rel(run.fromIndex),
     toIndex: rel(run.toIndex),
+    ...(run.partial ? { partial: true } : {}),
   }));
   if (!entry.open) {
     entry.view = closed;

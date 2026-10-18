@@ -74,6 +74,17 @@ export function HistoryPanel() {
                       <span className={active ? "text-desk-amber" : "text-desk-dim"}>#{run.index}</span>
                       <span className="text-desk-dim/70">{formatClock(run.startedAt)}</span>
                       <span className={STATUS_CLASS[run.status]}>{STATUS_LABEL[run.status]}</span>
+                      {run.partial ? (
+                        // The run's first events were trimmed out of the live
+                        // window. The row stays (History is a log) and says so,
+                        // rather than showing partial counts as the whole.
+                        <span
+                          className="text-desk-dim/70"
+                          title="The beginning of this run is no longer in the live event window — its counts and the Stage cover only what is still loaded."
+                        >
+                          partial
+                        </span>
+                      ) : null}
                       <span className="ml-auto text-desk-dim/70">{formatOffset(duration)}</span>
                     </div>
                     <div className="mt-0.5 truncate text-[11px] text-desk-ink/85" title={run.prompt}>

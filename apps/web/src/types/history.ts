@@ -16,6 +16,13 @@ export interface HistoryRun {
   fromIndex: number;
   toIndex: number;
   counts: RunCounts;
+  /**
+   * The run's start slid out of the event window, so only part of its events
+   * are available. The row stays — History is a log, and dropping a run for
+   * being old is how the panel came to show only the newest one — but its
+   * counts and Stage content are partial. See `rebase` in lib/history.
+   */
+  partial?: boolean;
 }
 
 export interface RunCounts {

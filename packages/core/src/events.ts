@@ -314,5 +314,13 @@ export function createEvent<K extends AbsenceEventType>(
  * Truncation drops the *oldest* events. Anything folded from the stream for
  * display (the egg list, Activity rows) must therefore be maintained
  * incrementally, or it shrinks as the window slides — see `sessionStore`.
+ *
+ * The size is a whole-session budget, not a session-tail budget. At 1000 a
+ * single long run — a dev server streaming `process` and `file_change` events —
+ * filled the window on its own, so History showed the last run or two and the
+ * earlier ones were gone. A run's events cannot be summarised away without
+ * losing what the Stage, Activity and the Report rebuild from, so the window
+ * has to be large enough to hold a real session. 10k events is roughly a few
+ * MB of JSON per session in memory, and the archive on disk is unbounded.
  */
-export const MAX_SESSION_EVENTS = 1000;
+export const MAX_SESSION_EVENTS = 10_000;

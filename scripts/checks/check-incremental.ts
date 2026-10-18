@@ -152,7 +152,9 @@ console.log("history + activity vs a full rebuild");
 {
   const window = makeWindow();
   const prompts = 6;
-  const perRun = 400;
+  // Sized from the window (~1.3 windows of events): enough to trim several
+  // runs, few enough that most survive.
+  const perRun = Math.ceil((MAX_SESSION_EVENTS * 1.3) / prompts);
   for (let run = 0; run < prompts; run++) {
     window.push(ev("message", { role: "user", content: `prompt ${run}`, streaming: false }));
     for (let i = 0; i < perRun; i++) {
@@ -183,15 +185,18 @@ console.log("history + activity vs a full rebuild");
 
   const incremental = memoBuildHistory(window.events);
   const full = buildHistory(window.events);
+  // Compare the runs a fresh fold can also see. The incremental view keeps the
+  // trimmed ones too, as `partial` rows — that is `rebase`'s whole purpose and
+  // is checked explicitly below.
+  const whole = incremental.filter((run) => !run.partial);
   check(
-    "same number of runs",
-    incremental.length === full.length,
-    `${incremental.length} vs ${full.length}`,
+    "the same whole runs as a full rebuild",
+    whole.length === full.length,
+    `${whole.length} whole + ${incremental.length - whole.length} partial vs ${full.length}`,
   );
-  const sameRuns = incremental.every((run, i) => {
+  const sameRuns = whole.every((run, i) => {
     const other = full[i]!;
     return (
-      run.id === other.id &&
       run.status === other.status &&
       run.fromIndex === other.fromIndex &&
       run.toIndex === other.toIndex &&
@@ -238,27 +243,42 @@ console.log("incremental vs full, event by event");
     markEventsBase(next, eventsBase(events) + (full ? 1 : 0));
     events = next;
   };
+  /**
+   * The incremental view must be a superset of a fresh rebuild, not equal to it.
+   * A fresh fold only sees the window, so a run whose start was trimmed is
+   * invisible to it; the incremental view has been folding since the session
+   * began and still has that run, with a clamped range and `partial` set.
+   * Comparing the runs both agree on is what is actually checkable; the extra
+   * rows are the point of keeping the cache (see `rebase`).
+   */
   const snapshot = () => {
     const inc = memoBuildHistory(events);
     const full = buildHistory(events);
+    const whole = inc.filter((run) => !run.partial);
+    // `index` is deliberately not compared: a fresh fold starts numbering at
+    // #1, while the incremental view keeps the real number of a trimmed run.
+    const shape = (list: typeof inc) =>
+      JSON.stringify(list.map((r) => [r.status, r.fromIndex, r.toIndex, r.counts]));
     return {
-      runs: JSON.stringify(inc.map((r) => [r.id, r.index, r.status, r.fromIndex, r.toIndex, r.counts])),
-      full: JSON.stringify(full.map((r) => [r.id, r.index, r.status, r.fromIndex, r.toIndex, r.counts])),
-      rows: inc.map((run) => memoRunRows(events, run, true).length).join(","),
+      runs: shape(whole),
+      full: shape(full),
+      rows: whole.map((run) => memoRunRows(events, run, true).length).join(","),
       fullRows: full.map((run) => runEvents(events, run).map(eventToActivityRow).filter(Boolean).length).join(","),
     };
   };
 
   let tracked = 0;
   let mismatched = 0;
-  for (let run = 0; run < 8; run++) {
+  const RUNS = 8;
+  const perRun = Math.ceil((MAX_SESSION_EVENTS * 1.4) / RUNS);
+  for (let run = 0; run < RUNS; run++) {
     push(ev("message", { role: "user", content: `p${run}`, streaming: false }));
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < perRun; i++) {
       if (i % 6 === 0) push(ev("file_write", { path: `f${run}_${i}.ts`, content: "x" }));
       else if (i % 6 === 1) push(ev("command", { command: "ls", status: "failed", toolCallId: `t${run}_${i}` }));
       else if (i % 6 === 2) push(ev("file_change", { path: `f${run}.ts`, kind: "created" }));
       else push(ev("thinking", { content: "x", streaming: true }));
-      if (i % 40 === 0) {
+      if (i % Math.max(1, Math.floor(perRun / 8)) === 0) {
         tracked += 1;
         const { runs, full, rows, fullRows } = snapshot();
         if (runs !== full || rows !== fullRows) mismatched += 1;
@@ -270,7 +290,17 @@ console.log("incremental vs full, event by event");
     if (runs !== full) mismatched += 1;
   }
   console.log(`         ${tracked} snapshots, window slid to base ${eventsBase(events)}`);
-  check("incremental matches a full rebuild at every step", mismatched === 0, `${mismatched} mismatches`);
+  check(
+    "incremental runs match a full rebuild at every step (partials excluded)",
+    mismatched === 0,
+    `${mismatched} mismatches`,
+  );
+  const finalInc = memoBuildHistory(events);
+  check(
+    "the incremental view keeps the runs a fresh fold cannot see",
+    finalInc.some((run) => run.partial) && finalInc.length > buildHistory(events).length,
+    `${finalInc.filter((r) => r.partial).length} partial, ${finalInc.length} vs ${buildHistory(events).length}`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +390,79 @@ console.log("session store publishes each event");
     "caches survive a new array wrapper",
     JSON.stringify(memoBuildHistory(copy).map((r) => [r.id, r.fromIndex, r.toIndex])) ===
       JSON.stringify(memoBuildHistory(useSessionStore.getState().events).map((r) => [r.id, r.fromIndex, r.toIndex])),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 4. History keeps every run as the window slides (regression)
+//
+// The panel used to show only the newest run or two, from a real session whose
+// archive held seven. Two separate causes:
+//   a. `rebase` dropped any run whose *start* fell out of the window, so a row
+//      vanished every time the oldest run was trimmed.
+//   b. the window was 1000 events for the whole session, which one long run
+//      (a dev server streaming process/file_change) filled on its own.
+// ---------------------------------------------------------------------------
+console.log("history keeps every run across a sliding window");
+{
+  const window = makeWindow();
+  const runs = 6;
+  // Each run fits comfortably in the window; the whole session is ~1.3 windows
+  // long, so runs are trimmed and at least one slides out entirely.
+  const perRun = Math.ceil((MAX_SESSION_EVENTS * 1.3) / runs);
+  // The live app folds on every event (History is always mounted), which is
+  // what lets it keep runs whose events have since been trimmed.
+  const emit = (event: AbsenceEvent) => {
+    window.push(event);
+    memoBuildHistory(window.events);
+  };
+  for (let r = 0; r < runs; r++) {
+    emit(ev("message", { role: "user", content: `run ${r}`, streaming: false }));
+    emit(ev("agent_start", { model: "pi" }));
+    for (let i = 0; i < perRun; i++) {
+      emit(
+        i % 2 === 0
+          ? ev("file_change", { path: `f${r}-${i}.ts`, kind: "modified" })
+          : ev("tool_update", { toolCallId: "t", toolName: "read", partial: {} }),
+      );
+    }
+    emit(ev("agent_end", { reason: "completed" }));
+  }
+  const live = memoBuildHistory(window.events);
+  const fresh = buildHistory(window.events);
+  console.log(`         window ${window.events.length}, a fresh fold sees ${fresh.length} of ${runs} runs`);
+  check("every run is still listed", live.length === runs, `${live.length} of ${runs}`);
+  check(
+    "the oldest run survives the window sliding past it",
+    live[0]?.prompt.startsWith("run 0"),
+    live[0]?.prompt,
+  );
+  check("the newest run is last", live[live.length - 1]?.prompt.startsWith(`run ${runs - 1}`));
+  check("a fresh fold loses the trimmed runs", fresh.length < runs, `${fresh.length} of ${runs}`);
+  check(
+    "a run the head has passed is marked partial",
+    live.some((run) => run.partial),
+    String(live.filter((run) => run.partial).length),
+  );
+  // An empty range (`runEvents` returns nothing) is the marker for "the window
+  // no longer holds any of this run"; the row and its number stay.
+  check(
+    "a run slid clean out keeps an empty row instead of vanishing",
+    live.some((run) => run.partial && runEvents(window.events, run).length === 0),
+    live.map((run) => `${run.index}:${run.fromIndex}-${run.toIndex}(${runEvents(window.events, run).length})`).join(" "),
+  );
+  check(
+    "every run's range is inside the window",
+    live.every((run) => run.fromIndex >= 0 && run.toIndex < window.events.length),
+  );
+  // The runs both views agree on must match exactly — the incremental view may
+  // hold more, never different.
+  const whole = live.filter((run) => !run.partial);
+  check(
+    "a fresh rebuild agrees on the runs still wholly in the window",
+    JSON.stringify(fresh.map((r) => [r.fromIndex, r.toIndex, r.status, r.counts])) ===
+      JSON.stringify(whole.map((r) => [r.fromIndex, r.toIndex, r.status, r.counts])),
+    `${fresh.length} fresh vs ${whole.length} whole`,
   );
 }
 
