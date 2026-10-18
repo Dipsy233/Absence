@@ -41,7 +41,6 @@ export class PiAdapter extends BaseAdapter {
   /** Paths whose whole content we hold (a write/edit). */
   private wholeFiles = new Set<string>();
   private assistantAcc = "";
-  private thinkingAcc = "";
   private aborted = false;
   /**
    * The tool names this session declares to the model, from
@@ -403,7 +402,7 @@ export class PiAdapter extends BaseAdapter {
     if (!this.session) throw new Error("Pi session not started");
     this.aborted = false;
     this.assistantAcc = "";
-    this.thinkingAcc = "";
+    this.resetThinking();
     try {
       await this.session.prompt(text);
     } catch (error) {
@@ -434,12 +433,15 @@ export class PiAdapter extends BaseAdapter {
         break;
 
       case "agent_settled":
+        // A run aborted mid-thought never reaches message_end, so send the
+        // tail the throttle still held before the run is declared over.
+        this.flushThinking();
         emit("agent_end", { reason: this.aborted ? "aborted" : "completed" });
         break;
 
       case "message_start":
         this.assistantAcc = "";
-        this.thinkingAcc = "";
+        this.resetThinking();
         break;
 
       case "message_update": {
@@ -453,12 +455,9 @@ export class PiAdapter extends BaseAdapter {
             streaming: true,
           });
         } else if (inner.type === "thinking_delta") {
-          this.thinkingAcc += inner.delta;
-          emit("thinking", {
-            content: this.thinkingAcc,
-            delta: inner.delta,
-            streaming: true,
-          });
+          // Coalesced in BaseAdapter: one event per token would flood the
+          // session window and give Activity a row per character.
+          this.emitThinkingDelta(inner.delta);
         } else if (inner.type === "error") {
           emit("error", { message: errorMessage(inner.error) });
         }
@@ -469,8 +468,11 @@ export class PiAdapter extends BaseAdapter {
         const message = event.message as { role?: string; content?: unknown };
         if (message.role === "assistant") {
           const text = textOfContent(message.content);
+          // End of the message is end of the thought: send what the throttle
+          // still held, then clear both accumulators.
+          this.flushThinking();
           this.assistantAcc = "";
-          this.thinkingAcc = "";
+          this.resetThinking();
           // A tool-only turn (e.g. a bare find/grep) carries no text. Emitting it
           // would append an empty bubble to the chat.
           if (text.trim().length > 0) {

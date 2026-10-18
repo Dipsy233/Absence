@@ -49,9 +49,9 @@ export class DshAdapter extends BaseAdapter {
   private configOptions?: AcpConfigOption[];
   /** Approval prompts waiting for a user decision, keyed by the event id. */
   private pendingApprovals = new Map<string, (value: string) => void>();
-  /** Accumulators so a streamed chunk becomes a full message/thought on end. */
+  /** Accumulators so a streamed chunk becomes a full message on end. The
+   *  thinking deltas are folded by BaseAdapter (see emitThinkingDelta). */
   private assistantAcc = "";
-  private thinkingAcc = "";
   /** The last assistant message id counted into the stats. */
   private countedMessageId = "";
   private stats = {
@@ -155,14 +155,16 @@ export class DshAdapter extends BaseAdapter {
     this.aborted = false;
     this.busy = true;
     this.assistantAcc = "";
-    this.thinkingAcc = "";
+    this.resetThinking();
     this.stats.userMessages += 1;
     this.emitAbsence("agent_start", { model: this.model });
     try {
       // `session/prompt` resolves when the turn settles, with a stopReason.
       const { stopReason } = await client.prompt(sessionId, text);
+      this.flushThinking();
       this.emitAbsence("agent_end", { reason: stopReasonToReason(stopReason, this.aborted) });
     } catch (error) {
+      this.flushThinking();
       this.emitAbsence("error", { message: errorMessage(error) });
       this.emitAbsence("agent_end", { reason: "error" });
     } finally {
@@ -309,12 +311,9 @@ export class DshAdapter extends BaseAdapter {
       case "agent_thought_chunk": {
         const text = textOfContentBlock(update.content);
         if (text.length === 0) break;
-        this.thinkingAcc += text;
-        emit("thinking", {
-          content: this.thinkingAcc,
-          delta: text,
-          streaming: true,
-        });
+        // Coalesced in BaseAdapter: one event per token would flood the
+        // session window and give Activity a row per character.
+        this.emitThinkingDelta(text);
         break;
       }
 

@@ -19,6 +19,7 @@
  *    with the window size.
  */
 import { createEvent, MAX_SESSION_EVENTS, type AbsenceEvent, type AbsenceEventType } from "@absence/core";
+import type { ActivityRow } from "../../apps/web/src/types/stage";
 import {
   buildHistory,
   eventsBase,
@@ -27,7 +28,7 @@ import {
   memoRunRows,
   runEvents,
 } from "../../apps/web/src/lib/history";
-import { eventToActivityRow } from "../../apps/web/src/lib/events";
+import { appendActivityRow, eventToActivityRow } from "../../apps/web/src/lib/events";
 import { applyProcessEvent, sortEggs, type Egg } from "../../apps/web/src/lib/eggs";
 
 let failures = 0;
@@ -213,9 +214,11 @@ console.log("history + activity vs a full rebuild");
   const display = true;
   for (const run of incremental) {
     const current = memoRunRows(window.events, run, display);
-    const expected = runEvents(window.events, run)
-      .map(eventToActivityRow)
-      .filter((row): row is NonNullable<typeof row> => row !== undefined);
+    const expected: NonNullable<ReturnType<typeof eventToActivityRow>>[] = [];
+    for (const row of runEvents(window.events, run).map(eventToActivityRow)) {
+      // Consecutive THINK rows fold into one (see appendActivityRow).
+      if (row) appendActivityRow(expected, row);
+    }
     if (
       current.length !== expected.length ||
       current.some((row, i) => row.id !== expected[i]!.id || row.tone !== expected[i]!.tone)
@@ -264,11 +267,22 @@ console.log("incremental vs full, event by event");
     // #1, while the incremental view keeps the real number of a trimmed run.
     const shape = (list: typeof inc) =>
       JSON.stringify(list.map((r) => [r.status, r.fromIndex, r.toIndex, r.counts]));
+    const foldRows = (list: typeof full) =>
+      list
+        .map((run) => {
+          const rows: ActivityRow[] = [];
+          for (const row of runEvents(events, run).map(eventToActivityRow)) {
+            // Consecutive THINK rows fold into one (see appendActivityRow).
+            if (row) appendActivityRow(rows, row);
+          }
+          return rows.length;
+        })
+        .join(",");
     return {
       runs: shape(whole),
       full: shape(full),
-      rows: whole.map((run) => memoRunRows(events, run, true).length).join(","),
-      fullRows: full.map((run) => runEvents(events, run).map(eventToActivityRow).filter(Boolean).length).join(","),
+      rows: foldRows(whole),
+      fullRows: foldRows(full),
     };
   };
 

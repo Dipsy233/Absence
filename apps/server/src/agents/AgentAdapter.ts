@@ -120,6 +120,19 @@ export abstract class BaseAdapter implements AgentAdapter {
   protected cwd = "";
   private subscribers = new Set<(event: AbsenceEvent) => void>();
 
+  // --- thinking stream coalescing -------------------------------------------
+  //
+  // Reasoning arrives one token at a time. Emitting a `thinking` event per
+  // token floods the session window (MAX_SESSION_EVENTS) with per-character
+  // events — one long thought could evict a whole run's history on its own —
+  // and gave the Activity panel a row per character. The deltas are folded
+  // here instead: the accumulated thought is re-emitted at most once per
+  // THINK_EMIT_MS, and `flushThinking()` sends whatever is still held when the
+  // thought ends (message_end / agent_end).
+  private thinkingAcc = "";
+  private thinkingDirty = false;
+  private thinkingLastEmit = 0;
+
   abstract start(ctx: AgentStartContext): Promise<AgentStartResult>;
   abstract prompt(text: string): Promise<void>;
   abstract abort(): Promise<void>;
@@ -143,4 +156,32 @@ export abstract class BaseAdapter implements AgentAdapter {
   protected emitAbsence<K extends AbsenceEventType>(type: K, payload: AbsenceEventPayloadMap[K]): void {
     this.emit(createEvent(this.sessionId, type, payload));
   }
+
+  /** Clear the thought accumulator (a new message, a new prompt). */
+  protected resetThinking(): void {
+    this.thinkingAcc = "";
+    this.thinkingDirty = false;
+    this.thinkingLastEmit = Date.now();
+  }
+
+  /** Fold one reasoning delta in, emitting the thought so far at most every THINK_EMIT_MS. */
+  protected emitThinkingDelta(delta: string): void {
+    this.thinkingAcc += delta;
+    this.thinkingDirty = true;
+    const now = Date.now();
+    if (now - this.thinkingLastEmit < THINK_EMIT_MS) return;
+    this.thinkingLastEmit = now;
+    this.thinkingDirty = false;
+    this.emitAbsence("thinking", { content: this.thinkingAcc, delta, streaming: true });
+  }
+
+  /** Emit the tail of a thought the throttle still held, as the final (non-streaming) event. */
+  protected flushThinking(): void {
+    if (!this.thinkingDirty) return;
+    this.thinkingDirty = false;
+    this.emitAbsence("thinking", { content: this.thinkingAcc, streaming: false });
+  }
 }
+
+/** How long a thought may grow before it is re-emitted as a `thinking` event. */
+const THINK_EMIT_MS = 150;

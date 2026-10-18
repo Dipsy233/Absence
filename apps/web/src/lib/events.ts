@@ -436,6 +436,27 @@ export function firstLine(text: string): string {
   return text.split("\n").find((line) => line.trim().length > 0)?.trim() ?? "(thinking…)";
 }
 
+/**
+ * Append a row to the Activity list, folding a streamed thought into the row
+ * it continues.
+ *
+ * Reasoning streams as a run of `thinking` events — one per token before the
+ * adapters coalesce them, one per flush window after — and each event used to
+ * become its own row, so one thought filled the panel with THINK lines that
+ * differ only in how much text they had. Consecutive thinking events are the
+ * same thought growing (the report's timeline collapses them the same way, see
+ * `buildTimeline`), so here the last row is replaced instead of a new one
+ * appended. Any other event in between ends the thought and starts a new row.
+ */
+export function appendActivityRow(rows: ActivityRow[], row: ActivityRow): void {
+  const last = rows[rows.length - 1];
+  if (row.tone === "think" && last?.tone === "think") {
+    rows[rows.length - 1] = row;
+    return;
+  }
+  rows.push(row);
+}
+
 /** A compact, clickable row for the Activity panel. */
 export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined {
   if (!ACTIVITY_TYPES.has(event.type)) return undefined;

@@ -1,6 +1,6 @@
 import type { AbsenceEvent } from "@absence/core";
 import type { ActivityRow } from "../types/stage";
-import { eventToActivityRow } from "./events";
+import { appendActivityRow, eventToActivityRow } from "./events";
 import type { HistoryRun, RunCounts } from "../types/history";
 
 /** One event's contribution to a run's counts. */
@@ -477,7 +477,9 @@ function publishOpen(entry: HistoryCache, absoluteLast: number): void {
  * The panel used to `map` + `filter` the whole run on every event, which is
  * O(run length) per token and allocates a new array each time. Here the rows
  * are kept per (events array, run, visibility) and only the tail is converted:
- * `eventToActivityRow` is pure, so a row never changes once created.
+ * `eventToActivityRow` is pure, so a row never changes once created — a
+ * streamed thought being the exception, which `appendActivityRow` folds into
+ * the row it continues instead of appending a new one per token.
  *
  * The run only grows at its tail, so a running absolute index into the event
  * stream is enough to resume the scan. A different run, or a toggled setting,
@@ -526,8 +528,9 @@ export function memoRunRows(
     if (!event) break;
     const row = eventToActivityRow(event);
     // The Setting can hide the LAID/DIED process rows (Agent Eggs) so the panel
-    // reads as actions only; the eggs stay in the Agent Eggs panel.
-    if (row && (displayInActivity || row.tone !== "process")) entry.rows.push(row);
+    // reads as actions only; the eggs stay in the Agent Eggs panel. Consecutive
+    // THINK rows fold into one (see appendActivityRow).
+    if (row && (displayInActivity || row.tone !== "process")) appendActivityRow(entry.rows, row);
   }
   entry.scanned = base + to + 1;
   return entry.rows;
