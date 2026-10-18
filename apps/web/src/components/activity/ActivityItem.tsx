@@ -4,6 +4,8 @@ import { eventContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
+import { useSessionStore } from "../../stores/sessionStore";
+import { eventToMcpInset } from "../../lib/events";
 import { useUiStore } from "../../stores/uiStore";
 
 const TONE_CLASS: Record<ActivityRow["tone"], string> = {
@@ -31,10 +33,15 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
   const focusedEventId = useUiStore((s) => s.focusedEventId);
   const addContext = useChatStore((s) => s.addContext);
   const seek = useReplayStore((s) => s.seekTimestamp);
+  const pinInset = useSessionStore((s) => s.pinInset);
+  const insetItemId = useSessionStore((s) => s.inset.item?.id);
   const ref = useRef<HTMLButtonElement>(null);
 
   const inReplay = mode === "replay";
-  const canOpen = row.stageItem !== undefined;
+  // An MCP call opens in the docked inset, so it is openable even though it
+  // never becomes a Stage page (`stageItem` is undefined for it).
+  const insetItem = eventToMcpInset(row.event);
+  const canOpen = row.stageItem !== undefined || insetItem !== undefined;
   const clickable = inReplay || canOpen;
   const focused = row.id === focusedEventId;
   // "Selected" is not its own state: it means "this row is what the Stage is
@@ -45,7 +52,8 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
   // replay pins its own view instead of opening Stage items.
   const selected = inReplay
     ? replayCurrent === true
-    : row.stageItem !== undefined && row.stageItem.id === activeItemId;
+    : (row.stageItem !== undefined && row.stageItem.id === activeItemId) ||
+      (insetItem !== undefined && insetItem.id === insetItemId);
 
   // Followed from a report link: bring the row into view.
   useEffect(() => {
@@ -55,6 +63,14 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
   const activate = () => {
     if (inReplay) {
       seek(row.event.timestamp);
+      return;
+    }
+    // An MCP call opens in the Stage's docked inset, not as a Stage page: it must
+    // never cover what the agent was actually looking at. Pinned, so a click
+    // holds it open instead of it folding away mid-read.
+    const mcpInset = insetItem;
+    if (mcpInset) {
+      pinInset(mcpInset);
       return;
     }
     if (row.stageItem) openStage(row.stageItem);
@@ -80,7 +96,9 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
         disabled={!clickable}
         onClick={activate}
         onContextMenu={handleContextMenu}
-        title={inReplay ? "Scrub to this event" : canOpen ? "Open in Stage" : undefined}
+        title={
+          inReplay ? "Scrub to this event" : insetItem ? "Show in the MCP dock" : canOpen ? "Open in Stage" : undefined
+        }
         aria-current={selected ? "true" : undefined}
         className={[
           // The left border is always 2px wide so selecting a row never shifts

@@ -9,9 +9,11 @@ import type {
   SessionRuntimeState,
   SessionSnapshot,
 } from "@absence/core";
+import type { StageItem } from "../types/stage";
 import { MAX_SESSION_EVENTS } from "@absence/core";
 import * as api from "../lib/api";
 import { STAGE_EVENT_TYPES, clearsStage, isInstantSearch, lastStageAction } from "../lib/events";
+import { CLOSED_INSET, latestMcpItem, reduceInset, type InsetState } from "../lib/terminalInset";
 import { applyProcessEvent, sortEggs, type Egg } from "../lib/eggs";
 import { eventsBase, markEventsBase } from "../lib/history";
 
@@ -65,6 +67,18 @@ interface SessionStore {
   eggState: EggStateHandle;
   /** The most recent event that owns the Stage (read02 §14). */
   currentAction?: AbsenceEvent;
+  /**
+   * The MCP call docked above the chat, if any. Kept apart from
+   * `currentAction` on purpose: an MCP call is an inset, not a page, so it must
+   * not cover — or be covered by — whatever the Stage is showing.
+   */
+  inset: InsetState;
+  /** Fold the docked call away now (its retract timer fired, or a dismiss). */
+  retractInset: () => void;
+  /** Empty the dock once the fold-away animation has played. */
+  closeInset: () => void;
+  /** Dock a call and hold it until dismissed (a click from Activity). */
+  pinInset: (item: StageItem) => void;
   context?: ContextState;
   /**
    * What the runtime can do beyond its built-in tools — MCP servers and skills.
@@ -98,10 +112,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   eventsVersion: 0,
   eggState: { eggs: new Map(), version: 0, retired: 0 },
   currentAction: undefined,
+  inset: CLOSED_INSET,
   context: undefined,
   capabilities: undefined,
   connected: false,
   error: undefined,
+
+  retractInset: () =>
+    set((state) => (state.inset.item ? { inset: { ...state.inset, phase: "closing" } } : {})),
+
+  closeInset: () => set((state) => (state.inset.item ? { inset: CLOSED_INSET } : {})),
+
+  pinInset: (item) => set({ inset: { item, phase: "open", pinned: true } }),
 
   startSession: async (projectPath, agent) => {
     set({ error: undefined });
@@ -159,6 +181,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       eventsVersion: 0,
       eggState: { eggs: new Map(), version: 0, retired: 0 },
       currentAction: undefined,
+      inset: CLOSED_INSET,
       context: undefined,
       capabilities: undefined,
       connected: false,
@@ -180,6 +203,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       eventsVersion: get().eventsVersion + 1,
       eggState: { eggs, version: get().eggState.version + 1, retired: 0 },
       currentAction: lastStageAction(snapshot.events),
+      inset: { item: latestMcpItem(snapshot.events), phase: "open", pinned: false },
     });
   },
 
@@ -219,6 +243,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     } else if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) {
       patch.currentAction = event;
     }
+    // The docked MCP inset folds independently of the page: it retracts on its
+    // own after the call ends, and never covers the Stage in the meantime.
+    const nextInset = reduceInset(get().inset, event);
+    if (nextInset !== get().inset) patch.inset = nextInset;
     set(patch);
   },
 

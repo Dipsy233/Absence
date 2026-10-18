@@ -21,7 +21,14 @@ export const ACTIVITY_TYPES = new Set<AbsenceEvent["type"]>([
   "error",
 ]);
 
-/** Events that own the Stage. */
+/**
+ * Events that own the Stage page — the sheet that covers the stage body.
+ *
+ * An MCP call is deliberately absent: it is docked as a terminal inset above the
+ * chat (see `mcpInsetItem`), because a call into another process should not
+ * replace what you are looking at. `isMcpEvent` is how the stage resolvers in
+ * lib/terminalInset.ts pick it up instead.
+ */
 export const STAGE_EVENT_TYPES = new Set<AbsenceEvent["type"]>([
   "thinking",
   "file_read",
@@ -30,8 +37,32 @@ export const STAGE_EVENT_TYPES = new Set<AbsenceEvent["type"]>([
   "command",
   "search",
   "approval",
-  "mcp",
 ]);
+
+/** ``mcp__<server>__<tool>`` — the tool name every runtime gives an MCP call. */
+export function parseMcpToolName(toolName: string): { server: string; tool: string } | undefined {
+  if (!toolName.startsWith("mcp__")) return undefined;
+  const rest = toolName.slice("mcp__".length);
+  const cut = rest.indexOf("__");
+  if (cut <= 0) return undefined;
+  return { server: rest.slice(0, cut), tool: rest.slice(cut + 2) };
+}
+
+/**
+ * Every event that concerns an MCP call — the full `mcp` event, and the
+ * `tool_start` / `tool_end` pair an adapter may emit before (or instead of) it.
+ */
+export function isMcpEvent(event: AbsenceEvent): boolean {
+  if (event.type === "mcp") return true;
+  if (event.type === "tool_start") return parseMcpToolName(event.payload.toolName) !== undefined;
+  if (event.type === "tool_end") {
+    // `tool_end` may not carry the tool name; a preceding start is matched by
+    // the call id in the inset resolver, so only name-bearing ends count here.
+    const name = event.payload.toolName;
+    return name !== undefined && parseMcpToolName(name) !== undefined;
+  }
+  return false;
+}
 
 /**
  * A run ended, a new one started, or the agent began speaking: the Stage goes
@@ -49,6 +80,9 @@ export function lastStageAction(events: AbsenceEvent[]): AbsenceEvent | undefine
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!;
     if (clearsStage(event)) return undefined;
+    // An MCP call never takes the page: skip past it to whatever the agent was
+    // actually showing (a diff, a file, a command) instead of blanking the Stage.
+    if (isMcpEvent(event)) continue;
     if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) return event;
   }
   return undefined;
@@ -258,29 +292,10 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
       };
     }
     case "mcp": {
-      // An MCP call renders through the terminal view — the same surface as a
-      // command — because it is one: something ran and this is what came back.
-      // The header says which server answered, so it is never confused with a
-      // shell command. Keyed on the call id so re-deriving (every state push,
-      // every replay tick) does not re-mount the card.
-      const { server, tool, namespace, args, result, structured, isError, toolCallId } = event.payload;
-      return {
-        id: `mcp_${toolCallId}`,
-        type: "terminal",
-        title: `mcp://${server}/${namespace ? `${namespace}.` : ""}${tool}`,
-        source: { eventId: event.id },
-        payload: {
-          kind: "terminal",
-          command: `mcp ${server} › ${namespace ? `${namespace}/` : ""}${tool}`,
-          stdout: (args && args !== "{}" ? "# arguments" + NL + args + NL + NL : "") + (result || "(no output)"),
-          stderr: "",
-          exitCode: isError ? 1 : 0,
-          // Extra context the terminal header shows for an MCP call.
-          mcp: { server, tool, namespace, structured },
-        },
-        createdAt: event.timestamp,
-        event,
-      };
+      // An MCP call is rendered through the terminal view, but as an *inset*
+      // docked above the chat rather than a page over the Stage (see
+      // `mcpInsetItem`): it runs alongside the work instead of replacing it.
+      return mcpInsetItem(event);
     }
     case "approval": {
       // An approval is a prompt, not an action: it is keyed on the approval id
@@ -300,6 +315,108 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
     default:
       return undefined;
   }
+}
+
+/**
+ * An MCP call as a terminal item meant for the docked inset, not a Stage page.
+ *
+ * `weight: "inset"` is what keeps it from covering the Stage: the terminal view
+ * is the right surface for "something ran, here is what came back", but a call
+ * into another process is a sidebar note, not a page. It is keyed on the call id
+ * so the start event and the result event render as one card (no re-mount, no
+ * flash) and so re-deriving on every state push / replay tick is stable.
+ *
+ * `phase` says whether the call is in flight or done. The inset uses it to pin
+ * an in-flight call open and to start the retract timer once it ends.
+ */
+export function mcpInsetItem(event: AbsenceEvent): StageItem | undefined {
+  if (event.type !== "mcp") return undefined;
+  const { server, tool, namespace, args, result, structured, isError, toolCallId } = event.payload;
+  const argsText = args && args !== "{}" ? args : undefined;
+  return {
+    id: `mcp_${toolCallId}`,
+    type: "terminal",
+    weight: "inset",
+    title: `mcp://${server}/${namespace ? `${namespace}.` : ""}${tool}`,
+    source: { eventId: event.id },
+    payload: {
+      kind: "terminal",
+      command: `mcp ${server} › ${namespace ? `${namespace}/` : ""}${tool}`,
+      stdout: (argsText ? "# arguments" + NL + argsText + NL + NL : "") + (result || "(no output)"),
+      stderr: isError && result ? result : "",
+      exitCode: isError ? 1 : 0,
+      mcp: {
+        server,
+        tool,
+        namespace,
+        structured,
+        args: argsText,
+        phase: "result",
+        toolCallId,
+      },
+    },
+    createdAt: event.timestamp,
+    event,
+  };
+}
+
+/**
+ * An MCP call the adapter only announced (`tool_start` for an `mcp__` tool).
+ *
+ * Some runtimes report a call's start and never a result of their own. Showing
+ * the call while it runs — and saying plainly that Absence saw it start and
+ * nothing more — is better than a silent gap, and it does not pretend the call
+ * produced the empty output. Keyed on the call id, exactly like the finished
+ * card, so the result event replaces this one in place when it arrives.
+ */
+function mcpStartItem(event: AbsenceEvent): StageItem | undefined {
+  if (event.type !== "tool_start") return undefined;
+  const { toolName, toolCallId, args } = event.payload;
+  const parsed = parseMcpToolName(toolName);
+  if (!parsed) return undefined;
+  const argsText =
+    args === undefined || args === null ? undefined : typeof args === "string" ? (args.length > 0 ? args : undefined) : safeJson(args);
+  return {
+    id: `mcp_${toolCallId}`,
+    type: "terminal",
+    weight: "inset",
+    title: `mcp://${parsed.server}/${parsed.tool}`,
+    source: { eventId: event.id },
+    payload: {
+      kind: "terminal",
+      command: `mcp ${parsed.server} › ${parsed.tool}`,
+      stdout: (argsText ? "# arguments" + NL + argsText + NL + NL : "") + "…",
+      stderr: "",
+      exitCode: 0,
+      mcp: {
+        server: parsed.server,
+        tool: parsed.tool,
+        args: argsText,
+        phase: "call",
+        toolCallId,
+        pending: true,
+        note: "Call in flight — Absence saw the request; the server's result has not arrived.",
+      },
+    },
+    createdAt: event.timestamp,
+    event,
+  };
+}
+
+/** JSON text for an unknown argument value, never throwing on cycles. */
+function safeJson(value: unknown): string | undefined {
+  try {
+    const text = JSON.stringify(value, undefined, 2);
+    return text === undefined ? undefined : text;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The Stage item for one MCP-ish event: a finished call, or a call in flight. */
+export function eventToMcpInset(event: AbsenceEvent): StageItem | undefined {
+  if (event.type === "mcp") return mcpInsetItem(event);
+  return mcpStartItem(event);
 }
 
 /** Added/removed line counts of a unified diff (ignores the +++/--- headers). */

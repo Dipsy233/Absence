@@ -14,6 +14,14 @@ export type StageMode =
 
 export type StageItemType = "file" | "diff" | "terminal" | "thought" | "process" | "approval";
 
+/**
+ * Presentation of a Stage item. A "page" is pinned over the whole Stage; an
+ * "inset" is a small terminal pane docked above the chat that never covers the
+ * Stage body. An MCP call is an inset: it runs alongside the work rather than
+ * replacing what you are looking at, and it retracts when the call ends.
+ */
+export type StageWeight = "page" | "inset";
+
 export type StagePayload =
   | {
       kind: "file";
@@ -61,6 +69,25 @@ export type StagePayload =
         namespace?: string;
         /** The server's structured result, as JSON text, when it sent one. */
         structured?: string;
+        /** The call's arguments, for the terminal card's text/json toggle. */
+        args?: string;
+        /**
+         * `call` while the call is in flight (a `tool_start` for an `mcp__`
+         * tool), `result` once it ends. An in-flight inset is pinned open; a
+         * finished one starts a short retract timer.
+         */
+        phase?: "call" | "result";
+        /** Pairing id, so the start event and the result event share one card. */
+        toolCallId?: string;
+        /**
+         * True when this card was rebuilt from the tool start instead of a full
+         * `mcp` event: the adapter never reported a result, so absence shows
+         * what it has and says so rather than pretending the call produced
+         * this.
+         */
+        pending?: boolean;
+        /** Absence's honest note for a call it only saw start. */
+        note?: string;
       };
     }
   /** The agent's own reasoning, streamed as it arrives. */
@@ -96,6 +123,8 @@ export interface StageItem {
   id: string;
   type: StageItemType;
   title: string;
+  /** Page (covers the Stage) or inset (docked, never covers). Defaults to page. */
+  weight?: StageWeight;
   source?: { eventId?: string; path?: string };
   payload: StagePayload;
   createdAt: number;

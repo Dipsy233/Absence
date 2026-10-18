@@ -9,6 +9,15 @@ export interface McpTerminalContext {
   tool: string;
   namespace?: string;
   structured?: string;
+  /** The call's arguments, shown by the header's text/json toggle. */
+  args?: string;
+  /** `call` while in flight, `result` once the server answered. */
+  phase?: "call" | "result";
+  toolCallId?: string;
+  /** Rebuilt from a tool start only: no result was ever reported. */
+  pending?: boolean;
+  /** Absence's honest note about a call it only saw start. */
+  note?: string;
 }
 
 interface TerminalStageProps {
@@ -32,6 +41,8 @@ export function TerminalStage({
   const addContext = useChatStore((s) => s.addContext);
   const [showStructured, setShowStructured] = useState(false);
   const output = [stdout, stderr].filter((part) => part.length > 0).join(String.fromCharCode(10));
+  // A call the adapter only announced: in flight, with nothing back yet.
+  const pending = mcp?.phase === "call";
   const NL = String.fromCharCode(10);
 
   return (
@@ -65,8 +76,13 @@ export function TerminalStage({
               {showStructured ? "text" : "json"}
             </button>
           ) : null}
-          <span className={["chip", exitCode === 0 ? "text-desk-teal" : "text-desk-ember"].join(" ")}>
-            {mcp ? (exitCode === 0 ? "ok" : "error") : `exit ${exitCode}`}
+          <span
+            className={[
+              "chip",
+              mcp && pending ? "text-desk-dim" : exitCode === 0 ? "text-desk-teal" : "text-desk-ember",
+            ].join(" ")}
+          >
+            {mcp ? (pending ? "running" : exitCode === 0 ? "ok" : "error") : `exit ${exitCode}`}
           </span>
           <CopyButton label="copy cmd" text={command} title="Copy the command" />
           <CopyButton label="copy out" text={output} title="Copy the output" disabled={output.length === 0} />
@@ -82,9 +98,22 @@ export function TerminalStage({
           ) : null}
         </span>
       </div>
+      {mcp?.note ? (
+        // Say plainly what Absence saw. A call it only watched start must not
+        // pass for one whose result it has.
+        <p className="shrink-0 border-b border-desk-line/60 px-3 py-1 text-[10px] italic text-desk-dim">
+          {mcp.note}
+        </p>
+      ) : null}
       <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-desk-ink/85">
-        {stdout || "(no output)"}
-        {stderr ? `\n${stderr}` : ""}
+        {pending && !output ? (
+          <span className="text-desk-dim">…</span>
+        ) : (
+          <>
+            {stdout || "(no output)"}
+            {stderr ? `\n${stderr}` : ""}
+          </>
+        )}
       </pre>
     </div>
   );
