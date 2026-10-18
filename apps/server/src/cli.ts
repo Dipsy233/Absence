@@ -33,7 +33,7 @@ const USAGE = [
   "  --project DIR   the directory the agent works in (default: cwd)",
   "  --pid PID       the process to watch (its whole subtree is the agent's work)",
   "  --label NAME    what to call the observed agent",
-  "  --mcp-log FILE  tail an absence-mcp-shim log to see MCP tool calls",
+  "  --transcript FILE  read an agent's own session log (default: discovered)",
 ].join(NL);
 
 /**
@@ -69,7 +69,7 @@ async function watchCommand(
   command: string[],
   projectPath: string,
   label: string | undefined,
-  mcpLog: string | undefined,
+  transcript: string | undefined,
 ): Promise<void> {
   // 1. Server first: it takes the job, so the agent below is born into it.
   const server = await startServer();
@@ -136,7 +136,7 @@ async function watchCommand(
   };
 
   try {
-    await observeAndHold(server, pty.pid, projectPath, label ?? command[0]!, mcpLog, () => pty.kill());
+    await observeAndHold(server, pty.pid, projectPath, label ?? command[0]!, transcript, () => pty.kill());
     await new Promise<void>((resolve) => pty.onExit(() => resolve()));
   } finally {
     restore();
@@ -149,11 +149,11 @@ async function watchPid(
   pid: number,
   projectPath: string,
   label: string,
-  mcpLog?: string,
+  transcript?: string,
   onInterrupt?: () => void,
 ): Promise<void> {
   const server = await startServer();
-  await observeAndHold(server, pid, projectPath, label, mcpLog, onInterrupt);
+  await observeAndHold(server, pid, projectPath, label, transcript, onInterrupt);
 }
 
 /**
@@ -168,13 +168,13 @@ async function observeAndHold(
   pid: number,
   projectPath: string,
   label: string,
-  mcpLog: string | undefined,
+  transcript: string | undefined,
   onInterrupt?: () => void,
 ): Promise<void> {
   const response = await fetch(`${server.url}/api/sessions/observe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectPath, pid, label, ...(mcpLog ? { mcpLog } : {}) }),
+    body: JSON.stringify({ projectPath, pid, label, ...(transcript ? { transcript } : {}) }),
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
@@ -227,7 +227,7 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
   if (args.command) {
-    await watchCommand(args.command, args.projectPath, args.label, args.mcpLog);
+    await watchCommand(args.command, args.projectPath, args.label, args.transcript);
     return;
   }
   if (args.pid === undefined) {
@@ -235,7 +235,7 @@ export async function runCli(argv: string[]): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  await watchPid(args.pid, args.projectPath, args.label ?? `pid ${args.pid}`, args.mcpLog);
+  await watchPid(args.pid, args.projectPath, args.label ?? `pid ${args.pid}`, args.transcript);
 }
 
 /**

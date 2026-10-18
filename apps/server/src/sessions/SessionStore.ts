@@ -21,7 +21,7 @@ import { appendEvents, drainArchive, readEvents, writeMeta } from "./archive";
 import { EventBus } from "../events";
 import type { AgentAdapter } from "../agents/AgentAdapter";
 import { TerminalMirror } from "./TerminalMirror";
-import { McpLogTail } from "./McpLogTail";
+import { SessionLogTail } from "./SessionLogTail";
 import { createAdapter } from "../agents/createAdapter";
 import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
@@ -113,14 +113,16 @@ export class AbsenceSession {
    */
   readonly terminal?: TerminalMirror;
   /**
-   * Tails an MCP proxy's log and turns its JSON-RPC stream into `mcp` events.
+   * Reads the agent's own session transcript and turns the tool calls it
+   * records into `mcp` / `tool_start` events.
    *
-   * The other half of the MCP story: the shim (bin/absence-mcp-shim.mjs) writes
-   * what passes through it, and this reads it back. Present only when a shim was
-   * configured; without one, MCP calls are invisible — they create no process
-   * and write no file, so Layer 0 cannot see them at all.
+   * The transcript is the only surface that sees *every* MCP call — stdio, HTTP
+   * and in-process alike — because all of them end up written down as a tool
+   * call. It needs no change to the agent's config and no proxy in the middle,
+   * so observing cannot break what it observes. Present only in observe mode;
+   * a driven session gets the same facts from its adapter.
    */
-  private mcpTail?: McpLogTail;
+  private transcriptTail?: SessionLogTail;
   readonly session: Session;
 
   private adapter: AgentAdapter | undefined;
@@ -162,13 +164,13 @@ export class AbsenceSession {
    * runtime is then unavailable by construction rather than by a guard that
    * someone will forget to add.
    */
-  private readonly observe?: { pid: number; label: string; terminal?: TerminalMirror; mcpLog?: string };
+  private readonly observe?: { pid: number; label: string; terminal?: TerminalMirror; transcript?: string };
 
   constructor(
     projectPath: string,
     kind: AgentKind,
     private readonly resume?: AbsenceResume,
-    observe?: { pid: number; label: string; terminal?: TerminalMirror; mcpLog?: string },
+    observe?: { pid: number; label: string; terminal?: TerminalMirror; transcript?: string },
   ) {
     this.id = resume?.absenceSessionId ?? newId("sess");
     this.session = {
@@ -227,27 +229,54 @@ export class AbsenceSession {
     );
     this.watcher.start();
 
-    // MCP calls, if a shim is watching the agent's server. This is a poll over
-    // the shim's log — not over the process table: the file only grows when a
-    // call happens, and reading a few lines is nothing like enumerating every
-    // process on the machine.
-    if (target.mcpLog) {
-      this.mcpTail = new McpLogTail(target.mcpLog, (call) => {
-        this.handleEvent(
-          createEvent(this.id, "mcp", {
-            server: call.server || "mcp",
-            tool: call.tool,
-            toolName: call.toolName,
-            toolCallId: call.id,
-            args: call.args,
-            result: call.result,
-            isError: call.isError,
-            durationMs: call.durationMs,
-          }),
-        );
-      });
-      this.mcpTail.start();
-    }
+    // The agent's own transcript. This is a poll over a file that only grows
+    // when a tool call happens — nothing like enumerating the process table.
+    //
+    // Why not a proxy on the MCP door: that door is only the stdio spec's
+    // `{command, args}`, so it misses HTTP and in-process servers, and it has
+    // to be written into the agent's config. The transcript covers all three
+    // and leaves the agent untouched.
+    const tail = new SessionLogTail(
+      this.session.projectPath,
+      {
+        onCall: (call) => {
+          // A call the model made to a server is an `mcp` event; a built-in
+          // tool recorded in the same transcript is a plain `tool_start`.
+          if (call.server) {
+            this.handleEvent(
+              createEvent(this.id, "mcp", {
+                server: call.server,
+                tool: call.tool,
+                toolName: call.toolName,
+                toolCallId: call.id,
+                args: call.args,
+                result: call.result,
+                isError: call.isError,
+                durationMs: call.durationMs,
+              }),
+            );
+          }
+        },
+        onSkills: (skills) => {
+          // The agent stated which skills it can load. Recording one event per
+          // skill turns "what is available" into something the Stage can show
+          // happening, without reading the agent's config.
+          for (const skill of skills) {
+            this.handleEvent(
+              createEvent(this.id, "tool_start", {
+                toolCallId: `skill:${skill.name}`,
+                toolName: "skill",
+                args: { name: skill.name, file: skill.filePath, description: skill.description },
+              }),
+            );
+          }
+        },
+      },
+      undefined,
+      this.observe?.transcript,
+    );
+    tail.start();
+    this.transcriptTail = tail;
     this.handleEvent(
       createEvent(this.id, "message", {
         role: "system",
@@ -721,6 +750,7 @@ export class AbsenceSession {
     this.unsubAdapter?.();
     this.adapter?.dispose();
     this.terminal?.dispose();
+    this.transcriptTail?.dispose();
     await this.watcher?.close();
     await this.flushMeta();
     await drainArchive();
@@ -1162,7 +1192,7 @@ export class SessionStore {
     pid: number,
     label?: string,
     terminal?: TerminalMirror,
-    mcpLog?: string,
+    transcript?: string,
   ): Promise<AbsenceSession> {
     const target = await describeProcess(pid);
     if (!target) {
@@ -1172,7 +1202,7 @@ export class SessionStore {
       projectPath,
       "observe" as unknown as AgentKind,
       undefined,
-      { pid, label: label?.trim() || target.name, terminal, mcpLog },
+      { pid, label: label?.trim() || target.name, terminal, transcript },
     );
     this.sessions.set(session.id, session);
     try {

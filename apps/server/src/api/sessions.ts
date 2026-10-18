@@ -85,7 +85,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post("/api/sessions/observe", async (request, reply) => {
     const body = request.body as
-      | { projectPath?: string; pid?: number; label?: string; mcpLog?: string }
+      | { projectPath?: string; pid?: number; label?: string; transcript?: string }
       | undefined;
     const pid = Number(body?.pid);
     if (!Number.isInteger(pid) || pid <= 0) {
@@ -109,7 +109,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
         pid,
         body?.label,
         terminal,
-        body?.mcpLog,
+        body?.transcript,
       );
       return session.snapshot();
     } catch (error) {

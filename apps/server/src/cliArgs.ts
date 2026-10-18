@@ -13,11 +13,14 @@ export interface WatchArgs {
   projectPath: string;
   label?: string;
   /**
-   * An MCP proxy's log to tail (see bin/absence-mcp-shim.mjs). MCP tool calls
-   * create no process and write no project file, so this is the only way to see
-   * them at all — the shim sits on the protocol's standard door.
+   * An agent's own session transcript to read. MCP tool calls create no
+   * process and write no project file — the agent writes them to its own
+   * transcript, which is the only surface that sees them all (stdio, HTTP and
+   * in-process alike) without changing the agent's config.
+   *
+   * When omitted, the transcript is discovered from the agent's own layout.
    */
-  mcpLog?: string;
+  transcript?: string;
   /** The command to run and watch, when Absence starts the agent itself. */
   command?: string[];
 }
@@ -49,12 +52,12 @@ export function parseWatchArgs(argv: string[], cwd = process.cwd()): WatchArgs {
       args.label = value;
     } else if (arg.startsWith("--label=")) {
       args.label = arg.slice("--label=".length);
-    } else if (arg === "--mcp-log") {
+    } else if (arg === "--transcript") {
       const value = own[++i];
-      if (!value) throw new Error("--mcp-log needs a file path");
-      args.mcpLog = path.resolve(value);
-    } else if (arg.startsWith("--mcp-log=")) {
-      args.mcpLog = path.resolve(arg.slice("--mcp-log=".length));
+      if (!value) throw new Error("--transcript needs a file path");
+      args.transcript = path.resolve(value);
+    } else if (arg.startsWith("--transcript=")) {
+      args.transcript = path.resolve(arg.slice("--transcript=".length));
     } else if (arg === "--help" || arg === "-h") {
       throw new Error("help");
     } else if (arg.startsWith("-")) {

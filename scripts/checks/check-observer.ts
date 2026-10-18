@@ -449,51 +449,169 @@ section("exit codes survive the observer");
 
 
 // ---------------------------------------------------------------------------
-// 12. MCP calls, through the proxy.
+// 12. Tool calls, read from the agent's own transcript.
 //
 // Measured on a real agent: driving Windows Calculator through an MCP server
 // produced *zero* process events — an MCP call is a JSON-RPC message written to
 // a pipe that already exists, so no process is created. That leaves the OS layer
 // blind to the thing such an agent mostly does.
 //
-// MCP is the one door every agent opens the same way (the spec's stdio server is
-// `{ command, args }`), so a proxy on that door sees every call. This pins the
-// reader that turns the proxy's log back into calls.
+// A proxy on the stdio door sees those, but only those: the `{command, args}`
+// door does not exist for HTTP or in-process servers, and inserting a proxy
+// means rewriting the agent's config. Both agents instead write every tool call
+// to their own session transcript, which covers all three kinds and leaves the
+// agent untouched. This pins the readers that turn that file back into calls.
 // ---------------------------------------------------------------------------
-section("mcp: calls are paired and classified");
+section("transcript: Pi tool calls are paired and classified");
 {
-  const { McpLogReader } = await import("../../apps/server/src/mcp/McpLogReader");
-  const reader = new McpLogReader();
-  const record = (dir: "client-to-server" | "server-to-client", text: string, ts: number) => ({ ts, dir, text });
-  const request = (id: number, name: string, args: unknown) =>
-    JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
-
-  reader.push(record("client-to-server", request(1, "mcp__somnus__observe", { windows_only: true }), 1000));
-  const ok = reader.push(
-    record("server-to-client", JSON.stringify({ jsonrpc: "2.0", id: 1, result: { content: [{ type: "text", text: "WINDOW w1" }] } }), 1120),
+  const { PiTranscriptReader, parseSkillCatalogue } = await import(
+    "../../apps/server/src/sessions/SessionLogReader"
   );
-  check("a call is completed by its response", ok !== undefined);
-  check("the server and tool are split from the tool name", ok?.server === "somnus" && ok?.tool === "observe", `${ok?.server}/${ok?.tool}`);
+  const reader = new PiTranscriptReader();
+  // The real shape: Pi wraps each chat record in an envelope, so the role lives
+  // at `message.role` and the timestamp is an ISO string.
+  const call = (id: string, name: string, args: unknown, ts: number) =>
+    JSON.stringify({
+      type: "message",
+      timestamp: new Date(ts).toISOString(),
+      message: { role: "assistant", content: [{ type: "toolCall", id, name, arguments: args }] },
+    });
+  const result = (id: string, name: string, text: string, ts: number, isError = false) =>
+    JSON.stringify({
+      type: "message",
+      timestamp: new Date(ts).toISOString(),
+      message: { role: "toolResult", toolCallId: id, toolName: name, isError, content: [{ type: "text", text }] },
+    });
+
+  check("a call alone completes nothing", reader.push(JSON.parse(call("c1", "mcp__somnus__observe", { windows_only: true }, 1000))).calls === undefined);
+  const ok = reader.push(JSON.parse(result("c1", "mcp__somnus__observe", "WINDOW w1", 1120))).calls?.[0];
+  check("the result completes the call", ok !== undefined);
+  check("server and tool are split from the name", ok?.server === "somnus" && ok?.tool === "observe", `${ok?.server}/${ok?.tool}`);
   check("the arguments survive as JSON text", (ok?.args ?? "").includes("windows_only"));
   check("the result text survives", ok?.result === "WINDOW w1", ok?.result);
-  check("the duration spans request to response", ok?.durationMs === 120, String(ok?.durationMs));
+  check("the duration spans call to result", ok?.durationMs === 120, String(ok?.durationMs));
 
-  reader.push(record("client-to-server", request(2, "mcp__somnus__call", { action: "x" }), 2000));
-  const failed = reader.push(
-    record("server-to-client", JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: "denied" }], isError: true } }), 2050),
-  );
-  check("an MCP error result is marked failed", failed?.isError === true);
+  reader.push(JSON.parse(call("c2", "mcp__somnus__call", { action: "x" }, 2000)));
+  const failed = reader.push(JSON.parse(result("c2", "mcp__somnus__call", "denied", 2050, true))).calls?.[0];
+  check("an error result is marked failed", failed?.isError === true);
   check("and its text is kept", failed?.result === "denied", failed?.result);
 
+  // The transcript states whether the call failed; text is never parsed for it,
+  // so a result that merely mentions failure is not misreported.
+  reader.push(JSON.parse(call("c5", "mcp__search", { query: "error" }, 5000)));
+  const mention = reader.push(JSON.parse(result("c5", "mcp__search", "matches=[SearchMatch(preview='error handling')]", 5010))).calls?.[0];
+  check("a result that mentions an error is not a failure", mention?.isError === false, String(mention?.isError));
+
+  reader.push(JSON.parse(call("c3", "bash", { command: "ls" }, 3000)));
+  const builtin = reader.push(JSON.parse(result("c3", "bash", "a.txt", 3010))).calls?.[0];
+  check("a built-in tool keeps its bare name", builtin?.toolName === "bash" && builtin?.server === "", builtin?.toolName);
+  check("a torn line is ignored, not thrown", reader.push("{not json").calls === undefined);
+
+  const catalogue =
+    "<skills><available_skills><skill><name>playwright-cli</name><description>Automate a browser.</description>" +
+    "<location>C:\\skills\\playwright-cli\\SKILL.md</location></skill></available_skills></skills>";
+  const parsedSkills = parseSkillCatalogue(catalogue);
   check(
-    "the handshake is not a call",
-    reader.push(record("client-to-server", JSON.stringify({ jsonrpc: "2.0", id: 9, method: "initialize" }), 3000)) === undefined,
+    "a skill catalogue is parsed",
+    parsedSkills.length === 1 && parsedSkills[0]?.name === "playwright-cli",
+    JSON.stringify(parsedSkills),
   );
-  check("a torn line is ignored, not thrown", reader.push(record("server-to-client", "{not json", 3100)) === undefined);
   check(
-    "a response with no request is ignored",
-    reader.push(record("server-to-client", JSON.stringify({ jsonrpc: "2.0", id: 99, result: {} }), 3200)) === undefined,
+    "with its description and file",
+    parsedSkills[0]?.description === "Automate a browser." && (parsedSkills[0]?.filePath ?? "").endsWith("SKILL.md"),
+    parsedSkills[0]?.filePath,
   );
+
+  // Newer builds leave `content` empty and keep the prompt in `sections`.
+  const withSections = new PiTranscriptReader();
+  const systemLine = (ts: number) => ({
+    type: "message",
+    timestamp: new Date(ts).toISOString(),
+    message: { role: "system", content: "", sections: { skills: catalogue } },
+  });
+  check(
+    "the catalogue is read from sections.skills",
+    withSections.push(systemLine(5000)).skills?.[0]?.name === "playwright-cli",
+  );
+  check("and is reported once, not per message", withSections.push(systemLine(5001)).skills === undefined);
+}
+
+section("transcript: Codex tool calls are paired and classified");
+{
+  const { CodexTranscriptReader } = await import("../../apps/server/src/sessions/SessionLogReader");
+  const reader = new CodexTranscriptReader();
+  const line = (payload: unknown, ts: string) => JSON.parse(JSON.stringify({ type: "response_item", timestamp: ts, payload }));
+  const at = new Date(1_000).toISOString();
+  const later = new Date(1_120).toISOString();
+
+  check("a call alone completes nothing", reader.push(line({ type: "function_call", call_id: "k1", name: "mcp__fs__read", arguments: '{"p":"a"}' }, at)).calls === undefined);
+  const ok = reader.push(line({ type: "function_call_output", call_id: "k1", output: "hello" }, later)).calls?.[0];
+  check("the output completes the call", ok !== undefined);
+  check("server and tool are split from the name", ok?.server === "fs" && ok?.tool === "read", `${ok?.server}/${ok?.tool}`);
+  check("the arguments survive", (ok?.args ?? "").includes('"p":"a"'), ok?.args);
+  check("the output text survives", ok?.result === "hello", ok?.result);
+  check("the duration spans call to output", ok?.durationMs === 120, String(ok?.durationMs));
+
+  reader.push(line({ type: "function_call", call_id: "k2", name: "exec_command", arguments: '{"cmd":"x"}' }, at));
+  const failed = reader.push(line({ type: "function_call_output", call_id: "k2", output: "Error: boom" }, later)).calls?.[0];
+  check("an error output is marked failed", failed?.isError === true, failed?.result);
+
+  check(
+    "an output with no call is ignored",
+    reader.push(line({ type: "function_call_output", call_id: "nope", output: "x" }, later)).calls === undefined,
+  );
+  check(
+    "a non-response line is not a call",
+    reader.push(line({ type: "message", role: "assistant", content: "hi" }, at)).calls === undefined,
+  );
+
+  // MCP tools arrive as two fields: `namespace` + `name`. Reading only `name`
+  // drops the server, which is the whole reason an observed call is filed under
+  // one server and not another.
+  const ns = new CodexTranscriptReader();
+  ns.push(
+    line({ type: "function_call", call_id: "k9", namespace: "mcp__notepad", name: "observe", arguments: "{}" }, at),
+  );
+  const namespaced = ns.push(line({ type: "function_call_output", call_id: "k9", output: "17 lines" }, later)).calls?.[0];
+  check(
+    "namespace and name are rejoined into the tool name",
+    namespaced?.toolName === "mcp__notepad__observe" && namespaced?.server === "notepad" && namespaced?.tool === "observe",
+    `${namespaced?.toolName}/${namespaced?.server}`,
+  );
+
+  // Codex writes one MCP call twice: a rich McpToolCall item and the
+  // function-call pair. Both are the same call.
+  const dedupe = new CodexTranscriptReader();
+  const rich = dedupe.push({
+    type: "event_msg",
+    payload: {
+      type: "item_completed",
+      item: {
+        type: "McpToolCall",
+        id: "call_1",
+        server: "notepad",
+        tool: "search",
+        arguments: { query: "hello" },
+        status: "completed",
+        result: { content: [{ type: "text", text: "m_001" }] },
+      },
+    },
+  }).calls?.[0];
+  check("an McpToolCall item names server and tool directly", rich?.server === "notepad" && rich?.tool === "search", `${rich?.server}/${rich?.tool}`);
+  check("and carries the structured result as text", rich?.result === "m_001", rich?.result);
+  dedupe.push(line({ type: "function_call", call_id: "call_1", namespace: "mcp__notepad", name: "search", arguments: "{}" }, at));
+  check(
+    "the function-call half of the same call is not reported again",
+    dedupe.push(line({ type: "function_call_output", call_id: "call_1", output: "m_001" }, later)).calls === undefined,
+  );
+  const failedCall = dedupe.push({
+    type: "event_msg",
+    payload: {
+      type: "item_completed",
+      item: { type: "McpToolCall", id: "call_2", server: "notepad", tool: "replace", arguments: {}, status: "failed", result: { content: [] } },
+    },
+  }).calls?.[0];
+  check("a failed MCP call is marked failed", failedCall?.isError === true);
 }
 
 finish("observer decoupling checks");
