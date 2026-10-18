@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { memoBuildHistory, memoRunRows, pickRun, runEvents } from "../../lib/history";
 import { useEvents, useSessionStore } from "../../stores/sessionStore";
 import { useStageStore } from "../../stores/stageStore";
+import { useIsObserved } from "../../stores/sessionStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -17,7 +18,12 @@ export function ActivityPanel() {
   const setMode = useStageStore((s) => s.setMode);
   const load = useReplayStore((s) => s.load);
   const replayTime = useReplayStore((s) => s.currentTime);
-  const displayInActivity = useSettingsStore((s) => s.displayInActivity);
+  const displaySetting = useSettingsStore((s) => s.displayInActivity);
+  // An observed agent has no tool events: its processes *are* what it is doing,
+  // so the setting that hides process rows cannot hide the only rows this
+  // session has. Driving a runtime keeps the setting exactly as the user set it.
+  const observed = useIsObserved();
+  const displayInActivity = displaySetting || observed;
 
   const runs = useMemo(() => memoBuildHistory(events), [events]);
   const run = pickRun(runs, selectedRunId);
@@ -88,7 +94,11 @@ export function ActivityPanel() {
       ) : null}
 
       {rows.length === 0 ? (
-        <p className="text-xs text-desk-dim">Nothing yet. Send the agent a task.</p>
+        <p className="text-xs text-desk-dim">
+          {observed
+            ? "Nothing yet. An observed agent's processes and file changes appear here as they happen."
+            : "Nothing yet. Send the agent a task."}
+        </p>
       ) : (
         <ul className="space-y-0.5">
           {rows.map((row) => (

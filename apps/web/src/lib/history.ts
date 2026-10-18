@@ -71,8 +71,29 @@ export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
     start = null;
   };
 
+  /**
+   * An observed agent never gets a `message` from us to send it, so the run
+   * boundary has to come from something it does: the OLDEST event after the
+   * last run is its opening. That keeps "runs" — the unit History, Replay and
+   * the Report are built on — working for a session Absence only watches, with
+   * no runtime to ask for a prompt.
+   */
+  const observed = isObservedStream(events);
+  const opening = (index: number, timestamp: number) => ({
+    from: index,
+    prompt: observed ? "observed activity" : "",
+    startedAt: timestamp,
+    counts: { read: 0, search: 0, edit: 0, run: 0, created: 0 },
+    touched: new Set<string>(),
+  });
+
   for (let i = 0; i < events.length; i++) {
     const event = events[i]!;
+    if (observed && !start && OPENING_EVENT_TYPES.has(event.type)) {
+      start = opening(i, event.timestamp);
+      applyCount(start.counts, event, start.touched);
+      continue;
+    }
     if (event.type === "message" && event.payload.role === "user") {
       if (start) flush(i - 1, undefined, "interrupted");
       start = {
@@ -92,6 +113,43 @@ export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
 
   if (start) flush(events.length - 1, undefined, "running");
   return runs;
+}
+
+/**
+ * Events that open a run in a session Absence only observes.
+ *
+ * Everything the OS reports about the agent's work qualifies; `message` and
+ * `agent_start` are a driven runtime's, and cannot appear here. Kept small on
+ * purpose: it answers "when did this start", not "what counts as activity".
+ */
+const OPENING_EVENT_TYPES = new Set<AbsenceEvent["type"]>([
+  "process",
+  "file_change",
+  "file_write",
+  "file_edit",
+  "file_read",
+  "command",
+  "search",
+  "mcp",
+  "tool_start",
+  "thinking",
+]);
+
+/**
+ * Whether this window is an observed session's.
+ *
+ * Deliberately inferred from the events rather than passed in: `buildHistory`
+ * is called from the incremental memo, the Report and Replay, and threading a
+ * session flag through all of them would put the same knowledge in four places.
+ * The signal is unambiguous — a driven runtime always opens with
+ * `agent_start`, and an observed session cannot produce one.
+ */
+export function isObservedStream(events: AbsenceEvent[]): boolean {
+  for (const event of events) {
+    if (event.type === "agent_start") return false;
+    if (event.type === "message" && event.payload.role === "user") return false;
+  }
+  return events.length > 0;
 }
 
 /** The events belonging to a run, clamped to the live window. */
@@ -154,6 +212,12 @@ interface HistoryCache {
   /** Paths touched by all *closed* runs. */
   touched: Set<string>;
   open?: OpenRun;
+  /**
+   * True once a driven runtime's marker (`agent_start` / a user message) has
+   * been seen. Until then the cache also opens runs at an observed stream's
+   * first event; see applyEvent.
+   */
+  observed: boolean;
   /** The runs array handed out, reused as long as it is not mutated in place. */
   view: HistoryRun[];
 }
@@ -251,6 +315,7 @@ function fold(events: AbsenceEvent[], base: number): HistoryCache {
     consumed: base,
     runs: [],
     touched: new Set(),
+    observed: false,
     view: [],
   };
   for (let i = 0; i < events.length; i++) applyEvent(entry, events[i]!, base + i);
@@ -295,7 +360,23 @@ function rebase(entry: HistoryCache, base: number): void {
 }
 
 function applyEvent(entry: HistoryCache, event: AbsenceEvent, absoluteIndex: number) {
+  if (!entry.observed && OPENING_EVENT_TYPES.has(event.type) && !entry.open) {
+    // Observe mode: the first event after the last run opens it. See
+    // buildHistory for why a watched agent cannot open a run with a prompt.
+    // A driven runtime's marker below flips `observed` and reopens the run with
+    // its own prompt instead, so this opening is replaced, not kept.
+    entry.open = {
+      prompt: "observed activity",
+      startedAt: event.timestamp,
+      fromIndex: absoluteIndex,
+      counts: { read: 0, search: 0, edit: 0, run: 0, created: 0 },
+      touched: new Set(),
+    };
+    applyCount(entry.open.counts, event, entry.open.touched);
+    return;
+  }
   if (event.type === "message" && event.payload.role === "user") {
+    entry.observed = false;
     closeOpen(entry, undefined, "interrupted", absoluteIndex - 1);
     entry.open = {
       prompt: event.payload.content,
@@ -305,6 +386,12 @@ function applyEvent(entry: HistoryCache, event: AbsenceEvent, absoluteIndex: num
       touched: new Set(),
     };
     return;
+  }
+  if (event.type === "agent_start" && entry.open && entry.open.prompt === "observed activity") {
+    // The runtime announced itself: this is a driven session, and the run starts
+    // where it said, not at the observed events that preceded it.
+    entry.observed = false;
+    entry.open = undefined;
   }
   if (!entry.open) return;
   if (event.type === "agent_end") {

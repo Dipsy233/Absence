@@ -114,9 +114,13 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   };
 }
 
-/** CLI entry: `tsx src/index.ts`. The server owns its own process here. */
+/**
+ * CLI entry: `tsx src/index.ts [serve|watch …]`. The server owns its own
+ * process here; `watch` is the observer mode (see cli.ts).
+ */
 async function main(): Promise<void> {
-  await startServer();
+  const { runCli } = await import("./cli");
+  await runCli(process.argv.slice(2));
 }
 
 // Only run the CLI path when this module is the entry point, so the desktop

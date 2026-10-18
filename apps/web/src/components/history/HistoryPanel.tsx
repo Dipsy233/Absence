@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { HistoryRun } from "../../types/history";
 import { memoBuildHistory, runEvents } from "../../lib/history";
 import { formatClock, formatOffset } from "../../lib/format";
-import { useEvents, useSessionStore } from "../../stores/sessionStore";
+import { useEvents, useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useUiStore } from "../../stores/uiStore";
@@ -31,6 +31,7 @@ export function HistoryPanel() {
   const selectedRunId = useUiStore((s) => s.selectedRunId);
   const selectRun = useUiStore((s) => s.selectRun);
   const load = useReplayStore((s) => s.load);
+  const observed = useIsObserved();
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const runs = useMemo(() => memoBuildHistory(events), [events]);
@@ -49,7 +50,11 @@ export function HistoryPanel() {
       bodyRef={bodyRef}
     >
       {runs.length === 0 ? (
-        <p className="text-xs text-desk-dim">No runs yet. Send the agent a task.</p>
+        <p className="text-xs text-desk-dim">
+          {observed
+            ? "No runs yet. A run starts when the observed agent does."
+            : "No runs yet. Send the agent a task."}
+        </p>
       ) : (
         <ul className="space-y-1">
           {runs.map((run) => {

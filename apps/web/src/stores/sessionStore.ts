@@ -8,6 +8,7 @@ import type {
   SessionHistoryEntry,
   SessionRuntimeState,
   SessionSnapshot,
+  SessionSource,
 } from "@absence/core";
 import type { StageItem } from "../types/stage";
 import { MAX_SESSION_EVENTS } from "@absence/core";
@@ -86,6 +87,13 @@ interface SessionStore {
    * during a run as servers connect; undefined for a runtime that reports none.
    */
   capabilities?: CapabilityState;
+  /**
+   * Where the events come from. `observe` means Absence only watches somebody
+   * else's agent process: the chat cannot prompt it, Stop cannot stop it, and
+   * the command palette has nothing to ask it. Undefined from an older server,
+   * which was always a driven runtime.
+   */
+  source?: SessionSource;
   connected: boolean;
   error?: string;
 
@@ -115,6 +123,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   inset: CLOSED_INSET,
   context: undefined,
   capabilities: undefined,
+  source: undefined,
   connected: false,
   error: undefined,
 
@@ -184,6 +193,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       inset: CLOSED_INSET,
       context: undefined,
       capabilities: undefined,
+      source: undefined,
       connected: false,
       error: undefined,
     }),
@@ -199,6 +209,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       agent: snapshot.agent,
       context: snapshot.context,
       capabilities: snapshot.capabilities,
+      source: snapshot.source,
       events: snapshot.events,
       eventsVersion: get().eventsVersion + 1,
       eggState: { eggs, version: get().eggState.version + 1, retired: 0 },
@@ -213,6 +224,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       agent: state.agent,
       context: state.context,
       capabilities: state.capabilities,
+      source: state.source,
     }),
 
   ingestEvent: (event) => {
@@ -268,4 +280,17 @@ export function useEvents(): AbsenceEvent[] {
     void s.eventsVersion;
     return s.events;
   });
+}
+
+/**
+ * True when Absence only *watches* this session's agent.
+ *
+ * The UI uses this — never the runtime's name — to decide whether to offer
+ * actions that require owning the agent: sending a prompt, stopping a run,
+ * switching a model, reconnecting an MCP server. An observed agent lives in a
+ * terminal Absence did not start, so none of those are Absence's to make.
+ * Undefined `source` means an older server, which always drove the runtime.
+ */
+export function useIsObserved(): boolean {
+  return useSessionStore((s) => s.source?.kind === "observe");
 }

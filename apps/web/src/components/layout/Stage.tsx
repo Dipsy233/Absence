@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { isAgentBusy } from "@absence/core";
 import { focusFor, useReplayItem, useStageView } from "../../hooks/useStage";
 import { useStageStore } from "../../stores/stageStore";
-import { useSessionStore } from "../../stores/sessionStore";
+import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
 import { moodFor, type AgentVisualState } from "../../lib/agent";
@@ -39,6 +39,13 @@ export function Stage() {
   const replayStatus = useReplayStore((s) => s.view?.agentStatus);
   const agentOnStage = useUiStore((s) => s.agentOnStage);
   const absenceMode = useUiStore((s) => s.absenceMode);
+  // Whether Absence only watches this agent (see useIsObserved). With an
+  // observed agent, a run end is a fact we saw, not a state we set — the
+  // status line says so.
+  const observed = useIsObserved();
+  const observedLabel = useSessionStore((s) =>
+    s.source?.kind === "observe" ? s.source.label : undefined,
+  );
 
   // The MCP inset's timers (hold after a call ends, then the fold-away). Lives
   // here, once, rather than in the dock itself, so re-mounting the pane never
@@ -94,7 +101,7 @@ export function Stage() {
     // TABLE: the default page, regardless of what is pinned.
     key = "desk";
     sheet = false;
-    content = <DeskStage status={status} />;
+    content = <DeskStage status={status} observedLabel={observedLabel} />;
   }
 
   // ABSENCE mode only means something while a content page is up; on the default
@@ -137,6 +144,15 @@ export function Stage() {
 
           {mode === "replay" ? (
             <span className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-amber">REPLAY</span>
+          ) : observed ? (
+            // Not "LIVE": Absence is not driving anything. It is watching, and
+            // the label names what it is watching.
+            <span
+              className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-teal"
+              title="Absence is observing this process; it never drives or stops it"
+            >
+              ◇ OBSERVING{observedLabel ? ` ${observedLabel}` : ""}
+            </span>
           ) : mode === "live" && isAgentBusy(status) ? (
             <span className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-teal">● LIVE</span>
           ) : null}

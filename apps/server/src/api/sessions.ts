@@ -75,6 +75,35 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     return session.snapshot();
   });
 
+  /**
+   * Watch an agent that is already running, instead of starting one.
+   *
+   * This is the entry point that makes Absence an observer rather than a
+   * client: any process — any agent, any version — can be watched by its pid,
+   * with no adapter and no knowledge of its internals. `absence watch` uses it.
+   */
+  app.post("/api/sessions/observe", async (request, reply) => {
+    const body = request.body as { projectPath?: string; pid?: number; label?: string } | undefined;
+    const pid = Number(body?.pid);
+    if (!Number.isInteger(pid) || pid <= 0) {
+      return reply.code(400).send({ error: "pid is required" });
+    }
+    const projectPath = body?.projectPath?.trim();
+    if (!projectPath) {
+      return reply.code(400).send({ error: "projectPath is required" });
+    }
+    const resolved = toPosix(path.resolve(projectPath));
+    if (!(await isDirectory(resolved))) {
+      return reply.code(400).send({ error: `not a directory: ${resolved}` });
+    }
+    try {
+      const session = await sessionStore.createObserved(resolved, pid, body?.label);
+      return session.snapshot();
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   app.get("/api/sessions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const session = sessionStore.get(id);

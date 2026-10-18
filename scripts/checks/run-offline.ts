@@ -28,6 +28,7 @@ const OFFLINE = [
   "check-fsdiff.ts",
   "check-capabilities.ts",
   "check-mcp-events.ts",
+  "check-observer.ts",
   "check-capability-commands.ts",
 ];
 

@@ -13,6 +13,7 @@ import {
   type Session,
   type SessionRuntimeState,
   type SessionSnapshot,
+  type SessionSource,
   type SessionStatsInfo,
 } from "@absence/core";
 import { config, type AgentKind } from "../config";
@@ -23,6 +24,7 @@ import { createAdapter } from "../agents/createAdapter";
 import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
 import { ProcessWatcher } from "../process/ProcessWatcher";
+import { snapshotProcesses } from "../process/ProcessTable";
 import { JobMonitor } from "../process/JobMonitor";
 import { unifiedDiff } from "../util/diff";
 import { newId } from "../util/ids";
@@ -39,6 +41,14 @@ const MAX_EVENTS = MAX_SESSION_EVENTS;
 
 /** Newline, kept as a constant so multi-line notices read the same on Windows. */
 const NL = String.fromCharCode(10);
+
+/**
+ * What an observed session says when the UI asks it to do something only the
+ * owner of a process can do. One sentence, because it is the same sentence for
+ * every action: watch, do not drive.
+ */
+const OBSERVE_NOTICE =
+  "This session only observes: the agent runs in a terminal Absence did not start, so it cannot be prompted, stopped or reconfigured from here.";
 
 /**
  * Thrown when the requested agent runtime cannot start — not installed, the
@@ -94,7 +104,7 @@ export class AbsenceSession {
   readonly stateBus = new EventBus<SessionRuntimeState>();
   readonly session: Session;
 
-  private adapter: AgentAdapter;
+  private adapter: AgentAdapter | undefined;
   private watcher?: FileWatcher;
   /** Reports the OS processes the agent lays; Absence owns the shell (v0.3). */
   private processWatcher: ProcessWatcher;
@@ -126,7 +136,21 @@ export class AbsenceSession {
   private treeTimer?: NodeJS.Timeout;
   private disposed = false;
 
-  constructor(projectPath: string, kind: AgentKind, private readonly resume?: AbsenceResume) {
+  /**
+   * The agent Absence is only *watching* — somebody else's process tree.
+   *
+   * Set instead of an adapter (see `createObserved`). Everything that needs a
+   * runtime is then unavailable by construction rather than by a guard that
+   * someone will forget to add.
+   */
+  private readonly observe?: { pid: number; label: string };
+
+  constructor(
+    projectPath: string,
+    kind: AgentKind,
+    private readonly resume?: AbsenceResume,
+    observe?: { pid: number; label: string },
+  ) {
     this.id = resume?.absenceSessionId ?? newId("sess");
     this.session = {
       id: this.id,
@@ -140,7 +164,11 @@ export class AbsenceSession {
     this.piSessionId = resume?.piSessionId;
     // Pi and its tools run in this very process, so an egg's ancestor chain ends
     // here — the watcher's default root pid is us.
+    this.observe = observe;
     this.processWatcher = new ProcessWatcher({
+      // In observe mode the agent is somebody else's child, so its subtree is
+      // rooted at the agent's pid, not at ours (see ProcessWatcher.rootPid).
+      rootPid: observe?.pid,
       onProcess: (payload) => this.handleEvent(createEvent(this.id, "process", payload)),
       // Bound the live egg view: running eggs always stay, only the oldest
       // exits beyond the cap are retired. See ProcessWatcher.retireOverflow.
@@ -148,12 +176,45 @@ export class AbsenceSession {
     });
     // Say how precise process watching is, so the UI can be honest about it.
     this.session.processPrecision = JobMonitor.get().available ? "exact" : "sampled";
-    this.adapter = createAdapter(kind, { tools: config.piTools, processWatcher: this.processWatcher });
+    // An observed session never gets an adapter: there is no runtime to drive.
+    if (!observe) {
+      this.adapter = createAdapter(kind, { tools: config.piTools, processWatcher: this.processWatcher });
+    }
     // Baseline now: what is already running before the agent starts. The snapshot
     // costs half a second, so it has to be taken here rather than when the first
     // command begins.
     this.processWatcher.warm();
     this.lastActiveAt = this.session.startedAt;
+  }
+
+  /**
+   * Observe mode: no runtime, no prompt surface — just the OS.
+   *
+   * The process watcher is already rooted at the observed agent's pid, so every
+   * process it spawns is reported as its work; the file watcher reports what it
+   * writes. That is the whole session. Absence is a viewer here in the literal
+   * sense: it never sends the agent a byte.
+   */
+  private async startObserving(): Promise<void> {
+    const target = this.observe!;
+    this.setStatus("listening");
+    this.session.model = undefined;
+    this.tree = await buildTree(this.session.projectPath);
+    this.watcher = new FileWatcher(
+      this.session.projectPath,
+      (kind, abs) => this.onFsChange(kind, abs),
+      (kind, abs) => this.onOutsideFsChange(kind, abs),
+    );
+    this.watcher.start();
+    this.handleEvent(
+      createEvent(this.id, "message", {
+        role: "system",
+        content: `Observing ${target.label} (pid ${target.pid}) in ${this.session.projectPath}. Absence watches what it does — processes, files — and never drives it.`,
+        streaming: false,
+      }),
+    );
+    await this.flushMeta();
+    this.scheduleState();
   }
 
   async start(): Promise<void> {
@@ -168,6 +229,11 @@ export class AbsenceSession {
       this.setStatus("listening");
     }
 
+    if (this.observe) {
+      await this.startObserving();
+      return;
+    }
+
     const ctx = {
       sessionId: this.id,
       cwd: this.session.projectPath,
@@ -178,19 +244,19 @@ export class AbsenceSession {
     // the user can fix the runtime instead of unknowingly driving a mock.
     // The error propagates to the API, which returns it and the picker shows it.
     try {
-      const result = await this.adapter.start(ctx);
+      const result = await this.adapter!.start(ctx);
       this.session.model = result.model;
     } catch (error) {
-      this.adapter.dispose();
+      this.adapter?.dispose();
       this.processWatcher.stop();
       throw new RuntimeUnavailableError(this.session.agentRuntime, error);
     }
 
     // The adapter may have opened (or created) its own persisted session file.
-    this.piSessionFile = this.adapter.getSessionFile?.() ?? this.piSessionFile;
-    this.piSessionId = this.adapter.getRuntimeSessionId?.() ?? this.piSessionId;
+    this.piSessionFile = this.adapter?.getSessionFile?.() ?? this.piSessionFile;
+    this.piSessionId = this.adapter?.getRuntimeSessionId?.() ?? this.piSessionId;
 
-    this.unsubAdapter = this.adapter.subscribe((event) => this.handleEvent(event));
+    this.unsubAdapter = this.adapter?.subscribe((event) => this.handleEvent(event));
 
     this.tree = await buildTree(this.session.projectPath);
 
@@ -207,6 +273,12 @@ export class AbsenceSession {
 
   /** Fire-and-forget: the run streams over the bus, the HTTP call returns at once. */
   prompt(text: string): void {
+    // An observed agent is not ours to prompt. Say so in the chat rather than
+    // dropping the message on the floor.
+    if (!this.adapter) {
+      this.handleEvent(createEvent(this.id, "message", { role: "system", content: OBSERVE_NOTICE, streaming: false }));
+      return;
+    }
     this.handleEvent(
       createEvent(this.id, "message", { role: "user", content: text, streaming: false }),
     );
@@ -220,6 +292,12 @@ export class AbsenceSession {
   }
 
   async abort(): Promise<void> {
+    // Absence never kills an agent it does not own — not even on abort. Watching
+    // is a promise that we leave the thing we watch alone.
+    if (!this.adapter) {
+      this.handleEvent(createEvent(this.id, "message", { role: "system", content: OBSERVE_NOTICE, streaming: false }));
+      return;
+    }
     await this.adapter.abort();
   }
 
@@ -230,7 +308,7 @@ export class AbsenceSession {
    * archived with the session.
    */
   async respondApproval(id: string, value: string): Promise<void> {
-    if (!this.adapter.respondApproval) {
+    if (!this.adapter?.respondApproval) {
       this.handleEvent(
         createEvent(this.id, "message", {
           role: "system",
@@ -255,6 +333,10 @@ export class AbsenceSession {
 
   /** Choice lists for the commands that need one (the palette's submenu). */
   async commandOptions(name: string): Promise<CommandOption[]> {
+    // An observed agent's model list, thinking levels and MCP servers live in
+    // *its* process, which Absence has no handle on. The palette stays empty
+    // rather than showing stale configuration Absence read off disk.
+    if (!this.adapter) return [];
     switch (name) {
       case "model":
         return (await this.adapter.listModels?.()) ?? [];
@@ -307,6 +389,10 @@ export class AbsenceSession {
    */
   async runCommand(name: string, args: string): Promise<void> {
     const adapter = this.adapter;
+    if (!adapter) {
+      this.handleEvent(createEvent(this.id, "message", { role: "system", content: OBSERVE_NOTICE, streaming: false }));
+      return;
+    }
     const notice = (content: string): void =>
       this.handleEvent(createEvent(this.id, "message", { role: "system", content, streaming: false }));
     // `/skill <name>` prompts the agent, so it counts as mutating too — but a
@@ -318,7 +404,7 @@ export class AbsenceSession {
       name === "thinking" ||
       name === "compact" ||
       name === "permission" ||
-      (name === "skill" && (this.adapter.getCapabilities?.()?.skills ?? []).some((skill) =>
+      (name === "skill" && (this.adapter?.getCapabilities?.()?.skills ?? []).some((skill) =>
         skill.name.toLowerCase() === args.trim().split(/\s+/)[0]?.toLowerCase(),
       ));
     if (mutating && (adapter.isBusy?.() ?? false)) {
@@ -437,7 +523,7 @@ export class AbsenceSession {
     if (exact) {
       const request = args.trim().slice(exact.name.length).trim();
       const line = `/skill:${exact.name}${request ? ` ${request}` : ""}`;
-      await this.adapter.prompt(line);
+      await this.adapter?.prompt(line);
       return `Loaded skill "${exact.name}"${request ? ` with: ${request}` : ""}.`;
     }
     const shown = query ? skills.filter((skill) => skill.name.toLowerCase().includes(query)) : skills;
@@ -509,7 +595,7 @@ export class AbsenceSession {
 
   /** One server's live state from the adapter, or undefined when absent. */
   private mcpStatusFor(name?: string): CapabilityState["mcp"][number] | undefined {
-    const servers = this.adapter.getCapabilities?.()?.mcp ?? [];
+    const servers = this.adapter?.getCapabilities?.()?.mcp ?? [];
     if (name) return servers.find((server) => server.name === name);
     return servers.find((server) => server.enabled);
   }
@@ -520,14 +606,14 @@ export class AbsenceSession {
    * otherwise the edit still applies to the next session.
    */
   private async reloadExtensions(): Promise<void> {
-    const adapter = this.adapter as AgentAdapter & { reloadExtensions?(): Promise<void> };
-    if (adapter.reloadExtensions) await adapter.reloadExtensions();
+    const adapter = this.adapter as (AgentAdapter & { reloadExtensions?(): Promise<void> }) | undefined;
+    if (adapter?.reloadExtensions) await adapter.reloadExtensions();
   }
 
   /** `/mcp` with no arguments: the list, in Pi's own wording. */
   private formatMcpStatus(): string {
-    const state = this.adapter.getCapabilities?.();
-    if (!state) return "This runtime cannot report MCP servers.";
+    const state = this.adapter?.getCapabilities?.();
+    if (!state) return OBSERVE_NOTICE;
     if (state.mcp.length === 0) {
       return [
         "No MCP servers configured. Add one outside the session, as every runtime expects:",
@@ -544,6 +630,14 @@ export class AbsenceSession {
     return lines.join(NL);
   }
 
+  /** Where this session's events come from — see SessionSource. */
+  private source(): SessionSource {
+    if (this.observe) {
+      return { kind: "observe", targetPid: this.observe.pid, label: this.observe.label };
+    }
+    return { kind: "runtime", runtime: this.session.agentRuntime };
+  }
+
   history(): AbsenceEvent[] {
     return [...this.events];
   }
@@ -553,10 +647,11 @@ export class AbsenceSession {
     // connects, which happens after the session started (see
     // capabilities/piResources.ts). Absence re-reads the runtime's own list
     // rather than guessing when it changed.
-    const capabilities = this.adapter.getCapabilities?.();
+    const capabilities = this.adapter?.getCapabilities?.();
     return {
       session: this.session,
       agent: { status: this.session.status, model: this.session.model },
+      source: this.source(),
       context: this.context,
       tree: this.tree,
       ...(capabilities ? { capabilities } : {}),
@@ -582,7 +677,7 @@ export class AbsenceSession {
     // Stops watching only. Eggs the agent left running are not ours to kill.
     this.processWatcher.stop();
     this.unsubAdapter?.();
-    this.adapter.dispose();
+    this.adapter?.dispose();
     await this.watcher?.close();
     await this.flushMeta();
     await drainArchive();
@@ -933,7 +1028,7 @@ export class AbsenceSession {
     if (this.stateTimer) return;
     this.stateTimer = setTimeout(() => {
       this.stateTimer = undefined;
-      const usage = this.adapter.getContextUsage?.();
+      const usage = this.adapter?.getContextUsage?.();
       if (usage) this.context = usage;
       this.stateBus.emit(this.runtimeState());
     }, 40);
@@ -993,9 +1088,52 @@ function formatSessionStats(stats: SessionStatsInfo): string {
     .join("\n");
 }
 
+/**
+ * The executable name for a pid, or undefined when it is gone.
+ *
+ * Used only to label an observed session. A missing pid is not an error the
+ * caller has to interpret: it is the agent having already finished.
+ */
+async function describeProcess(pid: number): Promise<{ name: string } | undefined> {
+  const table = await snapshotProcesses();
+  const info = table.get(pid);
+  if (!info) return undefined;
+  return { name: info.name };
+}
+
 /** In-memory registry of live sessions. */
 export class SessionStore {
   private sessions = new Map<string, AbsenceSession>();
+
+  /**
+   * Open a session that only *watches* an agent somebody else started.
+   *
+   * This is the decoupled end of Absence: no adapter, no runtime version to
+   * match, no skills or MCP config to read. The agent's pid is the root of the
+   * process tree Absence reports, and the project directory is what it watches
+   * for file changes. Every agent is observable this way — see
+   * docs/decoupling.md.
+   */
+  async createObserved(projectPath: string, pid: number, label?: string): Promise<AbsenceSession> {
+    const target = await describeProcess(pid);
+    if (!target) {
+      throw new Error(`No process with pid ${pid} — it may already have exited.`);
+    }
+    const session = new AbsenceSession(
+      projectPath,
+      "observe" as unknown as AgentKind,
+      undefined,
+      { pid, label: label?.trim() || target.name },
+    );
+    this.sessions.set(session.id, session);
+    try {
+      await session.start();
+    } catch (error) {
+      this.sessions.delete(session.id);
+      throw error;
+    }
+    return session;
+  }
 
   async create(projectPath: string, kind: AgentKind, resume?: AbsenceResume): Promise<AbsenceSession> {
     // Reopening a session that is still live just returns it.

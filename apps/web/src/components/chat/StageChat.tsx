@@ -13,7 +13,7 @@ import { buildPrompt } from "../../lib/context";
 import * as api from "../../lib/api";
 import { COMMANDS, findCommand, isSkillInvocation, type CommandSpec } from "../../lib/commands";
 import { useChatStore } from "../../stores/chatStore";
-import { useSessionStore } from "../../stores/sessionStore";
+import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { ContextChip } from "./ContextChip";
@@ -41,6 +41,11 @@ export function StageChat({ expanded }: { expanded: boolean }) {
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
   const runCommand = useSessionStore((s) => s.runCommand);
   const abort = useSessionStore((s) => s.abort);
+  // Observing somebody else's agent: there is nothing to send a prompt to, so
+  // the input row becomes a read-only note instead of a disabled textbox that
+  // looks broken. Chat history is still shown — it is the agent's conversation,
+  // mirrored, not Absence's.
+  const observed = useIsObserved();
 
   const [text, setText] = useState("");
   const [full, setFull] = useState(false);
@@ -57,7 +62,10 @@ export function StageChat({ expanded }: { expanded: boolean }) {
   // `expanded` marks the Stage's default (desk) page. By default the chat stays
   // put no matter which page is up; only the "collapse on content" setting makes
   // a content page fold the history away.
-  const showHistory = historyOpen && (expanded || !collapseChatOnContent);
+  // An observed agent's conversation is worth showing by default: it is the only
+  // thing on the Stage that says what the agent is thinking about. The user's own
+  // preference still wins when they explicitly hide it.
+  const showHistory = observed ? historyOpen : historyOpen && (expanded || !collapseChatOnContent);
 
   // --- command-mode derivation ---------------------------------------------
   const commandMode = text.startsWith("/");
@@ -323,7 +331,16 @@ export function StageChat({ expanded }: { expanded: boolean }) {
         ) : null}
       </AnimatePresence>
 
-      {pending.length > 0 ? (
+      {observed ? (
+        <div className="pointer-events-auto mx-2 mb-2 flex items-center gap-2 rounded-lg border border-desk-line/70 bg-desk-panel/85 px-2 py-1.5 font-mono text-[10px] text-desk-dim backdrop-blur-[3px]">
+          <span className="rounded border border-desk-line px-1.5 py-0.5 uppercase tracking-[0.12em] text-desk-teal">
+            observing
+          </span>
+          <span className="min-w-0 flex-1 truncate">
+            Absence is watching this agent&apos;s terminal. Prompt it there — here it only shows what it does.
+          </span>
+        </div>
+      ) : pending.length > 0 ? (
         <div className="pointer-events-auto mx-2 mb-1 flex flex-wrap items-center gap-1 rounded-lg border border-desk-line/70 bg-desk-panel/85 px-2 py-1.5 backdrop-blur-[3px]">
           <span className="label">context</span>
           {pending.map((context, index) => (
@@ -332,6 +349,7 @@ export function StageChat({ expanded }: { expanded: boolean }) {
         </div>
       ) : null}
 
+      {observed ? null : (
       <form
         onSubmit={submit}
         className="pointer-events-auto relative mx-2 mb-2 flex items-center gap-2 rounded-lg border border-desk-line/70 bg-desk-panel/85 px-2 py-1.5 shadow-[0_12px_36px_rgba(0,0,0,.4)] backdrop-blur-[3px]"
@@ -440,6 +458,7 @@ export function StageChat({ expanded }: { expanded: boolean }) {
           </button>
         )}
       </form>
+      )}
     </div>
   );
 }

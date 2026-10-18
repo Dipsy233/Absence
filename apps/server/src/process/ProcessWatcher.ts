@@ -25,6 +25,17 @@ const SETTLE_MS = 2500;
  * and a long-running command is then sampled slowly, because anything it laid is
  * long-lived and any sample will do.
  */
+/**
+ * How often an observed agent's tree is re-read.
+ *
+ * Slower than the command-window sampling: an observed agent has no command we
+ * are waiting on, so there is no deadline to meet — but its work (a dev server,
+ * a build) lasts, and a second or so late is a second nobody notices. A process
+ * that lives and dies inside one poll is missed; that is the honest limit of
+ * watching from the outside without a kernel hook, and the UI says `sampled`.
+ */
+const OBSERVE_TICK_MS = 1200;
+
 const TICK_FAST_MS = 1100;
 const TICK_SLOW_MS = 4000;
 const TICK_FAST_WINDOW_MS = 8000;
@@ -245,8 +256,23 @@ export class ProcessWatcher {
    */
   private jobSessionId?: string;
 
+  /**
+   * Observe mode: `rootPid` is an agent Absence did not start.
+   *
+   * Then there is no command window to speak of — nobody told Absence a command
+   * began — so attribution has to come from the outside in: anything whose
+   * ancestor chain reaches the observed process is its work, and its direct
+   * children are the roots worth reporting. That is deliberate: an agent's
+   * own command runner is plumbing (like Absence's marked shell is for Pi), so
+   * the thing it runs is the egg, not the runner.
+   */
+  private readonly observedRoot: boolean;
+  /** True once the process table at attach time has been folded into `jobSeen`. */
+  private observedSeeded = false;
+
   constructor(private readonly options: ProcessWatcherOptions) {
     this.rootPid = options.rootPid ?? process.pid;
+    this.observedRoot = options.rootPid !== undefined && options.rootPid !== process.pid;
     this.snapshot = options.snapshot ?? snapshotProcesses;
     this.now = options.now ?? Date.now;
     this.maxFinishedEggs = Math.max(0, options.maxFinishedEggs ?? 0);
@@ -259,6 +285,12 @@ export class ProcessWatcher {
    * miss. When it is not available the watcher falls back to snapshots.
    */
   private attachJobObserver(): void {
+    // Observe mode never uses the kernel events. The Windows observer is a Job
+    // Object placed on *our* process: it reports children we create, and a
+    // process that existed before us (the agent somebody started in another
+    // terminal) is not in that job and can never be reported. Polling the
+    // process table is what sees it — and sees its children, once they exist.
+    if (this.observedRoot) return;
     const monitor = JobMonitor.get();
     if (!monitor.available && monitor.status === "unavailable") {
       // The helper did not start (missing binary, no rights). Stay on polling.
@@ -269,7 +301,8 @@ export class ProcessWatcher {
 
   /** True while events, rather than snapshots, drive this watcher. */
   private get jobMode(): boolean {
-    return this.jobUnsubscribe !== undefined;
+    // An observed tree is always polled: see attachJobObserver.
+    return this.jobUnsubscribe !== undefined && !this.observedRoot;
   }
 
   /**
@@ -279,6 +312,153 @@ export class ProcessWatcher {
    */
   warm(): void {
     void this.ensureBaseline();
+    // Observe mode: whatever already exists when Absence attaches is not the
+    // observed agent's *new* work — but it is the set its future children will
+    // appear under. Remembering every pid in the table makes the ancestry check
+    // in `onObservedStart` work for processes started before we looked (which
+    // is most of a real agent's tree: it was launched by a shell, its runner may
+    // pre-date us), without ever reporting them as eggs of their own.
+    if (this.observedRoot) {
+      void this.seedObservedAncestry().then(() => {
+        // Keep looking for as long as the session lives: in observe mode there
+        // is no command to bound the search, and the agent may run for hours.
+        this.startObservedPoll();
+      });
+    }
+  }
+
+  /** How often an observed tree is re-read. The agent's work is long-lived. */
+  private startObservedPoll(): void {
+    if (this.tickTimer !== undefined || this.disposed) return;
+    this.tickTimer = setTimeout(() => void this.pollObserved(), OBSERVE_TICK_MS);
+  }
+
+  /**
+   * One pass over the process table, in observe mode.
+   *
+   * Every process whose ancestor chain reaches the observed root (or one of the
+   * roots already found) is the agent's work. A process whose parent chain is
+   * broken — killed and reparented — is not claimed: Absence reports what it can
+   * prove. The previous table is diffed rather than the ancestry re-walked from
+   * scratch for everything, so the cost is one snapshot plus one walk per
+   * *new* process, not per process on the machine.
+   */
+  private async pollObserved(): Promise<void> {
+    this.tickTimer = undefined;
+    if (this.disposed) return;
+    try {
+      const table = await this.table();
+      if (this.disposed) return;
+      this.discoverObserved(table);
+    } catch {
+      // A failed snapshot is a missed tick, not an error worth killing the
+      // session over; the next one may work.
+    }
+    this.startObservedPoll();
+  }
+
+  /** The create side of pollObserved: new processes in the observed tree. */
+  private discoverObserved(table: ProcessTable): void {
+    for (const info of table.values()) {
+      if (this.eggs.has(info.pid)) continue;
+      if (info.pid === this.rootPid) {
+        this.jobSeen.add(info.pid);
+        continue;
+      }
+      // A descendant of an egg we already reported is folded into it. Only a
+      // *reported* egg can be a parent here: the seeded tree that existed before
+      // Absence attached is context, not an action, and must not swallow the
+      // agent's new children under it.
+      const parentEgg = this.eggs.has(info.ppid) ? info.ppid : undefined;
+      if (parentEgg !== undefined && parentEgg !== info.pid) {
+        this.jobParent.set(info.pid, parentEgg);
+        this.jobSeen.add(info.pid);
+        const egg = this.eggs.get(parentEgg);
+        if (egg) {
+          egg.children += 1;
+          if (egg.kind === "tool") {
+            egg.kind = "primary";
+            egg.kindReason = "spawns its own processes";
+          }
+          this.emit(egg);
+        }
+        continue;
+      }
+      // A root appears only under a pid that is part of the observed tree — the
+      // observed agent itself, or something it already owned. Anything else (a
+      // sibling app, a service) is none of our business, however many processes
+      // it spawns.
+      if (!this.jobSeen.has(info.ppid)) continue;
+
+      this.jobSeen.add(info.pid);
+      this.jobParent.set(info.pid, info.pid);
+      const verdict = classifyProcess({
+        name: info.name,
+        commandLine: info.commandLine,
+        cwd: this.jobCwd,
+        intent: parseCommandIntent(info.name),
+        survivedCommand: false,
+        ageMs: Math.max(0, this.now() - info.startedAt),
+        children: 0,
+        ppid: info.ppid,
+      });
+      const egg: Egg = {
+        info,
+        // No command is known in observe mode; the parent is the provenance.
+        command: `<pid ${info.ppid}>`,
+        startedAt: info.startedAt > 0 ? info.startedAt : this.now(),
+        children: 0,
+        status: "running",
+        kind: verdict.kind,
+        kindReason: verdict.reason,
+        cwd: this.jobCwd,
+        intent: parseCommandIntent(info.name),
+        reclassifyOnSurvive: verdict.kind === "tool",
+        survivedCommand: false,
+        namedSubject: false,
+      };
+      this.eggs.set(info.pid, egg);
+      this.emit(egg);
+      // An observed egg has no command to settle, so nothing else would ever
+      // notice it dying: the alive tick is what reports the exit.
+      this.startAliveTick();
+    }
+  }
+
+  /**
+   * Mark the processes *the observed agent already owns* at attach time.
+   *
+   * Deliberately not the whole table. Seeding every pid would make any process
+   * on the machine whose parent happens to exist look like the agent's work —
+   * which is exactly what it did the first time: services.exe, QQ.exe, every
+   * shell. What is seeded is the observed tree only: the agent's descendants,
+   * found by walking the table from the root down. Everything else stays
+   * unknown, so its children are never claimed.
+   */
+  private async seedObservedAncestry(): Promise<void> {
+    try {
+      const table = await this.table();
+      if (this.disposed) return;
+      // Walk down from the observed root. A single pass in parent-before-child
+      // order is enough in principle, but the table is a Map keyed by pid and
+      // not ordered by depth, so the walk repeats until it stops finding new
+      // pids (bounded by the size of the tree, not of the machine).
+      this.jobSeen.add(this.rootPid);
+      let added = 0;
+      do {
+        added = 0;
+        for (const info of table.values()) {
+          if (this.jobSeen.has(info.pid)) continue;
+          if (!this.jobSeen.has(info.ppid)) continue;
+          this.jobSeen.add(info.pid);
+          added += 1;
+        }
+      } while (added > 0);
+      this.observedSeeded = true;
+    } catch {
+      // No table (no permission): attribution falls back to "direct child of
+      // the observed root" only, which is still correct, just narrower.
+    }
   }
 
   /** Absence put this marker at the head of a command it drove. */
@@ -490,6 +670,10 @@ export class ProcessWatcher {
     const pid = event.pid;
     if (pid === this.rootPid) return;
     if (isConsoleHost(nameOf(event))) return;
+    if (this.observedRoot) {
+      this.onObservedStart(event);
+      return;
+    }
 
     // A pid that has already reported this exact command line is a duplicate of
     // an event already handled. The same pid with a *different* command line is
@@ -699,6 +883,93 @@ export class ProcessWatcher {
    *                  the server's own infrastructure; outside it, the older
    *                  heuristics (ancestry, the command window) still decide.
    */
+  /**
+   * One process creation, in observe mode.
+   *
+   * The observed agent's direct children are roots — `node app.mjs` spawning
+   * `esbuild` reports esbuild, not node. Anything deeper is folded into the root
+   * it descends from, the same way Pi's eggs fold a subtree. Commands are not
+   * known here, so an egg is credited to its parent process instead, which is
+   * the honest thing to show: "this was started by that".
+   */
+  private onObservedStart(event: WatchStart): void {
+    const pid = event.pid;
+    const line = event.commandLine ?? event.exePath ?? "";
+    if (this.jobExec.get(pid) === line && this.jobSeen.has(pid)) return;
+    this.jobExec.set(pid, line);
+
+    // A pid we have already claimed as a root: this is a re-exec in place.
+    if (this.eggs.has(pid)) return;
+
+    const parentPid = event.ppid;
+    const parentEgg = this.eggs.has(parentPid) ? parentPid : this.jobParent.get(parentPid);
+    if (parentEgg !== undefined && parentEgg !== pid) {
+      // A descendant of an egg: fold it in rather than report it twice.
+      this.jobParent.set(pid, parentEgg);
+      this.jobSeen.add(pid);
+      const egg = this.eggs.get(parentEgg);
+      if (egg) {
+        egg.children += 1;
+        if (egg.kind === "tool") {
+          egg.kind = "primary";
+          egg.kindReason = "spawns its own processes";
+        }
+        this.emit(egg);
+      }
+      return;
+    }
+
+    // A root is a process whose parent we know: the observed agent itself, or
+    // anything that already existed when Absence attached (a shell, a terminal,
+    // the agent's own runner). A process reparented to the system (ppid 0, or a
+    // pid we never saw) is not claimed — Absence reports what it can prove.
+    const isDirectChild = event.ppid === this.rootPid;
+    const parentAlive = isDirectChild || this.jobSeen.has(event.ppid);
+    // Before the baseline has landed, only the observed root's own children are
+    // attributed; claiming more would credit the agent with the terminal's work.
+    if (!parentAlive) return;
+    if (!this.observedSeeded && !isDirectChild) return;
+
+    this.jobSeen.add(pid);
+    this.jobParent.set(pid, pid);
+    const name = nameOf(event);
+    const verdict = classifyProcess({
+      name,
+      commandLine: line,
+      exePath: event.exePath,
+      cwd: this.jobCwd,
+      intent: parseCommandIntent(name),
+      survivedCommand: false,
+      ageMs: 0,
+      children: 0,
+      ppid: event.ppid,
+    });
+    const egg: Egg = {
+      info: {
+        pid,
+        ppid: event.ppid,
+        name,
+        commandLine: line,
+        startedAt: event.createdAt ?? this.now(),
+      },
+      // No command is known in observe mode; the parent is the provenance.
+      command: `<pid ${event.ppid}>`,
+      startedAt: event.createdAt ?? this.now(),
+      children: 0,
+      status: "running",
+      kind: verdict.kind,
+      kindReason: verdict.reason,
+      cwd: this.jobCwd,
+      exePath: event.exePath,
+      intent: parseCommandIntent(name),
+      reclassifyOnSurvive: verdict.kind === "tool",
+      survivedCommand: false,
+      namedSubject: false,
+    };
+    this.eggs.set(pid, egg);
+    this.emit(egg);
+  }
+
   private sessionVerdict(event: WatchStart): "ours" | "foreign" | "unmarked" {
     if (this.jobSessionId === undefined) return "unmarked";
     const marker = event.absenceSessionId;
