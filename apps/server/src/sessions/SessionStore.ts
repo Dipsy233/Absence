@@ -22,6 +22,7 @@ import { EventBus } from "../events";
 import type { AgentAdapter } from "../agents/AgentAdapter";
 import { TerminalMirror } from "./TerminalMirror";
 import { SessionLogTail } from "./SessionLogTail";
+import { OutsideAttribution } from "./OutsideAttribution";
 import { createAdapter } from "../agents/createAdapter";
 import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
@@ -40,6 +41,15 @@ import { capabilityPaths } from "../capabilities/manage";
  * on disk; only the live window is bounded.
  */
 const MAX_EVENTS = MAX_SESSION_EVENTS;
+
+/**
+ * How long a path the agent wrote stays attributable. The outside watcher's
+ * event for the same file can trail the tool call by the write-finish debounce
+ * plus a large file's flush; a couple of minutes covers that without keeping
+ * stale attributions alive long enough to catch a neighbour agent's later edit
+ * of the same file.
+ */
+const OUTSIDE_ATTRIBUTION_WINDOW_MS = 120_000;
 
 /** Newline, kept as a constant so multi-line notices read the same on Windows. */
 const NL = String.fromCharCode(10);
@@ -143,6 +153,12 @@ export class AbsenceSession {
   /** Paths whose disk diff is being computed right now, so concurrent watcher
    * events for one write cannot both diff against the same stale known content. */
   private diffingFiles = new Set<string>();
+  /**
+   * Which outside file changes are the agent's own doing (see the class doc):
+   * fed by adapter write events when driving, transcript tool calls when
+   * observing, consulted by the outside watcher before it reports.
+   */
+  private outsideAttribution = new OutsideAttribution(OUTSIDE_ATTRIBUTION_WINDOW_MS);
   private chat: ChatMessage[] = [];
   private context?: ContextState;
   private tree?: FileTreeNode;
@@ -240,6 +256,12 @@ export class AbsenceSession {
       this.session.projectPath,
       {
         onCall: (call) => {
+          // The transcript is also how an outside file change is attributed:
+          // the watched parent directory holds sibling projects, and only a
+          // path the agent itself wrote may read as this agent's activity.
+          if (!READ_ONLY_TOOL.test(call.toolName)) {
+            for (const p of pathsInJson(call.args)) this.outsideAttribution.note(p);
+          }
           // A call the model made to a server is an `mcp` event; a built-in
           // tool recorded in the same transcript is a plain `tool_start`.
           if (call.server) {
@@ -1073,7 +1095,8 @@ export class AbsenceSession {
 
   /**
    * Remember a write the agent reported directly, so the watcher does not
-   * report it a second time. Old entries are pruned so the map cannot grow
+   * report it a second time, and so an outside change on the same file can be
+   * attributed to the agent. Old entries are pruned so the maps cannot grow
    * without bound over a long session.
    */
   private noteAgentWrite(rel: string, content: string): void {
@@ -1084,10 +1107,24 @@ export class AbsenceSession {
         if (at - value.at > 10_000) this.recentAgentWrites.delete(key);
       }
     }
+    // The write tool accepts absolute paths, so a reported path may itself be
+    // outside the project — exactly the case the outside watcher must confirm
+    // against the attribution map rather than assume.
+    const absolute = path.isAbsolute(rel) ? rel : path.join(this.session.projectPath, rel);
+    this.outsideAttribution.note(absolute, at);
   }
 
-  /** A change outside the project — rare, and always worth reporting. */
+  /**
+   * A change outside the project. Only the agent's own writes can be reported
+   * as its doing: the watched parent directory holds sibling projects whose
+   * agents write all the time, and an unattributed echo of *their* work in
+   * this session's Activity is a lie about what this agent did. A change on a
+   * path the agent recently wrote through a tool is the agent's echo — report
+   * it. Anything else is somebody else's work, and Absence stays silent: the
+   * run row already shows whatever command or call carried the write.
+   */
   private onOutsideFsChange(kind: "created" | "modified" | "deleted", absolutePath: string): void {
+    if (!this.outsideAttribution.owns(absolutePath)) return;
     this.handleEvent(
       createEvent(this.id, "file_change", { path: toPosix(absolutePath), kind, outside: true }),
     );
@@ -1266,4 +1303,57 @@ function describeMcpState(server: CapabilityState["mcp"][number]): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Tools that only look. Their arguments name paths the agent *saw*, not paths
+ * it wrote, so they must not make an outside file change attributable: a read
+ * of a sibling project's file followed by that project's own agent writing it
+ * would otherwise read as this agent's write.
+ */
+export const READ_ONLY_TOOL = /^(read|grep|find|ls|observe|inspect|search|list|view|show|cat|head|tail|stat|glob)\b/i;
+
+/**
+ * Absolute paths mentioned anywhere in a tool call's arguments JSON. Write-ish
+ * tools name their targets in different fields per runtime (`path`, `file_path`,
+ * a changes map, an MCP payload), so rather than pin the schema, every string
+ * in the JSON is scanned for something that looks like an absolute path.
+ * Relative paths are skipped on purpose: the outside watcher only reports
+ * absolute paths outside the project, and a relative argument cannot be one.
+ */
+export function pathsInJson(json: string): string[] {
+  if (!json) return [];
+  const found: string[] = [];
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > 6) return;
+    if (typeof value === "string") {
+      // Windows drive paths and unix absolute paths; up to the first
+      // whitespace, quote, or closing bracket. A path with a space survives
+      // only if the JSON value is exactly the path, which the write tools's
+      // own `path` field is.
+      for (const match of value.matchAll(/[A-Za-z]:[\\/][^\s"'`\]}]*|(?:\/[^\s"'`\]}]{2,})+/g)) {
+        const candidate = match[0];
+        // A URL is not a filesystem path (`https://host/x`), and the unix
+        // branch happily matches the tail of one.
+        if (candidate.includes("://")) continue;
+        // A unix path must have a directory separator beyond the leading
+        // slash, so a bare word or a URL's `//` does not match.
+        if (/^[A-Za-z]:/.test(candidate) || candidate.split("/").length > 2) found.push(candidate);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    if (value && typeof value === "object") {
+      for (const item of Object.values(value)) walk(item, depth + 1);
+    }
+  };
+  try {
+    walk(JSON.parse(json), 0);
+  } catch {
+    // Unparseable arguments name no paths we can trust.
+  }
+  return found;
 }
