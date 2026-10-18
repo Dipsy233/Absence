@@ -103,6 +103,12 @@ interface Egg {
   children: number;
   status: "running" | "exited";
   exitedAt?: number;
+  /**
+   * The kernel's exit code, when the observer reported one. The only way an
+   * observed command can say whether it *worked*: without it, a failed
+   * `bash -c 'exit 7'` looked exactly like a successful one.
+   */
+  exitCode?: number;
   /** Primary (worth tracking) or tool (a short-lived helper, folded in the UI). */
   kind: "primary" | "tool";
   /** Why classify() reached that verdict, for the UI's tooltip. */
@@ -850,6 +856,9 @@ export class ProcessWatcher {
     if (!egg) return;
     egg.status = "exited";
     egg.exitedAt = event.exitedAt;
+    // The kernel reports the code with the exit; keep it on the egg so the
+    // event, the Stage and the Report can all say whether the command failed.
+    if (event.exitCode !== undefined) egg.exitCode = event.exitCode;
     // Re-run the classifier now that the process has a real lifetime. A tool
     // that lived far longer than a tool should, or that ended up with children,
     // is promoted. A process that was only provisionally a primary — an unknown
@@ -1079,6 +1088,7 @@ export class ProcessWatcher {
       status: egg.status,
       startedAt: egg.startedAt,
       exitedAt: egg.exitedAt,
+      exitCode: egg.exitCode,
       children: egg.children,
       command: egg.command,
       kind: egg.kind,
@@ -1107,6 +1117,7 @@ export class ProcessWatcher {
         status: egg.status,
         startedAt: egg.startedAt,
         exitedAt: egg.exitedAt,
+        exitCode: egg.exitCode,
       })),
       this.maxFinishedEggs,
     );
@@ -1122,6 +1133,7 @@ export class ProcessWatcher {
         status: egg.status,
         startedAt: egg.startedAt,
         exitedAt: egg.exitedAt,
+        exitCode: egg.exitCode,
         children: egg.children,
         command: egg.command,
         kind: egg.kind,

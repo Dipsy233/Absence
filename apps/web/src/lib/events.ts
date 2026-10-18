@@ -578,10 +578,12 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
         stageItem,
       };
     case "process": {
-      const { name, pid, status, children, kind, command } = event.payload;
+      const { name, pid, status, children, kind, command, exitCode } = event.payload;
       // Helpers are folded away here too: a run's `cat`, `grep` and `sleep` are
       // noise next to the daemon it started. The raw events remain in the stream.
       if (kind === "tool") return undefined;
+      const failed = status === "exited" && exitCode !== undefined && exitCode !== 0;
+      const exitCodeText = status === "exited" && exitCode !== undefined ? ` · exit ${exitCode}` : "";
       // A process created by a shell wrapping a command IS that command (the
       // server reads it off the command line — see `observedCommand`). Showing
       // it as `bash.exe` would bury the one thing a person wants: what ran.
@@ -594,8 +596,10 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
           time,
           action: status === "running" ? "RUN" : "EXIT",
           primary: command,
-          secondary: `${name} · pid ${pid}${children > 0 ? ` · +${children}` : ""}`,
-          tone: "run",
+          secondary: `${name} · pid ${pid}${children > 0 ? ` · +${children}` : ""}${exitCodeText}`,
+          // A non-zero exit is the one thing a watcher must not have to squint
+          // for: a failed command and a successful one used to look identical.
+          tone: failed ? "error" : "run",
           stageItem,
         };
       }

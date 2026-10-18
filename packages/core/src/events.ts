@@ -116,6 +116,13 @@ export interface ProcessPayload {
   /** When Absence first saw it alive — within a second of the real start. */
   startedAt: number;
   exitedAt?: number;
+  /**
+   * The process's exit code, once it has exited — present only when the OS
+   * reported one. An observed agent's command can therefore say whether it
+   * failed (`bash -c 'exit 7'`) instead of looking identical to a success,
+   * which is what Absence could see before this field existed.
+   */
+  exitCode?: number;
   /** Descendants rolled into this egg (Absence reports the roots only). */
   children: number;
   /** The shell command that laid it. */

@@ -402,3 +402,49 @@ section("observe mode: a wrapper level below the root is still the agent's tree"
   );
   watcher.stop();
 }
+
+// ---------------------------------------------------------------------------
+// 11. An exit code, so a failed command does not look like a successful one.
+//
+// Found by running a real agent: `bash -c 'exit 7'` was reported exactly like a
+// clean exit — the kernel sends the code with the exit event, but the egg never
+// kept it, so neither the event nor the Stage could say a command failed.
+// ---------------------------------------------------------------------------
+section("exit codes survive the observer");
+{
+  const { ProcessWatcher } = await import("../../apps/server/src/process/ProcessWatcher");
+  const self = process.pid;
+  const table = new Map<number, { pid: number; ppid: number; name: string; commandLine: string; startedAt: number }>();
+  const put = (pid: number, ppid: number, name: string, commandLine = name) =>
+    table.set(pid, { pid, ppid, name, commandLine, startedAt: Date.now() });
+  put(self, 1, "node");
+  put(8000, self, "node"); // the agent
+  put(8001, 8000, "bash.exe", 'bash.exe -lc "exit 7"');
+
+  const seen: { pid: number; status: string; exitCode?: number }[] = [];
+  const watcher = new ProcessWatcher({
+    rootPid: 8000,
+    snapshot: async () => new Map(table),
+    onProcess: (payload) => seen.push({ pid: payload.pid, status: payload.status, exitCode: payload.exitCode }),
+  });
+  watcher.warm();
+  await new Promise((resolve) => setTimeout(resolve, 80));
+
+  const internal = watcher as unknown as { onJobStart(e: unknown): void; onJobExit(e: unknown): void };
+  internal.onJobStart({
+    pid: 8001,
+    ppid: 8000,
+    commandLine: 'bash.exe -lc "exit 7"',
+    exePath: process.platform === "win32" ? "C:\\Program Files\\Git\\usr\\bin\\bash.exe" : "/bin/bash",
+  });
+  const started = seen.filter((s) => s.pid === 8001);
+  check("the command is reported as running", started.some((s) => s.status === "running"), JSON.stringify(started));
+
+  internal.onJobExit({ pid: 8001, exitedAt: Date.now(), durationMs: 12, exitCode: 7 });
+  const exited = seen.filter((s) => s.pid === 8001 && s.status === "exited");
+  check("the exit is reported", exited.length > 0, String(exited.length));
+  check("with the kernel's exit code", exited.at(-1)?.exitCode === 7, String(exited.at(-1)?.exitCode));
+  watcher.stop();
+}
+
+finish("observer decoupling checks");
