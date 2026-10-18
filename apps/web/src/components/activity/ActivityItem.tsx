@@ -4,8 +4,6 @@ import { eventContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
-import { useSessionStore } from "../../stores/sessionStore";
-import { eventToMcpInset } from "../../lib/events";
 import { useUiStore } from "../../stores/uiStore";
 
 const TONE_CLASS: Record<ActivityRow["tone"], string> = {
@@ -33,15 +31,10 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
   const focusedEventId = useUiStore((s) => s.focusedEventId);
   const addContext = useChatStore((s) => s.addContext);
   const seek = useReplayStore((s) => s.seekTimestamp);
-  const pinInset = useSessionStore((s) => s.pinInset);
-  const insetItemId = useSessionStore((s) => s.inset.item?.id);
   const ref = useRef<HTMLButtonElement>(null);
 
   const inReplay = mode === "replay";
-  // An MCP call opens in the docked inset, so it is openable even though it
-  // never becomes a Stage page (`stageItem` is undefined for it).
-  const insetItem = eventToMcpInset(row.event);
-  const canOpen = row.stageItem !== undefined || insetItem !== undefined;
+  const canOpen = row.stageItem !== undefined;
   const clickable = inReplay || canOpen;
   const focused = row.id === focusedEventId;
   // "Selected" is not its own state: it means "this row is what the Stage is
@@ -55,8 +48,9 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
   // of opening Stage items.
   const selected = inReplay
     ? replayCurrent === true
-    : (row.stageItem !== undefined && row.stageItem.source?.eventId !== undefined && row.stageItem.source.eventId === activeEventId) ||
-      (insetItem !== undefined && insetItem.id === insetItemId);
+    : row.stageItem !== undefined &&
+      row.stageItem.source?.eventId !== undefined &&
+      row.stageItem.source.eventId === activeEventId;
 
   // Followed from a report link: bring the row into view.
   useEffect(() => {
@@ -68,16 +62,9 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
       seek(row.event.timestamp);
       return;
     }
-    // An MCP call opens as a full Stage page, like any other action: the row
-    // is the user asking to *read* the call, and the docked inset (which still
-    // serves live calls) is too small for a long result. The dock itself keeps
-    // showing calls as they happen; this is the read-the-whole-thing path.
-    if (row.stageItem) {
-      openStage(row.stageItem);
-      return;
-    }
-    const mcpInset = insetItem;
-    if (mcpInset) pinInset(mcpInset);
+    // Every openable row opens its Stage page: an MCP call renders through the
+    // terminal view like a shell command, arguments and result included.
+    if (row.stageItem) openStage(row.stageItem);
   };
 
   const handleContextMenu = (event: MouseEvent) => {

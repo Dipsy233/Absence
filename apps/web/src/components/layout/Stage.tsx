@@ -8,10 +8,7 @@ import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
 import { moodFor, type AgentVisualState } from "../../lib/agent";
 import { statusFromEvent } from "../../lib/events";
-import { insetItemAtCursor } from "../../lib/terminalInset";
-import { useInsetLifetime } from "../../hooks/useInsetLifetime";
 import { StageItemView } from "../stage/StageItemView";
-import { StageInset } from "../stage/StageInset";
 import { DeskStage } from "../stage/DeskStage";
 import { StageToolbar } from "../stage/StageToolbar";
 import { ReplayBar } from "../stage/ReplayBar";
@@ -47,30 +44,12 @@ export function Stage() {
     s.source?.kind === "observe" ? s.source.label : undefined,
   );
 
-  // The MCP inset's timers (hold after a call ends, then the fold-away). Lives
-  // here, once, rather than in the dock itself, so re-mounting the pane never
-  // restarts the countdown.
-  useInsetLifetime();
-
-  // In replay the dock shows the call at the cursor instead of the live one: a
-  // recording must not spring a later call back onto the screen.
-  const replayEvents = useReplayStore((s) => s.events);
-  const replayTime = useReplayStore((s) => s.currentTime);
-  const replayInset = useMemo(
-    () => (mode === "replay" ? insetItemAtCursor(replayEvents, replayTime) : undefined),
-    [mode, replayEvents, replayTime],
-  );
-  const pinInset = useSessionStore((s) => s.pinInset);
-  const clearInset = useSessionStore((s) => s.retractInset);
-  useEffect(() => {
-    // A rewound call is shown as-is (pinned, no countdown); stepping past it —
-    // or leaving replay — folds it away.
-    if (replayInset) pinInset(replayInset);
-    else if (mode === "replay") clearInset();
-  }, [replayInset, mode, pinInset, clearInset]);
-
   // While replaying, the Stage shows the reconstructed state of the run — the
   // agent's status is part of that, so the avatar must not keep following the
+  // live agent while the rest of the Stage is rewound (read02 §26–27).
+  // A pinned item (an activity the user opened from the live stream) gets the
+  // same treatment: the avatar re-enacts the action that produced it instead of
+  // idling at whatever the live status happens to be.
   // live agent while the rest of the Stage is rewound (read02 §26–27).
   // A pinned item (an activity the user opened from the live stream) gets the
   // same treatment: the avatar re-enacts the action that produced it instead of
@@ -156,11 +135,6 @@ export function Stage() {
           ) : mode === "live" && isAgentBusy(status) ? (
             <span className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-teal">● LIVE</span>
           ) : null}
-
-          {/* MCP calls dock here, above the chat and beside whatever page is up:
-              an inset that never covers the Stage and retracts itself when the
-              call is over. Hidden while the report covers the body. */}
-          <StageInset paused={mode === "replay"} />
 
           {/* Chat floats over the Stage, above every page (file / diff / terminal /
               report). One input row, history only on the default page. */}

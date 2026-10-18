@@ -18,14 +18,6 @@ import {
   statusFromEvent,
   statusForTool,
 } from "../../apps/web/src/lib/events";
-import {
-  CLOSED_INSET,
-  HOLD_MS,
-  insetItemAtCursor,
-  latestMcpItem,
-  reduceInset,
-  shouldAutoRetract,
-} from "../../apps/web/src/lib/terminalInset";
 import { summarizeEvent } from "../../apps/web/src/lib/context";
 import { check, finish, section } from "./harness";
 
@@ -81,7 +73,7 @@ section("stage: an MCP call owns the terminal view with its arguments and result
     check("card id is keyed on the call", item.id === "mcp_call_1", item.id);
   }
   check("title is the mcp uri", item?.title === "mcp://filesystem/list_directory", item?.title);
-  check("the card is an inset, not a page", item?.weight === "inset", item?.weight);
+  check("the card is a Stage page, like a shell command", item?.weight === undefined, item?.weight);
 }
 
 section("stage: the card is stable across re-derivation (no re-mount per tick)");
@@ -91,11 +83,11 @@ section("stage: the card is stable across re-derivation (no re-mount per tick)")
   check("same call id → same card id", a?.id === b?.id, `${a?.id} vs ${b?.id}`);
 }
 
-section("stage: an MCP call never takes the page");
+section("stage: an MCP call takes the page, like a command");
 {
   check(
-    "an mcp event is not a Stage page event",
-    lastStageAction([mcpEvent()]) === undefined,
+    "an mcp event is a Stage page event",
+    lastStageAction([mcpEvent()])?.type === "mcp",
     lastStageAction([mcpEvent()])?.type,
   );
   const command = createEvent(session, "command", {
@@ -105,76 +97,9 @@ section("stage: an MCP call never takes the page");
     exitCode: 0,
   } as never);
   const page = lastStageAction([command, mcpEvent()]);
-  check("the page before the call stays up", page?.type === "command", page?.type);
+  check("the newest call owns the page", page?.type === "mcp", page?.type);
   check("a tool start for an mcp tool is recognised", isMcpEvent(toolStartEvent()));
   check("a tool start for bash is not", !isMcpEvent(toolStartEvent({ toolName: "bash" })));
-}
-
-section("inset: an MCP call docks, then folds away by itself");
-{
-  const finished = reduceInset(CLOSED_INSET, mcpEvent());
-  check("a finished call docks", finished.item?.id === "mcp_call_1", finished.item?.id);
-  check("it is not pinned", !finished.pinned);
-  check("a finished call counts down to a retract", shouldAutoRetract(finished));
-  check("the hold is long enough to read", HOLD_MS >= 4000);
-
-  const inFlight = reduceInset(CLOSED_INSET, toolStartEvent());
-  check("a call in flight docks", inFlight.item?.id === "mcp_call_1");
-  check("it is in flight", inFlight.item?.payload.kind === "terminal" && inFlight.item.payload.mcp?.phase === "call");
-  check("its note does not claim a result", Boolean(inFlight.item?.payload.kind === "terminal" && inFlight.item.payload.mcp?.note));
-  check("a call in flight is pinned open", inFlight.pinned);
-  check("it never auto-retracts", !shouldAutoRetract(inFlight));
-
-  const settled = reduceInset(inFlight, mcpEvent());
-  check("the result wakes the same card", settled.item?.id === inFlight.item?.id);
-  check("the result un-pins it so the timer can run", !settled.pinned && shouldAutoRetract(settled));
-  check("the result swaps the content", settled.item?.payload.kind === "terminal" && settled.item.payload.stdout.includes("[DIR] daze"));
-
-  const closing = reduceInset(settled, createEvent(session, "tool_start", { toolCallId: "c9", toolName: "bash", args: {} } as never));
-  check("another tool starts folding it away", closing.phase === "closing", closing.phase);
-  check("a closing card does not count down again", !shouldAutoRetract(closing) || closing.phase === "closing");
-
-  const pinned = reduceInset(CLOSED_INSET, mcpEvent(), {});
-  const held = { ...pinned, pinned: true };
-  check("a pinned call never auto-retracts", !shouldAutoRetract(held));
-  const spoken = reduceInset(
-    held,
-    createEvent(session, "message", { role: "assistant", content: "done", streaming: false } as never),
-  );
-  check("a pinned call survives the agent speaking on", spoken.phase === "open", spoken.phase);
-  const ended = reduceInset(held, createEvent(session, "agent_end", { reason: "completed" } as never));
-  check("a pinned call survives the run ending", ended.phase === "open", ended.phase);
-  const cleared = reduceInset(held, createEvent(session, "agent_start", { model: "pi", runtime: "pi", cwd: "/" } as never));
-  check("a new run clears the dock", cleared.item === undefined);
-}
-
-section("inset: the dock is re-derived from the stream after a reload");
-{
-  const start = createEvent(session, "agent_start", { model: "pi", runtime: "pi", cwd: "/" } as never);
-  const events = [start, mcpEvent()];
-  check("the newest call is the one docked", latestMcpItem(events)?.id === "mcp_call_1");
-  check("a later run boundary clears it", latestMcpItem([...events, start]) === undefined);
-}
-
-section("inset: replay shows the call at the cursor, not a later one");
-{
-  const base = Date.now();
-  const at = (offset: number) => base + offset;
-  const first = { ...mcpEvent({ result: "first" }), timestamp: at(100) };
-  const second = { ...mcpEvent({ toolCallId: "call_2", result: "second" }), timestamp: at(500) };
-  const events = [first, second];
-  check("before the first call nothing is docked", insetItemAtCursor(events, at(50)) === undefined);
-  check("at the first call it is docked", insetItemAtCursor(events, at(100))?.id === "mcp_call_1");
-  check("between calls the first stays", insetItemAtCursor(events, at(300))?.id === "mcp_call_1");
-  check("after the second it replaces the first", insetItemAtCursor(events, at(600))?.id === "mcp_call_2");
-}
-
-section("activity: an MCP row opens the dock, never the Stage page");
-{
-  const row = eventToActivityRow(mcpEvent());
-  // The row carries the inset item (so the click has something to dock), but the
-  // item is not a page: `openStage` must not fire for it.
-  check("the row's item is an inset", row?.stageItem?.weight === "inset", row?.stageItem?.weight);
 }
 
 section("errors and namespaces are visible");
