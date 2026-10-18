@@ -21,6 +21,7 @@ import { appendEvents, drainArchive, readEvents, writeMeta } from "./archive";
 import { EventBus } from "../events";
 import type { AgentAdapter } from "../agents/AgentAdapter";
 import { TerminalMirror } from "./TerminalMirror";
+import { McpLogTail } from "./McpLogTail";
 import { createAdapter } from "../agents/createAdapter";
 import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
@@ -111,6 +112,15 @@ export class AbsenceSession {
    * TerminalMirror.
    */
   readonly terminal?: TerminalMirror;
+  /**
+   * Tails an MCP proxy's log and turns its JSON-RPC stream into `mcp` events.
+   *
+   * The other half of the MCP story: the shim (bin/absence-mcp-shim.mjs) writes
+   * what passes through it, and this reads it back. Present only when a shim was
+   * configured; without one, MCP calls are invisible — they create no process
+   * and write no file, so Layer 0 cannot see them at all.
+   */
+  private mcpTail?: McpLogTail;
   readonly session: Session;
 
   private adapter: AgentAdapter | undefined;
@@ -152,13 +162,13 @@ export class AbsenceSession {
    * runtime is then unavailable by construction rather than by a guard that
    * someone will forget to add.
    */
-  private readonly observe?: { pid: number; label: string; terminal?: TerminalMirror };
+  private readonly observe?: { pid: number; label: string; terminal?: TerminalMirror; mcpLog?: string };
 
   constructor(
     projectPath: string,
     kind: AgentKind,
     private readonly resume?: AbsenceResume,
-    observe?: { pid: number; label: string; terminal?: TerminalMirror },
+    observe?: { pid: number; label: string; terminal?: TerminalMirror; mcpLog?: string },
   ) {
     this.id = resume?.absenceSessionId ?? newId("sess");
     this.session = {
@@ -216,6 +226,28 @@ export class AbsenceSession {
       (kind, abs) => this.onOutsideFsChange(kind, abs),
     );
     this.watcher.start();
+
+    // MCP calls, if a shim is watching the agent's server. This is a poll over
+    // the shim's log — not over the process table: the file only grows when a
+    // call happens, and reading a few lines is nothing like enumerating every
+    // process on the machine.
+    if (target.mcpLog) {
+      this.mcpTail = new McpLogTail(target.mcpLog, (call) => {
+        this.handleEvent(
+          createEvent(this.id, "mcp", {
+            server: call.server || "mcp",
+            tool: call.tool,
+            toolName: call.toolName,
+            toolCallId: call.id,
+            args: call.args,
+            result: call.result,
+            isError: call.isError,
+            durationMs: call.durationMs,
+          }),
+        );
+      });
+      this.mcpTail.start();
+    }
     this.handleEvent(
       createEvent(this.id, "message", {
         role: "system",
@@ -1130,6 +1162,7 @@ export class SessionStore {
     pid: number,
     label?: string,
     terminal?: TerminalMirror,
+    mcpLog?: string,
   ): Promise<AbsenceSession> {
     const target = await describeProcess(pid);
     if (!target) {
@@ -1139,7 +1172,7 @@ export class SessionStore {
       projectPath,
       "observe" as unknown as AgentKind,
       undefined,
-      { pid, label: label?.trim() || target.name, terminal },
+      { pid, label: label?.trim() || target.name, terminal, mcpLog },
     );
     this.sessions.set(session.id, session);
     try {

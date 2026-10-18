@@ -447,4 +447,53 @@ section("exit codes survive the observer");
   watcher.stop();
 }
 
+
+// ---------------------------------------------------------------------------
+// 12. MCP calls, through the proxy.
+//
+// Measured on a real agent: driving Windows Calculator through an MCP server
+// produced *zero* process events — an MCP call is a JSON-RPC message written to
+// a pipe that already exists, so no process is created. That leaves the OS layer
+// blind to the thing such an agent mostly does.
+//
+// MCP is the one door every agent opens the same way (the spec's stdio server is
+// `{ command, args }`), so a proxy on that door sees every call. This pins the
+// reader that turns the proxy's log back into calls.
+// ---------------------------------------------------------------------------
+section("mcp: calls are paired and classified");
+{
+  const { McpLogReader } = await import("../../apps/server/src/mcp/McpLogReader");
+  const reader = new McpLogReader();
+  const record = (dir: "client-to-server" | "server-to-client", text: string, ts: number) => ({ ts, dir, text });
+  const request = (id: number, name: string, args: unknown) =>
+    JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+
+  reader.push(record("client-to-server", request(1, "mcp__somnus__observe", { windows_only: true }), 1000));
+  const ok = reader.push(
+    record("server-to-client", JSON.stringify({ jsonrpc: "2.0", id: 1, result: { content: [{ type: "text", text: "WINDOW w1" }] } }), 1120),
+  );
+  check("a call is completed by its response", ok !== undefined);
+  check("the server and tool are split from the tool name", ok?.server === "somnus" && ok?.tool === "observe", `${ok?.server}/${ok?.tool}`);
+  check("the arguments survive as JSON text", (ok?.args ?? "").includes("windows_only"));
+  check("the result text survives", ok?.result === "WINDOW w1", ok?.result);
+  check("the duration spans request to response", ok?.durationMs === 120, String(ok?.durationMs));
+
+  reader.push(record("client-to-server", request(2, "mcp__somnus__call", { action: "x" }), 2000));
+  const failed = reader.push(
+    record("server-to-client", JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: "denied" }], isError: true } }), 2050),
+  );
+  check("an MCP error result is marked failed", failed?.isError === true);
+  check("and its text is kept", failed?.result === "denied", failed?.result);
+
+  check(
+    "the handshake is not a call",
+    reader.push(record("client-to-server", JSON.stringify({ jsonrpc: "2.0", id: 9, method: "initialize" }), 3000)) === undefined,
+  );
+  check("a torn line is ignored, not thrown", reader.push(record("server-to-client", "{not json", 3100)) === undefined);
+  check(
+    "a response with no request is ignored",
+    reader.push(record("server-to-client", JSON.stringify({ jsonrpc: "2.0", id: 99, result: {} }), 3200)) === undefined,
+  );
+}
+
 finish("observer decoupling checks");

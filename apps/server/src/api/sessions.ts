@@ -84,7 +84,9 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
    * with no adapter and no knowledge of its internals. `absence watch` uses it.
    */
   app.post("/api/sessions/observe", async (request, reply) => {
-    const body = request.body as { projectPath?: string; pid?: number; label?: string } | undefined;
+    const body = request.body as
+      | { projectPath?: string; pid?: number; label?: string; mcpLog?: string }
+      | undefined;
     const pid = Number(body?.pid);
     if (!Number.isInteger(pid) || pid <= 0) {
       return reply.code(400).send({ error: "pid is required" });
@@ -102,7 +104,13 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       // handed over here: the pid is the only shared key, and the HTTP body
       // cannot carry an object. An agent somebody else started has none.
       const terminal = takeTerminalMirror(pid);
-      const session = await sessionStore.createObserved(resolved, pid, body?.label, terminal);
+      const session = await sessionStore.createObserved(
+        resolved,
+        pid,
+        body?.label,
+        terminal,
+        body?.mcpLog,
+      );
       return session.snapshot();
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });

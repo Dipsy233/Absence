@@ -12,6 +12,12 @@ export interface WatchArgs {
   pid?: number;
   projectPath: string;
   label?: string;
+  /**
+   * An MCP proxy's log to tail (see bin/absence-mcp-shim.mjs). MCP tool calls
+   * create no process and write no project file, so this is the only way to see
+   * them at all — the shim sits on the protocol's standard door.
+   */
+  mcpLog?: string;
   /** The command to run and watch, when Absence starts the agent itself. */
   command?: string[];
 }
@@ -43,6 +49,12 @@ export function parseWatchArgs(argv: string[], cwd = process.cwd()): WatchArgs {
       args.label = value;
     } else if (arg.startsWith("--label=")) {
       args.label = arg.slice("--label=".length);
+    } else if (arg === "--mcp-log") {
+      const value = own[++i];
+      if (!value) throw new Error("--mcp-log needs a file path");
+      args.mcpLog = path.resolve(value);
+    } else if (arg.startsWith("--mcp-log=")) {
+      args.mcpLog = path.resolve(arg.slice("--mcp-log=".length));
     } else if (arg === "--help" || arg === "-h") {
       throw new Error("help");
     } else if (arg.startsWith("-")) {
