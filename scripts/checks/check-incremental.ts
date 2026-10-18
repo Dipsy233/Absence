@@ -155,8 +155,12 @@ console.log("history + activity vs a full rebuild");
   // Sized from the window (~1.3 windows of events): enough to trim several
   // runs, few enough that most survive.
   const perRun = Math.ceil((MAX_SESSION_EVENTS * 1.3) / prompts);
+  // Fold while the events are still in the window, as the mounted panel does:
+  // the cache can only keep the runs it folded *while* it was there.
+  const fold = () => memoBuildHistory(window.events);
   for (let run = 0; run < prompts; run++) {
     window.push(ev("message", { role: "user", content: `prompt ${run}`, streaming: false }));
+    fold();
     for (let i = 0; i < perRun; i++) {
       const kind = i % 5;
       if (kind === 0) {
@@ -181,6 +185,7 @@ console.log("history + activity vs a full rebuild");
       }
     }
     window.push(ev("agent_end", { reason: "completed" }));
+    fold();
   }
 
   const incremental = memoBuildHistory(window.events);
