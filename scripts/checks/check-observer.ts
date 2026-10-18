@@ -344,3 +344,61 @@ section("commands are read off the command line");
   check("a bare shell is not a command", detectCommand("bash.exe", "bash").wrapped === false);
   check("a program is not a command", detectCommand("node.exe", "node app.js").wrapped === false);
 }
+
+// ---------------------------------------------------------------------------
+// 10. A `.cmd` wrapper puts the real agent below the observed root.
+//
+// `absence watch -- pi` on Windows spawns `pi.cmd`, whose pid is `cmd.exe` and
+// whose child is the actual agent (`node.exe`). The agent's own tool processes
+// are then *grandchildren* of the pid Absence was given, so attribution that
+// only accepted direct children saw nothing at all — the session produced zero
+// process events while the agent ran commands in plain sight.
+//
+// Verified against a real Pi run: `bash.exe -lc "ls"` under the agent is now
+// reported with `command: "ls"`.
+// ---------------------------------------------------------------------------
+section("observe mode: a wrapper level below the root is still the agent's tree");
+{
+  const { ProcessWatcher } = await import("../../apps/server/src/process/ProcessWatcher");
+  type ProcInfo = { pid: number; ppid: number; name: string; commandLine: string; startedAt: number };
+  const self = process.pid;
+
+  const table = new Map<number, ProcInfo>();
+  const put = (pid: number, ppid: number, name: string, commandLine = name) =>
+    table.set(pid, { pid, ppid, name, commandLine, startedAt: Date.now() });
+
+  put(self, 1, "node");
+  // The root Absence was handed is the wrapper; the agent is its child.
+  put(7000, self, "cmd.exe");
+  put(7001, 7000, "node.exe");
+
+  const eggs: { pid: number; name: string; command: string }[] = [];
+  const watcher = new ProcessWatcher({
+    rootPid: 7000,
+    snapshot: async () => new Map(table),
+    onProcess: (payload) => eggs.push({ pid: payload.pid, name: payload.name, command: payload.command ?? "" }),
+  });
+  watcher.warm();
+  await new Promise((resolve) => setTimeout(resolve, 80));
+
+  // Now the agent runs a command: bash under the agent, two levels below the root.
+  put(7002, 7001, "bash.exe", 'bash.exe -lc "ls"');
+  // Drive the discovery the same way the kernel would: the job path checks
+  // `jobSeen`, which `warm` seeded from the table.
+  const internal = watcher as unknown as {
+    onJobStart(event: unknown): void;
+  };
+  internal.onJobStart({
+    pid: 7002,
+    ppid: 7001,
+    commandLine: 'bash.exe -lc "ls"',
+    exePath: process.platform === "win32" ? "C:\\Program Files\\Git\\usr\\bin\\bash.exe" : "/bin/bash",
+  });
+  check("a grandchild of the observed root is reported", eggs.some((egg) => egg.pid === 7002), JSON.stringify(eggs));
+  check(
+    "and its command is the one that ran, not the wrapper",
+    eggs.find((egg) => egg.pid === 7002)?.command === "ls",
+    eggs.find((egg) => egg.pid === 7002)?.command,
+  );
+  watcher.stop();
+}

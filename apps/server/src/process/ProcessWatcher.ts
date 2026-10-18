@@ -462,6 +462,11 @@ export class ProcessWatcher {
       //   our descendant → the job sees it, kernel events, no sampling
       //   somebody else → the job never will, sample the table
       this.observedInJob = this.descendsFromUs(table, this.rootPid) === true;
+      if (process.env.ABSENCE_DEBUG_OBSERVE) {
+        process.stderr.write(
+          `[observe] root=${this.rootPid} inJob=${this.observedInJob} jobSub=${this.jobUnsubscribe !== undefined}${String.fromCharCode(10)}`,
+        );
+      }
       // Walk down from the observed root. A single pass in parent-before-child
       // order is enough in principle, but the table is a Map keyed by pid and
       // not ordered by depth, so the walk repeats until it stops finding new
@@ -972,11 +977,13 @@ export class ProcessWatcher {
     // each asks its own question:
     //   · job path — the kernel already proved this event is in our job, so the
     //     parent chain is trustworthy by construction: the root's own children,
-    //     or anything under an egg we already reported.
-    //   · sampled path — `jobSeen` was seeded from the table at attach time;
-    //     until that lands, only the root's direct children are attributed.
+    //     or anything under an egg we already reported. `jobSeen` is seeded with
+    //     the observed tree at attach time, which is what lets the *grand*-children
+    //     in (a `.cmd` wrapper puts the real agent one level below the root).
+    //   · sampled path — same seeding, but nothing proves job membership, so the
+    //     root's direct children are trusted until the table lands.
     const anchored = this.observedInJob
-      ? isDirectChild || this.jobParent.has(event.ppid)
+      ? isDirectChild || this.jobSeen.has(event.ppid) || this.jobParent.has(event.ppid)
       : this.jobSeen.has(event.ppid) && (this.observedSeeded || isDirectChild);
     if (!anchored) return;
 
