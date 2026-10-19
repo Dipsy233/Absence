@@ -106,11 +106,44 @@ export function Stage() {
             {agentOnStage ? <AgentAvatar visual={visual} /> : <StageWorld focus={focus} />}
           </div>
 
-          <div className={sheet ? sheetClass(ghost) : "absolute inset-0"}>
+          {/* The sheet frame: a persistent layer so an outgoing page always fades
+              out *inside* the sheet while the frame itself eases between the
+              inset sheet geometry and the full-bleed desk page. Switching the
+              container class instead would make the outgoing page jump to
+              full-bleed for the length of its exit fade (read02 §11). */}
+          <motion.div
+            className="absence-overlay absolute isolate overflow-hidden rounded-lg border"
+            initial={false}
+            animate={{
+              left: sheet ? SHEET_INSET : 0,
+              right: sheet ? SHEET_INSET : 0,
+              top: sheet ? SHEET_INSET : 0,
+              bottom: sheet ? SHEET_BOTTOM : 0,
+              borderColor: sheet ? `rgba(${LINE_RGB},0.7)` : `rgba(${LINE_RGB},0)`,
+              boxShadow: sheet ? "0 18px 50px rgba(0,0,0,.45)" : "0 0 0 0 rgba(0,0,0,0)",
+            }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+          >
+            {/* Sheet tint and blur live on their own layers so they can fade with
+                the frame instead of popping between the two page kinds. In
+                ABSENCE mode the tint is opaque — the ghost carries the
+                translucency instead. */}
+            <motion.div
+              className="absolute inset-0 bg-desk-panel"
+              initial={false}
+              animate={{ opacity: sheet ? (ghost ? 1 : 0.85) : 0 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+            />
+            <motion.div
+              className="absolute inset-0 backdrop-blur-[3px]"
+              initial={false}
+              animate={{ opacity: sheet && !ghost ? 1 : 0 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+            />
             <AnimatePresence mode="wait">
               <motion.div
                 key={key}
-                className="h-full"
+                className="relative h-full"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -119,7 +152,7 @@ export function Stage() {
                 {content}
               </motion.div>
             </AnimatePresence>
-          </div>
+          </motion.div>
 
           {mode === "replay" ? (
             <span className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-amber">REPLAY</span>
@@ -152,15 +185,14 @@ export function Stage() {
 }
 
 /**
- * The translucent sheet FILE / DIFF / TERMINAL / LIVE sit on. The frame itself
- * does not fade, so live content crossfading inside never reveals the world.
- * In ABSENCE mode the ghost carries the translucency instead, so the page under it
- * is drawn opaque and stays readable through the 60% ghost above it.
+ * The sheet frame's geometry (read02 §11): `inset-x-2 top-2 bottom-14` in px,
+ * mirrored by the frame's animate values so desk ↔ sheet transitions ease
+ * instead of jumping. The frame itself does not fade while sheet pages swap
+ * inside it, so live content crossfading never reveals the world.
  */
-const SHEET =
-  "absence-overlay absolute inset-x-2 top-2 bottom-14 overflow-hidden rounded-lg border border-desk-line/70 shadow-[0_18px_50px_rgba(0,0,0,.45)]";
-const sheetClass = (ghost: boolean) =>
-  ghost ? `${SHEET} bg-desk-panel` : `${SHEET} bg-desk-panel/85 backdrop-blur-[3px]`;
+const SHEET_INSET = 8; // inset-x-2 / top-2
+const SHEET_BOTTOM = 56; // bottom-14 (3.5rem)
+const LINE_RGB = "46, 40, 34"; // --desk-line, for the animatable border colour
 
 /** The Stage's avatar honours the uploaded skin, same as the Agent panel. */
 function AgentAvatar({ visual }: { visual: AgentVisualState }) {
