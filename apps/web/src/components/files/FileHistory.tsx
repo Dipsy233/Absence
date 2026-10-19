@@ -6,9 +6,11 @@ import { formatClock } from "../../lib/format";
 import { createStageItem } from "../../lib/events";
 import { unifiedDiff } from "../../lib/diff";
 import { PanelNav } from "../common/PanelNav";
+import { useT } from "../../lib/i18n";
 
 /** Level 3: version history and the diff between any two versions (read02 §9). */
 export function FileHistory({ path }: { path: string }) {
+  const t = useT();
   const file = useFileStore((s) => s.files[path]);
   const setFilesView = useUiStore((s) => s.setFilesView);
   const openStage = useStageStore((s) => s.openStage);
@@ -31,13 +33,13 @@ export function FileHistory({ path }: { path: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PanelNav
-        title={`${path} · history`}
+        title={t("{path} · history", { path })}
         onBack={() => setFilesView({ kind: "detail", path })}
-        subtitle={`${history.length} version${history.length === 1 ? "" : "s"}`}
+        subtitle={t("{n} versions", { n: history.length })}
       />
 
       {history.length === 0 ? (
-        <p className="text-xs text-desk-dim">No versions yet — the agent has not written to this file.</p>
+        <p className="text-xs text-desk-dim">{t("No versions yet — the agent has not written to this file.")}</p>
       ) : (
         <>
           <ul className="shrink-0 space-y-0.5">
@@ -56,7 +58,7 @@ export function FileHistory({ path }: { path: string }) {
                     <span className="w-8">v{version.version}</span>
                     <span>{formatClock(version.timestamp)}</span>
                     <span className="text-desk-dim/70">{version.source}</span>
-                    {index === history.length - 1 ? <span className="ml-auto text-desk-teal">← current</span> : null}
+                    {index === history.length - 1 ? <span className="ml-auto text-desk-teal">{t("← current")}</span> : null}
                   </button>
                 </li>
               );
@@ -65,7 +67,7 @@ export function FileHistory({ path }: { path: string }) {
 
           <div className="mt-2 flex shrink-0 items-center gap-2">
             <span className="label">
-              {fromVersion ? `v${fromVersion.version} → v${toEntry?.version}` : "no previous version"}
+              {fromVersion ? `v${fromVersion.version} → v${toEntry?.version}` : t("no previous version")}
             </span>
             <button
               type="button"
@@ -91,7 +93,7 @@ export function FileHistory({ path }: { path: string }) {
               }
               className="ml-auto rounded border border-desk-line px-2 py-1 text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber disabled:opacity-40"
             >
-              Open Diff in Stage
+              {t("Open Diff in Stage")}
             </button>
           </div>
 

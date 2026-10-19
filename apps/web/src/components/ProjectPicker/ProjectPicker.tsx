@@ -11,6 +11,7 @@ import {
 import { WindowControls } from "../common/WindowControls";
 import { useSessionStore } from "../../stores/sessionStore";
 import { resetAllStores } from "../../stores/reset";
+import { useT } from "../../lib/i18n";
 
 type AgentChoice = RuntimeKind;
 
@@ -25,6 +26,7 @@ function formatWhen(timestamp: number): string {
 
 /** The first screen: pick a local project and start watching (read.md §25). */
 export function ProjectPicker() {
+  const t = useT();
   const startSession = useSessionStore((s) => s.startSession);
   const resumeSession = useSessionStore((s) => s.resumeSession);
 
@@ -138,11 +140,11 @@ export function ProjectPicker() {
           <span className="text-xs text-desk-dim">发呆症</span>
         </div>
         <p className="mt-2 text-sm text-desk-dim">
-          AI moves fast. Humans watch. Choose a project and let the agent work.
+          {t("AI moves fast. Humans watch. Choose a project and let the agent work.")}
         </p>
 
         <div className="mt-5">
-          <div className="label mb-1">project path</div>
+          <div className="label mb-1">{t("project path")}</div>
           <div className="flex gap-2">
             <input
               value={path}
@@ -157,7 +159,7 @@ export function ProjectPicker() {
               onClick={() => void start(path)}
               className="shrink-0 rounded border border-desk-amber/60 bg-desk-amber/10 px-4 py-2 text-xs text-desk-amber hover:bg-desk-amber/20 disabled:opacity-40"
             >
-              {busy ? "opening…" : "Open"}
+              {busy ? t("opening…") : t("Open")}
             </button>
           </div>
         </div>
@@ -172,9 +174,9 @@ export function ProjectPicker() {
             }}
             className="flex w-full items-center justify-between rounded border border-transparent px-1 py-1 text-left hover:border-desk-line hover:bg-desk-panel2"
           >
-            <span className="label">History</span>
+            <span className="label">{t("History")}</span>
             <span className="font-mono text-[10px] text-desk-dim">
-              {visibleSessions.length} session{visibleSessions.length === 1 ? "" : "s"} {historyOpen ? "▾" : "▸"}
+              {t("{n} sessions", { n: visibleSessions.length })} {historyOpen ? "▾" : "▸"}
             </span>
           </button>
 
@@ -183,8 +185,8 @@ export function ProjectPicker() {
               {visibleSessions.length === 0 ? (
                 <p className="px-2 py-1.5 text-[11px] text-desk-dim">
                   {query
-                    ? "No saved sessions for this path."
-                    : "No saved sessions yet — open a project to start one."}
+                    ? t("No saved sessions for this path.")
+                    : t("No saved sessions yet — open a project to start one.")}
                 </p>
               ) : (
                 visibleSessions.map((session) => (
@@ -193,7 +195,7 @@ export function ProjectPicker() {
                     type="button"
                     disabled={busy}
                     onClick={() => void resume(session)}
-                    title={`Resume ${session.piSessionFile ?? session.absenceSessionId ?? session.id}`}
+                    title={t("Resume {id}", { id: session.piSessionFile ?? session.absenceSessionId ?? session.id })}
                     className="block w-full rounded border border-transparent px-2 py-1.5 text-left hover:border-desk-line hover:bg-desk-panel2 disabled:opacity-40"
                   >
                     <div className="flex items-baseline gap-2">
@@ -212,7 +214,7 @@ export function ProjectPicker() {
                         {session.runtime}
                       </span>
                       <span>
-                        · {session.messageCount} msg{session.messageCount === 1 ? "" : "s"}
+                        {t("· {n} msgs", { n: session.messageCount })}
                       </span>
                       {session.firstPrompt ? (
                         <span className="truncate text-desk-dim/80">· {session.firstPrompt}</span>
@@ -226,7 +228,7 @@ export function ProjectPicker() {
         </div>
 
         <div className="mt-4">
-          <div className="label mb-1">runtime</div>
+          <div className="label mb-1">{t("runtime")}</div>
           <div className="flex flex-wrap gap-1">
             {runtimes.map((rt) => (
               <button
@@ -250,15 +252,16 @@ export function ProjectPicker() {
             ))}
           </div>
           <p className="mt-1 text-[11px] text-desk-dim/80">
-            A green dot means the runtime was found. A red dot means it is not installed (or the path is wrong) — fix
-            it below before opening.
+            {t(
+              "A green dot means the runtime was found. A red dot means it is not installed (or the path is wrong) — fix it below before opening.",
+            )}
           </p>
         </div>
 
         {/* Runtime paths: point codex / dsh at their binary when the probe misses. */}
         {runtimes.some((rt) => rt.configurable) ? (
           <div className="mt-3">
-            <div className="label mb-1">runtime paths</div>
+            <div className="label mb-1">{t("runtime paths")}</div>
             <div className="space-y-2">
               {runtimes
                 .filter((rt) => rt.configurable)
@@ -271,8 +274,8 @@ export function ProjectPicker() {
                           aria-hidden
                           className={["h-1.5 w-1.5 rounded-full", rt.available ? "bg-desk-teal" : "bg-desk-ember"].join(" ")}
                         />
-                        <span className="font-mono uppercase tracking-wide text-desk-ink">{rt.label} path</span>
-                        <span className="truncate text-desk-dim/80">{rt.available ? "found" : "not found"}</span>
+                        <span className="font-mono uppercase tracking-wide text-desk-ink">{t("{label} path", { label: rt.label })}</span>
+                        <span className="truncate text-desk-dim/80">{rt.available ? t("found") : t("not found")}</span>
                       </div>
                       <input
                         value={pathEdits[key] ?? ""}
@@ -292,7 +295,7 @@ export function ProjectPicker() {
                 onClick={() => void savePaths()}
                 className="rounded border border-desk-line px-3 py-1 font-mono text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber disabled:opacity-40"
               >
-                {savingPaths ? "saving…" : "save paths"}
+                {savingPaths ? t("saving…") : t("save paths")}
               </button>
             </div>
           </div>
@@ -306,7 +309,7 @@ export function ProjectPicker() {
 
         {projects.length > 0 ? (
           <div className="mt-5">
-            <div className="label mb-1">recent</div>
+            <div className="label mb-1">{t("recent")}</div>
             <div className="max-h-48 space-y-1 overflow-auto">
               {projects.map((project) => (
                 <button

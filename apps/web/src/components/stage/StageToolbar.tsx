@@ -2,6 +2,7 @@ import type { StageItemType } from "../../types/stage";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
+import { useT } from "../../lib/i18n";
 
 /**
  * Three groups (read02 §13):
@@ -10,6 +11,7 @@ import { useUiStore } from "../../stores/uiStore";
  *   right  — the agent's view (its terminal, the file it has in context, live)
  */
 export function StageToolbar() {
+  const t = useT();
   const mode = useStageStore((s) => s.mode);
   const activeId = useStageStore((s) => s.activeItem?.id);
   const lastByType = useStageStore((s) => s.lastByType);
@@ -41,7 +43,7 @@ export function StageToolbar() {
       onClick={() => showType(type)}
       className={buttonClass(mode === type && activeId === lastByType[type]?.id, lastByType[type] !== undefined)}
     >
-      {label}
+      {t(label)}
     </button>
   );
 
@@ -52,10 +54,10 @@ export function StageToolbar() {
         type="button"
         disabled={!userFile}
         onClick={showUserFile}
-        title="The whole file you opened from the project tree"
+        title={t("The whole file you opened from the project tree")}
         className={buttonClass(mode === "file" && activeId !== undefined && activeId === userFile?.id, !!userFile)}
       >
-        FILE
+        {t("FILE")}
       </button>
       {itemButton("diff", "DIFF")}
       <button
@@ -64,7 +66,7 @@ export function StageToolbar() {
         onClick={() => setMode("replay")}
         className={buttonClass(mode === "replay", replayReady)}
       >
-        REPLAY
+        {t("REPLAY")}
       </button>
 
       {/* centre — the default page (the agent, once swapped in) */}
@@ -72,10 +74,10 @@ export function StageToolbar() {
         <button
           type="button"
           onClick={goDesk}
-          title={agentOnStage ? "Back to the agent — the default page" : "Back to the desk — the default page"}
+          title={agentOnStage ? t("Back to the agent — the default page") : t("Back to the desk — the default page")}
           className={buttonClass(mode === "desk", true)}
         >
-          {agentOnStage ? "AGENT" : "TABLE"}
+          {agentOnStage ? t("AGENT") : t("TABLE")}
         </button>
       </div>
 
@@ -86,16 +88,16 @@ export function StageToolbar() {
           type="button"
           disabled={!agentFile}
           onClick={showAgentFile}
-          title="The content the agent has in context"
+          title={t("The content the agent has in context")}
           className={buttonClass(
             mode === "file" && activeId !== undefined && activeId === agentFile?.id,
             !!agentFile,
           )}
         >
-          FILE
+          {t("FILE")}
         </button>
         <button type="button" onClick={() => setMode("live")} className={buttonClass(mode === "live", true)}>
-          LIVE
+          {t("LIVE")}
         </button>
       </div>
     </div>

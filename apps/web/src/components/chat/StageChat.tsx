@@ -16,6 +16,7 @@ import { useChatStore } from "../../stores/chatStore";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useT } from "../../lib/i18n";
 import { ContextChip } from "./ContextChip";
 
 /**
@@ -32,6 +33,7 @@ import { ContextChip } from "./ContextChip";
  * commands. Anything else is an ordinary prompt.
  */
 export function StageChat({ expanded }: { expanded: boolean }) {
+  const t = useT();
   const messages = useChatStore((s) => s.messages);
   const pending = useChatStore((s) => s.pending);
   const clearContext = useChatStore((s) => s.clearContext);
@@ -288,27 +290,30 @@ export function StageChat({ expanded }: { expanded: boolean }) {
             ].join(" ")}
           >
             <div className="flex shrink-0 items-center justify-between border-b border-desk-line/70 px-2 py-1">
-              <span className="label">Chat</span>
+              <span className="label">{t("Chat")}</span>
               <button
                 type="button"
                 onClick={() => setFull((value) => !value)}
-                title={full ? "Collapse the history" : "Expand the full history"}
+                title={full ? t("Collapse the history") : t("Expand the full history")}
                 className="rounded px-1.5 py-0.5 font-mono text-[10px] text-desk-dim hover:bg-desk-panel2 hover:text-desk-ink"
               >
-                {full ? "▼ collapse" : "▲ expand"}
+                {full ? t("▼ collapse") : t("▲ expand")}
               </button>
             </div>
             <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-auto px-3 py-2">
               {messages.length === 0 ? (
                 <p className="text-xs text-desk-dim">
-                  Ask the agent to do something, or type <span className="font-mono text-desk-amber">/</span> for
-                  commands. Attach context from Files, Activity or a selection.
+                  {t("Ask the agent to do something, or type <slash> for commands. Attach context from Files, Activity or a selection.")
+                    .split("<slash>")[0]}
+                  <span className="font-mono text-desk-amber">/</span>
+                  {t("Ask the agent to do something, or type <slash> for commands. Attach context from Files, Activity or a selection.")
+                    .split("<slash>")[1]}
                 </p>
               ) : (
                 messages.map((message) => (
                   <div key={message.id}>
                     <div className="label mb-0.5">
-                      {message.role === "user" ? "You" : message.role === "system" ? "ABSENCE" : "Agent"}
+                      {message.role === "user" ? t("You") : message.role === "system" ? "ABSENCE" : t("Agent")}
                     </div>
                     <div
                       className={[
@@ -334,15 +339,15 @@ export function StageChat({ expanded }: { expanded: boolean }) {
       {observed ? (
         <div className="pointer-events-auto mx-2 mb-2 flex items-center gap-2 rounded-lg border border-desk-line/70 bg-desk-panel/85 px-2 py-1.5 font-mono text-[10px] text-desk-dim backdrop-blur-[3px]">
           <span className="rounded border border-desk-line px-1.5 py-0.5 uppercase tracking-[0.12em] text-desk-teal">
-            observing
+            {t("observing")}
           </span>
           <span className="min-w-0 flex-1 truncate">
-            Absence is watching this agent&apos;s terminal. Prompt it there — here it only shows what it does.
+            {t("Absence is watching this agent's terminal. Prompt it there — here it only shows what it does.")}
           </span>
         </div>
       ) : pending.length > 0 ? (
         <div className="pointer-events-auto mx-2 mb-1 flex flex-wrap items-center gap-1 rounded-lg border border-desk-line/70 bg-desk-panel/85 px-2 py-1.5 backdrop-blur-[3px]">
-          <span className="label">context</span>
+          <span className="label">{t("context")}</span>
           {pending.map((context, index) => (
             <ContextChip key={`${context.label}-${index}`} context={context} index={index} />
           ))}
@@ -358,7 +363,9 @@ export function StageChat({ expanded }: { expanded: boolean }) {
           <div className="absolute bottom-full left-0 right-0 mb-1 max-h-56 overflow-auto rounded-lg border border-desk-line/70 bg-desk-panel/95 p-1 shadow-[0_18px_50px_rgba(0,0,0,.45)] backdrop-blur-[3px]">
             {phase === "name" || command?.kind === "choice" ? (
               paletteItems.length === 0 ? (
-                <div className="px-2 py-1 text-xs text-desk-dim">{loadingOptions ? "loading…" : "no options"}</div>
+                <div className="px-2 py-1 text-xs text-desk-dim">
+                  {loadingOptions ? t("loading…") : t("no options")}
+                </div>
               ) : (
                 paletteItems.map((item, index) => (
                   <PaletteRow
@@ -379,7 +386,7 @@ export function StageChat({ expanded }: { expanded: boolean }) {
               <div className="px-2 py-1 text-xs text-desk-dim">
                 <span className="font-mono text-desk-amber">/{command?.name}</span>
                 {command?.argHint ? <span className="ml-2">{command.argHint}</span> : null}
-                <span className="ml-2">— press Enter to run</span>
+                <span className="ml-2">{t("— press Enter to run")}</span>
               </div>
             )}
           </div>
@@ -397,7 +404,7 @@ export function StageChat({ expanded }: { expanded: boolean }) {
               inputRef.current?.focus();
             }
           }}
-          title="Commands — type / and pick one"
+          title={t("Commands — type / and pick one")}
           className={[
             "shrink-0 rounded border px-2 py-1 font-mono text-xs transition-colors",
             commandMode
@@ -414,12 +421,12 @@ export function StageChat({ expanded }: { expanded: boolean }) {
           disabled={!expanded && collapseChatOnContent}
           title={
             historyOpen
-              ? "Hide the conversation — keep just the input row"
-              : "Show the conversation"
+              ? t("Hide the conversation — keep just the input row")
+              : t("Show the conversation")
           }
           className="shrink-0 rounded border border-desk-line px-1.5 py-1 font-mono text-[10px] text-desk-dim transition-colors hover:border-desk-amber/60 hover:text-desk-amber disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-desk-line disabled:hover:text-desk-dim"
         >
-          {historyOpen ? "▾ hide" : "▴ chat"}
+          {historyOpen ? t("▾ hide") : t("▴ chat")}
         </button>
 
         <input
@@ -427,7 +434,13 @@ export function StageChat({ expanded }: { expanded: boolean }) {
           value={text}
           onChange={(event) => handleChange(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={connected ? (commandMode ? "type a command…" : "Ask the agent…") : "connecting…"}
+          placeholder={
+            connected
+              ? commandMode
+                ? t("type a command…")
+                : t("Ask the agent…")
+              : t("connecting…")
+          }
           disabled={!connected}
           className="min-w-0 flex-1 rounded border border-desk-line bg-desk-panel2 px-2 py-1.5 font-mono text-xs text-desk-ink outline-none placeholder:text-desk-dim/60 focus:border-desk-amber/70 disabled:opacity-50"
         />
@@ -438,7 +451,7 @@ export function StageChat({ expanded }: { expanded: boolean }) {
             disabled={!connected}
             className="shrink-0 rounded border border-desk-amber/60 bg-desk-panel2 px-3 py-1.5 text-xs text-desk-amber hover:bg-desk-amber/10 disabled:opacity-40"
           >
-            Run
+            {t("Run")}
           </button>
         ) : busy ? (
           <button
@@ -446,7 +459,7 @@ export function StageChat({ expanded }: { expanded: boolean }) {
             onClick={() => void abort()}
             className="shrink-0 rounded border border-desk-ember/60 px-3 py-1.5 text-xs text-desk-ember hover:bg-desk-ember/10"
           >
-            Stop
+            {t("Stop")}
           </button>
         ) : (
           <button
@@ -454,7 +467,7 @@ export function StageChat({ expanded }: { expanded: boolean }) {
             disabled={!connected || (!text.trim() && pending.length === 0)}
             className="shrink-0 rounded border border-desk-line bg-desk-panel2 px-3 py-1.5 text-xs text-desk-ink hover:border-desk-amber/70 disabled:opacity-40"
           >
-            Send
+            {t("Send")}
           </button>
         )}
       </form>

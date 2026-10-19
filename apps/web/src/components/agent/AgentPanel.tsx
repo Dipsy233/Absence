@@ -8,6 +8,7 @@ import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 import { AgentStatusRow } from "./AgentStatusRow";
 import { Panel } from "../Panel";
 import { StageWorld } from "../stage/StageWorld";
+import { useT } from "../../lib/i18n";
 
 /**
  * Agent status driven purely by the event stream (read02 §31–32).
@@ -16,6 +17,7 @@ import { StageWorld } from "../stage/StageWorld";
  * background and the desk world moves in here as TABLE (and back).
  */
 export function AgentPanel() {
+  const t = useT();
   const status = useSessionStore((s) => s.agent.status);
   const model = useSessionStore((s) => s.agent.model);
   const agentOnStage = useUiStore((s) => s.agentOnStage);
@@ -36,7 +38,7 @@ export function AgentPanel() {
   if (agentOnStage) {
     return (
       <Panel
-        title="TABLE"
+        title={t("TABLE")}
         className="shrink-0 cursor-pointer"
         bodyClassName="p-2"
         onClick={toggleAgentOnStage}
@@ -53,7 +55,7 @@ export function AgentPanel() {
 
   return (
     <Panel
-      title="Agent"
+      title={t("Agent")}
       aside={model}
       className="shrink-0 cursor-pointer"
       bodyClassName="p-2"

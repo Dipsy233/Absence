@@ -5,6 +5,7 @@ import { useChatStore } from "../../stores/chatStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useUiStore } from "../../stores/uiStore";
+import { useT } from "../../lib/i18n";
 
 const TONE_CLASS: Record<ActivityRow["tone"], string> = {
   read: "text-desk-teal",
@@ -24,6 +25,7 @@ const TONE_CLASS: Record<ActivityRow["tone"], string> = {
  * (read02 §19); inside replay it scrubs the Stage to that event.
  */
 export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayCurrent?: boolean }) {
+  const t = useT();
   const openStage = useStageStore((s) => s.openStage);
   const mode = useStageStore((s) => s.mode);
   const activeEventId = useStageStore((s) => s.activeItem?.source?.eventId);
@@ -71,11 +73,11 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
     event.preventDefault();
     openMenu(event.clientX, event.clientY, [
       {
-        label: inReplay ? "Scrub to this event" : "Open in Stage",
+        label: inReplay ? t("Scrub to this event") : t("Open in Stage"),
         disabled: !clickable,
         onSelect: activate,
       },
-      { label: "Add event to Chat", onSelect: () => addContext(eventContext(row.event)) },
+      { label: t("Add event to Chat"), onSelect: () => addContext(eventContext(row.event)) },
     ]);
   };
 
@@ -88,7 +90,7 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
         onClick={activate}
         onContextMenu={handleContextMenu}
         title={
-          inReplay ? "Scrub to this event" : canOpen ? "Open in Stage" : undefined
+          inReplay ? t("Scrub to this event") : canOpen ? t("Open in Stage") : undefined
         }
         aria-current={selected ? "true" : undefined}
         className={[
@@ -107,7 +109,7 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
       >
         <span className="flex items-baseline gap-2">
           <span className="shrink-0 text-desk-dim/70">{row.time}</span>
-          <span className={["shrink-0 font-semibold", TONE_CLASS[row.tone]].join(" ")}>{row.action}</span>
+          <span className={["shrink-0 font-semibold", TONE_CLASS[row.tone]].join(" ")}>{t(row.action)}</span>
           {row.secondary ? <span className="truncate text-desk-dim">{row.secondary}</span> : null}
         </span>
         <span className="block truncate pl-[68px] text-desk-ink/80" title={row.primary}>

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useT } from "../../lib/i18n";
 
 interface PanelNavProps {
   title: string;
@@ -9,6 +10,7 @@ interface PanelNavProps {
 
 /** A lightweight in-panel header used when drilling into detail (read02 §6). */
 export function PanelNav({ title, onBack, subtitle, right }: PanelNavProps) {
+  const t = useT();
   return (
     <div className="mb-2 flex items-center gap-2 border-b border-desk-line pb-2">
       {onBack ? (
@@ -16,7 +18,7 @@ export function PanelNav({ title, onBack, subtitle, right }: PanelNavProps) {
           type="button"
           onClick={onBack}
           className="shrink-0 rounded border border-desk-line px-1.5 py-0.5 text-xs text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-          title="Back"
+          title={t("Back")}
         >
           ←
         </button>

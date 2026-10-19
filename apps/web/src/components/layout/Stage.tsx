@@ -8,6 +8,7 @@ import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
 import { moodFor, type AgentVisualState } from "../../lib/agent";
 import { statusFromEvent } from "../../lib/events";
+import { useT } from "../../lib/i18n";
 import { StageItemView } from "../stage/StageItemView";
 import { DeskStage } from "../stage/DeskStage";
 import { StageToolbar } from "../stage/StageToolbar";
@@ -30,6 +31,7 @@ import { ReportOverlay } from "../stage/ReportOverlay";
  */
 export function Stage() {
   const { item } = useStageView();
+  const t = useT();
   const replayItem = useReplayItem();
   const mode = useStageStore((s) => s.mode);
   const liveStatus = useSessionStore((s) => s.agent.status);
@@ -155,18 +157,19 @@ export function Stage() {
           </motion.div>
 
           {mode === "replay" ? (
-            <span className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-amber">REPLAY</span>
+            <span className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-amber">{t("REPLAY")}</span>
           ) : observed ? (
             // Not "LIVE": Absence is not driving anything. It is watching, and
             // the label names what it is watching.
             <span
               className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-teal"
-              title="Absence is observing this process; it never drives or stops it"
+              title={t("Absence is observing this process; it never drives or stops it")}
             >
-              ◇ OBSERVING{observedLabel ? ` ${observedLabel}` : ""}
+              {t("◇ OBSERVING")}
+              {observedLabel ? ` ${observedLabel}` : ""}
             </span>
           ) : mode === "live" && isAgentBusy(status) ? (
-            <span className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-teal">● LIVE</span>
+            <span className="chip pointer-events-none absolute right-3 top-2 z-10 text-desk-teal">{t("● LIVE")}</span>
           ) : null}
 
           {/* Chat floats over the Stage, above every page (file / diff / terminal /
@@ -203,10 +206,11 @@ function AgentAvatar({ visual }: { visual: AgentVisualState }) {
 }
 
 function EmptyStage({ text }: { text: string }) {
+  const t = useT();
   return (
     <div className="flex h-full items-center justify-center">
       <p className="rounded-full bg-black/35 px-3 py-1 text-xs italic text-desk-ink/80 backdrop-blur-[2px]">
-        {text}
+        {t(text)}
       </p>
     </div>
   );

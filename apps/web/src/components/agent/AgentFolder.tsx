@@ -6,13 +6,14 @@ import { useFileStore } from "../../stores/fileStore";
 import { useStageStore } from "../../stores/stageStore";
 import type { FileVersion } from "../../types/file";
 import { Panel } from "../Panel";
+import { useT } from "../../lib/i18n";
 
-function versionLabel(entry: FileVersion): string {
-  if (entry.complete) return "whole file";
+function versionLabel(t: (key: string, params?: Record<string, string | number>) => string, entry: FileVersion): string {
+  if (entry.complete) return t("whole file");
   if (entry.startLine !== undefined && entry.endLine !== undefined) {
-    return `lines ${entry.startLine}–${entry.endLine}`;
+    return t("lines {a}–{b}", { a: entry.startLine, b: entry.endLine });
   }
-  return "partial";
+  return t("partial");
 }
 
 /**
@@ -22,6 +23,7 @@ function versionLabel(entry: FileVersion): string {
  */
 export function AgentFolder() {
   useNow(5000);
+  const t = useT();
   const files = useFileStore((s) => s.files);
   const activeId = useStageStore((s) => s.activeItem?.id);
   const agentFile = useStageStore((s) => s.agentFile);
@@ -50,14 +52,14 @@ export function AgentFolder() {
 
   return (
     <Panel
-      title="Agent Folder"
-      aside={`${rows.length} known`}
+      title={t("Agent Folder")}
+      aside={t("{n} known", { n: rows.length })}
       className="min-h-0 flex-1"
       bodyClassName="p-2"
     >
       {rows.length === 0 ? (
         <p className="text-[11px] text-desk-dim">
-          The agent has not touched anything yet. Files appear here as it reads and edits them.
+          {t("The agent has not touched anything yet. Files appear here as it reads and edits them.")}
         </p>
       ) : (
         <ul className="space-y-0.5">
@@ -72,7 +74,7 @@ export function AgentFolder() {
                   <button
                     type="button"
                     onClick={() => toggle(file.path)}
-                    title={open ? "Hide versions" : "Show versions"}
+                    title={open ? t("Hide versions") : t("Show versions")}
                     className="shrink-0 px-1 py-1 font-mono text-[10px] text-desk-dim hover:text-desk-ink"
                   >
                     {open ? "▾" : "▸"}
@@ -80,7 +82,7 @@ export function AgentFolder() {
                   <button
                     type="button"
                     onClick={() => openKnownFile(file.path)}
-                    title={`${file.path} · show the newest agent-known content`}
+                    title={t("{path} · show the newest agent-known content", { path: file.path })}
                     className="min-w-0 flex-1 py-1 pr-1 text-left"
                   >
                     <div className="flex items-baseline gap-2">
@@ -98,7 +100,7 @@ export function AgentFolder() {
                       </span>
                     </div>
                     <div className="font-mono text-[10px] text-desk-dim">
-                      {file.history.length} version{file.history.length === 1 ? "" : "s"}
+                      {t("{n} versions", { n: file.history.length })}
                       {latest ? ` · v${latest.version} ${latest.source}` : ""}
                     </div>
                   </button>
@@ -113,7 +115,7 @@ export function AgentFolder() {
                           <button
                             type="button"
                             onClick={() => openKnownFile(file.path, entry.version)}
-                            title={`Show v${entry.version} on the Stage`}
+                            title={t("Show v{v} on the Stage", { v: entry.version })}
                             className={[
                               "flex w-full items-baseline gap-2 rounded px-1 py-0.5 text-left font-mono text-[10px]",
                               selected
@@ -123,7 +125,7 @@ export function AgentFolder() {
                           >
                             <span className="w-6 shrink-0">v{entry.version}</span>
                             <span className="w-9 shrink-0">{entry.source}</span>
-                            <span className="truncate">{versionLabel(entry)}</span>
+                            <span className="truncate">{versionLabel(t, entry)}</span>
                             <span className="ml-auto shrink-0 text-desk-dim/70">
                               {formatClock(entry.timestamp)}
                             </span>

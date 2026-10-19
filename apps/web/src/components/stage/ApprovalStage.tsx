@@ -3,6 +3,7 @@ import type { ApprovalOption, AbsenceEvent } from "@absence/core";
 import { eventContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useT } from "../../lib/i18n";
 
 interface ApprovalStageProps {
   approvalId: string;
@@ -39,6 +40,7 @@ export function ApprovalStage({
   options,
   event,
 }: ApprovalStageProps) {
+  const t = useT();
   const respondApproval = useSessionStore((s) => s.respondApproval);
   const addContext = useChatStore((s) => s.addContext);
   const [chosen, setChosen] = useState<string>();
@@ -80,15 +82,15 @@ export function ApprovalStage({
           {title}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-2">
-          <span className="text-desk-dim">the agent is waiting</span>
+          <span className="text-desk-dim">{t("the agent is waiting")}</span>
           {event ? (
             <button
               type="button"
               onClick={() => addContext(eventContext(event))}
               className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-              title="Add this approval to Chat"
+              title={t("Add this approval to Chat")}
             >
-              + Chat
+              {t("+ Chat")}
             </button>
           ) : null}
         </span>
@@ -120,7 +122,7 @@ export function ApprovalStage({
           );
         })}
         {chosen !== undefined ? (
-          <span className="ml-auto font-mono text-[10px] text-desk-dim">answered: {chosen}</span>
+          <span className="ml-auto font-mono text-[10px] text-desk-dim">{t("answered: {value}", { value: chosen })}</span>
         ) : null}
       </div>
     </div>

@@ -6,11 +6,13 @@ import { useIsObserved } from "../../stores/sessionStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useT } from "../../lib/i18n";
 import { Panel } from "../Panel";
 import { ActivityItem } from "./ActivityItem";
 
 /** Bottom-left: the actions of the selected run, with a Replay button. */
 export function ActivityPanel() {
+  const t = useT();
   const events = useEvents();
   const selectedRunId = useUiStore((s) => s.selectedRunId);
   const selectRun = useUiStore((s) => s.selectRun);
@@ -60,7 +62,7 @@ export function ActivityPanel() {
 
   return (
     <Panel
-      title="Activity"
+      title={t("Activity")}
       aside={
         <span className="flex items-center gap-2">
           <span>{rows.length}</span>
@@ -75,9 +77,9 @@ export function ActivityPanel() {
                 : "border-desk-line text-desk-dim enabled:hover:border-desk-amber/60 enabled:hover:text-desk-amber",
               "disabled:opacity-40",
             ].join(" ")}
-            title={run ? `Replay run #${run.index}` : "Nothing to replay"}
+            title={run ? t("Replay run #{index}", { index: run.index }) : t("Nothing to replay")}
           >
-            ▶ replay
+            {t("▶ replay")}
           </button>
         </span>
       }
@@ -86,7 +88,7 @@ export function ActivityPanel() {
     >
       {run ? (
         <div className="mb-1.5 flex items-baseline gap-2 border-b border-desk-line pb-1 text-[10px] text-desk-dim">
-          <span className="font-mono">run #{run.index}</span>
+          <span className="font-mono">{t("run #{index}", { index: run.index })}</span>
           <span className="truncate" title={run.prompt}>
             {run.prompt}
           </span>
@@ -96,8 +98,8 @@ export function ActivityPanel() {
       {rows.length === 0 ? (
         <p className="text-xs text-desk-dim">
           {observed
-            ? "Nothing yet. An observed agent's processes and file changes appear here as they happen."
-            : "Nothing yet. Send the agent a task."}
+            ? t("Nothing yet. An observed agent's processes and file changes appear here as they happen.")
+            : t("Nothing yet. Send the agent a task.")}
         </p>
       ) : (
         <ul className="space-y-0.5">

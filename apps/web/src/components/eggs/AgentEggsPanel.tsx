@@ -14,6 +14,7 @@ import {
 import { useSessionStore } from "../../stores/sessionStore";
 import { useStageStore } from "../../stores/stageStore";
 import { Panel } from "../Panel";
+import { useT } from "../../lib/i18n";
 
 const FILTERS: EggFilter[] = ["running", "dead", "all"];
 
@@ -30,6 +31,7 @@ const FILTERS: EggFilter[] = ["running", "dead", "all"];
  * stay in the event stream for the Report.
  */
 export function AgentEggsPanel() {
+  const t = useT();
   // The store keeps eggs incrementally, so this panel never folds the event
   // stream: the count is the live process set, not the tail of a window that
   // may have dropped a process's first sighting. The map is mutated in place,
@@ -76,8 +78,8 @@ export function AgentEggsPanel() {
 
   return (
     <Panel
-      title="Agent Eggs"
-      aside={counts.all > 0 ? `${counts.running}/${counts.all} running` : "none"}
+      title={t("Agent Eggs")}
+      aside={counts.all > 0 ? t("{r}/{a} running", { r: counts.running, a: counts.all }) : t("none")}
       className="min-h-0 flex-1"
       bodyClassName="p-2"
     >
@@ -94,7 +96,7 @@ export function AgentEggsPanel() {
                 : "border-desk-line bg-desk-panel2 text-desk-dim hover:text-desk-ink",
             ].join(" ")}
           >
-            {option}
+            {t(option)}
             <span className="ml-1 normal-case text-desk-dim">
               {option === "running" ? counts.running : option === "dead" ? counts.dead : counts.all}
             </span>
@@ -106,17 +108,17 @@ export function AgentEggsPanel() {
         type="text"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        placeholder="search name, command, pid…"
+        placeholder={t("search name, command, pid…")}
         className="mb-2 w-full rounded border border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[11px] text-desk-ink placeholder:text-desk-dim/60 focus:border-desk-amber/60 focus:outline-none"
       />
 
       {shown.length === 0 ? (
         <p className="text-xs text-desk-dim">
           {eggs.length === 0
-            ? "No eggs yet. An egg is a process the agent left running — a dev server, a watcher."
+            ? t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")
             : query.trim()
-              ? `No eggs match "${query.trim()}".`
-              : "Nothing here. Try another filter."}
+              ? t("No eggs match \"{q}\".", { q: query.trim() })
+              : t("Nothing here. Try another filter.")}
         </p>
       ) : (
         <ul className="space-y-1">
@@ -130,7 +132,7 @@ export function AgentEggsPanel() {
                 <button
                   type="button"
                   onClick={() => open(egg)}
-                  title={`Open pid ${egg.pid} on the Stage`}
+                  title={t("Open pid {n} on the Stage", { n: egg.pid })}
                   aria-current={selected ? "true" : undefined}
                   className={[
                     "block w-full rounded border-l-2 px-1.5 py-1 text-left font-mono text-[11px] leading-tight",
@@ -155,9 +157,9 @@ export function AgentEggsPanel() {
                     {egg.command || egg.commandLine || ""}
                   </span>
                   <span className="block pl-3 text-[10px] text-desk-dim/80">
-                    {egg.status === "running" ? "running for" : "lived"}{" "}
+                    {egg.status === "running" ? t("running for") : t("lived")}{" "}
                     {formatOffset((egg.exitedAt ?? Date.now()) - egg.startedAt)}
-                    {egg.children > 0 ? ` · +${egg.children} child${egg.children === 1 ? "" : "ren"}` : ""}
+                    {egg.children > 0 ? ` · ${t("+{n} children", { n: egg.children })}` : ""}
                     {egg.kindReason ? ` · ${egg.kindReason}` : ""}
                   </span>
                 </button>
@@ -171,9 +173,16 @@ export function AgentEggsPanel() {
         <p className="mt-2 space-y-0.5 border-t border-desk-line/60 pt-1.5 font-mono text-[10px] text-desk-dim">
           {tools.count > 0 ? (
             <span className="block" title={tools.names.join(", ")}>
-              folded {tools.count} helper{tools.count === 1 ? "" : "s"}
-              {tools.names.length > 0 ? `: ${tools.names.join(", ")}` : ""}
-              {tools.running > 0 ? ` (${tools.running} still running)` : ""}
+              {t(
+                tools.names.length > 0 && tools.running > 0
+                  ? "folded {n} helpers: {names} ({r} still running)"
+                  : tools.names.length > 0
+                    ? "folded {n} helpers: {names}"
+                    : tools.running > 0
+                      ? "folded {n} helpers ({r} still running)"
+                      : "folded {n} helpers",
+                { n: tools.count, names: tools.names.join(", "), r: tools.running },
+              )}
             </span>
           ) : null}
           {/*
@@ -186,9 +195,11 @@ export function AgentEggsPanel() {
           {retired > 0 ? (
             <span
               className="block"
-              title="Older finished processes were retired from this list to keep it bounded. Running ones are always shown. They remain in the session archive and the Report."
+              title={t(
+                "Older finished processes were retired from this list to keep it bounded. Running ones are always shown. They remain in the session archive and the Report.",
+              )}
             >
-              {retired} older finished process{retired === 1 ? "" : "es"} folded
+              {t("{n} older finished processes folded", { n: retired })}
             </span>
           ) : null}
         </p>

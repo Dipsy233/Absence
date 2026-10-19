@@ -1,5 +1,6 @@
 import { useNow } from "../../hooks/useNow";
 import { formatClock, formatContext } from "../../lib/format";
+import { useT } from "../../lib/i18n";
 import { useState } from "react";
 import { WindowControls } from "../common/WindowControls";
 import { SettingsDialog } from "../common/SettingsDialog";
@@ -11,6 +12,7 @@ import { resetAllStores } from "../../stores/reset";
  * doubles as the frameless window's title bar: drag region + window controls. */
 export function SessionBar() {
   useNow(1000);
+  const t = useT();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const session = useSessionStore((s) => s.session);
   const context = useSessionStore((s) => s.context);
@@ -47,7 +49,7 @@ export function SessionBar() {
         <button
           type="button"
           onClick={toggleAbsenceMode}
-          title="Float the desk over the Stage's content page as a translucent ghost"
+          title={t("Float the desk over the Stage's content page as a translucent ghost")}
           className={[
             "pointer-events-auto rounded border px-2 py-0.5 font-mono text-[11px] tracking-widest transition-colors",
             absenceMode
@@ -59,11 +61,11 @@ export function SessionBar() {
         </button>
       </div>
 
-      <span className="hidden shrink-0 font-mono text-xs text-desk-dim md:inline" title="model">
+      <span className="hidden shrink-0 font-mono text-xs text-desk-dim md:inline" title={t("model")}>
         {session.model ?? "—"}
       </span>
 
-      <div className="hidden shrink-0 items-center gap-2 lg:flex" title="context usage">
+      <div className="hidden shrink-0 items-center gap-2 lg:flex" title={t("context usage")}>
         <span className="font-mono text-[11px] text-desk-dim">{formatContext(used, total)}</span>
         <div className="h-1.5 w-24 overflow-hidden rounded-full bg-desk-panel2">
           <div
@@ -80,27 +82,27 @@ export function SessionBar() {
       ) : null}
 
       <span className={["shrink-0 font-mono text-[11px]", connected ? "text-desk-teal" : "text-desk-ember"].join(" ")}>
-        {connected ? "live" : "offline"}
+        {connected ? t("live") : t("offline")}
       </span>
 
       {/* Settings: theme, rail order, egg filters, avatar skin. */}
       <button
         type="button"
         onClick={() => setSettingsOpen(true)}
-        title="Settings"
+        title={t("Settings")}
         className="flex shrink-0 items-center gap-1.5 rounded border border-desk-line px-2 py-0.5 font-mono text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
       >
         <span aria-hidden className="text-[13px] leading-none">⚙</span>
-        settings
+        {t("settings")}
       </button>
 
       <button
         type="button"
         onClick={resetAllStores}
         className="shrink-0 rounded border border-desk-line px-2 py-0.5 text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-        title="Close this session and pick another project"
+        title={t("Close this session and pick another project")}
       >
-        change
+        {t("change")}
       </button>
 
       <WindowControls />

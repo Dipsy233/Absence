@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { THEMES, type ThemeId } from "../../lib/theme";
+import { LANGUAGES, useT } from "../../lib/i18n";
 import {
   useSettingsStore,
   type CommandFailLevel,
@@ -44,7 +45,7 @@ const FAIL_LEVEL_TEXT: Record<CommandFailLevel, string> = {
  * The Settings dialog, opened from the gear button in the session bar. Four
  * panes:
  *
- *   p1      — appearance & layout (theme, rail orders, chat)
+ *   p1      — appearance & layout (language, theme, rail orders, chat)
  *   p2      — report: failed-command warning threshold & level
  *   p3      — personalization: avatar skin + sound sets stacked in one pane
  *   p4      — Agent Eggs filter profiles: a small file manager over the
@@ -114,19 +115,23 @@ function PersonalizationPane() {
    Report pane: the Absence Report's human-attention thresholds.
    ══════════════════════════════════════════════════════════════════════ */
 function ReportPane() {
+  const t = useT();
   return (
     <div className="min-w-0 flex-1 basis-0 overflow-y-auto p-4">
-      <h2 className="mb-3 font-mono text-sm tracking-widest text-desk-ink">REPORT WARN</h2>
+      <h2 className="mb-3 font-mono text-sm tracking-widest text-desk-ink">{t("REPORT WARN")}</h2>
       <CommandFailSettings />
     </div>
   );
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   Appearance & layout (the left pane): theme and the two rails' panel order.
-   Same sections the dialog had when it was a single column.
+   Appearance & layout (the left pane): language, theme and the two rails'
+   panel order. Same sections the dialog had when it was a single column.
    ════════════════════════════════════════════════════════════════════════ */
 function AppearancePane() {
+  const t = useT();
+  const language = useSettingsStore((s) => s.language);
+  const setLanguage = useSettingsStore((s) => s.setLanguage);
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
   const railOrder = useSettingsStore((s) => s.railOrder);
@@ -138,11 +143,35 @@ function AppearancePane() {
 
   return (
     <div className="min-w-0 flex-1 basis-0 overflow-y-auto p-4">
-      <h2 className="mb-3 font-mono text-sm tracking-widest text-desk-ink">APPEARANCE</h2>
+      <h2 className="mb-3 font-mono text-sm tracking-widest text-desk-ink">{t("APPEARANCE")}</h2>
+
+      {/* ── Language ───────────────────────────────────────── */}
+      <section className="mb-4">
+        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">
+          {t("Language · 语言")}
+        </h3>
+        <div className="flex gap-1.5">
+          {LANGUAGES.map((lang) => (
+            <button
+              key={lang.id}
+              type="button"
+              onClick={() => setLanguage(lang.id)}
+              className={[
+                "rounded border px-2.5 py-1 font-mono text-[11px] transition-colors",
+                language === lang.id
+                  ? "border-desk-amber/70 bg-desk-amber/10 text-desk-amber"
+                  : "border-desk-line bg-desk-panel2 text-desk-dim hover:text-desk-ink",
+              ].join(" ")}
+            >
+              {lang.label}
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* ── Theme ──────────────────────────────────────────── */}
       <section className="mb-4">
-        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">Color theme</h3>
+        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">{t("Color theme")}</h3>
         <div className="flex gap-1.5">
           {THEME_IDS.map((id) => (
             <button
@@ -165,7 +194,7 @@ function AppearancePane() {
 
       {/* ── Chat ──────────────────────────────────────────── */}
       <section className="mb-4">
-        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">Chat</h3>
+        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">{t("Chat")}</h3>
         <label className="flex items-start gap-1.5 text-[11px] leading-snug text-desk-dim">
           <input
             type="checkbox"
@@ -174,8 +203,13 @@ function AppearancePane() {
             className="mt-0.5 accent-[rgb(var(--desk-accent))]"
           />
           <span>
-            <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">collapse on content</span>
-            {" — fold the chat history away whenever the Stage shows a file, diff, terminal or the report. Off (the default) keeps the chat exactly as you left it."}
+            <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">
+              {t("collapse on content")}
+            </span>
+            {" — "}
+            {t(
+              "fold the chat history away whenever the Stage shows a file, diff, terminal or the report. Off (the default) keeps the chat exactly as you left it.",
+            )}
           </span>
         </label>
       </section>
@@ -183,20 +217,20 @@ function AppearancePane() {
       {/* ── Left rail order ───────────────────────────────── */}
       <section className="mb-4">
         <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">
-          Left rail panel order
+          {t("Left rail panel order")}
         </h3>
         <ul className="space-y-1">
           {leftOrder.map((id, i) => (
             <li key={id} className="flex items-center gap-2 rounded border border-desk-line bg-desk-panel2 px-2 py-1">
               <span className="flex-1 font-mono text-[11px] text-desk-ink">
-                {i + 1}. {LEFT_LABELS[id]}
+                {i + 1}. {t(LEFT_LABELS[id])}
               </span>
               <button
                 type="button"
                 disabled={i === 0}
                 onClick={() => moveLeftPanel(id, "up")}
                 className="rounded px-1 font-mono text-[11px] text-desk-dim hover:text-desk-amber disabled:opacity-30"
-                title="Move up"
+                title={t("Move up")}
               >
                 ▲
               </button>
@@ -205,7 +239,7 @@ function AppearancePane() {
                 disabled={i === leftOrder.length - 1}
                 onClick={() => moveLeftPanel(id, "down")}
                 className="rounded px-1 font-mono text-[11px] text-desk-dim hover:text-desk-amber disabled:opacity-30"
-                title="Move down"
+                title={t("Move down")}
               >
                 ▼
               </button>
@@ -217,20 +251,20 @@ function AppearancePane() {
       {/* ── Right rail order ─────────────────────────────── */}
       <section>
         <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">
-          Right rail panel order
+          {t("Right rail panel order")}
         </h3>
         <ul className="space-y-1">
           {railOrder.map((id, i) => (
             <li key={id} className="flex items-center gap-2 rounded border border-desk-line bg-desk-panel2 px-2 py-1">
               <span className="flex-1 font-mono text-[11px] text-desk-ink">
-                {i + 1}. {RAIL_LABELS[id]}
+                {i + 1}. {t(RAIL_LABELS[id])}
               </span>
               <button
                 type="button"
                 disabled={i === 0}
                 onClick={() => moveRailPanel(id, "up")}
                 className="rounded px-1 font-mono text-[11px] text-desk-dim hover:text-desk-amber disabled:opacity-30"
-                title="Move up"
+                title={t("Move up")}
               >
                 ▲
               </button>
@@ -239,7 +273,7 @@ function AppearancePane() {
                 disabled={i === railOrder.length - 1}
                 onClick={() => moveRailPanel(id, "down")}
                 className="rounded px-1 font-mono text-[11px] text-desk-dim hover:text-desk-amber disabled:opacity-30"
-                title="Move down"
+                title={t("Move down")}
               >
                 ▼
               </button>
@@ -256,6 +290,7 @@ function AppearancePane() {
  * before the Absence Report raises `command_failed`, and at what level.
  */
 function CommandFailSettings() {
+  const t = useT();
   const threshold = useSettingsStore((s) => s.commandFailThreshold);
   const setThreshold = useSettingsStore((s) => s.setCommandFailThreshold);
   const level = useSettingsStore((s) => s.commandFailLevel);
@@ -272,7 +307,7 @@ function CommandFailSettings() {
   return (
     <div className="space-y-4">
       <label className="block text-[11px] text-desk-dim">
-        <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">command failed per run</span>
+        <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">{t("command failed per run")}</span>
         <input
           type="number"
           min={1}
@@ -283,7 +318,7 @@ function CommandFailSettings() {
         />
       </label>
       <label className="block text-[11px] text-desk-dim">
-        <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">attention level</span>
+        <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">{t("attention level")}</span>
         <select
           value={level}
           onChange={(e) => setLevel(e.target.value as CommandFailLevel)}
@@ -291,15 +326,15 @@ function CommandFailSettings() {
         >
           {FAIL_LEVELS.map((id) => (
             <option key={id} value={id}>
-              {FAIL_LEVEL_TEXT[id]}
+              {t(FAIL_LEVEL_TEXT[id])}
             </option>
           ))}
         </select>
       </label>
       <div className="border-t border-desk-line/70 pt-3">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-desk-ink/80">failure streak</p>
+        <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-desk-ink/80">{t("failure streak")}</p>
         <label className="mb-2 block text-[11px] text-desk-dim">
-          <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">consecutive failed</span>
+          <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">{t("consecutive failed")}</span>
           <input
             type="number"
             min={1}
@@ -310,7 +345,7 @@ function CommandFailSettings() {
           />
         </label>
         <label className="block text-[11px] text-desk-dim">
-          <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">attention level</span>
+          <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">{t("attention level")}</span>
           <select
             value={streakLevel}
             onChange={(e) => setStreakLevel(e.target.value as CommandFailLevel)}
@@ -318,17 +353,17 @@ function CommandFailSettings() {
           >
             {FAIL_LEVELS.map((id) => (
               <option key={id} value={id}>
-                {FAIL_LEVEL_TEXT[id]}
+                {t(FAIL_LEVEL_TEXT[id])}
               </option>
             ))}
           </select>
         </label>
       </div>
       <div className="border-t border-desk-line/70 pt-3">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-desk-ink/80">activity time</p>
+        <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-desk-ink/80">{t("activity time")}</p>
         <label className="mb-2 block text-[11px] text-desk-dim">
           <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">
-            no activity for (seconds)
+            {t("no activity for (seconds)")}
           </span>
           <input
             type="number"
@@ -340,7 +375,7 @@ function CommandFailSettings() {
           />
         </label>
         <label className="block text-[11px] text-desk-dim">
-          <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">attention level</span>
+          <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">{t("attention level")}</span>
           <select
             value={stallLevel}
             onChange={(e) => setStallLevel(e.target.value as CommandFailLevel)}
@@ -348,17 +383,19 @@ function CommandFailSettings() {
           >
             {FAIL_LEVELS.map((id) => (
               <option key={id} value={id}>
-                {FAIL_LEVEL_TEXT[id]}
+                {t(FAIL_LEVEL_TEXT[id])}
               </option>
             ))}
           </select>
         </label>
       </div>
       <p className="text-[10px] leading-snug text-desk-dim/80">
-        The Absence Report raises <span className="font-mono">command_failed</span> once this many commands have
-        failed in one run, <span className="font-mono">command_failure_streak</span> once this many failed
-        back-to-back, and <span className="font-mono">activity_stalled</span> once no event has arrived for this
-        many seconds; unresolved failures always stay high.
+        {t(
+          "The Absence Report raises <code> once this many commands have failed in one run, <streak> once this many failed back-to-back, and <stall> once no event has arrived for this many seconds; unresolved failures always stay high.",
+        )
+          .replace("<code>", "command_failed")
+          .replace("<streak>", "command_failure_streak")
+          .replace("<stall>", "activity_stalled")}
       </p>
     </div>
   );
@@ -376,6 +413,7 @@ function CommandFailSettings() {
    immediately.
    ════════════════════════════════════════════════════════════════════════ */
 function EggFilterPane() {
+  const t = useT();
   const displayInActivity = useSettingsStore((s) => s.displayInActivity);
   const setDisplayInActivity = useSettingsStore((s) => s.setDisplayInActivity);
   const [profiles, setProfiles] = useState<EggFilterProfileMeta[]>([]);
@@ -401,14 +439,15 @@ function EggFilterPane() {
         setLoaded(true);
         setMessage(undefined);
       })
-      .catch(() => setMessage({ ok: false, text: "failed to load profiles" }));
+      .catch(() => setMessage({ ok: false, text: t("failed to load profiles") }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** Save: same name overwrites the profile file, a new name creates one. */
   const apply = async () => {
     const trimmedName = editing.trim();
     if (!trimmedName) {
-      setMessage({ ok: false, text: "select or create a profile first" });
+      setMessage({ ok: false, text: t("select or create a profile first") });
       return;
     }
     setBusy(true);
@@ -422,9 +461,9 @@ function EggFilterPane() {
       setActive(res.active);
       setEditing(res.profile.name);
       setProfiles(await fetchEggFilter().then((r) => r.profiles));
-      setMessage({ ok: true, text: `saved & applied ✓ (${res.profile.count} names)` });
+      setMessage({ ok: true, text: t("saved & applied ✓ ({n} names)", { n: res.profile.count }) });
     } catch {
-      setMessage({ ok: false, text: "save failed" });
+      setMessage({ ok: false, text: t("save failed") });
     } finally {
       setBusy(false);
     }
@@ -445,9 +484,9 @@ function EggFilterPane() {
       setEditing(trimmed);
       setContent("");
       setNewName("");
-      setMessage({ ok: true, text: `created "${trimmed}" — edit names, then Apply` });
+      setMessage({ ok: true, text: t("created \"{name}\" — edit names, then Apply", { name: trimmed }) });
     } catch {
-      setMessage({ ok: false, text: "create failed" });
+      setMessage({ ok: false, text: t("create failed") });
     } finally {
       setBusy(false);
     }
@@ -458,14 +497,14 @@ function EggFilterPane() {
       const res = await activateEggFilter(profileName);
       setActive(res.active);
       setContent((res.current ?? []).join("\n"));
-      setMessage({ ok: true, text: `activated "${profileName}"` });
+      setMessage({ ok: true, text: t("activated \"{name}\"", { name: profileName }) });
     } catch {
-      setMessage({ ok: false, text: "activate failed" });
+      setMessage({ ok: false, text: t("activate failed") });
     }
   };
 
   const remove = async (profileName: string) => {
-    if (!window.confirm(`Delete profile "${profileName}"?`)) return;
+    if (!window.confirm(t("Delete profile \"{name}\"?", { name: profileName }))) return;
     try {
       await deleteEggFilter(profileName);
       const res = await fetchEggFilter();
@@ -474,20 +513,22 @@ function EggFilterPane() {
         setActive(res.active);
         setContent((res.current ?? []).join("\n"));
       }
-      setMessage({ ok: true, text: `deleted "${profileName}"` });
+      setMessage({ ok: true, text: t("deleted \"{name}\"", { name: profileName }) });
     } catch {
-      setMessage({ ok: false, text: "delete failed" });
+      setMessage({ ok: false, text: t("delete failed") });
     }
   };
 
   return (
     <div className="flex min-w-0 flex-1 basis-0 flex-col p-4">
-      <h2 className="mb-1 font-mono text-sm tracking-widest text-desk-ink">EGGS FILTER</h2>
+      <h2 className="mb-1 font-mono text-sm tracking-widest text-desk-ink">{t("EGGS FILTER")}</h2>
       <p className="mb-3 shrink-0 text-[11px] leading-snug text-desk-dim">
-        Command names the classifier treats as helpers, one per line. Profiles live in
+        {t(
+          "Command names the classifier treats as helpers, one per line. Profiles live in <dir> Create a profile with the sidebar's <+> (an empty file lands in the editor), fill it in, then Apply saves and activates it. Same name overwrites.",
+        )
+          .replace("<dir>", "")
+          .replace("<+>", "+")}
         <span className="mx-1 break-all font-mono text-[10px] text-desk-ink/70">{dir || "…"}</span>
-        Create a profile with the sidebar's <span className="font-mono">+</span> (an empty file lands in the
-        editor), fill it in, then Apply saves and activates it. Same name overwrites.
       </p>
 
       {/* The profile list + editor scroll; the header above and the toggles +
@@ -495,12 +536,12 @@ function EggFilterPane() {
       <div className="flex min-h-0 flex-1 gap-2">
         {/* Sidebar: saved profiles + new-profile input, like Avatar Skin's. */}
         <div className="flex w-32 shrink-0 flex-col">
-          <p className="mb-1 shrink-0 font-mono text-[10px] uppercase tracking-wide text-desk-dim">saved</p>
+          <p className="mb-1 shrink-0 font-mono text-[10px] uppercase tracking-wide text-desk-dim">{t("saved")}</p>
           <ul className="mb-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
             {!loaded ? (
-              <li className="font-mono text-[10px] text-desk-dim/70">loading…</li>
+              <li className="font-mono text-[10px] text-desk-dim/70">{t("loading…")}</li>
             ) : profiles.length === 0 ? (
-              <li className="font-mono text-[10px] text-desk-dim/70">none yet</li>
+              <li className="font-mono text-[10px] text-desk-dim/70">{t("none yet")}</li>
             ) : (
               profiles.map((p) => (
                 <li key={p.name} className="group flex items-center gap-0.5">
@@ -522,7 +563,7 @@ function EggFilterPane() {
                     type="button"
                     onClick={() => void remove(p.name)}
                     className="shrink-0 rounded px-1 font-mono text-[10px] text-desk-dim opacity-0 hover:text-desk-ember group-hover:opacity-100"
-                    title={`Delete ${p.name}`}
+                    title={`✕ ${p.name}`}
                   >
                     ✕
                   </button>
@@ -538,7 +579,7 @@ function EggFilterPane() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") void create();
               }}
-              placeholder="new name"
+              placeholder={t("new name")}
               className="min-w-0 flex-1 rounded border border-desk-line bg-desk-panel2 px-1.5 py-1 font-mono text-[10px] text-desk-ink placeholder:text-desk-dim/60 focus:border-desk-amber/60 focus:outline-none"
             />
             <button
@@ -546,7 +587,7 @@ function EggFilterPane() {
               disabled={busy || !newName.trim()}
               onClick={() => void create()}
               className="shrink-0 rounded border border-desk-line px-1.5 font-mono text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber disabled:opacity-40"
-              title="Create an empty profile and load it into the editor"
+              title={t("Create an empty profile and load it into the editor")}
             >
               +
             </button>
@@ -558,10 +599,10 @@ function EggFilterPane() {
             sidebar selection; there is no separate name field. */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <p className="mb-1 shrink-0 font-mono text-[10px] uppercase tracking-wide text-desk-dim">
-            editing: <span className="text-desk-amber">{editing || "—"}</span>
+            {t("editing:")} <span className="text-desk-amber">{editing || "—"}</span>
           </p>
           <label className="mb-1 shrink-0 font-mono text-[10px] uppercase tracking-wide text-desk-dim">
-            content (one command name per line)
+            {t("content (one command name per line)")}
           </label>
           <textarea
             value={content}
@@ -578,7 +619,9 @@ function EggFilterPane() {
       <div className="mt-2 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1">
         <label
           className="flex items-center gap-1.5 text-[11px] text-desk-dim"
-          title="Also filter a listed name when it is the command's declared subject (e.g. node ticker.mjs). A process that outlived its command stays visible either way."
+          title={t(
+            "Also filter a listed name when it is the command's declared subject (e.g. node ticker.mjs). A process that outlived its command stays visible either way.",
+          )}
         >
           <input
             type="checkbox"
@@ -586,14 +629,17 @@ function EggFilterPane() {
             onChange={(e) => setForce(e.target.checked)}
             className="accent-[rgb(var(--desk-accent))]"
           />
-          <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">force</span>
+          <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">{t("force")}</span>
           <span className="hidden text-[10px] xl:inline">
-            {" — also filter a listed name when it is the command's declared subject"}
+            {" — "}
+            {t("also filter a listed name when it is the command's declared subject")}
           </span>
         </label>
         <label
           className="flex items-center gap-1.5 text-[11px] text-desk-dim"
-          title="Show LAID / DIED process events in the Activity panel. Off hides them so the panel reads as actions only; the eggs stay visible in the Agent Eggs panel either way."
+          title={t(
+            "Show LAID / DIED process events in the Activity panel. Off hides them so the panel reads as actions only; the eggs stay visible in the Agent Eggs panel either way.",
+          )}
         >
           <input
             type="checkbox"
@@ -601,8 +647,10 @@ function EggFilterPane() {
             onChange={(e) => setDisplayInActivity(e.target.checked)}
             className="accent-[rgb(var(--desk-accent))]"
           />
-          <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">display in activity</span>
-          <span className="hidden text-[10px] 2xl:inline">{" — show LAID / DIED process events in Activity"}</span>
+          <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">
+            {t("display in activity")}
+          </span>
+          <span className="hidden text-[10px] 2xl:inline">{" — "}{t("show LAID / DIED process events in Activity")}</span>
         </label>
 
         <div className="ml-auto flex items-center gap-2">
@@ -618,9 +666,9 @@ function EggFilterPane() {
             disabled={busy}
             onClick={() => void apply()}
             className="rounded border border-desk-amber/60 bg-desk-amber/10 px-3 py-1 font-mono text-[11px] text-desk-amber transition-colors hover:bg-desk-amber/20 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Save the profile (overwrite if the name exists, create otherwise) and activate it"
+            title={t("Save the profile (overwrite if the name exists, create otherwise) and activate it")}
           >
-            {busy ? "saving…" : "Apply"}
+            {busy ? t("saving…") : t("Apply")}
           </button>
         </div>
       </div>

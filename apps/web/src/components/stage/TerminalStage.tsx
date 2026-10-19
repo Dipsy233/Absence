@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { eventContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
+import { useT } from "../../lib/i18n";
 import type { AbsenceEvent } from "@absence/core";
 
 /** The MCP context a terminal card carries when it is an MCP call. */
@@ -38,6 +39,7 @@ export function TerminalStage({
   mcp,
   event,
 }: TerminalStageProps) {
+  const t = useT();
   const addContext = useChatStore((s) => s.addContext);
   const [showStructured, setShowStructured] = useState(false);
   const output = [stdout, stderr].filter((part) => part.length > 0).join(String.fromCharCode(10));
@@ -71,9 +73,9 @@ export function TerminalStage({
               type="button"
               onClick={() => setShowStructured((on) => !on)}
               className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-              title="Toggle the server's structured (JSON) result"
+              title={t("Toggle the server's structured (JSON) result")}
             >
-              {showStructured ? "text" : "json"}
+              {showStructured ? t("text") : t("json")}
             </button>
           ) : null}
           <span
@@ -82,18 +84,18 @@ export function TerminalStage({
               mcp && pending ? "text-desk-dim" : exitCode === 0 ? "text-desk-teal" : "text-desk-ember",
             ].join(" ")}
           >
-            {mcp ? (pending ? "running" : exitCode === 0 ? "ok" : "error") : `exit ${exitCode}`}
+            {mcp ? (pending ? t("running") : exitCode === 0 ? t("ok") : t("error")) : t("exit {code}", { code: exitCode })}
           </span>
-          <CopyButton label="copy cmd" text={command} title="Copy the command" />
-          <CopyButton label="copy out" text={output} title="Copy the output" disabled={output.length === 0} />
+          <CopyButton label={t("copy cmd")} text={command} title={t("Copy the command")} />
+          <CopyButton label={t("copy out")} text={output} title={t("Copy the output")} disabled={output.length === 0} />
           {event ? (
             <button
               type="button"
               onClick={() => addContext(eventContext(event))}
               className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-              title="Add this command to Chat"
+              title={t("Add this command to Chat")}
             >
-              + Chat
+              {t("+ Chat")}
             </button>
           ) : null}
         </span>
@@ -110,7 +112,7 @@ export function TerminalStage({
           <span className="text-desk-dim">…</span>
         ) : (
           <>
-            {stdout || "(no output)"}
+            {stdout || t("(no output)")}
             {stderr ? `\n${stderr}` : ""}
           </>
         )}
@@ -131,6 +133,7 @@ function CopyButton({
   title: string;
   disabled?: boolean;
 }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -154,7 +157,7 @@ function CopyButton({
         "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-desk-line disabled:hover:text-desk-dim",
       ].join(" ")}
     >
-      {copied ? "copied" : label}
+      {copied ? t("copied") : label}
     </button>
   );
 }

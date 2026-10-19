@@ -4,6 +4,7 @@ import type * as Monaco from "monaco-editor";
 import { formatBytes } from "../../lib/format";
 import { fileContext, selectionContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
+import { useT } from "../../lib/i18n";
 
 interface FileStageProps {
   path: string;
@@ -33,6 +34,7 @@ export function FileStage({
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const collectionRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
   const addContext = useChatStore((s) => s.addContext);
+  const t = useT();
 
   const applyDecorations = useCallback(() => {
     const editor = editorRef.current;
@@ -92,9 +94,9 @@ export function FileStage({
             type="button"
             onClick={() => addContext(fileContext(path, content))}
             className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-            title="Add this file to Chat"
+            title={t("Add this file to Chat")}
           >
-            + Chat
+            {t("+ Chat")}
           </button>
         </div>
       </div>
@@ -104,13 +106,13 @@ export function FileStage({
           language={language}
           value={content}
           theme="absence"
-          loading={<div className="p-4 font-mono text-xs text-desk-dim">loading editor…</div>}
+          loading={<div className="p-4 font-mono text-xs text-desk-dim">{t("loading editor…")}</div>}
           onMount={(editor) => {
             editorRef.current = editor;
             applyDecorations();
             editor.addAction({
               id: "absence.addSelectionToChat",
-              label: "Add selection to Chat",
+              label: t("Add selection to Chat"),
               contextMenuGroupId: "z_absence",
               contextMenuOrder: 1,
               run: (instance) => {
@@ -132,7 +134,7 @@ export function FileStage({
             });
             editor.addAction({
               id: "absence.addFileToChat",
-              label: "Add file to Chat",
+              label: t("Add file to Chat"),
               contextMenuGroupId: "z_absence",
               contextMenuOrder: 2,
               run: () => addContext(fileContext(path, content)),

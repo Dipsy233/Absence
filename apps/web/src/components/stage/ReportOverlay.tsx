@@ -9,6 +9,7 @@ import { formatOffset } from "../../lib/format";
 import { useEvents, useSessionStore } from "../../stores/sessionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useUiStore } from "../../stores/uiStore";
+import { useT } from "../../lib/i18n";
 import { StageItemView } from "./StageItemView";
 import type { HistoryRun } from "../../types/history";
 import type {
@@ -29,6 +30,7 @@ import type {
  * the run changed. Derived entirely from the AbsenceEvent stream.
  */
 export function ReportOverlay() {
+  const t = useT();
   const events = useEvents();
   const status = useSessionStore((s) => s.agent.status);
   const selectedRunId = useUiStore((s) => s.selectedRunId);
@@ -109,7 +111,7 @@ export function ReportOverlay() {
       <button
         type="button"
         onClick={toggleReport}
-        title={reportOpen ? "Collapse the Absence Report" : "Expand the Absence Report"}
+        title={reportOpen ? t("Collapse the Absence Report") : t("Expand the Absence Report")}
         className={[
           "absolute left-1/2 top-0 z-40 -translate-x-1/2 rounded-b-md border border-t-0 px-3 py-0.5",
           "font-mono text-[10px] uppercase tracking-[0.15em] backdrop-blur-[2px] transition-colors",
@@ -118,7 +120,7 @@ export function ReportOverlay() {
             : "border-desk-line bg-desk-panel/85 text-desk-dim hover:text-desk-amber",
         ].join(" ")}
       >
-        {reportOpen ? "▲" : "▼"} ABSENCE REPORT
+        {reportOpen ? "▲" : "▼"} {t("ABSENCE REPORT")}
       </button>
 
       <AnimatePresence>
@@ -145,15 +147,15 @@ export function ReportOverlay() {
             <div className="min-w-0 flex-1 overflow-auto">
               <div className="mx-auto max-w-2xl px-5 pb-8 pt-8">
                 <div className="mb-4 flex items-center justify-between border-b border-desk-line pb-2">
-                  <span className="font-mono text-sm uppercase tracking-[0.25em] text-desk-amber">Absence Report</span>
+                  <span className="font-mono text-sm uppercase tracking-[0.25em] text-desk-amber">{t("Absence Report")}</span>
                   <div className="flex items-center gap-3 font-mono text-[10px] text-desk-dim">
-                    {run ? <span>run #{run.index}</span> : null}
+                    {run ? <span>{t("run #{index}", { index: run.index })}</span> : null}
                     <button
                       type="button"
                       onClick={toggleReport}
                       className="rounded border border-desk-line px-1.5 py-0.5 hover:border-desk-amber/60 hover:text-desk-amber"
                     >
-                      ✕ close
+                      {t("✕ close")}
                     </button>
                   </div>
                 </div>
@@ -164,7 +166,7 @@ export function ReportOverlay() {
                   <LiveReportView live={live} />
                 ) : (
                   <p className="py-10 text-center text-xs text-desk-dim">
-                    Nothing to report yet — send the agent a task.
+                    {t("Nothing to report yet — send the agent a task.")}
                   </p>
                 )}
               </div>
@@ -190,6 +192,7 @@ function EvidencePane({
   node?: TimelineNode;
   onClose: () => void;
 }) {
+  const t = useT();
   const item = eventToStageItem(event);
   return (
     <motion.div
@@ -200,11 +203,11 @@ function EvidencePane({
       className="flex min-w-0 flex-1 flex-col border-r border-desk-line/70 bg-desk-deep/40"
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-desk-line/70 px-3 py-1.5">
-        <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-desk-amber">Evidence</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-desk-amber">{t("Evidence")}</span>
         <button
           type="button"
           onClick={onClose}
-          title="Close the evidence view"
+          title={t("Close the evidence view")}
           className="shrink-0 rounded border border-desk-line px-1.5 py-0.5 font-mono text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
         >
           ✕
@@ -232,7 +235,7 @@ function EvidencePane({
         {item ? (
           <StageItemView item={item} />
         ) : (
-          <p className="p-3 font-mono text-xs text-desk-dim">No preview for a {event.type} event.</p>
+          <p className="p-3 font-mono text-xs text-desk-dim">{t("No preview for a {type} event.", { type: event.type })}</p>
         )}
       </div>
     </motion.div>
@@ -253,12 +256,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function LiveReportView({ live }: { live: LiveReport }) {
+  const t = useT();
   return (
     <div>
-      <div className="mb-1 font-mono text-lg uppercase tracking-[0.2em] text-desk-amber">{live.phase}</div>
+      <div className="mb-1 font-mono text-lg uppercase tracking-[0.2em] text-desk-amber">{t(live.phase)}</div>
       <p className="mb-4 text-sm text-desk-ink">{live.headline}</p>
 
-      <Section title="Progress">
+      <Section title={t("Progress")}>
         <ul className="space-y-0.5">
           {live.details.map((line, index) => (
             <li key={index} className="text-desk-ink/80">
@@ -284,45 +288,50 @@ function RunReportView({
 }) {
   const { created, modified, deleted, observed } = report.changes;
   const total = created.length + modified.length + deleted.length + observed.length;
+  const t = useT();
 
   return (
     <div>
-      <div className="mb-1 font-mono text-lg uppercase tracking-[0.2em] text-desk-amber">{report.outcome.replace(/_/g, " ")}</div>
+      <div className="mb-1 font-mono text-lg uppercase tracking-[0.2em] text-desk-amber">
+        {t(report.outcome.replace(/_/g, " "))}
+      </div>
       <p className="mb-1 text-sm text-desk-ink">{report.headline}</p>
-      <p className="mb-4 font-mono text-[10px] text-desk-dim">duration {formatOffset(report.durationMs)}</p>
+      <p className="mb-4 font-mono text-[10px] text-desk-dim">
+        {t("duration {time}", { time: formatOffset(report.durationMs) })}
+      </p>
 
       {report.timeline.length > 0 ? (
-        <Section title={`Timeline · ${report.timeline.length}`}>
+        <Section title={`${t("Timeline")} · ${report.timeline.length}`}>
           <TimelineStrip nodes={report.timeline} onSelect={(node) => onReveal([node.eventId], node)} />
         </Section>
       ) : null}
 
       {run ? (
-        <Section title="Request">
+        <Section title={t("Request")}>
           <p className="whitespace-pre-wrap text-desk-ink/90">{run.prompt}</p>
         </Section>
       ) : null}
 
-      <Section title="Knows">
+      <Section title={t("Knows")}>
         {report.knows.reads.length === 0 && report.knows.searches.length === 0 ? (
-          <p className="text-desk-dim">Nothing inspected.</p>
+          <p className="text-desk-dim">{t("Nothing inspected.")}</p>
         ) : (
           <div className="space-y-2">
             {report.knows.reads.length > 0 ? (
               <div>
-                <div className="font-mono text-[10px] uppercase tracking-wide text-desk-dim">read</div>
+                <div className="font-mono text-[10px] uppercase tracking-wide text-desk-dim">{t("read")}</div>
                 <ul className="space-y-0.5">
                   {report.knows.reads.map((read) => (
                     <li key={read.path}>
                       <button
                         type="button"
                         onClick={() => onReveal(read.evidence)}
-                        title={`Show in Activity — ${read.path}`}
+                        title={t("Show in Activity — {path}", { path: read.path })}
                         className={`${LINK} text-desk-teal hover:text-desk-amber`}
                       >
                         {read.path}
                         <span className="ml-2 text-desk-dim">
-                          lines {read.startLine}–{read.endLine}
+                          {t("lines {a}–{b}", { a: read.startLine, b: read.endLine })}
                         </span>
                       </button>
                     </li>
@@ -332,21 +341,19 @@ function RunReportView({
             ) : null}
             {report.knows.searches.length > 0 ? (
               <div>
-                <div className="font-mono text-[10px] uppercase tracking-wide text-desk-dim">searched</div>
+                <div className="font-mono text-[10px] uppercase tracking-wide text-desk-dim">{t("searched")}</div>
                 <ul className="space-y-0.5">
                   {report.knows.searches.map((search, index) => (
                     <li key={index}>
                       <button
                         type="button"
                         onClick={() => onReveal(search.evidence)}
-                        title="Show in Activity"
+                        title={t("Show in Activity")}
                         className={`${LINK} text-desk-ink/80 hover:text-desk-amber`}
                       >
                         {search.tool} “{search.query}”
                         {search.scope ? <span className="text-desk-dim"> · {search.scope}</span> : null}
-                        <span className="ml-2 text-desk-dim">
-                          {search.matches} hit{search.matches === 1 ? "" : "s"}
-                        </span>
+                        <span className="ml-2 text-desk-dim">{t("{n} hits", { n: search.matches })}</span>
                       </button>
                     </li>
                   ))}
@@ -357,36 +364,39 @@ function RunReportView({
         )}
       </Section>
 
-      <Section title="Changes">
+      <Section title={t("Changes")}>
         {total === 0 ? (
-          <p className="text-desk-dim">No files changed.</p>
+          <p className="text-desk-dim">{t("No files changed.")}</p>
         ) : (
           <div className="space-y-2">
             <p className="font-mono text-desk-ink/80">
-              +{report.changes.created.length + report.changes.modified.length} changed
-              {report.changes.observed.length ? ` · ${report.changes.observed.length} observed` : ""}
-              {report.changes.deleted.length ? ` · ${report.changes.deleted.length} deleted` : ""}
+              {t("+{n} changed", { n: report.changes.created.length + report.changes.modified.length })}
+              {report.changes.observed.length ? ` · ${t("{n} observed", { n: report.changes.observed.length })}` : ""}
+              {report.changes.deleted.length ? ` · ${t("{n} deleted", { n: report.changes.deleted.length })}` : ""}
               {report.changes.additions + report.changes.deletions > 0
-                ? ` · +${report.changes.additions} / −${report.changes.deletions} lines`
+                ? ` · ${t("+{a} / −{d} lines", { a: report.changes.additions, d: report.changes.deletions })}`
                 : ""}
             </p>
-            <FileList label="modified" files={modified} tone="text-desk-amber" onReveal={onReveal} />
-            <FileList label="created" files={created} tone="text-desk-teal" onReveal={onReveal} />
-            <FileList label="deleted" files={deleted} tone="text-desk-ember" onReveal={onReveal} />
-            <FileList label="observed" files={observed} tone="text-desk-dim" onReveal={onReveal} />
+            <FileList label={t("modified")} files={modified} tone="text-desk-amber" onReveal={onReveal} />
+            <FileList label={t("created")} files={created} tone="text-desk-teal" onReveal={onReveal} />
+            <FileList label={t("deleted")} files={deleted} tone="text-desk-ember" onReveal={onReveal} />
+            <FileList label={t("observed")} files={observed} tone="text-desk-dim" onReveal={onReveal} />
           </div>
         )}
       </Section>
 
-      <Section title="Executions">
+      <Section title={t("Executions")}>
         {report.executions.length === 0 ? (
-          <p className="text-desk-dim">No commands run.</p>
+          <p className="text-desk-dim">{t("No commands run.")}</p>
         ) : (
           <div className="space-y-2">
             <p className="font-mono text-[11px] text-desk-dim">
-              {report.execution.commands} command{report.execution.commands === 1 ? "" : "s"} ·{" "}
-              {report.execution.succeeded} succeeded · {report.execution.failed} failed
-              {report.execution.unknown ? ` · ${report.execution.unknown} unknown` : ""}
+              {t("{n} commands · {s} succeeded · {f} failed · {u} unknown", {
+                n: report.execution.commands,
+                s: report.execution.succeeded,
+                f: report.execution.failed,
+                u: report.execution.unknown,
+              })}
             </p>
             <ul className="space-y-0.5">
               {report.executions.map((command) => (
@@ -394,19 +404,22 @@ function RunReportView({
                   <button
                     type="button"
                     onClick={() => onReveal(command.evidence)}
-                    title="Show in Activity"
+                    title={t("Show in Activity")}
                     className={`${LINK} hover:text-desk-amber`}
                   >
                     <span className={command.status === "failed" ? "text-desk-ember" : "text-desk-dim"}>$</span>{" "}
                     <span className="text-desk-ink/80">{command.command || "(shell)"}</span>
-                    <span className="ml-2 text-desk-dim">{commandLabel(command)}</span>
+                    <span className="ml-2 text-desk-dim">{commandLabel(t, command)}</span>
                   </button>
                 </li>
               ))}
             </ul>
             {report.recoveries.length > 0 ? (
               <p className="text-desk-ink/70">
-                {report.recoveries.length} recovery detected — a command failed, then the agent continued successfully.
+                {t(
+                  "{n} recoveries detected — a command failed, then the agent continued successfully.",
+                  { n: report.recoveries.length },
+                )}
               </p>
             ) : null}
           </div>
@@ -416,9 +429,9 @@ function RunReportView({
       {report.mcp.length > 0 ? (
         <Section title="MCP">
           <p className="mb-2 font-mono text-[11px] text-desk-dim">
-            {report.mcpCalls} call{report.mcpCalls === 1 ? "" : "s"} to {report.mcp.length} server
-            {report.mcp.length === 1 ? "" : "s"}
-            {report.mcpFailed ? ` · ${report.mcpFailed} failed` : ""}
+            {report.mcpFailed
+              ? t("{n} calls to {m} servers · {f} failed", { n: report.mcpCalls, m: report.mcp.length, f: report.mcpFailed })
+              : t("{n} calls to {m} servers", { n: report.mcpCalls, m: report.mcp.length })}
           </p>
           <ul className="space-y-0.5">
             {report.mcp.map((usage) => (
@@ -426,14 +439,17 @@ function RunReportView({
                 <button
                   type="button"
                   onClick={() => onReveal(usage.evidence)}
-                  title="Show in Activity"
+                  title={t("Show in Activity")}
                   className={`${LINK} hover:text-desk-amber`}
                 >
                   <span className="text-desk-lavender">mcp</span>{" "}
                   <span className="text-desk-ink/80">{usage.server}</span>
                   <span className="ml-2 text-desk-dim">
-                    {usage.calls} call{usage.calls === 1 ? "" : "s"}
-                    {usage.failed ? ` · ${usage.failed} failed` : ""} · {usage.tools.join(", ")}
+                    {usage.failed
+                      ? t("{n} calls · {f} failed", { n: usage.calls, f: usage.failed })
+                      : t("{n} calls", { n: usage.calls })}
+                    {' · '}
+                    {usage.tools.join(", ")}
                   </span>
                 </button>
               </li>
@@ -443,14 +459,14 @@ function RunReportView({
       ) : null}
 
       {report.outsideChanges.length > 0 ? (
-        <Section title="Outside the project">
+        <Section title={t("Outside the project")}>
           <ul className="space-y-0.5">
             {report.outsideChanges.map((change) => (
               <li key={change.path} className="font-mono text-[11px] text-desk-ember/90">
                 <button
                   type="button"
                   onClick={() => onReveal(change.evidence)}
-                  title="Show in Activity"
+                  title={t("Show in Activity")}
                   className={`${LINK} hover:text-desk-amber`}
                 >
                   {change.path}
@@ -464,11 +480,11 @@ function RunReportView({
 
       <AttentionBlock attention={report.attention} />
 
-      <Section title="Response">
+      <Section title={t("Response")}>
         {report.response ? (
           <p className="whitespace-pre-wrap text-desk-ink/90">{report.response}</p>
         ) : (
-          <p className="text-desk-dim">(no reply)</p>
+          <p className="text-desk-dim">{t("(no reply)")}</p>
         )}
       </Section>
     </div>
@@ -497,6 +513,7 @@ const NODE_TONE: Record<TimelineKind, string> = {
  * report.
  */
 function TimelineStrip({ nodes, onSelect }: { nodes: TimelineNode[]; onSelect: (node: TimelineNode) => void }) {
+  const t = useT();
   return (
     <div className="overflow-x-auto pb-1">
       <div className="min-w-max px-1 pt-2">
@@ -506,7 +523,7 @@ function TimelineStrip({ nodes, onSelect }: { nodes: TimelineNode[]; onSelect: (
               key={node.eventId}
               type="button"
               onClick={() => onSelect(node)}
-              title={`${node.action} · ${node.subject} — click for the specifics`}
+              title={`${t(node.action)} · ${node.subject} — ${t("click for the specifics")}`}
               className="group relative w-44 shrink-0 px-2.5 pt-3 text-left"
             >
               <span
@@ -523,7 +540,7 @@ function TimelineStrip({ nodes, onSelect }: { nodes: TimelineNode[]; onSelect: (
                   NODE_TONE[node.kind],
                 ].join(" ")}
               >
-                {node.action}
+                {t(node.action)}
               </span>
               <span className="block truncate font-mono text-[11px] text-desk-ink/85" title={node.subject}>
                 {node.subject}
@@ -546,16 +563,19 @@ function TimelineStrip({ nodes, onSelect }: { nodes: TimelineNode[]; onSelect: (
         </div>
       </div>
       <p className="mt-1 font-mono text-[10px] text-desk-dim">
-        {nodes.length} {nodes.length === 1 ? "activity" : "activities"} · scroll → · click a node for the specifics
+        {t("{n} activities · scroll → · click a node for the specifics", { n: nodes.length })}
       </p>
     </div>
   );
 }
 
-function commandLabel(command: CommandFact): string {
-  if (command.status === "running") return "running";
-  if (command.exitCode !== undefined) return `exit ${command.exitCode}`;
-  if (command.status === "failed") return "failed";
+function commandLabel(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  command: CommandFact,
+): string {
+  if (command.status === "running") return t("running");
+  if (command.exitCode !== undefined) return t("exit {code}", { code: command.exitCode });
+  if (command.status === "failed") return t("failed");
   return "—";
 }
 
@@ -580,7 +600,7 @@ function FileList({
             <button
               type="button"
               onClick={() => onReveal(file.evidence)}
-              title={`Show in Activity — ${file.path}`}
+              title={`${label} — ${file.path}`}
               className={`${LINK} hover:text-desk-amber ${tone}`}
             >
               {file.path}
@@ -615,21 +635,22 @@ const REASON_TEXT: Record<AttentionReason, string> = {
 };
 
 function AttentionBlock({ attention }: { attention: Attention }) {
+  const t = useT();
   return (
-    <Section title="Human attention">
+    <Section title={t("Human attention")}>
       <div className={`font-mono text-lg uppercase tracking-[0.15em] ${ATTENTION_TONE[attention.level]}`}>
-        {attention.level}
+        {t(attention.level)}
       </div>
       {attention.reasons.length > 0 ? (
         <ul className="mt-1 space-y-0.5">
           {attention.reasons.map((reason) => (
             <li key={reason} className="text-desk-ink/80">
-              • {REASON_TEXT[reason]}
+              • {t(REASON_TEXT[reason])}
             </li>
           ))}
         </ul>
       ) : (
-        <p className="mt-1 text-desk-ink/70">Agent is working normally.</p>
+        <p className="mt-1 text-desk-ink/70">{t("Agent is working normally.")}</p>
       )}
     </Section>
   );

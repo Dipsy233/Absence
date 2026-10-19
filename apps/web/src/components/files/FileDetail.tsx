@@ -9,9 +9,11 @@ import { fileContext } from "../../lib/context";
 import { unifiedDiff } from "../../lib/diff";
 import { CodeView } from "../common/CodeView";
 import { PanelNav } from "../common/PanelNav";
+import { useT } from "../../lib/i18n";
 
 /** Level 2: inspect one file before opening it on the Stage (read02 §5, §10). */
 export function FileDetail({ path }: { path: string }) {
+  const t = useT();
   const file = useFileStore((s) => s.files[path]);
   const setFilesView = useUiStore((s) => s.setFilesView);
   const openStage = useStageStore((s) => s.openStage);
@@ -52,16 +54,16 @@ export function FileDetail({ path }: { path: string }) {
       <PanelNav
         title={path}
         onBack={() => setFilesView({ kind: "tree" })}
-        subtitle={file ? `v${file.version} · edited ${formatAgo(file.lastModifiedAt)}` : "not seen yet"}
+        subtitle={file ? t("v{v} · edited {ago}", { v: file.version, ago: formatAgo(file.lastModifiedAt) }) : t("not seen yet")}
       />
 
       <div className="mb-2 flex h-40 shrink-0 overflow-hidden rounded border border-desk-line">
-        <CodeView value={content || "// (the agent has not read this file yet)"} language={file?.language ?? "plaintext"} />
+        <CodeView value={content || t("// (the agent has not read this file yet)")} language={file?.language ?? "plaintext"} />
       </div>
 
       <div className="flex flex-wrap gap-1">
         <button type="button" className={button} disabled={!file} onClick={openInStage}>
-          Open in Stage
+          {t("Open in Stage")}
         </button>
         <button
           type="button"
@@ -69,19 +71,19 @@ export function FileDetail({ path }: { path: string }) {
           disabled={history.length === 0}
           onClick={() => setFilesView({ kind: "history", path })}
         >
-          View History
+          {t("View History")}
         </button>
         <button type="button" className={button} disabled={history.length < 2} onClick={openDiffInStage}>
-          View Diff
+          {t("View Diff")}
         </button>
         <button type="button" className={button} disabled={!file} onClick={() => addContext(fileContext(path, content))}>
-          Add to Chat
+          {t("Add to Chat")}
         </button>
       </div>
 
       {history.length > 0 ? (
         <div className="mt-3 overflow-auto border-t border-desk-line pt-2">
-          <div className="label mb-1">last edits</div>
+          <div className="label mb-1">{t("last edits")}</div>
           <ul className="space-y-0.5 font-mono text-[10px] text-desk-dim">
             {history
               .slice(-5)

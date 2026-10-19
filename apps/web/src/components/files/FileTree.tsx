@@ -11,9 +11,11 @@ import { fileContext } from "../../lib/context";
 import { unifiedDiff } from "../../lib/diff";
 import { languageFromPath } from "../../lib/language";
 import { openUserFile } from "../../lib/openFile";
+import { useT } from "../../lib/i18n";
 
 /** Level 1: the project tree (read02 §7). */
 export function FileTree() {
+  const t = useT();
   const tree = useFileStore((s) => s.tree);
   const files = useFileStore((s) => s.files);
   const projectPath = useSessionStore((s) => s.session?.projectPath) ?? "";
@@ -69,11 +71,11 @@ export function FileTree() {
     const history = view?.history ?? [];
 
     openMenu(event.clientX, event.clientY, [
-      { label: "Inspect", onSelect: () => setFilesView({ kind: "detail", path: rel }) },
-      { label: "Open in Stage", onSelect: () => void openUserFile(rel) },
-      { label: "View History", disabled: history.length === 0, onSelect: () => setFilesView({ kind: "history", path: rel }) },
+      { label: t("Inspect"), onSelect: () => setFilesView({ kind: "detail", path: rel }) },
+      { label: t("Open in Stage"), onSelect: () => void openUserFile(rel) },
+      { label: t("View History"), disabled: history.length === 0, onSelect: () => setFilesView({ kind: "history", path: rel }) },
       {
-        label: "View Diff",
+        label: t("View Diff"),
         disabled: history.length < 2,
         onSelect: () => {
           const previous = history[history.length - 2]!;
@@ -96,16 +98,16 @@ export function FileTree() {
         },
       },
       { label: "", onSelect: () => {}, separator: true },
-      { label: "Add file to Chat", onSelect: () => addContext(fileContext(rel, content)) },
+      { label: t("Add file to Chat"), onSelect: () => addContext(fileContext(rel, content)) },
       {
-        label: "Explain this",
+        label: t("Explain this"),
         onSelect: () => void sendPrompt(`${fileContext(rel, content).label}\n\`\`\`${languageFromPath(rel)}\n${content.slice(0, 2000)}\n\`\`\`\n\nExplain this file.`),
       },
     ]);
   };
 
   if (!tree) {
-    return <p className="text-xs text-desk-dim">Loading project…</p>;
+    return <p className="text-xs text-desk-dim">{t("Loading project…")}</p>;
   }
 
   return (
@@ -141,6 +143,7 @@ interface TreeRowProps {
 }
 
 function TreeRow(props: TreeRowProps) {
+  const t = useT();
   const { node, depth, expanded, projectPath, files, activePath, onToggle, onOpenStage, onContextMenu } = props;
   const pad = { paddingLeft: `${depth * 12 + 4}px` };
 
@@ -179,7 +182,7 @@ function TreeRow(props: TreeRowProps) {
         style={pad}
         onClick={() => onOpenStage(rel)}
         onContextMenu={(event) => onContextMenu(event, rel)}
-        title={view ? `${rel} · ${formatAgo(view.lastModifiedAt)}` : `${rel} · open in Stage`}
+        title={view ? `${rel} · ${formatAgo(view.lastModifiedAt)}` : t("{rel} · open in Stage", { rel })}
         className={[
           "flex w-full items-center gap-1 rounded py-0.5 text-left",
           isActive ? "bg-desk-amber/15 text-desk-amber" : "text-desk-ink/80 hover:bg-desk-panel2 hover:text-desk-ink",

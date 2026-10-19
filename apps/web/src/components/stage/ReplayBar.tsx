@@ -3,6 +3,7 @@ import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayClock } from "../../hooks/useReplay";
 import { formatOffset } from "../../lib/format";
+import { useT } from "../../lib/i18n";
 
 const BUTTON =
   "rounded border border-desk-line px-2 py-0.5 font-mono text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber";
@@ -12,6 +13,7 @@ const BUTTON =
  * Stage is a self-contained replay surface.
  */
 export function ReplayBar() {
+  const t = useT();
   const status = useReplayStore((s) => s.status);
   const speed = useReplayStore((s) => s.speed);
   const label = useReplayStore((s) => s.label);
@@ -29,32 +31,32 @@ export function ReplayBar() {
   return (
     <div className="shrink-0 border-t border-desk-line bg-desk-panel px-2 py-1.5">
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-desk-dim" title={label ?? "replay"}>
-          {label ?? "replay"}
+        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-desk-dim" title={label ?? t("replay")}>
+          {label ?? t("replay")}
         </span>
-        <button type="button" className={BUTTON} onClick={stepBackward} title="Step backward">
+        <button type="button" className={BUTTON} onClick={stepBackward} title={t("Step backward")}>
           ◀
         </button>
         {status === "playing" ? (
-          <button type="button" className={BUTTON} onClick={pause} title="Pause">
+          <button type="button" className={BUTTON} onClick={pause} title={t("Pause")}>
             ⏸
           </button>
         ) : (
-          <button type="button" className={BUTTON} onClick={play} title="Play">
+          <button type="button" className={BUTTON} onClick={play} title={t("Play")}>
             ▶
           </button>
         )}
-        <button type="button" className={BUTTON} onClick={stop} title="Jump to the end">
+        <button type="button" className={BUTTON} onClick={stop} title={t("Jump to the end")}>
           ■
         </button>
-        <button type="button" className={BUTTON} onClick={stepForward} title="Step forward">
+        <button type="button" className={BUTTON} onClick={stepForward} title={t("Step forward")}>
           ▶|
         </button>
         <span className="shrink-0 font-mono text-[10px] text-desk-dim">
           {formatOffset(clock.currentTime - clock.start)} / {formatOffset(clock.duration)}
         </span>
-        <button type="button" className={BUTTON} onClick={goLive} title="Leave replay">
-          back to live
+        <button type="button" className={BUTTON} onClick={goLive} title={t("Leave replay")}>
+          {t("back to live")}
         </button>
       </div>
 
@@ -66,7 +68,7 @@ export function ReplayBar() {
           value={Math.round(clock.progress * 1000)}
           onChange={(event) => seekRatio(Number(event.target.value) / 1000)}
           className="h-1 min-w-0 flex-1 cursor-pointer accent-desk-amber"
-          aria-label="Replay position"
+          aria-label={t("Replay position")}
         />
         <div className="flex shrink-0 items-center gap-0.5">
           {REPLAY_SPEEDS.map((value) => (

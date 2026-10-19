@@ -32,6 +32,8 @@ const LEFT_PANEL_IDS: LeftPanelId[] = ["files", "history", "activity"];
 export type CommandFailLevel = "none" | "low" | "medium" | "high";
 
 export interface Settings {
+  /** UI language: English or Chinese (see lib/i18n.ts). */
+  language: "en" | "zh";
   theme: "amber" | "blue" | "green";
   /** Right rail top → bottom. */
   railOrder: RailPanelId[];
@@ -64,6 +66,7 @@ export interface Settings {
 }
 
 const DEFAULTS: Settings = {
+  language: "en",
   theme: "amber",
   railOrder: ["agent", "folder", "eggs"],
   leftOrder: ["files", "history", "activity"],
@@ -83,6 +86,7 @@ function load(): Settings {
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<Settings>;
     return {
+      language: parsed.language === "zh" ? "zh" : "en",
       theme: parsed.theme ?? DEFAULTS.theme,
       // Keep only known ids; append anything missing so each rail always renders all panels.
       railOrder: normalizeIds(parsed.railOrder, RAIL_PANEL_IDS) as RailPanelId[],
@@ -127,6 +131,7 @@ function persist(settings: Settings): void {
 }
 
 interface SettingsStore extends Settings {
+  setLanguage: (language: Settings["language"]) => void;
   setTheme: (theme: Settings["theme"]) => void;
   setRailOrder: (order: RailPanelId[]) => void;
   moveRailPanel: (id: RailPanelId, dir: "up" | "down") => void;
@@ -146,6 +151,7 @@ interface SettingsStore extends Settings {
 export const useSettingsStore = create<SettingsStore>((set) => ({
   ...load(),
 
+  setLanguage: (language) => set((s) => persistIt(s, { language })),
   setTheme: (theme) => set((s) => persistIt(s, { theme })),
   setRailOrder: (railOrder) =>
     set((s) => persistIt(s, { railOrder: normalizeIds(railOrder, RAIL_PANEL_IDS) as RailPanelId[] })),
@@ -180,6 +186,7 @@ function movePanel<T>(order: T[], id: T, dir: "up" | "down"): T[] {
 function persistIt(state: Settings, patch: Partial<Settings>): Partial<SettingsStore> {
   const next = { ...state, ...patch };
   persist({
+    language: next.language,
     theme: next.theme,
     railOrder: next.railOrder,
     leftOrder: next.leftOrder,

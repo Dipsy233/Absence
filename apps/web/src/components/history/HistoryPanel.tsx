@@ -6,6 +6,7 @@ import { useEvents, useIsObserved, useSessionStore } from "../../stores/sessionS
 import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useUiStore } from "../../stores/uiStore";
+import { useT } from "../../lib/i18n";
 import { Panel } from "../Panel";
 
 const STATUS_LABEL: Record<HistoryRun["status"], string> = {
@@ -27,6 +28,7 @@ const STATUS_CLASS: Record<HistoryRun["status"], string> = {
  * Oldest first with the newest at the bottom, like a log.
  */
 export function HistoryPanel() {
+  const t = useT();
   const events = useEvents();
   const selectedRunId = useUiStore((s) => s.selectedRunId);
   const selectRun = useUiStore((s) => s.selectRun);
@@ -43,8 +45,8 @@ export function HistoryPanel() {
 
   return (
     <Panel
-      title="History"
-      aside={`${runs.length} run${runs.length === 1 ? "" : "s"}`}
+      title={t("History")}
+      aside={t("{n} runs", { n: runs.length })}
       className="min-h-0 flex-1"
       bodyClassName="p-2"
       bodyRef={bodyRef}
@@ -52,8 +54,8 @@ export function HistoryPanel() {
       {runs.length === 0 ? (
         <p className="text-xs text-desk-dim">
           {observed
-            ? "No runs yet. A run starts when the observed agent does."
-            : "No runs yet. Send the agent a task."}
+            ? t("No runs yet. A run starts when the observed agent does.")
+            : t("No runs yet. Send the agent a task.")}
         </p>
       ) : (
         <ul className="space-y-1">
@@ -78,16 +80,18 @@ export function HistoryPanel() {
                     <div className="flex items-baseline gap-2 font-mono text-[11px]">
                       <span className={active ? "text-desk-amber" : "text-desk-dim"}>#{run.index}</span>
                       <span className="text-desk-dim/70">{formatClock(run.startedAt)}</span>
-                      <span className={STATUS_CLASS[run.status]}>{STATUS_LABEL[run.status]}</span>
+                      <span className={STATUS_CLASS[run.status]}>{t(STATUS_LABEL[run.status])}</span>
                       {run.partial ? (
                         // The run's first events were trimmed out of the live
                         // window. The row stays (History is a log) and says so,
                         // rather than showing partial counts as the whole.
                         <span
                           className="text-desk-dim/70"
-                          title="The beginning of this run is no longer in the live event window — its counts and the Stage cover only what is still loaded."
+                          title={t(
+                            "The beginning of this run is no longer in the live event window — its counts and the Stage cover only what is still loaded.",
+                          )}
                         >
-                          partial
+                          {t("partial")}
                         </span>
                       ) : null}
                       <span className="ml-auto text-desk-dim/70">{formatOffset(duration)}</span>
@@ -96,11 +100,11 @@ export function HistoryPanel() {
                       {run.prompt}
                     </div>
                     <div className="mt-0.5 flex gap-2 font-mono text-[10px] text-desk-dim">
-                      <span title="files read">R{run.counts.read}</span>
-                      <span title="searches">S{run.counts.search}</span>
-                      <span title="files edited">E{run.counts.edit}</span>
-                      <span title="files created">C{run.counts.created}</span>
-                      <span title="commands run">$ {run.counts.run}</span>
+                      <span title={t("files read")}>R{run.counts.read}</span>
+                      <span title={t("searches")}>S{run.counts.search}</span>
+                      <span title={t("files edited")}>E{run.counts.edit}</span>
+                      <span title={t("files created")}>C{run.counts.created}</span>
+                      <span title={t("commands run")}>$ {run.counts.run}</span>
                     </div>
                   </button>
 

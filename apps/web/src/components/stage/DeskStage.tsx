@@ -1,4 +1,5 @@
 import { isAgentBusy, type AgentStatus } from "@absence/core";
+import { useT } from "../../lib/i18n";
 
 /**
  * The default desk page (read02 §11, §34). Nothing draws here — the desk stays
@@ -17,13 +18,14 @@ export function DeskStage({
   /** Set when Absence only watches this agent (see SessionSource). */
   observedLabel?: string;
 }) {
+  const t = useT();
   const caption = observedLabel
     ? isAgentBusy(status)
-      ? `Watching ${observedLabel} work. Its terminal is the one to type in.`
-      : `Watching ${observedLabel} — nothing it started is running.`
+      ? t("Watching {label} work. Its terminal is the one to type in.", { label: observedLabel })
+      : t("Watching {label} — nothing it started is running.", { label: observedLabel })
     : isAgentBusy(status)
-      ? "The agent is working…"
-      : "The agent is listening.";
+      ? t("The agent is working…")
+      : t("The agent is listening.");
 
   return (
     <div className="flex h-full items-center justify-center">

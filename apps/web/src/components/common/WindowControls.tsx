@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useT } from "../../lib/i18n";
 
 /**
  * The desktop shell's self-rendered window controls (min / max / close),
@@ -9,6 +10,7 @@ import { useEffect, useState } from "react";
  * tray menu.
  */
 export function WindowControls() {
+  const t = useT();
   const [maximized, setMaximized] = useState(false);
   const shell = window.absenceDesktop;
 
@@ -30,7 +32,7 @@ export function WindowControls() {
     <div className="absence-nodrag flex h-8 shrink-0 items-stretch">
       <button
         type="button"
-        title="Minimize"
+        title={t("Minimize")}
         onClick={() => shell.minimize()}
         className={`${base} hover:bg-desk-panel2 hover:text-desk-ink`}
       >
@@ -41,7 +43,7 @@ export function WindowControls() {
       </button>
       <button
         type="button"
-        title={maximized ? "Restore" : "Maximize"}
+        title={maximized ? t("Restore") : t("Maximize")}
         onClick={() => shell.toggleMaximize()}
         className={`${base} hover:bg-desk-panel2 hover:text-desk-ink`}
       >
@@ -58,7 +60,7 @@ export function WindowControls() {
       </button>
       <button
         type="button"
-        title="Close (hides to tray)"
+        title={t("Close (hides to tray)")}
         onClick={() => shell.close()}
         className={`${base} hover:bg-[#c0392b] hover:text-white`}
       >

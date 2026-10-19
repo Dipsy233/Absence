@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { diffContext } from "../../lib/context";
 import { unifiedDiff } from "../../lib/diff";
 import { useChatStore } from "../../stores/chatStore";
+import { useT } from "../../lib/i18n";
 
 interface DiffStageProps {
   path: string;
@@ -73,6 +74,7 @@ function diffLineClass(line: string): string {
  * unified diff text directly is unambiguous.
  */
 export function DiffStage({ path, before, after, diff, emptied = false }: DiffStageProps) {
+  const t = useT();
   const addContext = useChatStore((s) => s.addContext);
   // Prefer the run's own diff (Pi annotates it with line numbers); if it is
   // missing, generate a standard unified diff from the two versions.
@@ -99,9 +101,9 @@ export function DiffStage({ path, before, after, diff, emptied = false }: DiffSt
             type="button"
             onClick={() => addContext(diffContext(path, diff ?? `${before}\n→\n${after}`))}
             className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-            title="Add this diff to Chat"
+            title={t("Add this diff to Chat")}
           >
-            + Chat
+            {t("+ Chat")}
           </button>
         </div>
         <motion.span
@@ -137,9 +139,9 @@ export function DiffStage({ path, before, after, diff, emptied = false }: DiffSt
 
       <div className="shrink-0 border-t border-desk-line px-3 py-1.5 text-center text-xs italic text-desk-dim">
         {emptied ? (
-          <span className="text-desk-ember">Agent removed all content — the file still exists on disk.</span>
+          <span className="text-desk-ember">{t("Agent removed all content — the file still exists on disk.")}</span>
         ) : (
-          <>Agent edited {path}</>
+          <>{t("Agent edited {path}", { path })}</>
         )}
       </div>
     </motion.div>
