@@ -30,6 +30,7 @@
     "check:capabilities": "tsx scripts/checks/check-capabilities.ts",
     "check:mcp": "tsx scripts/checks/check-mcp-events.ts",
     "check:observer": "tsx scripts/checks/check-observer.ts",
+    "check:lifecycle": "tsx scripts/checks/check-lifecycle.ts",
     "check:capability-commands": "tsx scripts/checks/check-capability-commands.ts",
     "probe:mcp": "tsx scripts/dev/probe-mcp.ts",
     "probe:absence-mcp": "tsx scripts/dev/probe-absence-mcp.ts",

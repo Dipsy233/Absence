@@ -45,6 +45,8 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   // defaults, so a runtime moved since last launch still resolves.
   applyRuntimePaths();
 
+  guardAgainstDeadStdio();
+
   const app = Fastify({ logger: options.quiet ? false : { level: process.env.ABSENCE_LOG_LEVEL ?? "info" } });
 
   // Raw-body parser for the avatar-skin uploads: the client PUTs bare file
@@ -95,7 +97,21 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 
   const port = options.port ?? config.port;
   const host = options.host ?? config.host;
-  await app.listen({ port, host });
+  try {
+    await app.listen({ port, host });
+  } catch (error) {
+    // The classic way into this is an orphaned earlier server: on Windows the
+    // npm/concurrently process tree does not always die with the terminal that
+    // started it, and a leftover server holds the port while being wedged.
+    if (isAddrInUse(error)) {
+      throw new Error(
+        `port ${port} on ${host} is already taken — an earlier ABSENCE server is probably still running there.` +
+          ` If it no longer answers, kill the process listening on port ${port}` +
+          ` (netstat -ano | findstr :${port}, then taskkill /PID <pid> /F) and start again.`,
+      );
+    }
+    throw error;
+  }
 
   // With port 0 the OS chose one; read it back from the listening address.
   const address = app.server.address();
@@ -112,6 +128,28 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
     url,
     close: () => app.close(),
   };
+}
+
+/**
+ * A dead console or a closed parent pipe must not take the server down or wedge
+ * it: once the reader on the other end is gone, stdout/stderr writes fail with
+ * EPIPE (and a blocked console write was observed stalling a whole server).
+ * Dropping the log line is always the right answer here — the log has nowhere
+ * to go anyway.
+ */
+function guardAgainstDeadStdio(): void {
+  for (const stream of [process.stdout, process.stderr]) {
+    stream?.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EPIPE" || error.code === "EIO") return;
+      throw error;
+    });
+  }
+}
+
+/** Windows reports EADDRINUSE wrapped; the code is the only stable marker. */
+function isAddrInUse(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "EADDRINUSE" || code === "EACCES";
 }
 
 /**
