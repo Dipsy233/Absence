@@ -258,8 +258,9 @@ export class AbsenceSession {
         onCall: (call) => {
           // The transcript is also how an outside file change is attributed:
           // the watched parent directory holds sibling projects, and only a
-          // path the agent itself wrote may read as this agent's activity.
-          if (!READ_ONLY_TOOL.test(call.toolName)) {
+          // path the agent itself *wrote through a write-semantics tool* may
+          // read as this agent's activity (see WRITE_TOOL).
+          if (WRITE_TOOL.test(call.toolName)) {
             for (const p of pathsInJson(call.args)) this.outsideAttribution.note(p);
           }
           // A call the model made to a server is an `mcp` event; a built-in
@@ -1125,6 +1126,10 @@ export class AbsenceSession {
    */
   private onOutsideFsChange(kind: "created" | "modified" | "deleted", absolutePath: string): void {
     if (!this.outsideAttribution.owns(absolutePath)) return;
+    // Spend the attribution: this echo is the record. What the same path does
+    // for the rest of the window is no longer provably this agent's — most
+    // plausibly a sibling agent writing the same shared file.
+    this.outsideAttribution.demote(absolutePath);
     this.handleEvent(
       createEvent(this.id, "file_change", { path: toPosix(absolutePath), kind, outside: true }),
     );
@@ -1306,52 +1311,74 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * Tools that only look. Their arguments name paths the agent *saw*, not paths
- * it wrote, so they must not make an outside file change attributable: a read
- * of a sibling project's file followed by that project's own agent writing it
- * would otherwise read as this agent's write.
+ * Tools whose semantics are writing a file. Only these may make an outside
+ * file change attributable: their arguments name the paths they target. The
+ * first cut of this rule was a *blacklist* of read-ish tools, and it leaked:
+ * `bash` sat outside the list, so a `bash cat E:/other/x.txt` — a read —
+ * attributed the path, and the sibling agent's later write of that file read
+ * as this agent's outside change. A whitelist is the honest polarity: an MCP
+ * tool with unknown semantics, a shell command whose effect on files is not
+ * proven, none of them earn attribution. A shell write outside the project is
+ * still visible in its run row; it just cannot claim the watcher's echo.
  */
-export const READ_ONLY_TOOL = /^(read|grep|find|ls|observe|inspect|search|list|view|show|cat|head|tail|stat|glob)\b/i;
+export const WRITE_TOOL =
+  /^(write|edit|multiedit|apply_patch|patch|save|create|remove|delete|unlink|move|rename|str_replace|insert|notebook_edit)\b/i;
 
 /**
- * Absolute paths mentioned anywhere in a tool call's arguments JSON. Write-ish
- * tools name their targets in different fields per runtime (`path`, `file_path`,
- * a changes map, an MCP payload), so rather than pin the schema, every string
- * in the JSON is scanned for something that looks like an absolute path.
- * Relative paths are skipped on purpose: the outside watcher only reports
- * absolute paths outside the project, and a relative argument cannot be one.
+ * Absolute paths in a write tool's arguments JSON — but only where paths live.
+ *
+ * Write tools name their targets in different fields per runtime (`path`,
+ * `file_path`, a changes map, a patch body), so the shape is not pinned;
+ * instead a string is scanned only when its *key* is path-shaped (path, file,
+ * dir, patch, diff, changes, target, source, dest…) or when an object's key is
+ * itself an absolute path (the `changes` map). Everything else — a written
+ * file's `content`, an edit's `oldText`, a shell `command` — is skipped on
+ * purpose: a config that *mentions* other absolute paths must not attribute
+ * them, or the next write by whoever owns those paths reads as this agent's.
+ *
+ * Relative paths are skipped: the outside watcher only reports absolute paths
+ * outside the project, and a relative argument cannot be one.
  */
 export function pathsInJson(json: string): string[] {
   if (!json) return [];
   const found: string[] = [];
-  const walk = (value: unknown, depth: number): void => {
+  const PATHY_KEY = /(path|file|dir|folder|target|source|src|dest|patch|diff|changes|location)/i;
+  const ABSOLUTE = /[A-Za-z]:[\\/][^\s"'`\]}]*|(?:\/[^\s"'`\]}]{2,})+/g;
+  const consider = (candidate: string): void => {
+    // A URL is not a filesystem path (`https://host/x`), and the unix branch
+    // happily matches the tail of one.
+    if (candidate.includes("://")) return;
+    // A unix path must have a directory separator beyond the leading slash,
+    // so a bare word or a URL's `//` does not match.
+    if (/^[A-Za-z]:/.test(candidate) || candidate.split("/").length > 2) found.push(candidate);
+  };
+  const scan = (text: string): void => {
+    for (const match of text.matchAll(ABSOLUTE)) consider(match[0]);
+  };
+  const walk = (value: unknown, key: string, depth: number): void => {
     if (depth > 6) return;
     if (typeof value === "string") {
-      // Windows drive paths and unix absolute paths; up to the first
-      // whitespace, quote, or closing bracket. A path with a space survives
-      // only if the JSON value is exactly the path, which the write tools's
-      // own `path` field is.
-      for (const match of value.matchAll(/[A-Za-z]:[\\/][^\s"'`\]}]*|(?:\/[^\s"'`\]}]{2,})+/g)) {
-        const candidate = match[0];
-        // A URL is not a filesystem path (`https://host/x`), and the unix
-        // branch happily matches the tail of one.
-        if (candidate.includes("://")) continue;
-        // A unix path must have a directory separator beyond the leading
-        // slash, so a bare word or a URL's `//` does not match.
-        if (/^[A-Za-z]:/.test(candidate) || candidate.split("/").length > 2) found.push(candidate);
-      }
+      // The value's own key decides whether its strings can hold a target. A
+      // patch body is included whole: the target sits after `*** Update
+      // File:` inside it, and `patch` is a pathy key.
+      if (PATHY_KEY.test(key)) scan(value);
       return;
     }
     if (Array.isArray(value)) {
-      for (const item of value) walk(item, depth + 1);
+      for (const item of value) walk(item, key, depth + 1);
       return;
     }
     if (value && typeof value === "object") {
-      for (const item of Object.values(value)) walk(item, depth + 1);
+      for (const [childKey, item] of Object.entries(value)) {
+        // A key that is itself an absolute path is a file the tool targets —
+        // Codex's `changes` map is keyed by path.
+        scan(childKey);
+        walk(item, childKey, depth + 1);
+      }
     }
   };
   try {
-    walk(JSON.parse(json), 0);
+    walk(JSON.parse(json), "", 0);
   } catch {
     // Unparseable arguments name no paths we can trust.
   }

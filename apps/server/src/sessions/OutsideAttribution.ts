@@ -39,7 +39,24 @@ export class OutsideAttribution {
     const at = this.writtenAt.get(key(absolutePath));
     return at !== undefined && now - at <= this.windowMs;
   }
+
+  /**
+   * Spend the attribution: the watcher just echoed the agent's own write, so
+   * the record is done. What remains of this path's window shrinks to a short
+   * tail — long enough for the write's own trailing watcher events (a create
+   * followed by a flush, an editor's second save) to still count as one
+   * write, short enough that a sibling agent's later edit of the same file
+   * cannot ride the rest of the window as this agent's doing.
+   */
+  demote(absolutePath: string, now = Date.now()): void {
+    const at = this.writtenAt.get(key(absolutePath));
+    if (at === undefined) return;
+    this.writtenAt.set(key(absolutePath), now - this.windowMs + ECHO_TAIL_MS);
+  }
 }
+
+/** How long a claimed echo stays attributable, for its own duplicate events. */
+const ECHO_TAIL_MS = 5_000;
 
 /** Paths are matched case-insensitively and in posix form: Windows watchers
  * report the same file through either separator or casing. */

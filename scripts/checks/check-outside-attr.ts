@@ -10,9 +10,14 @@
  * makes lands in the other session's watcher too. Reported unattributed, the
  * first session's Activity fills with the second agent's work — exactly the
  * lie this check pins the fix to.
+ *
+ * Attribution is a whitelist, twice over. Only tools whose *semantics* are
+ * writing a file may attribute (a `bash` that merely cats a path must not),
+ * and within a tool's arguments only path-shaped fields count (a file whose
+ * *content* mentions other paths must not attribute those).
  */
 import { OutsideAttribution } from "../../apps/server/src/sessions/OutsideAttribution";
-import { pathsInJson, READ_ONLY_TOOL } from "../../apps/server/src/sessions/sessionStore";
+import { pathsInJson, WRITE_TOOL } from "../../apps/server/src/sessions/sessionStore";
 import { check, finish, section } from "./harness";
 
 const WINDOW = 120_000;
@@ -43,6 +48,25 @@ section("attribution: the sibling agent's edits are not this agent's");
   );
 }
 
+section("attribution: an echo claimed is an echo spent");
+{
+  // Agent A wrote the outside file, the watcher echoed it, the session
+  // reported it. Every change on that path from now on is *someone else's* —
+  // most plausibly the sibling agent that writes the same shared file — and
+  // must not ride the rest of the window as this agent's doing. A short tail
+  // remains only so the write's own trailing watcher events still count.
+  const attribution = new OutsideAttribution(WINDOW);
+  attribution.note("E:/0down/shared/config.json", 1_000);
+  check("owned before the echo", attribution.owns("E:/0down/shared/config.json", 2_000));
+  attribution.demote("E:/0down/shared/config.json", 2_000);
+  check("still owned within the tail (duplicate watcher events)", attribution.owns("E:/0down/shared/config.json", 3_000));
+  check("not owned after the tail", !attribution.owns("E:/0down/shared/config.json", 2_000 + 6_000));
+  check(
+    "the sibling's later edit of the same file is not owned",
+    !attribution.owns("E:/0down/shared/config.json", 60_000),
+  );
+}
+
 section("attribution: windows path casing and separators are one file");
 {
   const attribution = new OutsideAttribution(WINDOW);
@@ -51,13 +75,32 @@ section("attribution: windows path casing and separators are one file");
   check("same file, other separator", attribution.owns("E:\\0down/projB/notes.txt", 2_000));
 }
 
-section("paths in a transcript call's arguments");
+section("paths in a transcript call's arguments: only path-shaped fields");
 {
   const write = pathsInJson(JSON.stringify({ path: "E:\\0down\\projB\\x.txt", content: "hi" }));
   check("a write tool's path is found", write.includes("E:\\0down\\projB\\x.txt"), JSON.stringify(write));
 
-  const edit = pathsInJson(JSON.stringify({ edits: [{ path: "/home/u/proj/y.ts", edits: [] }] }));
+  const edit = pathsInJson(JSON.stringify({ path: "/home/u/proj/y.ts", edits: [{ oldText: "a", newText: "b" }] }));
   check("a nested edit path is found", edit.includes("/home/u/proj/y.ts"), JSON.stringify(edit));
+
+  // The hole the whitelist closed: a file written whose *content* mentions
+  // other absolute paths (a config, a script) attributed every path it named.
+  const config = pathsInJson(
+    JSON.stringify({ path: "E:\\0down\\projA\\config.json", content: '{"db": "E:/0down/projB/data.db"}' }),
+  );
+  check("the written file's own path is found", config.includes("E:\\0down\\projA\\config.json"), JSON.stringify(config));
+  check("a path inside the written content is not attributed", !config.some((p) => p.includes("projB")), JSON.stringify(config));
+
+  // Codex's patch body carries the target after `*** Update File:`; the patch
+  // field is where the paths live, so it counts.
+  const patch = pathsInJson(
+    JSON.stringify({ patch: "*** Update File: E:\\0down\\projB\\x.ts\n@@\n-a\n+b" }),
+  );
+  check("a patch body's target is found", patch.some((p) => p.endsWith("x.ts")), JSON.stringify(patch));
+
+  // A changes map keyed by absolute path (Codex `fileChange` shape).
+  const changes = pathsInJson(JSON.stringify({ changes: { "E:\\0down\\projB\\z.ts": "+x" } }));
+  check("a changes map's path key is found", changes.some((p) => p.endsWith("z.ts")), JSON.stringify(changes));
 
   check("no arguments, no paths", pathsInJson("{}").length === 0);
   check("unparseable arguments, no paths", pathsInJson("{broken").length === 0);
@@ -66,14 +109,21 @@ section("paths in a transcript call's arguments");
   check("a URL is not a path", !urls.some((p) => p.includes("example.com")), JSON.stringify(urls));
 }
 
-section("read-only tools never attribute");
+section("only write-semantics tools attribute");
 {
-  for (const tool of ["read", "grep", "find", "ls", "observe", "inspect", "search", "list"]) {
-    check(`${tool} is read-only`, READ_ONLY_TOOL.test(tool));
+  // First-class file writers: the tools whose arguments name their targets.
+  for (const tool of ["write", "edit", "apply_patch", "multiedit", "save", "remove", "create", "move", "rename"]) {
+    check(`${tool} may attribute`, WRITE_TOOL.test(tool));
   }
-  for (const tool of ["write", "edit", "apply_patch", "remove", "save"]) {
-    check(`${tool} is not read-only`, !READ_ONLY_TOOL.test(tool));
+  // Everything else must not — including the whole shell family. The report
+  // that reopened this: a `bash cat E:/other/x.txt` (a *read*) attributed the
+  // path, and the sibling agent's later write of that file read as this
+  // agent's outside change.
+  for (const tool of ["bash", "powershell", "shell", "command", "exec", "read", "grep", "find", "ls", "web_search"]) {
+    check(`${tool} must not attribute`, !WRITE_TOOL.test(tool));
   }
+  // MCP tools (mcp__server__tool) have unknown semantics: no attribution.
+  check("an mcp tool must not attribute", !WRITE_TOOL.test("mcp__fs__write_file"));
 }
 
 finish();
