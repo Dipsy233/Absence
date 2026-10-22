@@ -60,6 +60,7 @@ async function collect(prompts: string[]): Promise<{ events: AbsenceEvent[]; sna
   ws.addEventListener("message", (raw: MessageEvent) => {
     const m = JSON.parse(String(raw.data));
     if (m.type === "event") events.push(m.event);
+    else if (m.type === "events") events.push(...m.events);
   });
   await new Promise((r) => ws.addEventListener("open", r));
 

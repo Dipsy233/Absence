@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { memoBuildHistory, memoRunRows, pickRun, runEvents } from "../../lib/history";
 import { useEvents, useSessionStore } from "../../stores/sessionStore";
 import { useStageStore } from "../../stores/stageStore";
@@ -8,13 +8,19 @@ import { useUiStore } from "../../stores/uiStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
 import { Panel } from "../Panel";
-import { ActivityItem } from "./ActivityItem";
+import { ACTIVITY_ROW_HEIGHT, ActivityItem } from "./ActivityItem";
+
+/** How many rows to render beyond the viewport, so fast scrolling is not blank. */
+const OVERSCAN = 8;
+/** Fallback viewport height before the first ResizeObserver callback. */
+const INITIAL_VIEWPORT = 600;
 
 /** Bottom-left: the actions of the selected run, with a Replay button. */
 export function ActivityPanel() {
   const t = useT();
   const events = useEvents();
   const selectedRunId = useUiStore((s) => s.selectedRunId);
+  const focusedEventId = useUiStore((s) => s.focusedEventId);
   const selectRun = useUiStore((s) => s.selectRun);
   const mode = useStageStore((s) => s.mode);
   const setMode = useStageStore((s) => s.setMode);
@@ -26,6 +32,10 @@ export function ActivityPanel() {
   // session has. Driving a runtime keeps the setting exactly as the user set it.
   const observed = useIsObserved();
   const displayInActivity = displaySetting || observed;
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ scrollTop: 0, height: INITIAL_VIEWPORT });
+  const stickToBottom = useRef(true);
+  const lastRunId = useRef<string | undefined>(undefined);
 
   const runs = useMemo(() => memoBuildHistory(events), [events]);
   const run = pickRun(runs, selectedRunId);
@@ -42,14 +52,85 @@ export function ActivityPanel() {
   // which of the rows is last. `rows` is chronological, so the first row past
   // the cursor ends the scan.
   const replayRowId = useMemo(() => {
-    if (mode !== "replay") return undefined;
-    let current: string | undefined;
-    for (const row of rows) {
-      if (row.event.timestamp <= replayTime) current = row.id;
-      else break;
+    if (mode !== "replay" || rows.length === 0) return undefined;
+    // Rows are chronological; binary search for the last one at or before the
+    // cursor instead of walking the whole run on every 80ms replay tick.
+    let low = 0;
+    let high = rows.length - 1;
+    let found = -1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (rows[mid]!.event.timestamp <= replayTime) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
     }
-    return current;
+    return found >= 0 ? rows[found]!.id : undefined;
   }, [mode, rows, replayTime]);
+
+  // Track the scroll container: the list renders only the rows around it.
+  useEffect(() => {
+    const element = bodyRef.current;
+    if (!element) return;
+    const update = () => {
+      stickToBottom.current =
+        element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+      setViewport({ scrollTop: element.scrollTop, height: element.clientHeight });
+    };
+    update();
+    element.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => {
+      element.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, []);
+
+  // Follow new rows only when the user was already at the bottom; scrolling up
+  // to read something must not be yanked away by the next token. Switching runs
+  // starts at that run's newest row.
+  useEffect(() => {
+    const element = bodyRef.current;
+    if (!element) return;
+    if (lastRunId.current !== run?.id) {
+      lastRunId.current = run?.id;
+      stickToBottom.current = true;
+    }
+    if (!stickToBottom.current) return;
+    const frame = requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight;
+      setViewport((current) => ({ ...current, scrollTop: element.scrollTop }));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [rows.length, run?.id]);
+
+  // A report link can target a row outside the mounted window; bring it in.
+  useEffect(() => {
+    if (!focusedEventId) return;
+    const index = rows.findIndex((row) => row.id === focusedEventId);
+    const element = bodyRef.current;
+    if (index < 0 || !element) return;
+    const top = index * ACTIVITY_ROW_HEIGHT;
+    if (top < element.scrollTop || top + ACTIVITY_ROW_HEIGHT > element.scrollTop + element.clientHeight) {
+      stickToBottom.current = false;
+      element.scrollTop = Math.max(0, top - element.clientHeight / 2);
+    }
+  }, [focusedEventId, rows]);
+
+  const totalHeight = rows.length * ACTIVITY_ROW_HEIGHT;
+  // Clamp the window to the list: switching to a shorter run while scrolled
+  // down must still render a row instead of an empty slice.
+  const maxStart = Math.max(0, rows.length - 1);
+  const start = Math.min(
+    maxStart,
+    Math.max(0, Math.floor(viewport.scrollTop / ACTIVITY_ROW_HEIGHT) - OVERSCAN),
+  );
+  const visibleCount = Math.ceil(viewport.height / ACTIVITY_ROW_HEIGHT) + OVERSCAN * 2;
+  const end = Math.min(rows.length, start + visibleCount);
+  const visibleRows = rows.slice(start, end);
 
   const enterReplay = () => {
     if (!run || rows.length === 0) return;
@@ -85,6 +166,7 @@ export function ActivityPanel() {
       }
       className="min-h-0 flex-1"
       bodyClassName="p-2"
+      bodyRef={bodyRef}
     >
       {run ? (
         <div className="mb-1.5 flex items-baseline gap-2 border-b border-desk-line pb-1 text-[10px] text-desk-dim">
@@ -102,9 +184,14 @@ export function ActivityPanel() {
             : t("Nothing yet. Send the agent a task.")}
         </p>
       ) : (
-        <ul className="space-y-0.5">
-          {rows.map((row) => (
-            <ActivityItem key={row.id} row={row} replayCurrent={row.id === replayRowId} />
+        <ul className="relative" style={{ height: totalHeight }}>
+          {visibleRows.map((row, index) => (
+            <ActivityItem
+              key={row.id}
+              row={row}
+              replayCurrent={row.id === replayRowId}
+              top={(start + index) * ACTIVITY_ROW_HEIGHT}
+            />
           ))}
         </ul>
       )}

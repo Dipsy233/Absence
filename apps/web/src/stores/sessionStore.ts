@@ -97,6 +97,8 @@ interface SessionStore {
   hydrate: (snapshot: SessionSnapshot) => void;
   applyRuntimeState: (state: SessionRuntimeState) => void;
   ingestEvent: (event: AbsenceEvent) => void;
+  /** Fold a whole socket batch in one store update (see useSessionSocket). */
+  ingestEvents: (events: AbsenceEvent[]) => void;
   setConnected: (connected: boolean) => void;
 }
 
@@ -204,36 +206,54 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       source: state.source,
     }),
 
-  ingestEvent: (event) => {
+  ingestEvents: (incoming) => {
+    if (incoming.length === 0) return;
     const previous = get().events;
-    // A fresh array per change is what makes React's selector see the update
-    // (`Object.is` on the same reference would skip the render). A shallow copy
-    // of the window is a few microseconds; the incremental history / row caches
-    // no longer key on identity, so they still fold only the new tail.
-    const full = previous.length >= MAX_SESSION_EVENTS;
-    const events = full ? [...previous.slice(1), event] : [...previous, event];
-    // One event leaves the window when it was already full.
-    markEventsBase(events, eventsBase(previous) + (full ? 1 : 0));
+    // The socket batches events, so copy the window once per batch instead of
+    // once per event. `keepFrom` is how many of the oldest events no longer
+    // fit; it may include some of this batch when a batch alone overflows.
+    const total = previous.length + incoming.length;
+    const keepFrom = Math.max(0, total - MAX_SESSION_EVENTS);
+    const droppedPrevious = Math.min(previous.length, keepFrom);
+    const droppedIncoming = keepFrom - droppedPrevious;
+    const events = [...previous.slice(droppedPrevious), ...incoming.slice(droppedIncoming)];
+    markEventsBase(events, eventsBase(previous) + keepFrom);
 
-    const patch: Partial<SessionStore> = { events, eventsVersion: get().eventsVersion + 1 };
-    // Eggs update in place, O(1), and do not depend on the event window above.
-    if (event.type === "process") {
-      const current = get().eggState;
-      applyProcessEvent(current.eggs, event);
-      patch.eggState = {
-        eggs: current.eggs,
-        version: current.version + 1,
-        retired: current.retired + (event.payload.retired ? 1 : 0),
-      };
+    let currentAction = get().currentAction;
+    let stageChanged = false;
+    let eggsChanged = false;
+    let retired = get().eggState.retired;
+    const eggs = get().eggState.eggs;
+
+    for (const event of incoming) {
+      // Eggs update in place, O(1), and do not depend on the event window.
+      if (event.type === "process") {
+        applyProcessEvent(eggs, event);
+        eggsChanged = true;
+        if (event.payload.retired) retired += 1;
+      }
+      if (clearsStage(event)) {
+        // A run ended, or a new one just started: back to the default Stage page.
+        currentAction = undefined;
+        stageChanged = true;
+      } else if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) {
+        currentAction = event;
+        stageChanged = true;
+      }
     }
-    if (clearsStage(event)) {
-      // A run ended, or a new one just started: back to the default Stage page.
-      patch.currentAction = undefined;
-    } else if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) {
-      patch.currentAction = event;
+
+    const patch: Partial<SessionStore> = {
+      events,
+      eventsVersion: get().eventsVersion + 1,
+    };
+    if (eggsChanged) {
+      patch.eggState = { eggs, version: get().eggState.version + 1, retired };
     }
+    if (stageChanged) patch.currentAction = currentAction;
     set(patch);
   },
+
+  ingestEvent: (event) => get().ingestEvents([event]),
 
   setConnected: (connected) => set({ connected }),
 }));

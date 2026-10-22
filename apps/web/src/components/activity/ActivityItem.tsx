@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MouseEvent } from "react";
+import { memo, useEffect, useRef, type MouseEvent } from "react";
 import type { ActivityRow } from "../../types/stage";
 import { eventContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
@@ -21,10 +21,27 @@ const TONE_CLASS: Record<ActivityRow["tone"], string> = {
 };
 
 /**
+ * Fixed row height. The row is deliberately two clipped lines, so the virtual
+ * list can position it without measuring; changing the markup means changing
+ * this constant too (ActivityPanel uses it for the same reason).
+ */
+export const ACTIVITY_ROW_HEIGHT = 40;
+
+interface ActivityItemProps {
+  row: ActivityRow;
+  replayCurrent?: boolean;
+  /** Absolute offset in the virtual list, in pixels. */
+  top: number;
+}
+
+/**
  * One clickable row. Outside replay it opens the matching Stage content
  * (read02 §19); inside replay it scrubs the Stage to that event.
+ *
+ * Memoised because the panel keeps only a window of rows mounted: a new event
+ * must not re-render every row that did not change.
  */
-export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayCurrent?: boolean }) {
+export const ActivityItem = memo(function ActivityItem({ row, replayCurrent, top }: ActivityItemProps) {
   const t = useT();
   const openStage = useStageStore((s) => s.openStage);
   const mode = useStageStore((s) => s.mode);
@@ -82,7 +99,7 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
   };
 
   return (
-    <li>
+    <li className="absolute inset-x-0" style={{ top, height: ACTIVITY_ROW_HEIGHT }}>
       <button
         type="button"
         ref={ref}
@@ -98,7 +115,7 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
           // its content sideways; only the colour changes (and the two colour
           // classes are mutually exclusive, or Tailwind's rule order would let
           // `transparent` win over the accent).
-          "block w-full rounded border-l-2 px-1.5 py-1 text-left font-mono text-[11px] leading-tight",
+          "flex h-[38px] w-full flex-col justify-center rounded border-l-2 px-1.5 py-1 text-left font-mono text-[11px] leading-tight",
           clickable ? "hover:bg-desk-panel2" : "cursor-default",
           // A selected row is what the Stage is showing: an amber left bar and
           // a filled background, legible even when the row already has a hover
@@ -118,4 +135,4 @@ export function ActivityItem({ row, replayCurrent }: { row: ActivityRow; replayC
       </button>
     </li>
   );
-}
+});

@@ -190,7 +190,7 @@ export class MockAdapter extends BaseAdapter {
     await sleep(300);
     if (bail()) return this.finish("aborted");
 
-    emit("thinking", { content: "Getting oriented in the project…", streaming: true });
+    emit("thinking", { content: "Getting oriented in the project…", streaming: false });
     await sleep(450);
 
     const allFiles = await scanCodeFiles(this.cwd, 40);
@@ -333,25 +333,27 @@ export class MockAdapter extends BaseAdapter {
     await sleep(400);
 
     // Final assistant message, streamed.
-    emit("thinking", { content: "Writing up what I found…", streaming: true });
+    emit("thinking", { content: "Writing up what I found…", streaming: false });
     await sleep(300);
     const answer =
       `I looked through the project and read ${picks.length} file${picks.length === 1 ? "" : "s"} ` +
       `(${picks.join(", ")}). Nothing looks obviously broken — I made one small edit as a demonstration. ` +
       `Ask me to dig into anything specific.`;
-    let acc = "";
+    this.resetMessage();
     for (const chunk of chunkText(answer, 18)) {
       if (bail()) return this.finish("aborted");
-      acc += chunk;
-      emit("message", { role: "assistant", content: acc, delta: chunk, streaming: true });
+      this.emitMessageDelta(chunk);
       await sleep(60);
     }
-    emit("message", { role: "assistant", content: answer, streaming: false });
+    this.flushMessage(answer);
     this.finish("completed");
   }
 
   private finish(reason: string): void {
     this.busy = false;
+    // Send whatever the stream throttles still held before declaring the run over.
+    this.flushMessage();
+    this.flushThinking();
     this.emitAbsence("agent_end", { reason });
   }
 

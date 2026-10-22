@@ -65,6 +65,7 @@ interface ChatStore {
   removeContext: (index: number) => void;
   clearContext: () => void;
   ingest: (event: AbsenceEvent) => void;
+  ingestEvents: (events: AbsenceEvent[]) => void;
   hydrate: (snapshot: SessionSnapshot) => void;
   reset: () => void;
 }
@@ -77,10 +78,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   removeContext: (index) => set({ pending: get().pending.filter((_, i) => i !== index) }),
   clearContext: () => set({ pending: [] }),
 
-  ingest: (event) => {
-    const next = applyChatEvent(get().messages, event);
-    if (next) set({ messages: next });
+  ingestEvents: (events) => {
+    let messages = get().messages;
+    let changed = false;
+    for (const event of events) {
+      const next = applyChatEvent(messages, event);
+      if (next) {
+        messages = next;
+        changed = true;
+      }
+    }
+    if (changed) set({ messages });
   },
+
+  ingest: (event) => get().ingestEvents([event]),
 
   hydrate: (snapshot) => set({ messages: snapshot.chat, pending: [] }),
   reset: () => set({ messages: [], pending: [] }),

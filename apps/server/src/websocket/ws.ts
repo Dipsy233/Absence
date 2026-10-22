@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { AbsenceEvent } from "@absence/core";
 import { sessionStore } from "../sessions/SessionStore";
 
 /** Minimal shape of the ws socket we use — avoids depending on ws types. */
@@ -10,6 +11,15 @@ interface ClientSocket {
 }
 
 const OPEN = 1;
+
+/**
+ * Event batching window. A run can emit many events per second (process
+ * creation, file changes, streamed text); sending each as its own JSON frame
+ * makes the client run a React update per event. One frame per window lets the
+ * client fold the batch into a single store update.
+ */
+const EVENT_FLUSH_MS = 50;
+const EVENT_BATCH_MAX = 200;
 
 function send(socket: ClientSocket, message: unknown): void {
   if (socket.readyState !== OPEN) return;
@@ -39,14 +49,41 @@ export async function wsRoutes(app: FastifyInstance): Promise<void> {
     const client = socket as unknown as ClientSocket;
     send(client, { type: "snapshot", state: session.snapshot() });
 
-    const unsubscribeEvents = session.bus.subscribe((event) => {
-      send(client, { type: "event", event });
-    });
+    // Buffer events for this client only: a slow reader loses its own frames,
+    // never another client's. The batch is flushed on a timer, on size, and on
+    // close so a burst is never left in memory.
+    let pending: AbsenceEvent[] = [];
+    let flushTimer: NodeJS.Timeout | undefined;
+    const flushEvents = () => {
+      if (pending.length === 0) return;
+      const events = pending;
+      pending = [];
+      send(client, { type: "events", events });
+    };
+    const queueEvent = (event: AbsenceEvent) => {
+      pending.push(event);
+      if (pending.length >= EVENT_BATCH_MAX) {
+        if (flushTimer) clearTimeout(flushTimer);
+        flushTimer = undefined;
+        flushEvents();
+        return;
+      }
+      if (flushTimer) return;
+      flushTimer = setTimeout(() => {
+        flushTimer = undefined;
+        flushEvents();
+      }, EVENT_FLUSH_MS);
+    };
+
+    const unsubscribeEvents = session.bus.subscribe(queueEvent);
     const unsubscribeState = session.stateBus.subscribe((state) => {
       send(client, { type: "session_state", state });
     });
 
     client.on("close", () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      flushTimer = undefined;
+      flushEvents();
       unsubscribeEvents();
       unsubscribeState();
     });

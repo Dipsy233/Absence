@@ -162,6 +162,12 @@ export class AbsenceSession {
   private chat: ChatMessage[] = [];
   private context?: ContextState;
   private tree?: FileTreeNode;
+  /**
+   * True when `tree` changed since the last state push. A tree can hold 4000
+   * entries; sending it with every 40ms state update is pure waste. New
+   * clients still get it in their snapshot; live clients only when it moves.
+   */
+  private treeDirty = true;
   private assistantStreamId?: string;
   private lastActiveAt: number;
   private promptCount = 0;
@@ -238,6 +244,7 @@ export class AbsenceSession {
     this.setStatus("listening");
     this.session.model = undefined;
     this.tree = await buildTree(this.session.projectPath);
+    this.treeDirty = true;
     this.watcher = new FileWatcher(
       this.session.projectPath,
       (kind, abs) => this.onFsChange(kind, abs),
@@ -353,6 +360,7 @@ export class AbsenceSession {
     this.unsubAdapter = this.adapter?.subscribe((event) => this.handleEvent(event));
 
     this.tree = await buildTree(this.session.projectPath);
+    this.treeDirty = true;
 
     this.watcher = new FileWatcher(
       this.session.projectPath,
@@ -736,18 +744,20 @@ export class AbsenceSession {
     return [...this.events];
   }
 
-  runtimeState(): SessionRuntimeState {
+  runtimeState(options: { includeTree?: boolean } = {}): SessionRuntimeState {
     // Asked per push, not cached: an MCP tool appears when its server
     // connects, which happens after the session started (see
     // capabilities/piResources.ts). Absence re-reads the runtime's own list
-    // rather than guessing when it changed.
+    // rather than guessing when it changed. (The disk scan behind it is
+    // cached by the adapter — see PiAdapter.getCapabilities.)
     const capabilities = this.adapter?.getCapabilities?.();
+    const includeTree = options.includeTree ?? true;
     return {
       session: this.session,
       agent: { status: this.session.status, model: this.session.model },
       source: this.source(),
       context: this.context,
-      tree: this.tree,
+      ...(includeTree && this.tree ? { tree: this.tree } : {}),
       ...(capabilities ? { capabilities } : {}),
     };
   }
@@ -803,7 +813,13 @@ export class AbsenceSession {
 
   /** Append to the on-disk archive and refresh its header (best-effort). */
   private persist(event: AbsenceEvent): void {
-    appendEvents(this.session.projectPath, this.id, [event]);
+    // Streaming message/thinking events are the live view of a value that is
+    // re-sent in full on every update. Persisting them writes O(n²) bytes for
+    // one reply and makes resume replay every prefix. The final non-streaming
+    // event carries the whole value, so that is what the archive keeps.
+    if (!isStreamingEvent(event)) {
+      appendEvents(this.session.projectPath, this.id, [event]);
+    }
     this.scheduleMeta();
   }
 
@@ -1145,7 +1161,9 @@ export class AbsenceSession {
       this.stateTimer = undefined;
       const usage = this.adapter?.getContextUsage?.();
       if (usage) this.context = usage;
-      this.stateBus.emit(this.runtimeState());
+      const includeTree = this.treeDirty;
+      this.treeDirty = false;
+      this.stateBus.emit(this.runtimeState({ includeTree }));
     }, 40);
   }
 
@@ -1155,10 +1173,23 @@ export class AbsenceSession {
       this.treeTimer = undefined;
       void buildTree(this.session.projectPath).then((tree) => {
         this.tree = tree;
+        this.treeDirty = true;
         this.scheduleState();
       });
     }, 500);
   }
+}
+
+/**
+ * True for the throttled live view of a value that the runtime re-sends in
+ * full: `message`/`thinking` with `streaming: true`. The archive keeps only
+ * the final non-streaming event (see SessionStore.persist).
+ */
+function isStreamingEvent(event: AbsenceEvent): boolean {
+  return (
+    (event.type === "message" || event.type === "thinking") &&
+    event.payload.streaming === true
+  );
 }
 
 function statusForTool(toolName: string): AgentStatus {

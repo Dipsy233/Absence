@@ -49,9 +49,6 @@ export class DshAdapter extends BaseAdapter {
   private configOptions?: AcpConfigOption[];
   /** Approval prompts waiting for a user decision, keyed by the event id. */
   private pendingApprovals = new Map<string, (value: string) => void>();
-  /** Accumulators so a streamed chunk becomes a full message on end. The
-   *  thinking deltas are folded by BaseAdapter (see emitThinkingDelta). */
-  private assistantAcc = "";
   /** The last assistant message id counted into the stats. */
   private countedMessageId = "";
   private stats = {
@@ -154,16 +151,19 @@ export class DshAdapter extends BaseAdapter {
     if (!client.isAlive()) throw new Error("dsh acp server has exited");
     this.aborted = false;
     this.busy = true;
-    this.assistantAcc = "";
+    this.resetMessage();
     this.resetThinking();
     this.stats.userMessages += 1;
     this.emitAbsence("agent_start", { model: this.model });
     try {
       // `session/prompt` resolves when the turn settles, with a stopReason.
       const { stopReason } = await client.prompt(sessionId, text);
+      // ACP has no message-end record: the accumulated chunks are the message.
+      this.flushMessage();
       this.flushThinking();
       this.emitAbsence("agent_end", { reason: stopReasonToReason(stopReason, this.aborted) });
     } catch (error) {
+      this.flushMessage();
       this.flushThinking();
       this.emitAbsence("error", { message: errorMessage(error) });
       this.emitAbsence("agent_end", { reason: "error" });
@@ -298,13 +298,7 @@ export class DshAdapter extends BaseAdapter {
           this.countedMessageId = messageId;
           this.stats.assistantMessages += 1;
         }
-        this.assistantAcc += text;
-        emit("message", {
-          role: "assistant",
-          content: this.assistantAcc,
-          delta: text,
-          streaming: true,
-        });
+        this.emitMessageDelta(text);
         break;
       }
 

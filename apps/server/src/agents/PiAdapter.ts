@@ -21,6 +21,14 @@ import { languageFromPath } from "../util/language";
 import { toPosix } from "../util/paths";
 
 /**
+ * How long a capabilities scan is reused. `runtimeState()` is pushed at most
+ * every 40ms while a run streams; discovery reads mcp.json and skill folders,
+ * so doing it per push is disk I/O on the event path. A short TTL keeps a
+ * newly added server visible soon enough, and `/mcp reconnect` refreshes now.
+ */
+const CAPABILITIES_TTL_MS = 5_000;
+
+/**
  * Wraps the Pi SDK (read.md §6). Pi is the worker; Absence only observes.
  *
  * We subscribe to `AgentSessionEvent` and translate each one into a
@@ -40,7 +48,6 @@ export class PiAdapter extends BaseAdapter {
   private fileLines = new Map<string, Map<number, string>>();
   /** Paths whose whole content we hold (a write/edit). */
   private wholeFiles = new Set<string>();
-  private assistantAcc = "";
   private aborted = false;
   /**
    * The tool names this session declares to the model, from
@@ -55,6 +62,8 @@ export class PiAdapter extends BaseAdapter {
   private piAgentDir?: string;
   /** Skill / MCP discovery for this session (see capabilities/discover.ts). */
   private capabilities?: DiscoveredCapabilities;
+  /** When `capabilities` was last read from disk (see CAPABILITIES_TTL_MS). */
+  private capabilitiesAt = 0;
 
   constructor(private readonly options: AdapterOptions) {
     super();
@@ -85,6 +94,7 @@ export class PiAdapter extends BaseAdapter {
       cwd: ctx.cwd,
       agentDir: piAgentDirFromSdk(sdk as { getAgentDir?: () => string }),
     });
+    this.capabilitiesAt = Date.now();
     const agentDir = piAgentDirFromSdk(sdk as { getAgentDir?: () => string });
     this.piAgentDir = agentDir;
     if (this.capabilities.diagnostics.length > 0) {
@@ -238,17 +248,22 @@ export class PiAdapter extends BaseAdapter {
       cwd: this.cwd,
       agentDir: this.piAgentDir,
     });
+    this.capabilitiesAt = Date.now();
   }
 
   getCapabilities(): CapabilityState | undefined {
     if (!this.capabilities) return undefined;
-    // Re-read the files, not a snapshot from `start`: `/mcp add` and
-    // `/mcp enable` edit mcp.json while the session runs, and the answer must
-    // describe the configuration as it is now. Connection state below still
-    // comes from the session's own tool registry, so "configured" and
-    // "connected" stay two different facts.
-    const discovered = discoverCapabilities({ cwd: this.cwd, agentDir: this.piAgentDir });
-    this.capabilities = discovered;
+    // Re-read the files, but not on every state push: `runtimeState()` runs at
+    // most every 40ms while a run streams, and discovery walks the project and
+    // the agent dir. A short TTL keeps `/mcp add` visible within a few seconds
+    // without putting disk I/O on the event path. `/mcp reconnect` calls
+    // reloadExtensions(), which refreshes immediately.
+    const now = Date.now();
+    if (now - this.capabilitiesAt >= CAPABILITIES_TTL_MS) {
+      this.capabilities = discoverCapabilities({ cwd: this.cwd, agentDir: this.piAgentDir });
+      this.capabilitiesAt = now;
+    }
+    const discovered = this.capabilities;
     const declared = new Set(this.declaredTools());
     const mcpAvailable = typeof this.session?.getAllTools === "function";
     const registered = mcpAvailable ? this.registeredTools() : [];
@@ -401,7 +416,7 @@ export class PiAdapter extends BaseAdapter {
   async prompt(text: string): Promise<void> {
     if (!this.session) throw new Error("Pi session not started");
     this.aborted = false;
-    this.assistantAcc = "";
+    this.resetMessage();
     this.resetThinking();
     try {
       await this.session.prompt(text);
@@ -433,27 +448,24 @@ export class PiAdapter extends BaseAdapter {
         break;
 
       case "agent_settled":
-        // A run aborted mid-thought never reaches message_end, so send the
-        // tail the throttle still held before the run is declared over.
+        // A run aborted mid-thought or mid-message never reaches message_end,
+        // so send the tails the throttles still held before the run is over.
+        this.flushMessage();
         this.flushThinking();
         emit("agent_end", { reason: this.aborted ? "aborted" : "completed" });
         break;
 
       case "message_start":
-        this.assistantAcc = "";
+        this.resetMessage();
         this.resetThinking();
         break;
 
       case "message_update": {
         const inner = event.assistantMessageEvent;
         if (inner.type === "text_delta") {
-          this.assistantAcc += inner.delta;
-          emit("message", {
-            role: "assistant",
-            content: this.assistantAcc,
-            delta: inner.delta,
-            streaming: true,
-          });
+          // Coalesced in BaseAdapter: the payload carries the whole message so
+          // far, so one event per token is quadratic in the reply's size.
+          this.emitMessageDelta(inner.delta);
         } else if (inner.type === "thinking_delta") {
           // Coalesced in BaseAdapter: one event per token would flood the
           // session window and give Activity a row per character.
@@ -468,16 +480,12 @@ export class PiAdapter extends BaseAdapter {
         const message = event.message as { role?: string; content?: unknown };
         if (message.role === "assistant") {
           const text = textOfContent(message.content);
-          // End of the message is end of the thought: send what the throttle
-          // still held, then clear both accumulators.
+          // End of the message is end of the thought: send what the throttles
+          // still held, then clear both accumulators. `text` is authoritative
+          // (the deltas are only the streaming view of it).
           this.flushThinking();
-          this.assistantAcc = "";
+          this.flushMessage(text);
           this.resetThinking();
-          // A tool-only turn (e.g. a bare find/grep) carries no text. Emitting it
-          // would append an empty bubble to the chat.
-          if (text.trim().length > 0) {
-            emit("message", { role: "assistant", content: text, streaming: false });
-          }
         }
         break;
       }
@@ -515,7 +523,9 @@ export class PiAdapter extends BaseAdapter {
       }
 
       case "compaction_start":
-        emit("thinking", { content: `Compacting context (${event.reason})…`, streaming: true });
+        // A one-shot notice, not a stream: persist it (streaming events are
+        // skipped by the archive) and let the UI show it as finished text.
+        emit("thinking", { content: `Compacting context (${event.reason})…`, streaming: false });
         break;
 
       case "auto_retry_start":

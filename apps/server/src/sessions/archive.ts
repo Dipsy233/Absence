@@ -69,13 +69,36 @@ export async function writeMeta(cwd: string, meta: ArchiveMeta): Promise<void> {
   }
 }
 
-/** Serialized appender: one queue per archive file, so lines never interleave. */
+/**
+ * Serialized, batched appender.
+ *
+ * One `appendFile` per event made a long run thousands of tiny writes (and a
+ * promise-chain hop for each). Events are buffered per archive file instead and
+ * flushed every FLUSH_MS, so a token burst becomes one write. The per-file
+ * promise queue still guarantees lines never interleave, and `drainArchive()`
+ * flushes both the buffers and the queues on dispose.
+ */
 const queues = new Map<string, Promise<void>>();
+const pending = new Map<string, string[]>();
+const timers = new Map<string, NodeJS.Timeout>();
+const FLUSH_MS = 50;
 
-export function appendEvents(cwd: string, id: string, events: AbsenceEvent[]): void {
-  if (events.length === 0) return;
-  const file = eventsFile(cwd, id);
-  const text = events.map((event) => JSON.stringify(event)).join("\n") + "\n";
+function scheduleFlush(file: string): void {
+  if (timers.has(file)) return;
+  timers.set(
+    file,
+    setTimeout(() => {
+      timers.delete(file);
+      void flushFile(file);
+    }, FLUSH_MS),
+  );
+}
+
+async function flushFile(file: string): Promise<void> {
+  const lines = pending.get(file);
+  if (!lines || lines.length === 0) return;
+  pending.delete(file);
+  const text = lines.join("\n") + "\n";
   const previous = queues.get(file) ?? Promise.resolve();
   const next = previous
     .then(() => fs.mkdir(path.dirname(file), { recursive: true }))
@@ -83,10 +106,30 @@ export function appendEvents(cwd: string, id: string, events: AbsenceEvent[]): v
     .catch(() => undefined)
     .then(() => undefined);
   queues.set(file, next);
+  await next;
+  // Drop the settled tail so a long-lived server does not keep one resolved
+  // promise per archive file it has ever written. A newer append may have
+  // replaced it already; only delete our own entry.
+  if (queues.get(file) === next) queues.delete(file);
+}
+
+export function appendEvents(cwd: string, id: string, events: AbsenceEvent[]): void {
+  if (events.length === 0) return;
+  const file = eventsFile(cwd, id);
+  let lines = pending.get(file);
+  if (!lines) {
+    lines = [];
+    pending.set(file, lines);
+  }
+  for (const event of events) lines.push(JSON.stringify(event));
+  scheduleFlush(file);
 }
 
 /** Wait for pending appends (used on dispose and by tests). */
 export async function drainArchive(): Promise<void> {
+  for (const timer of timers.values()) clearTimeout(timer);
+  timers.clear();
+  await Promise.all([...pending.keys()].map((file) => flushFile(file)));
   await Promise.all([...queues.values()]);
 }
 

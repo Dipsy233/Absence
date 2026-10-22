@@ -106,6 +106,7 @@ interface FileStore {
 
   setTree: (tree?: FileTreeNode) => void;
   ingest: (event: AbsenceEvent) => void;
+  ingestEvents: (events: AbsenceEvent[]) => void;
   hydrate: (snapshot: SessionSnapshot) => void;
   reset: () => void;
 }
@@ -116,11 +117,23 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   setTree: (tree) => set({ tree }),
 
-  ingest: (event) => {
+  ingestEvents: (events) => {
+    // Only file events change this store; a batch of process/thinking events
+    // must not copy the file map or re-render the Files panel.
+    const relevant = events.filter(
+      (event) =>
+        event.type === "file_read" ||
+        event.type === "file_write" ||
+        event.type === "file_edit" ||
+        event.type === "file_change",
+    );
+    if (relevant.length === 0) return;
     const files = { ...get().files };
-    applyEvent(files, event);
+    for (const event of relevant) applyEvent(files, event);
     set({ files });
   },
+
+  ingest: (event) => get().ingestEvents([event]),
 
   hydrate: (snapshot) => {
     // Rebuild from the event timeline so recorded versions survive a reconnect.

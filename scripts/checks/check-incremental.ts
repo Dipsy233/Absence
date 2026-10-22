@@ -413,6 +413,52 @@ console.log("session store publishes each event");
 }
 
 // ---------------------------------------------------------------------------
+// 3b. A socket batch is folded in one store update
+// ---------------------------------------------------------------------------
+console.log("session store folds a socket batch in one update");
+{
+  const { useSessionStore } = await import("../../apps/web/src/stores/sessionStore");
+  useSessionStore.getState().reset();
+  useSessionStore.getState().hydrate({
+    session: { id: "check" } as never,
+    agent: { status: "listening" },
+    files: [],
+    chat: [],
+    events: [],
+  });
+
+  const batch = [
+    ev("message", { role: "user", content: "go", streaming: false }),
+    ev("thinking", { content: "working", streaming: true }),
+    ev("file_read", { path: "a.ts", content: "x", startLine: 1, endLine: 1 }),
+    ev("process", {
+      pid: 42,
+      ppid: 1,
+      name: "node",
+      commandLine: "node a.js",
+      status: "running",
+      startedAt: clock,
+      children: 0,
+      kind: "primary",
+    }),
+    ev("agent_end", { reason: "completed" }),
+  ];
+
+  let updates = 0;
+  const unsubscribe = useSessionStore.subscribe(() => {
+    updates += 1;
+  });
+  useSessionStore.getState().ingestEvents(batch);
+  unsubscribe();
+
+  const state = useSessionStore.getState();
+  check("one store update per batch", updates === 1, `${updates} updates`);
+  check("every event in the batch is kept", state.events.length === batch.length, `${state.events.length} events`);
+  check("the batch opens and closes the run", state.currentAction === undefined, `action=${state.currentAction?.type ?? "undefined"}`);
+  check("a process in the batch reaches the egg map", state.eggState.eggs.has(42));
+}
+
+// ---------------------------------------------------------------------------
 // 4. History keeps every run as the window slides (regression)
 //
 // The panel used to show only the newest run or two, from a real session whose

@@ -9,6 +9,7 @@ import { useUiStore } from "../stores/uiStore";
 type ServerMessage =
   | { type: "snapshot"; state: SessionSnapshot }
   | { type: "event"; event: AbsenceEvent }
+  | { type: "events"; events: AbsenceEvent[] }
   | { type: "session_state"; state: SessionRuntimeState }
   | { type: "error"; message: string };
 
@@ -56,9 +57,20 @@ export function useSessionSocket(sessionId: string | undefined): void {
             useFileStore.getState().ingest(message.event);
             useChatStore.getState().ingest(message.event);
             break;
+          case "events":
+            // One store update per socket batch: the server already coalesced
+            // a burst into this frame (see websocket/ws.ts).
+            useSessionStore.getState().ingestEvents(message.events);
+            useFileStore.getState().ingestEvents(message.events);
+            useChatStore.getState().ingestEvents(message.events);
+            break;
           case "session_state":
             useSessionStore.getState().applyRuntimeState(message.state);
-            useFileStore.getState().setTree(message.state.tree);
+            // `tree` is only present when it actually changed; an absent tree
+            // must leave the current one alone, not clear the Files panel.
+            if (message.state.tree !== undefined) {
+              useFileStore.getState().setTree(message.state.tree);
+            }
             break;
           case "error":
             break;

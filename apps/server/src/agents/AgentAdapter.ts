@@ -133,6 +133,19 @@ export abstract class BaseAdapter implements AgentAdapter {
   private thinkingDirty = false;
   private thinkingLastEmit = 0;
 
+  // --- assistant message coalescing -----------------------------------------
+  //
+  // Text arrives the same way, and the payload carries the *whole message so
+  // far*, so one event per token is quadratic in the size of the reply. Fold
+  // the deltas here, emit at most once per MESSAGE_EMIT_MS, and let
+  // `flushMessage()` send the final non-streaming event. Streaming events are
+  // deliberately not archived (see SessionStore.persist): the archive keeps the
+  // finished message, not every intermediate prefix of it.
+  private messageAcc = "";
+  private messageSinceEmit = "";
+  private messageDirty = false;
+  private messageLastEmit = 0;
+
   abstract start(ctx: AgentStartContext): Promise<AgentStartResult>;
   abstract prompt(text: string): Promise<void>;
   abstract abort(): Promise<void>;
@@ -181,7 +194,59 @@ export abstract class BaseAdapter implements AgentAdapter {
     this.thinkingDirty = false;
     this.emitAbsence("thinking", { content: this.thinkingAcc, streaming: false });
   }
+
+  /** Clear the assistant accumulator (a new message, a new prompt). */
+  protected resetMessage(): void {
+    this.messageAcc = "";
+    this.messageSinceEmit = "";
+    this.messageDirty = false;
+    // The first delta of a reply should appear immediately, not after a
+    // throttle window with nothing on screen.
+    this.messageLastEmit = 0;
+  }
+
+  /** Fold one assistant text delta in, emitting the message so far at most every MESSAGE_EMIT_MS. */
+  protected emitMessageDelta(delta: string): void {
+    this.messageAcc += delta;
+    this.messageSinceEmit += delta;
+    this.messageDirty = true;
+    const now = Date.now();
+    if (now - this.messageLastEmit < MESSAGE_EMIT_MS) return;
+    this.messageLastEmit = now;
+    this.messageDirty = false;
+    const emitted = this.messageSinceEmit;
+    this.messageSinceEmit = "";
+    this.emitAbsence("message", {
+      role: "assistant",
+      content: this.messageAcc,
+      delta: emitted,
+      streaming: true,
+    });
+  }
+
+  /**
+   * Emit the finished assistant message as one non-streaming event.
+   *
+   * `finalText` is the runtime's authoritative copy when it has one (Pi's
+   * `message_end`); without it the accumulated deltas are used (DSH's turn
+   * settles without a message-end record). An empty/tool-only turn emits
+   * nothing, so no empty chat bubble is appended.
+   */
+  protected flushMessage(finalText?: string): void {
+    if (finalText !== undefined) this.messageAcc = finalText;
+    const text = this.messageAcc;
+    const shouldEmit = this.messageDirty || text.trim().length > 0;
+    this.messageAcc = "";
+    this.messageSinceEmit = "";
+    this.messageDirty = false;
+    this.messageLastEmit = Date.now();
+    if (!shouldEmit || text.trim().length === 0) return;
+    this.emitAbsence("message", { role: "assistant", content: text, streaming: false });
+  }
 }
 
 /** How long a thought may grow before it is re-emitted as a `thinking` event. */
 const THINK_EMIT_MS = 150;
+
+/** How long an assistant message may grow before it is re-emitted as a `message` event. */
+const MESSAGE_EMIT_MS = 100;
