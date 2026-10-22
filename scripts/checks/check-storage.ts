@@ -23,6 +23,7 @@ import {
   encodeCwd,
   listArchives,
   readEvents,
+  readEventsPage,
   writeMeta,
 } from "../../apps/server/src/sessions/archive";
 import { check, finish, section } from "./harness";
@@ -109,6 +110,22 @@ section("new writes");
     "history filters by project path",
     (await listArchives(project.replace(/\//g, "\\"))).some((m) => m.absenceSessionId === id),
   );
+}
+
+section("pagination");
+{
+  const newest = await readEventsPage(legacyId, { limit: 2 });
+  check("a page is chronological", newest.events.map((e) => e.id).join(",") === "evt_msg_final,evt_write", newest.events.map((e) => e.id).join(","));
+  check("the newest page reports more", newest.hasMore);
+  check("the cursor is the oldest seq in the page", typeof newest.nextBefore === "number", `${newest.nextBefore}`);
+
+  const older = await readEventsPage(legacyId, { before: newest.nextBefore, limit: 2 });
+  check("before is exclusive", !older.events.some((e) => e.id === "evt_msg_final"));
+  check("the older page is chronological", older.events.map((e) => e.id).join(",") === "evt_user,evt_think_final", older.events.map((e) => e.id).join(","));
+  check("the oldest page ends the walk", older.hasMore === false && older.nextBefore === undefined);
+
+  const empty = await readEventsPage("sess_missing", { limit: 2 });
+  check("an unknown session has an empty page", empty.events.length === 0 && empty.hasMore === false);
 }
 
 section("reopen and re-import");

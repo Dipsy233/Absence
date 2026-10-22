@@ -259,3 +259,15 @@ export interface SessionSnapshot extends SessionRuntimeState {
   chat: ChatMessage[];
   events: AbsenceEvent[];
 }
+
+/**
+ * One page of persisted events, oldest → newest.
+ *
+ * `nextBefore` is the cursor for the next older page: pass it back as
+ * `?before=`. It is absent when this page already starts at the oldest event.
+ */
+export interface SessionEventPage {
+  events: AbsenceEvent[];
+  nextBefore?: number;
+  hasMore: boolean;
+}

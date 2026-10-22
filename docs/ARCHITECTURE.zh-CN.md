@@ -402,7 +402,7 @@ type AbsenceEventType =
 | `GET` | `/api/sessions/history` | 保存的会话（Absence 归档 + Pi），最新在前；`?path=` 过滤 |
 | `POST` | `/api/sessions` | `{ projectPath, agent?, resume? }` → 创建或重开会话 |
 | `GET` | `/api/sessions/:id` | 会话快照（session、files、chat、events、tree） |
-| `GET` | `/api/sessions/:id/events` | 事件历史 |
+| `GET` | `/api/sessions/:id/events?before=&limit=` | 持久化事件分页（`{ events, nextBefore, hasMore }`，页内按时间正序；`before` 是排他的 seq 游标） |
 | `GET` | `/api/sessions/:id/file?path=` | 读项目文件（用户视角） |
 | `POST` | `/api/sessions/:id/prompt` | `{ prompt }` → 发给 agent |
 | `POST` | `/api/sessions/:id/abort` | 打断运行 |

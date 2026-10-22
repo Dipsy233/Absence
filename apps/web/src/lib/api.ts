@@ -1,4 +1,10 @@
-import type { CommandOption, Project, SessionHistoryEntry, SessionSnapshot } from "@absence/core";
+import type {
+  CommandOption,
+  Project,
+  SessionEventPage,
+  SessionHistoryEntry,
+  SessionSnapshot,
+} from "@absence/core";
 
 async function json<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -85,6 +91,23 @@ export async function getSession(id: string): Promise<SessionSnapshot> {
 export async function fetchSessionHistory(path?: string): Promise<SessionHistoryEntry[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   return json<SessionHistoryEntry[]>(await fetch(`/api/sessions/history${query}`));
+}
+
+/**
+ * One page of persisted events, oldest → newest. Omit `before` for the newest
+ * page; pass the previous page's `nextBefore` to walk backwards.
+ */
+export async function fetchSessionEventPage(
+  sessionId: string,
+  options: { before?: number; limit?: number } = {},
+): Promise<SessionEventPage> {
+  const params = new URLSearchParams();
+  if (options.before !== undefined) params.set("before", String(options.before));
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  const query = params.toString();
+  return json<SessionEventPage>(
+    await fetch(`/api/sessions/${sessionId}/events${query ? `?${query}` : ""}`),
+  );
 }
 
 export async function sendPrompt(id: string, prompt: string): Promise<void> {

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import { isStreamingEvent, type AbsenceEvent } from "@absence/core";
+import { isStreamingEvent, type AbsenceEvent, type SessionEventPage } from "@absence/core";
 import { toPosix } from "../../util/paths";
 import { eventsFile, sessionsRoot, stateRoot } from "./legacyPaths";
 
@@ -470,6 +470,17 @@ export async function drainArchive(): Promise<void> {
   flushPending();
 }
 
+/** Rebuild the full AbsenceEvent from the columns + payload JSON. */
+function eventFromRow(sessionId: string, row: SqlRow): AbsenceEvent {
+  return {
+    id: String(row.id),
+    sessionId,
+    timestamp: Number(row.ts),
+    type: String(row.type),
+    payload: JSON.parse(String(row.payload)),
+  } as AbsenceEvent;
+}
+
 export async function readEvents(cwd: string, id: string): Promise<AbsenceEvent[]> {
   flushPending();
   let rows: SqlRow[];
@@ -484,21 +495,62 @@ export async function readEvents(cwd: string, id: string): Promise<AbsenceEvent[
   const events: AbsenceEvent[] = [];
   for (const row of rows) {
     try {
-      // The table stores the payload separately from the envelope; rebuild the
-      // full event the rest of Absence expects.
-      const event = {
-        id: String(row.id),
-        sessionId: id,
-        timestamp: Number(row.ts),
-        type: String(row.type),
-        payload: JSON.parse(String(row.payload)),
-      } as AbsenceEvent;
-      if (event && typeof event.type === "string") events.push(event);
+      events.push(eventFromRow(id, row));
     } catch {
       // Skip a row written by an older/broken version.
     }
   }
   return events;
+}
+
+/**
+ * One page of stored events, oldest → newest. `before` is exclusive (events
+ * with `seq < before`); omitting it returns the newest page. The cursor in
+ * `nextBefore` is the oldest `seq` in this page, so the next call can ask for
+ * the events immediately older than it.
+ */
+export async function readEventsPage(
+  id: string,
+  options: { before?: number; limit?: number } = {},
+): Promise<SessionEventPage> {
+  flushPending();
+  const limit = Math.min(Math.max(Math.trunc(options.limit ?? 500), 1), 2000);
+  const before = options.before;
+  let rows: SqlRow[];
+  try {
+    const db = open();
+    rows = (
+      before === undefined
+        ? db
+            .prepare(
+              "SELECT seq, id, ts, type, payload FROM events WHERE session_id = ? ORDER BY seq DESC LIMIT ?",
+            )
+            .all(id, limit + 1)
+        : db
+            .prepare(
+              "SELECT seq, id, ts, type, payload FROM events WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?",
+            )
+            .all(id, before, limit + 1)
+    ) as SqlRow[];
+  } catch (error) {
+    console.error("[absence] sqlite event page read failed:", error);
+    return { events: [], hasMore: false };
+  }
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  // The query walks backwards; the API and the UI both want chronological order.
+  page.reverse();
+  const events: AbsenceEvent[] = [];
+  for (const row of page) {
+    try {
+      events.push(eventFromRow(id, row));
+    } catch {
+      // Skip a row written by an older/broken version.
+    }
+  }
+  const nextBefore = hasMore && page.length > 0 ? Number(page[0]!.seq) : undefined;
+  return { events, nextBefore, hasMore };
 }
 
 /** Every archive header for a project, or for all projects when cwd is omitted. */

@@ -5,7 +5,7 @@ import type { SessionHistoryEntry } from "@absence/core";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentKind } from "../config";
 import { config } from "../config";
-import { listArchives } from "../sessions/archive";
+import { listArchives, readEventsPage, readMeta } from "../sessions/archive";
 import { sessionStore, RuntimeUnavailableError } from "../sessions/SessionStore";
 import { toPosix } from "../util/paths";
 import { takeTerminalMirror } from "../sessions/terminalRegistry";
@@ -22,6 +22,14 @@ async function isDirectory(candidate: string): Promise<boolean> {
 function resolveAgent(value: string | undefined): AgentKind {
   if (value === "mock" || value === "pi" || value === "codex" || value === "dsh") return value;
   return config.defaultAgent;
+}
+
+/** A query-string positive integer, or undefined when absent/invalid. */
+function parsePositiveInt(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^\d+$/.test(value)) return undefined;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n > 0 ? n : undefined;
 }
 
 /** Session lifecycle API (read.md §31–32). */
@@ -124,11 +132,33 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     return session.snapshot();
   });
 
+  /**
+   * Persisted events, newest page first when `before` is omitted.
+   *
+   *   ?limit=500          page size (1..2000)
+   *   ?before=<seq>       exclusive cursor from the previous page's nextBefore
+   *
+   * Returns `{ events, nextBefore, hasMore }`, with events chronological inside
+   * the page. A live session and an archived one are served the same way; the
+   * database is the source of history either way.
+   */
   app.get("/api/sessions/:id/events", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const session = sessionStore.get(id);
-    if (!session) return reply.code(404).send({ error: "session not found" });
-    return session.history();
+    const query = (request.query ?? {}) as { before?: string; limit?: string };
+    const before = parsePositiveInt(query.before);
+    if (query.before !== undefined && before === undefined) {
+      return reply.code(400).send({ error: "before must be a positive integer" });
+    }
+    const limit = parsePositiveInt(query.limit);
+    if (query.limit !== undefined && limit === undefined) {
+      return reply.code(400).send({ error: "limit must be a positive integer" });
+    }
+    // A live session is in the store; a historical one only needs its archive
+    // row. `readMeta` takes a cwd for compatibility, but the id is global.
+    if (!sessionStore.get(id) && !(await readMeta("", id))) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    return readEventsPage(id, { before, limit });
   });
 
   /**

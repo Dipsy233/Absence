@@ -21,6 +21,7 @@ export {
   drainArchive,
   listArchives,
   readEvents,
+  readEventsPage,
   readMeta,
   writeMeta,
 } from "./storage/db";

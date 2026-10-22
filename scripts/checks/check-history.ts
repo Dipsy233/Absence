@@ -91,6 +91,33 @@ const run = async () => {
   const { events, snapshot } = await collect(["first task: tidy up", "second task: look around"]);
   console.log(`collected ${events.length} events\n`);
 
+  // 0. paginated events API
+  {
+    const url = (query: string) => base + `/api/sessions/${snapshot.session.id}/events${query}`;
+    const page = (await (await fetch(url("?limit=5"))).json()) as {
+      events: AbsenceEvent[];
+      nextBefore?: number;
+      hasMore: boolean;
+    };
+    assert("pagination returns a page", page.events.length === 5, `${page.events.length}`);
+    assert("pagination reports more", page.hasMore === true);
+    assert(
+      "pagination is chronological",
+      page.events.every((e, i) => i === 0 || page.events[i - 1]!.timestamp <= e.timestamp),
+    );
+    assert("pagination gives a cursor", typeof page.nextBefore === "number", `${page.nextBefore}`);
+    const older = (await (
+      await fetch(url(`?before=${page.nextBefore}&limit=5`))
+    ).json()) as { events: AbsenceEvent[]; nextBefore?: number; hasMore: boolean };
+    assert(
+      "before is exclusive",
+      !older.events.some((e) => page.events.some((p) => p.id === e.id)),
+    );
+    assert("an older page is returned", older.events.length === 5, `${older.events.length}`);
+    const bad = await fetch(url("?limit=0"));
+    assert("an invalid limit is rejected", bad.status === 400, `${bad.status}`);
+  }
+
   // 1. history runs
   const runs = buildHistory(events);
   console.log("--- history runs ---");

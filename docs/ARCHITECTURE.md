@@ -366,7 +366,7 @@ Context usage, status, model and the file tree ride a separate
 | `GET` | `/api/sessions/history` | Saved sessions (Absence archives + Pi), newest first; `?path=` filters |
 | `POST` | `/api/sessions` | `{ projectPath, agent?, resume? }` → create or reopen a session |
 | `GET` | `/api/sessions/:id` | Session snapshot (session, files, chat, events, tree) |
-| `GET` | `/api/sessions/:id/events` | Event history |
+| `GET` | `/api/sessions/:id/events?before=&limit=` | Persisted events page (`{ events, nextBefore, hasMore }`, oldest → newest; `before` is an exclusive seq cursor) |
 | `GET` | `/api/sessions/:id/file?path=` | Read a project file (the user view) |
 | `POST` | `/api/sessions/:id/prompt` | `{ prompt }` → send to the agent |
 | `POST` | `/api/sessions/:id/abort` | Interrupt the run |
