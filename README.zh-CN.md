@@ -325,6 +325,10 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
 
 ## 注记与限制
 
+- 会话存储使用 Node 内置的 **`node:sqlite`**。它在上游仍标记为 experimental，
+  所以运行时版本是固定的（Electron `37.10.3`；Node `22.23.4` 见 `.nvmrc`/CI），
+  所有 SQLite 调用都隔离在 `apps/server/src/sessions/storage/db.ts`。服务端只
+  过滤 SQLite 这一条 experimental 警告，其他警告照常输出。
 - 会话**持久化到磁盘**，重启后还在。Pi 把模型的对话放在
   `~/.pi/agent/sessions/`；Absence 把 `AbsenceEvent` 流放在
   `~/.absence/absence.db`（SQLite，WAL；用 `ABSENCE_STATE_DIR` 覆盖根目录）。

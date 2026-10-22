@@ -352,6 +352,11 @@ port to the public internet.
 
 ## Notes & limitations
 
+- The session store uses Node's built-in **`node:sqlite`**. It is still marked
+  experimental upstream, so the runtime is pinned (Electron `37.10.3`; Node
+  `22.23.4` in `.nvmrc`/CI) and every SQLite call is isolated in
+  `apps/server/src/sessions/storage/db.ts`. The server filters only the SQLite
+  experimental warning; other warnings still print.
 - Sessions **persist to disk** and survive a restart. Pi keeps the model's
   conversation under `~/.pi/agent/sessions/`; Absence keeps the `AbsenceEvent` stream
   in `~/.absence/absence.db` (SQLite, WAL; override the root with

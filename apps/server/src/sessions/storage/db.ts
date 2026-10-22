@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
+import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { isStreamingEvent, type AbsenceEvent } from "@absence/core";
 import { toPosix } from "../../util/paths";
 import { eventsFile, sessionsRoot, stateRoot } from "./legacyPaths";
@@ -43,11 +44,40 @@ export interface ArchiveMeta {
 
 type SqlRow = Record<string, unknown>;
 
+/**
+ * `node:sqlite` is experimental in the Node versions we ship (22/24) and prints
+ * an ExperimentalWarning the first time it loads. The API we use is wrapped
+ * here and the runtime is pinned (Electron exact; Node LTS in .nvmrc/CI), so the
+ * warning is noise in the server log. Filter only that one warning.
+ *
+ * The patch has to run before the module is loaded, so `node:sqlite` is pulled
+ * in with `createRequire` instead of a static import (which the module loader
+ * would evaluate before this file's body). This is cosmetic: the module is
+ * still experimental upstream. Swapping to better-sqlite3 means deleting this
+ * block and the require below; the rest of Absence does not care.
+ */
+const originalEmitWarning = process.emitWarning as (...args: unknown[]) => void;
+process.emitWarning = ((warning: unknown, ...args: unknown[]) => {
+  const message =
+    typeof warning === "string" ? warning : warning instanceof Error ? warning.message : "";
+  const type =
+    typeof args[0] === "string"
+      ? args[0]
+      : warning instanceof Error
+        ? warning.name
+        : "";
+  if (type === "ExperimentalWarning" && /SQLite/i.test(message)) return;
+  originalEmitWarning.call(process, warning, ...args);
+}) as typeof process.emitWarning;
+
+const nodeRequire = createRequire(import.meta.url);
+const { DatabaseSync } = nodeRequire("node:sqlite") as typeof import("node:sqlite");
+
 const DB_FILE = "absence.db";
 const SCHEMA_VERSION = 1;
 const FLUSH_MS = 50;
 
-let database: DatabaseSync | undefined;
+let database: DatabaseSyncType | undefined;
 let pending = new Map<string, { cwd: string; events: AbsenceEvent[] }>();
 let flushTimer: NodeJS.Timeout | undefined;
 /** Next `seq` per session, cached so a batch does not re-query MAX(seq). */
@@ -57,7 +87,7 @@ function dbFile(): string {
   return path.join(stateRoot(), DB_FILE);
 }
 
-function open(): DatabaseSync {
+function open(): DatabaseSyncType {
   if (database) return database;
   fs.mkdirSync(stateRoot(), { recursive: true });
   const db = new DatabaseSync(dbFile());
@@ -126,7 +156,7 @@ function open(): DatabaseSync {
  * Legacy files are left in place. They are no longer written, but they are a
  * useful export/backup and deleting user data is not this migration's job.
  */
-function importLegacyArchives(db: DatabaseSync): void {
+function importLegacyArchives(db: DatabaseSyncType): void {
   const marker = db
     .prepare("SELECT value FROM store_meta WHERE key = ?")
     .get("jsonl_import_v1") as SqlRow | undefined;
@@ -359,7 +389,7 @@ function scheduleFlush(): void {
 }
 
 function ensureSessionRow(
-  db: DatabaseSync,
+  db: DatabaseSyncType,
   cwd: string,
   id: string,
   events: AbsenceEvent[],
@@ -382,7 +412,7 @@ function flushPending(): void {
   const batch = pending;
   pending = new Map();
 
-  let db: DatabaseSync;
+  let db: DatabaseSyncType;
   try {
     db = open();
   } catch (error) {
