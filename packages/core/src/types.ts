@@ -258,6 +258,10 @@ export interface SessionSnapshot extends SessionRuntimeState {
   files: FileState[];
   chat: ChatMessage[];
   events: AbsenceEvent[];
+  /** Cursor for events older than `events[0]`, when `events` is a tail. */
+  eventsBefore?: number;
+  /** True when the store has older events beyond the snapshot tail. */
+  eventsHasMore?: boolean;
 }
 
 /**

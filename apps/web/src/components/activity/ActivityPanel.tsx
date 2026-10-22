@@ -74,17 +74,23 @@ export function ActivityPanel() {
   useEffect(() => {
     const element = bodyRef.current;
     if (!element) return;
-    const update = () => {
-      stickToBottom.current =
-        element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+    // Measure the viewport without changing the follow state. The first
+    // `rows.length` effect below scrolls a fresh panel to the bottom; only a
+    // real scroll should turn following off.
+    const measure = () => {
       setViewport({ scrollTop: element.scrollTop, height: element.clientHeight });
     };
-    update();
-    element.addEventListener("scroll", update, { passive: true });
-    const observer = new ResizeObserver(update);
+    const onScroll = () => {
+      stickToBottom.current =
+        element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+      measure();
+    };
+    measure();
+    element.addEventListener("scroll", onScroll, { passive: true });
+    const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => {
-      element.removeEventListener("scroll", update);
+      element.removeEventListener("scroll", onScroll);
       observer.disconnect();
     };
   }, []);

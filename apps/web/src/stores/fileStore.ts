@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AbsenceEvent, FileTreeNode, SessionSnapshot } from "@absence/core";
+import type { AbsenceEvent, FileState, FileTreeNode, SessionSnapshot } from "@absence/core";
 import type { FileVersion, FileView } from "../types/file";
 import { languageFromPath } from "../lib/language";
 import { renderKnownState } from "../lib/knownLines";
@@ -100,20 +100,52 @@ function applyEvent(views: Record<string, FileView>, event: AbsenceEvent): void 
   }
 }
 
+/** Rebuild file views from a timeline, then fill files no event mentioned. */
+function buildFileViews(
+  events: AbsenceEvent[],
+  seedFiles: FileState[],
+): Record<string, FileView> {
+  const files: Record<string, FileView> = {};
+  for (const event of events) applyEvent(files, event);
+
+  for (const f of seedFiles) {
+    if (files[f.path]) continue;
+    const view = emptyView(f.path);
+    files[f.path] = {
+      ...putVersion(view, {
+        version: Math.max(0, f.version),
+        timestamp: f.lastModified ?? 0,
+        source: "write",
+        content: f.content,
+        complete: f.version > 0,
+        lineOffset: 0,
+      }),
+      lastRead: f.lastRead,
+      lastModifiedAt: f.lastModified,
+    };
+  }
+  return files;
+}
+
 interface FileStore {
   tree?: FileTreeNode;
   files: Record<string, FileView>;
+  /** Current-state files from the last snapshot, for files no event mentioned. */
+  seedFiles: FileState[];
 
   setTree: (tree?: FileTreeNode) => void;
   ingest: (event: AbsenceEvent) => void;
   ingestEvents: (events: AbsenceEvent[]) => void;
   hydrate: (snapshot: SessionSnapshot) => void;
+  /** Rebuild versions from a longer event timeline (after loading older pages). */
+  rebuildFromEvents: (events: AbsenceEvent[]) => void;
   reset: () => void;
 }
 
 export const useFileStore = create<FileStore>((set, get) => ({
   tree: undefined,
   files: {},
+  seedFiles: [],
 
   setTree: (tree) => set({ tree }),
 
@@ -137,27 +169,16 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   hydrate: (snapshot) => {
     // Rebuild from the event timeline so recorded versions survive a reconnect.
-    const files: Record<string, FileView> = {};
-    for (const event of snapshot.events) applyEvent(files, event);
-
-    for (const f of snapshot.files) {
-      if (files[f.path]) continue;
-      const view = emptyView(f.path);
-      files[f.path] = {
-        ...putVersion(view, {
-          version: Math.max(0, f.version),
-          timestamp: f.lastModified ?? 0,
-          source: "write",
-          content: f.content,
-          complete: f.version > 0,
-          lineOffset: 0,
-        }),
-        lastRead: f.lastRead,
-        lastModifiedAt: f.lastModified,
-      };
-    }
-    set({ tree: snapshot.tree, files });
+    set({
+      tree: snapshot.tree,
+      files: buildFileViews(snapshot.events, snapshot.files),
+      seedFiles: snapshot.files,
+    });
   },
 
-  reset: () => set({ tree: undefined, files: {} }),
+  rebuildFromEvents: (events) => {
+    set({ files: buildFileViews(events, get().seedFiles) });
+  },
+
+  reset: () => set({ tree: undefined, files: {}, seedFiles: [] }),
 }));

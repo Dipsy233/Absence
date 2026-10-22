@@ -129,7 +129,12 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const session = sessionStore.get(id);
     if (!session) return reply.code(404).send({ error: "session not found" });
-    return session.snapshot();
+    const query = (request.query ?? {}) as { eventLimit?: string };
+    const eventLimit = parsePositiveInt(query.eventLimit);
+    if (query.eventLimit !== undefined && eventLimit === undefined) {
+      return reply.code(400).send({ error: "eventLimit must be a positive integer" });
+    }
+    return session.snapshot({ eventLimit });
   });
 
   /**

@@ -357,6 +357,10 @@ port to the public internet.
   `22.23.4` in `.nvmrc`/CI) and every SQLite call is isolated in
   `apps/server/src/sessions/storage/db.ts`. The server filters only the SQLite
   experimental warning; other warnings still print.
+- A session snapshot carries the newest **2,000 events**. Older Activity is
+  loaded on demand from `GET /api/sessions/:id/events?before=&limit=`; the
+  snapshot's `eventsBefore` / `eventsHasMore` fields drive the History panel's
+  **load older** button. This keeps the first connect small on a long session.
 - Sessions **persist to disk** and survive a restart. Pi keeps the model's
   conversation under `~/.pi/agent/sessions/`; Absence keeps the `AbsenceEvent` stream
   in `~/.absence/absence.db` (SQLite, WAL; override the root with

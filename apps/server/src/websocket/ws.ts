@@ -37,7 +37,7 @@ function send(socket: ClientSocket, message: unknown): void {
  * session-state updates.
  */
 export async function wsRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/ws/sessions/:id", { websocket: true }, (socket, request) => {
+  app.get("/ws/sessions/:id", { websocket: true }, async (socket, request) => {
     const { id } = request.params as { id: string };
     const session = sessionStore.get(id);
     if (!session) {
@@ -47,7 +47,7 @@ export async function wsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const client = socket as unknown as ClientSocket;
-    send(client, { type: "snapshot", state: session.snapshot() });
+    send(client, { type: "snapshot", state: await session.snapshot() });
 
     // Buffer events for this client only: a slow reader loses its own frames,
     // never another client's. The batch is flushed on a timer, on size, and on

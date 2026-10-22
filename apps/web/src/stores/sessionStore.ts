@@ -5,6 +5,7 @@ import type {
   ContextState,
   AbsenceEvent,
   Session,
+  SessionEventPage,
   SessionHistoryEntry,
   SessionRuntimeState,
   SessionSnapshot,
@@ -15,7 +16,16 @@ import { MAX_SESSION_EVENTS } from "@absence/core";
 import * as api from "../lib/api";
 import { STAGE_EVENT_TYPES, clearsStage, isInstantSearch, lastStageAction } from "../lib/events";
 import { applyProcessEvent, sortEggs, type Egg } from "../lib/eggs";
-import { eventsBase, markEventsBase } from "../lib/history";
+import { eventsBase, markEventsBase, resetEventCaches } from "../lib/history";
+import { useFileStore } from "./fileStore";
+
+/**
+ * A hard ceiling for explicitly loaded history. The live window is 10k; a user
+ * who pages backwards can grow it, but not without bound. Activity is
+ * virtualised and History is a run list, so 50k events is the point where the
+ * tab should be reloaded instead of the memory growing further.
+ */
+const MAX_LOADED_EVENTS = 50_000;
 
 /**
  * Eggs folded incrementally from `process` events.
@@ -65,6 +75,17 @@ interface SessionStore {
   eventsVersion: number;
   /** Live egg state, maintained incrementally (see `EggStateHandle`). */
   eggState: EggStateHandle;
+  /**
+   * Current window budget. Starts at MAX_SESSION_EVENTS and grows when the user
+   * pages older history in, so the next live event does not immediately trim
+   * what they just loaded.
+   */
+  eventWindowSize: number;
+  /** Cursor for events older than `events[0]`, from the snapshot/page API. */
+  eventsBefore?: number;
+  /** True when the store has older events beyond the loaded window. */
+  eventsHasMore: boolean;
+  loadingOlder: boolean;
   /** The most recent event that owns the Stage (read02 §14). */
   currentAction?: AbsenceEvent;
   context?: ContextState;
@@ -99,6 +120,10 @@ interface SessionStore {
   ingestEvent: (event: AbsenceEvent) => void;
   /** Fold a whole socket batch in one store update (see useSessionSocket). */
   ingestEvents: (events: AbsenceEvent[]) => void;
+  /** Prepend a page returned by fetchSessionEventPage, deduplicated by id. */
+  prependEventPage: (page: SessionEventPage) => void;
+  /** Fetch and prepend the next older page, if there is one. */
+  loadOlderEvents: () => Promise<void>;
   setConnected: (connected: boolean) => void;
 }
 
@@ -108,6 +133,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   events: [],
   eventsVersion: 0,
   eggState: { eggs: new Map(), version: 0, retired: 0 },
+  eventWindowSize: MAX_SESSION_EVENTS,
+  eventsBefore: undefined,
+  eventsHasMore: false,
+  loadingOlder: false,
   currentAction: undefined,
   context: undefined,
   capabilities: undefined,
@@ -163,26 +192,35 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     await api.abortSession(id);
   },
 
-  reset: () =>
+  reset: () => {
+    resetEventCaches();
     set({
       session: undefined,
       agent: { status: "listening" },
       events: [],
       eventsVersion: 0,
       eggState: { eggs: new Map(), version: 0, retired: 0 },
+      eventWindowSize: MAX_SESSION_EVENTS,
+      eventsBefore: undefined,
+      eventsHasMore: false,
+      loadingOlder: false,
       currentAction: undefined,
       context: undefined,
       capabilities: undefined,
       source: undefined,
       connected: false,
       error: undefined,
-    }),
+    });
+  },
 
   hydrate: (snapshot) => {
     const eggs = new Map<number, Egg>();
     for (const event of snapshot.events) applyProcessEvent(eggs, event);
-    // A hydrated snapshot is a fresh window: no events have been trimmed from
-    // it, so absolute indices start at 0 and the history cache rebuilds.
+    // A hydrated snapshot is a fresh window. Reset the module-level history /
+    // row caches first: a different session can have the same length and base,
+    // and the incremental cache would otherwise reuse the previous session's
+    // runs. Absolute indices start at 0 for the loaded tail.
+    resetEventCaches();
     markEventsBase(snapshot.events, 0);
     set({
       session: snapshot.session,
@@ -193,6 +231,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       events: snapshot.events,
       eventsVersion: get().eventsVersion + 1,
       eggState: { eggs, version: get().eggState.version + 1, retired: 0 },
+      eventWindowSize: Math.max(MAX_SESSION_EVENTS, snapshot.events.length),
+      eventsBefore: snapshot.eventsBefore,
+      eventsHasMore: snapshot.eventsHasMore === true,
+      loadingOlder: false,
       currentAction: lastStageAction(snapshot.events),
     });
   },
@@ -213,7 +255,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // once per event. `keepFrom` is how many of the oldest events no longer
     // fit; it may include some of this batch when a batch alone overflows.
     const total = previous.length + incoming.length;
-    const keepFrom = Math.max(0, total - MAX_SESSION_EVENTS);
+    const keepFrom = Math.max(0, total - get().eventWindowSize);
     const droppedPrevious = Math.min(previous.length, keepFrom);
     const droppedIncoming = keepFrom - droppedPrevious;
     const events = [...previous.slice(droppedPrevious), ...incoming.slice(droppedIncoming)];
@@ -254,6 +296,58 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   ingestEvent: (event) => get().ingestEvents([event]),
+
+  prependEventPage: (page) => {
+    const current = get().events;
+    const seen = new Set(current.map((event) => event.id));
+    const fresh = page.events.filter((event) => !seen.has(event.id));
+    if (fresh.length === 0) {
+      set({ eventsBefore: page.nextBefore, eventsHasMore: page.hasMore, loadingOlder: false });
+      return;
+    }
+
+    const merged = [...fresh, ...current];
+    const windowSize = Math.min(
+      MAX_LOADED_EVENTS,
+      Math.max(get().eventWindowSize, merged.length + 1_000),
+    );
+    const overflow = Math.max(0, merged.length - windowSize);
+    const events = overflow > 0 ? merged.slice(overflow) : merged;
+    // Prepending invalidates the incremental run/row caches: they fold a tail,
+    // not a head. A fresh fold over the combined window is the honest answer.
+    resetEventCaches();
+    markEventsBase(events, overflow);
+    set({
+      events,
+      eventsVersion: get().eventsVersion + 1,
+      eventWindowSize: windowSize,
+      eventsBefore: page.nextBefore,
+      eventsHasMore: page.hasMore,
+      loadingOlder: false,
+    });
+    // File history is derived from events; rebuild it from the longer stream so
+    // loading older Activity also restores older file versions.
+    useFileStore.getState().rebuildFromEvents(events);
+  },
+
+  loadOlderEvents: async () => {
+    const { session, eventsBefore, eventsHasMore, loadingOlder } = get();
+    if (!session || !eventsHasMore || loadingOlder) return;
+    if (eventsBefore === undefined) {
+      set({ eventsHasMore: false });
+      return;
+    }
+    set({ loadingOlder: true, error: undefined });
+    try {
+      const page = await api.fetchSessionEventPage(session.id, { before: eventsBefore, limit: 1_000 });
+      get().prependEventPage(page);
+    } catch (error) {
+      set({
+        loadingOlder: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
 
   setConnected: (connected) => set({ connected }),
 }));

@@ -18,7 +18,7 @@ import {
   type SessionStatsInfo,
 } from "@absence/core";
 import { config, type AgentKind } from "../config";
-import { appendEvents, drainArchive, readEvents, writeMeta } from "./archive";
+import { appendEvents, drainArchive, readEvents, readEventsPage, writeMeta } from "./archive";
 import { EventBus } from "../events";
 import type { AgentAdapter } from "../agents/AgentAdapter";
 import { TerminalMirror } from "./TerminalMirror";
@@ -42,6 +42,14 @@ import { capabilityPaths } from "../capabilities/manage";
  * on disk; only the live window is bounded.
  */
 const MAX_EVENTS = MAX_SESSION_EVENTS;
+
+/**
+ * How many events a snapshot carries. The live window can hold 10k, but sending
+ * all of them on every connect/resume is the largest remaining payload. The
+ * tail is enough to draw the current run; `eventsBefore` lets the client page
+ * backwards through the store (GET /api/sessions/:id/events?before=).
+ */
+const SNAPSHOT_EVENT_LIMIT = 2_000;
 
 /**
  * How long a path the agent wrote stays attributable. The outside watcher's
@@ -763,14 +771,47 @@ export class AbsenceSession {
     };
   }
 
-  /** A compact row for the session history list. */
-  snapshot(): SessionSnapshot {
+  /**
+   * A snapshot for the wire: runtime state plus the newest `eventLimit` events.
+   *
+   * The events come from the store rather than the in-memory window so the
+   * response can carry a cursor for older pages. A small/new session (its whole
+   * live window fits) is served from memory, which also keeps a streaming
+   * message visible on reconnect. The rest is durable history; the UI loads it
+   * with `eventsBefore` when the user asks for older Activity.
+   */
+  async snapshot(options: { eventLimit?: number } = {}): Promise<SessionSnapshot> {
+    const limit = Math.min(
+      Math.max(Math.trunc(options.eventLimit ?? SNAPSHOT_EVENT_LIMIT), 1),
+      SNAPSHOT_EVENT_LIMIT,
+    );
+    let events: AbsenceEvent[];
+    let eventsBefore: number | undefined;
+    let eventsHasMore = false;
+
+    if (this.events.length < limit) {
+      events = [...this.events];
+    } else {
+      const page = await readEventsPage(this.id, { limit });
+      if (page.events.length > 0) {
+        events = page.events;
+        eventsBefore = page.nextBefore;
+        eventsHasMore = page.hasMore;
+      } else {
+        // The store is empty or unavailable (a brand-new session, or a storage
+        // failure). Fall back to the live tail; there is no cursor to page with.
+        events = this.events.slice(-limit);
+      }
+    }
+
     return {
       ...this.runtimeState(),
       currentAction: this.currentAction,
       files: [...this.files.values()],
       chat: [...this.chat],
-      events: [...this.events],
+      events,
+      ...(eventsBefore !== undefined ? { eventsBefore } : {}),
+      ...(eventsHasMore ? { eventsHasMore: true } : {}),
     };
   }
 

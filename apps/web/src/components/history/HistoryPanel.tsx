@@ -34,13 +34,47 @@ export function HistoryPanel() {
   const selectRun = useUiStore((s) => s.selectRun);
   const load = useReplayStore((s) => s.load);
   const observed = useIsObserved();
+  const eventsHasMore = useSessionStore((s) => s.eventsHasMore);
+  const loadingOlder = useSessionStore((s) => s.loadingOlder);
+  const loadOlderEvents = useSessionStore((s) => s.loadOlderEvents);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
 
   const runs = useMemo(() => memoBuildHistory(events), [events]);
 
+  /**
+   * Run ids are positional (`run_1`, `run_2`, …), so prepending older runs
+   * renumbers them. Keep the user's selection on the same run by matching its
+   * opening time and prompt after the merge.
+   */
+  const loadOlder = async () => {
+    const selected = runs.find((run) => run.id === selectedRunId);
+    stickToBottom.current = false;
+    await loadOlderEvents();
+    if (!selected) return;
+    const next = memoBuildHistory(useSessionStore.getState().events);
+    const match = next.find(
+      (run) => run.startedAt === selected.startedAt && run.prompt === selected.prompt,
+    );
+    if (match) selectRun(match.id);
+  };
+
+  // Follow new runs only while the user is at the bottom. Loading older runs
+  // must not yank the list back to the newest one.
   useEffect(() => {
     const element = bodyRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
+    if (!element) return;
+    const onScroll = () => {
+      stickToBottom.current =
+        element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
+    return () => element.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const element = bodyRef.current;
+    if (element && stickToBottom.current) element.scrollTop = element.scrollHeight;
   }, [runs.length]);
 
   return (
@@ -51,6 +85,17 @@ export function HistoryPanel() {
       bodyClassName="p-2"
       bodyRef={bodyRef}
     >
+      {eventsHasMore ? (
+        <button
+          type="button"
+          onClick={() => void loadOlder()}
+          disabled={loadingOlder}
+          className="mb-1.5 w-full rounded border border-desk-line px-2 py-1 text-[10px] uppercase tracking-wide text-desk-dim enabled:hover:border-desk-amber/60 enabled:hover:text-desk-amber disabled:opacity-40"
+        >
+          {loadingOlder ? t("loading…") : t("load older")}
+        </button>
+      ) : null}
+
       {runs.length === 0 ? (
         <p className="text-xs text-desk-dim">
           {observed

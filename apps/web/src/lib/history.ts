@@ -535,3 +535,15 @@ export function memoRunRows(
   entry.scanned = base + to + 1;
   return entry.rows;
 }
+
+/**
+ * Drop the incremental history/row caches.
+ *
+ * Needed when the event window is not a continuation of the previous one:
+ * a different session (same length/base can otherwise reuse stale runs), or an
+ * older page prepended to the head (the caches fold a tail, not a head).
+ */
+export function resetEventCaches(): void {
+  cache = undefined;
+  rowCache = undefined;
+}
