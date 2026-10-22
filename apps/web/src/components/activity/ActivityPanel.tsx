@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { memoBuildHistory, memoRunRows, pickRun, runEvents } from "../../lib/history";
-import { useEvents, useSessionStore } from "../../stores/sessionStore";
+import { memoRunRows, runEvents } from "../../lib/history";
 import { useStageStore } from "../../stores/stageStore";
 import { useIsObserved } from "../../stores/sessionStore";
+import { useSelectedRun } from "../../hooks/useSelectedRun";
 import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -18,8 +18,7 @@ const INITIAL_VIEWPORT = 600;
 /** Bottom-left: the actions of the selected run, with a Replay button. */
 export function ActivityPanel() {
   const t = useT();
-  const events = useEvents();
-  const selectedRunId = useUiStore((s) => s.selectedRunId);
+  const { run, events, loading } = useSelectedRun();
   const focusedEventId = useUiStore((s) => s.focusedEventId);
   const selectRun = useUiStore((s) => s.selectRun);
   const mode = useStageStore((s) => s.mode);
@@ -37,8 +36,6 @@ export function ActivityPanel() {
   const stickToBottom = useRef(true);
   const lastRunId = useRef<string | undefined>(undefined);
 
-  const runs = useMemo(() => memoBuildHistory(events), [events]);
-  const run = pickRun(runs, selectedRunId);
   // Rows are maintained incrementally (see `memoRunRows`): a streamed token
   // converts one event, not the whole run.
   const rows = useMemo(
@@ -183,7 +180,9 @@ export function ActivityPanel() {
         </div>
       ) : null}
 
-      {rows.length === 0 ? (
+      {loading && rows.length === 0 ? (
+        <p className="text-xs text-desk-dim">{t("loading…")}</p>
+      ) : rows.length === 0 ? (
         <p className="text-xs text-desk-dim">
           {observed
             ? t("Nothing yet. An observed agent's processes and file changes appear here as they happen.")

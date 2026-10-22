@@ -119,7 +119,8 @@ apps/server/src/
                           CommandIntent.ts + classify.ts + priors.ts (primary vs tool)
   runtimes/config.ts      runtime paths (~/.absence/runtimes.json)
   sessions/               SessionStore.ts  archive.ts (facade)
-                          storage/db.ts (SQLite ~/.absence/absence.db; legacy JSONL import)
+                          storage/db.ts (SQLite ~/.absence/absence.db; sessions, events, runs)
+                          storage/runs.ts (incremental run index for History)
                           storage/legacyPaths.ts (~/.absence/sessions)
   filesystem/             FileTree.ts  FileWatcher.ts (chokidar)
   events/                 EventBus.ts
@@ -365,7 +366,9 @@ Context usage, status, model and the file tree ride a separate
 | `GET` | `/api/projects` | List projects under the root (`?root=` to override) |
 | `GET` | `/api/sessions/history` | Saved sessions (Absence archives + Pi), newest first; `?path=` filters |
 | `POST` | `/api/sessions` | `{ projectPath, agent?, resume? }` → create or reopen a session |
-| `GET` | `/api/sessions/:id` | Session snapshot (session, files, chat, tree, newest 2,000 events; `?eventLimit=`; `eventsBefore`/`eventsHasMore` for older pages) |
+| `GET` | `/api/sessions/:id` | Session snapshot (session, files, chat, tree, run summaries, newest 2,000 events; `?eventLimit=`) |
+| `GET` | `/api/sessions/:id/runs` | Run summaries for History (no event payloads) |
+| `GET` | `/api/sessions/:id/runs/:index/events` | One run's summary and events, fetched when History selects it |
 | `GET` | `/api/sessions/:id/events?before=&limit=` | Persisted events page (`{ events, nextBefore, hasMore }`, oldest → newest; `before` is an exclusive seq cursor) |
 | `GET` | `/api/sessions/:id/file?path=` | Read a project file (the user view) |
 | `POST` | `/api/sessions/:id/prompt` | `{ prompt }` → send to the agent |

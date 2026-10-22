@@ -1,6 +1,7 @@
 import { useChatStore } from "./chatStore";
 import { useFileStore } from "./fileStore";
 import { useReplayStore } from "./replayStore";
+import { useRunsStore } from "./runsStore";
 import { useSessionStore } from "./sessionStore";
 import { useStageStore } from "./stageStore";
 import { useUiStore } from "./uiStore";
@@ -11,6 +12,7 @@ export function resetAllStores(): void {
   useFileStore.getState().reset();
   useChatStore.getState().reset();
   useReplayStore.getState().clear();
+  useRunsStore.getState().clear();
   useStageStore.getState().reset();
   useUiStore.getState().reset();
 }

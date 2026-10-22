@@ -1,22 +1,20 @@
-import { useEffect, useMemo, useRef } from "react";
-import type { HistoryRun } from "../../types/history";
-import { memoBuildHistory, runEvents } from "../../lib/history";
+import { useEffect, useRef } from "react";
+import type { RunSummary } from "@absence/core";
 import { formatClock, formatOffset } from "../../lib/format";
-import { useEvents, useIsObserved, useSessionStore } from "../../stores/sessionStore";
-import { useReplayStore } from "../../stores/replayStore";
-import { useStageStore } from "../../stores/stageStore";
+import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
+import { useRunsStore } from "../../stores/runsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useT } from "../../lib/i18n";
 import { Panel } from "../Panel";
 
-const STATUS_LABEL: Record<HistoryRun["status"], string> = {
+const STATUS_LABEL: Record<RunSummary["status"], string> = {
   running: "running",
   completed: "done",
   interrupted: "stopped",
   error: "error",
 };
 
-const STATUS_CLASS: Record<HistoryRun["status"], string> = {
+const STATUS_CLASS: Record<RunSummary["status"], string> = {
   running: "text-desk-amber",
   completed: "text-desk-teal",
   interrupted: "text-desk-dim",
@@ -26,41 +24,35 @@ const STATUS_CLASS: Record<HistoryRun["status"], string> = {
 /**
  * Left rail, middle: one row per run — prompt to completion/interruption.
  * Oldest first with the newest at the bottom, like a log.
+ *
+ * The rows come from the server's run index, not from the live event window.
+ * That is what lets History show every run in the session without loading the
+ * events: selecting one fetches only that run's Activity.
  */
 export function HistoryPanel() {
   const t = useT();
-  const events = useEvents();
+  const sessionId = useSessionStore((s) => s.session?.id);
   const selectedRunId = useUiStore((s) => s.selectedRunId);
   const selectRun = useUiStore((s) => s.selectRun);
-  const load = useReplayStore((s) => s.load);
   const observed = useIsObserved();
-  const eventsHasMore = useSessionStore((s) => s.eventsHasMore);
-  const loadingOlder = useSessionStore((s) => s.loadingOlder);
-  const loadOlderEvents = useSessionStore((s) => s.loadOlderEvents);
+  const runs = useRunsStore((s) => s.runs);
+  const loading = useRunsStore((s) => s.loading);
+  const loadRuns = useRunsStore((s) => s.loadRuns);
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const requestedFor = useRef<string | undefined>(undefined);
 
-  const runs = useMemo(() => memoBuildHistory(events), [events]);
+  // A snapshot carries the run list, but a direct start/resume can mount this
+  // panel before the socket snapshot arrives. Fetch once per session; a zero-run
+  // session must not trigger an endless loading loop.
+  useEffect(() => {
+    if (!sessionId || requestedFor.current === sessionId) return;
+    requestedFor.current = sessionId;
+    if (runs.length === 0) void loadRuns(sessionId);
+  }, [sessionId, runs.length, loadRuns]);
 
-  /**
-   * Run ids are positional (`run_1`, `run_2`, …), so prepending older runs
-   * renumbers them. Keep the user's selection on the same run by matching its
-   * opening time and prompt after the merge.
-   */
-  const loadOlder = async () => {
-    const selected = runs.find((run) => run.id === selectedRunId);
-    stickToBottom.current = false;
-    await loadOlderEvents();
-    if (!selected) return;
-    const next = memoBuildHistory(useSessionStore.getState().events);
-    const match = next.find(
-      (run) => run.startedAt === selected.startedAt && run.prompt === selected.prompt,
-    );
-    if (match) selectRun(match.id);
-  };
-
-  // Follow new runs only while the user is at the bottom. Loading older runs
-  // must not yank the list back to the newest one.
+  // Follow new runs only while the user is at the bottom; reading an older run
+  // must not be interrupted by the next one.
   useEffect(() => {
     const element = bodyRef.current;
     if (!element) return;
@@ -85,22 +77,13 @@ export function HistoryPanel() {
       bodyClassName="p-2"
       bodyRef={bodyRef}
     >
-      {eventsHasMore ? (
-        <button
-          type="button"
-          onClick={() => void loadOlder()}
-          disabled={loadingOlder}
-          className="mb-1.5 w-full rounded border border-desk-line px-2 py-1 text-[10px] uppercase tracking-wide text-desk-dim enabled:hover:border-desk-amber/60 enabled:hover:text-desk-amber disabled:opacity-40"
-        >
-          {loadingOlder ? t("loading…") : t("load older")}
-        </button>
-      ) : null}
-
       {runs.length === 0 ? (
         <p className="text-xs text-desk-dim">
-          {observed
-            ? t("No runs yet. A run starts when the observed agent does.")
-            : t("No runs yet. Send the agent a task.")}
+          {loading
+            ? t("loading…")
+            : observed
+              ? t("No runs yet. A run starts when the observed agent does.")
+              : t("No runs yet. Send the agent a task.")}
         </p>
       ) : (
         <ul className="space-y-1">
@@ -127,9 +110,6 @@ export function HistoryPanel() {
                       <span className="text-desk-dim/70">{formatClock(run.startedAt)}</span>
                       <span className={STATUS_CLASS[run.status]}>{t(STATUS_LABEL[run.status])}</span>
                       {run.partial ? (
-                        // The run's first events were trimmed out of the live
-                        // window. The row stays (History is a log) and says so,
-                        // rather than showing partial counts as the whole.
                         <span
                           className="text-desk-dim/70"
                           title={t(
@@ -152,7 +132,6 @@ export function HistoryPanel() {
                       <span title={t("commands run")}>$ {run.counts.run}</span>
                     </div>
                   </button>
-
                 </div>
               </li>
             );

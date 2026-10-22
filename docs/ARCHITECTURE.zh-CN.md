@@ -101,7 +101,8 @@ apps/server/src/
                           CommandIntent.ts + classify.ts + priors.ts（primary/tool）
   runtimes/config.ts      运行时路径（~/.absence/runtimes.json）
   sessions/               SessionStore.ts  archive.ts（门面）
-                          storage/db.ts（SQLite ~/.absence/absence.db；导入旧 JSONL）
+                          storage/db.ts（SQLite ~/.absence/absence.db；sessions、events、runs）
+                          storage/runs.ts（History 的增量 run 索引）
                           storage/legacyPaths.ts（~/.absence/sessions）
   filesystem/             FileTree.ts  FileWatcher.ts（chokidar）
   events/                 EventBus.ts
@@ -401,7 +402,9 @@ type AbsenceEventType =
 | `GET` | `/api/projects` | 列出根目录下的项目（`?root=` 覆盖） |
 | `GET` | `/api/sessions/history` | 保存的会话（Absence 归档 + Pi），最新在前；`?path=` 过滤 |
 | `POST` | `/api/sessions` | `{ projectPath, agent?, resume? }` → 创建或重开会话 |
-| `GET` | `/api/sessions/:id` | 会话快照（session、files、chat、tree、最新 2,000 条事件；`?eventLimit=`；`eventsBefore`/`eventsHasMore` 用于加载更早） |
+| `GET` | `/api/sessions/:id` | 会话快照（session、files、chat、tree、run 摘要、最新 2,000 条事件；`?eventLimit=`） |
+| `GET` | `/api/sessions/:id/runs` | History 的 run 摘要（不含事件 payload） |
+| `GET` | `/api/sessions/:id/runs/:index/events` | 选中某个 run 时获取它的摘要和事件 |
 | `GET` | `/api/sessions/:id/events?before=&limit=` | 持久化事件分页（`{ events, nextBefore, hasMore }`，页内按时间正序；`before` 是排他的 seq 游标） |
 | `GET` | `/api/sessions/:id/file?path=` | 读项目文件（用户视角） |
 | `POST` | `/api/sessions/:id/prompt` | `{ prompt }` → 发给 agent |

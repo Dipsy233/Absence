@@ -118,6 +118,38 @@ const run = async () => {
     assert("an invalid limit is rejected", bad.status === 400, `${bad.status}`);
   }
 
+  // 0b. run index API (History without event payloads)
+  {
+    const runList = (await (
+      await fetch(base + `/api/sessions/${snapshot.session.id}/runs`)
+    ).json()) as Array<{
+      index: number;
+      prompt: string;
+      status: string;
+      fromSeq: number;
+      toSeq: number;
+    }>;
+    assert("run index returns both runs", runList.length === 2, `${runList.length}`);
+    assert(
+      "run index carries prompts and ranges",
+      runList[0]?.prompt === "first task: tidy up" &&
+        runList[1]?.prompt === "second task: look around" &&
+        runList.every((run) => run.fromSeq > 0 && run.toSeq >= run.fromSeq),
+    );
+    assert("run index closes both runs", runList.every((run) => run.status === "completed"));
+
+    const firstRun = (await (
+      await fetch(base + `/api/sessions/${snapshot.session.id}/runs/1/events`)
+    ).json()) as { run: { index: number }; events: AbsenceEvent[] };
+    assert("run events are fetched on demand", firstRun.run.index === 1 && firstRun.events.length > 0, `${firstRun.events.length}`);
+    assert(
+      "run events start at the user message and end at agent_end",
+      firstRun.events[0]?.type === "message" &&
+        firstRun.events[0]?.payload.role === "user" &&
+        firstRun.events.at(-1)?.type === "agent_end",
+    );
+  }
+
   // 1. history runs
   const runs = buildHistory(events);
   console.log("--- history runs ---");

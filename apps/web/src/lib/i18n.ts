@@ -135,7 +135,6 @@ const ZH: Record<string, string> = {
   stopped: "已停止",
   error: "出错",
   partial: "不完整",
-  "load older": "加载更早",
   "The beginning of this run is no longer in the live event window — its counts and the Stage cover only what is still loaded.":
     "这次运行的开头已不在实时事件窗口内——计数和 Stage 只覆盖仍加载的部分。",
   "No runs yet. A run starts when the observed agent does.": "还没有运行。被观察的智能体开始工作时,一次运行就开始了。",

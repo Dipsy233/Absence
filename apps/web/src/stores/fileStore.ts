@@ -130,22 +130,17 @@ function buildFileViews(
 interface FileStore {
   tree?: FileTreeNode;
   files: Record<string, FileView>;
-  /** Current-state files from the last snapshot, for files no event mentioned. */
-  seedFiles: FileState[];
 
   setTree: (tree?: FileTreeNode) => void;
   ingest: (event: AbsenceEvent) => void;
   ingestEvents: (events: AbsenceEvent[]) => void;
   hydrate: (snapshot: SessionSnapshot) => void;
-  /** Rebuild versions from a longer event timeline (after loading older pages). */
-  rebuildFromEvents: (events: AbsenceEvent[]) => void;
   reset: () => void;
 }
 
 export const useFileStore = create<FileStore>((set, get) => ({
   tree: undefined,
   files: {},
-  seedFiles: [],
 
   setTree: (tree) => set({ tree }),
 
@@ -172,13 +167,8 @@ export const useFileStore = create<FileStore>((set, get) => ({
     set({
       tree: snapshot.tree,
       files: buildFileViews(snapshot.events, snapshot.files),
-      seedFiles: snapshot.files,
     });
   },
 
-  rebuildFromEvents: (events) => {
-    set({ files: buildFileViews(events, get().seedFiles) });
-  },
-
-  reset: () => set({ tree: undefined, files: {}, seedFiles: [] }),
+  reset: () => set({ tree: undefined, files: {} }),
 }));

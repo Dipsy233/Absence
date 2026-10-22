@@ -1,6 +1,8 @@
 import type {
+  AbsenceEvent,
   CommandOption,
   Project,
+  RunSummary,
   SessionEventPage,
   SessionHistoryEntry,
   SessionSnapshot,
@@ -91,6 +93,21 @@ export async function getSession(id: string): Promise<SessionSnapshot> {
 export async function fetchSessionHistory(path?: string): Promise<SessionHistoryEntry[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   return json<SessionHistoryEntry[]>(await fetch(`/api/sessions/history${query}`));
+}
+
+/** Run summaries for History (no event payloads). */
+export async function fetchRuns(sessionId: string): Promise<RunSummary[]> {
+  return json<RunSummary[]>(await fetch(`/api/sessions/${sessionId}/runs`));
+}
+
+/** The events belonging to one run, fetched only when it is selected. */
+export async function fetchRunEvents(
+  sessionId: string,
+  index: number,
+): Promise<{ run: RunSummary; events: AbsenceEvent[] }> {
+  return json<{ run: RunSummary; events: AbsenceEvent[] }>(
+    await fetch(`/api/sessions/${sessionId}/runs/${index}/events`),
+  );
 }
 
 /**

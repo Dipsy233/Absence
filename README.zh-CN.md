@@ -329,10 +329,10 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
   所以运行时版本是固定的（Electron `37.10.3`；Node `22.23.4` 见 `.nvmrc`/CI），
   所有 SQLite 调用都隔离在 `apps/server/src/sessions/storage/db.ts`。服务端只
   过滤 SQLite 这一条 experimental 警告，其他警告照常输出。
-- 会话快照只携带最新 **2,000 条事件**。更早的 Activity 通过
-  `GET /api/sessions/:id/events?before=&limit=` 按需加载；快照里的
-  `eventsBefore` / `eventsHasMore` 驱动 History 面板的 **加载更早** 按钮。
-  长会话首次连接因此不会一次性传输整个窗口。
+- 会话快照携带 **run 摘要**（用于 History）；只有 run 正在运行时才额外携带
+  最新 **2,000 条事件**（用于 live Activity）。选中历史 run 时只请求该 run
+  的事件（`GET /api/sessions/:id/runs/:index/events`），因此浏览长会话不会把
+  整个事件流加载进浏览器。
 - 会话**持久化到磁盘**，重启后还在。Pi 把模型的对话放在
   `~/.pi/agent/sessions/`；Absence 把 `AbsenceEvent` 流放在
   `~/.absence/absence.db`（SQLite，WAL；用 `ABSENCE_STATE_DIR` 覆盖根目录）。

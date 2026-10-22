@@ -5,7 +5,13 @@ import type { SessionHistoryEntry } from "@absence/core";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentKind } from "../config";
 import { config } from "../config";
-import { listArchives, readEventsPage, readMeta } from "../sessions/archive";
+import {
+  listArchives,
+  readEventsPage,
+  readMeta,
+  readRunEvents,
+  readRuns,
+} from "../sessions/archive";
 import { sessionStore, RuntimeUnavailableError } from "../sessions/SessionStore";
 import { toPosix } from "../util/paths";
 import { takeTerminalMirror } from "../sessions/terminalRegistry";
@@ -135,6 +141,33 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "eventLimit must be a positive integer" });
     }
     return session.snapshot({ eventLimit });
+  });
+
+  /**
+   * Run summaries for History. Small enough to send all at once for a normal
+   * session (tens of runs); the events for one run are fetched separately.
+   */
+  app.get("/api/sessions/:id/runs", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!sessionStore.get(id) && !(await readMeta("", id))) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    return readRuns(id);
+  });
+
+  /** One run's summary and events, by the 1-based index History shows. */
+  app.get("/api/sessions/:id/runs/:index/events", async (request, reply) => {
+    const { id, index } = request.params as { id: string; index: string };
+    const runIndex = parsePositiveInt(index);
+    if (runIndex === undefined) {
+      return reply.code(400).send({ error: "run index must be a positive integer" });
+    }
+    if (!sessionStore.get(id) && !(await readMeta("", id))) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    const run = (await readRuns(id)).find((candidate) => candidate.index === runIndex);
+    if (!run) return reply.code(404).send({ error: "run not found" });
+    return { run, events: await readRunEvents(id, run.fromSeq, run.toSeq) };
   });
 
   /**

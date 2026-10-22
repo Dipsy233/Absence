@@ -22,6 +22,8 @@ export {
   listArchives,
   readEvents,
   readEventsPage,
+  readRunEvents,
+  readRuns,
   readMeta,
   writeMeta,
 } from "./storage/db";

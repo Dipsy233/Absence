@@ -2,6 +2,7 @@
  * Shared domain types for Absence. Kept deliberately small for v0.1.
  */
 import type { AbsenceEvent } from "./events";
+import type { RunSummary } from "./runs";
 
 /** The agent's coarse state — drives the Avatar and status text. */
 export type AgentStatus =
@@ -258,10 +259,8 @@ export interface SessionSnapshot extends SessionRuntimeState {
   files: FileState[];
   chat: ChatMessage[];
   events: AbsenceEvent[];
-  /** Cursor for events older than `events[0]`, when `events` is a tail. */
-  eventsBefore?: number;
-  /** True when the store has older events beyond the snapshot tail. */
-  eventsHasMore?: boolean;
+  /** Run summaries for History; no event payloads. */
+  runs?: RunSummary[];
 }
 
 /**

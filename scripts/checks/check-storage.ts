@@ -24,6 +24,8 @@ import {
   listArchives,
   readEvents,
   readEventsPage,
+  readRunEvents,
+  readRuns,
   writeMeta,
 } from "../../apps/server/src/sessions/archive";
 import { check, finish, section } from "./harness";
@@ -84,6 +86,25 @@ section("legacy import");
   check("the envelope is rebuilt, not just the payload", first.id === "evt_user" && first.type === "message" && first.timestamp === startedAt + 1);
 }
 
+section("run index");
+{
+  const runs = await readRuns(legacyId);
+  check("the legacy run is indexed", runs.length === 1, `${runs.length} runs`);
+  check("the run carries its prompt", runs[0]?.prompt === "hello", runs[0]?.prompt);
+  check(
+    "the run covers its event range",
+    runs[0]?.fromSeq === 1 && runs[0]?.toSeq === 6,
+    `${runs[0]?.fromSeq}..${runs[0]?.toSeq}`,
+  );
+  check(
+    "the run counts its work",
+    runs[0]?.counts.edit === 1 && runs[0]?.counts.created === 1,
+    JSON.stringify(runs[0]?.counts),
+  );
+  const runEvents = await readRunEvents(legacyId, runs[0]!.fromSeq, runs[0]!.toSeq);
+  check("the run's events are fetched by range", runEvents.length === 4, `${runEvents.length}`);
+}
+
 section("new writes");
 {
   const id = "sess_new";
@@ -106,6 +127,8 @@ section("new writes");
   const events = await readEvents(project, id);
   check("a durable event round-trips", events.length === 1 && events[0]!.id === "evt_new_user", `${events.length}`);
   check("the session is listed", (await listArchives(project)).some((m) => m.absenceSessionId === id));
+  const newRuns = await readRuns(id);
+  check("a new run is indexed immediately", newRuns.length === 1 && newRuns[0]!.prompt === "roundtrip", `${newRuns.length}`);
   check(
     "history filters by project path",
     (await listArchives(project.replace(/\//g, "\\"))).some((m) => m.absenceSessionId === id),
@@ -140,6 +163,7 @@ section("reopen and re-import");
   check("re-import keeps one legacy row", metas.filter((m) => m.absenceSessionId === legacyId).length === 1);
   const events = await readEvents(project, legacyId);
   check("re-import does not duplicate events", events.length === 4, `${events.length} events`);
+  check("re-import rebuilds the run index", (await readRuns(legacyId)).length === 1);
 }
 
 closeArchive();

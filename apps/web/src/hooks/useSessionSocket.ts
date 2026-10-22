@@ -4,6 +4,7 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useFileStore } from "../stores/fileStore";
 import { useChatStore } from "../stores/chatStore";
 import { useStageStore } from "../stores/stageStore";
+import { useRunsStore } from "../stores/runsStore";
 import { useUiStore } from "../stores/uiStore";
 
 type ServerMessage =
@@ -12,6 +13,15 @@ type ServerMessage =
   | { type: "events"; events: AbsenceEvent[] }
   | { type: "session_state"; state: SessionRuntimeState }
   | { type: "error"; message: string };
+
+/** A user message opens a run; agent_end closes it. Both change History. */
+function isRunBoundary(events: AbsenceEvent[]): boolean {
+  return events.some(
+    (event) =>
+      event.type === "agent_end" ||
+      (event.type === "message" && event.payload.role === "user"),
+  );
+}
 
 /**
  * Opens the session websocket and fans each message out to the stores
@@ -56,6 +66,7 @@ export function useSessionSocket(sessionId: string | undefined): void {
             useSessionStore.getState().ingestEvent(message.event);
             useFileStore.getState().ingest(message.event);
             useChatStore.getState().ingest(message.event);
+            if (isRunBoundary([message.event])) void useRunsStore.getState().loadRuns(sessionId);
             break;
           case "events":
             // One store update per socket batch: the server already coalesced
@@ -63,6 +74,9 @@ export function useSessionSocket(sessionId: string | undefined): void {
             useSessionStore.getState().ingestEvents(message.events);
             useFileStore.getState().ingestEvents(message.events);
             useChatStore.getState().ingestEvents(message.events);
+            if (isRunBoundary(message.events)) {
+              void useRunsStore.getState().loadRuns(sessionId);
+            }
             break;
           case "session_state":
             useSessionStore.getState().applyRuntimeState(message.state);

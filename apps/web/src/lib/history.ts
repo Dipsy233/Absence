@@ -1,41 +1,16 @@
-import type { AbsenceEvent } from "@absence/core";
+import {
+  applyRunCount,
+  emptyRunCounts,
+  isObservedStream,
+  OBSERVED_OPENING_EVENT_TYPES,
+  type AbsenceEvent,
+  type RunCounts,
+} from "@absence/core";
 import type { ActivityRow } from "../types/stage";
 import { appendActivityRow, eventToActivityRow } from "./events";
-import type { HistoryRun, RunCounts } from "../types/history";
+import type { HistoryRun } from "../types/history";
 
-/** One event's contribution to a run's counts. */
-function applyCount(counts: RunCounts, event: AbsenceEvent, touched: Set<string>) {
-  switch (event.type) {
-    case "file_read":
-      counts.read += 1;
-      touched.add(event.payload.path);
-      break;
-    case "file_edit":
-      counts.edit += 1;
-      touched.add(event.payload.path);
-      break;
-    case "file_write": {
-      counts.edit += 1;
-      const path = event.payload.path;
-      // A write to a path nobody had seen before is a new file.
-      if (!touched.has(path)) counts.created += 1;
-      touched.add(path);
-      break;
-    }
-    case "file_change":
-      if (event.payload.kind === "created") counts.created += 1;
-      touched.add(event.payload.path);
-      break;
-    case "search":
-      counts.search += 1;
-      break;
-    case "command":
-      counts.run += 1;
-      break;
-    default:
-      break;
-  }
-}
+export { isObservedStream } from "@absence/core";
 
 /**
  * Group the event stream into runs (read02-style sessions split by user input).
@@ -83,15 +58,15 @@ export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
     from: index,
     prompt: observed ? "observed activity" : "",
     startedAt: timestamp,
-    counts: { read: 0, search: 0, edit: 0, run: 0, created: 0 },
+    counts: emptyRunCounts(),
     touched: new Set<string>(),
   });
 
   for (let i = 0; i < events.length; i++) {
     const event = events[i]!;
-    if (observed && !start && OPENING_EVENT_TYPES.has(event.type)) {
+    if (observed && !start && OBSERVED_OPENING_EVENT_TYPES.has(event.type)) {
       start = opening(i, event.timestamp);
-      applyCount(start.counts, event, start.touched);
+      applyRunCount(start.counts, event, start.touched);
       continue;
     }
     if (event.type === "message" && event.payload.role === "user") {
@@ -100,56 +75,19 @@ export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
         from: i,
         prompt: event.payload.content,
         startedAt: event.timestamp,
-        counts: { read: 0, search: 0, edit: 0, run: 0, created: 0 },
+        counts: emptyRunCounts(),
         touched: new Set(),
       };
     } else if (event.type === "agent_end" && start) {
       const reason = String(event.payload.reason);
       flush(i, event.timestamp, reason === "aborted" ? "interrupted" : reason === "error" ? "error" : "completed");
     } else if (start) {
-      applyCount(start.counts, event, start.touched);
+      applyRunCount(start.counts, event, start.touched);
     }
   }
 
   if (start) flush(events.length - 1, undefined, "running");
   return runs;
-}
-
-/**
- * Events that open a run in a session Absence only observes.
- *
- * Everything the OS reports about the agent's work qualifies; `message` and
- * `agent_start` are a driven runtime's, and cannot appear here. Kept small on
- * purpose: it answers "when did this start", not "what counts as activity".
- */
-const OPENING_EVENT_TYPES = new Set<AbsenceEvent["type"]>([
-  "process",
-  "file_change",
-  "file_write",
-  "file_edit",
-  "file_read",
-  "command",
-  "search",
-  "mcp",
-  "tool_start",
-  "thinking",
-]);
-
-/**
- * Whether this window is an observed session's.
- *
- * Deliberately inferred from the events rather than passed in: `buildHistory`
- * is called from the incremental memo, the Report and Replay, and threading a
- * session flag through all of them would put the same knowledge in four places.
- * The signal is unambiguous — a driven runtime always opens with
- * `agent_start`, and an observed session cannot produce one.
- */
-export function isObservedStream(events: AbsenceEvent[]): boolean {
-  for (const event of events) {
-    if (event.type === "agent_start") return false;
-    if (event.type === "message" && event.payload.role === "user") return false;
-  }
-  return events.length > 0;
 }
 
 /** The events belonging to a run, clamped to the live window. */
@@ -360,7 +298,7 @@ function rebase(entry: HistoryCache, base: number): void {
 }
 
 function applyEvent(entry: HistoryCache, event: AbsenceEvent, absoluteIndex: number) {
-  if (!entry.observed && OPENING_EVENT_TYPES.has(event.type) && !entry.open) {
+  if (!entry.observed && OBSERVED_OPENING_EVENT_TYPES.has(event.type) && !entry.open) {
     // Observe mode: the first event after the last run opens it. See
     // buildHistory for why a watched agent cannot open a run with a prompt.
     // A driven runtime's marker below flips `observed` and reopens the run with
@@ -369,10 +307,10 @@ function applyEvent(entry: HistoryCache, event: AbsenceEvent, absoluteIndex: num
       prompt: "observed activity",
       startedAt: event.timestamp,
       fromIndex: absoluteIndex,
-      counts: { read: 0, search: 0, edit: 0, run: 0, created: 0 },
+      counts: emptyRunCounts(),
       touched: new Set(),
     };
-    applyCount(entry.open.counts, event, entry.open.touched);
+    applyRunCount(entry.open.counts, event, entry.open.touched);
     return;
   }
   if (event.type === "message" && event.payload.role === "user") {
@@ -382,7 +320,7 @@ function applyEvent(entry: HistoryCache, event: AbsenceEvent, absoluteIndex: num
       prompt: event.payload.content,
       startedAt: event.timestamp,
       fromIndex: absoluteIndex,
-      counts: { read: 0, search: 0, edit: 0, run: 0, created: 0 },
+      counts: emptyRunCounts(),
       touched: new Set(),
     };
     return;
@@ -404,7 +342,7 @@ function applyEvent(entry: HistoryCache, event: AbsenceEvent, absoluteIndex: num
     );
     return;
   }
-  applyCount(entry.open.counts, event, entry.open.touched);
+  applyRunCount(entry.open.counts, event, entry.open.touched);
 }
 
 function closeOpen(

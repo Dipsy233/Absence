@@ -2,9 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import { isStreamingEvent, type AbsenceEvent, type SessionEventPage } from "@absence/core";
+import {
+  isStreamingEvent,
+  type AbsenceEvent,
+  type RunSummary,
+  type SessionEventPage,
+} from "@absence/core";
 import { toPosix } from "../../util/paths";
 import { eventsFile, sessionsRoot, stateRoot } from "./legacyPaths";
+import { ensureRunsMigrated, RunIndex, type RunEvent } from "./runs";
 
 /**
  * ABSENCE's session store.
@@ -78,7 +84,11 @@ const SCHEMA_VERSION = 1;
 const FLUSH_MS = 50;
 
 let database: DatabaseSyncType | undefined;
-let pending = new Map<string, { cwd: string; events: AbsenceEvent[] }>();
+let runIndex: RunIndex | undefined;
+let pending = new Map<
+  string,
+  { cwd: string; events: AbsenceEvent[]; observed: boolean }
+>();
 let flushTimer: NodeJS.Timeout | undefined;
 /** Next `seq` per session, cached so a batch does not re-query MAX(seq). */
 const nextSeq = new Map<string, number>();
@@ -132,10 +142,27 @@ function open(): DatabaseSyncType {
     CREATE INDEX IF NOT EXISTS idx_events_type ON events(session_id, type, ts);
     CREATE INDEX IF NOT EXISTS idx_events_ts ON events(session_id, ts);
 
+    CREATE TABLE IF NOT EXISTS runs (
+      session_id  TEXT NOT NULL,
+      run_index   INTEGER NOT NULL,
+      from_seq    INTEGER NOT NULL,
+      to_seq      INTEGER NOT NULL,
+      prompt      TEXT NOT NULL,
+      started_at  INTEGER NOT NULL,
+      ended_at    INTEGER,
+      status      TEXT NOT NULL,
+      counts_json TEXT NOT NULL,
+      PRIMARY KEY (session_id, run_index)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runs_session ON runs(session_id, run_index);
+
     PRAGMA user_version = ${SCHEMA_VERSION};
   `);
   try {
     importLegacyArchives(db);
+    const index = new RunIndex(db);
+    ensureRunsMigrated(db, index);
+    runIndex = index;
   } catch (error) {
     // Leave no half-open database behind: the next call must retry the import.
     db.close();
@@ -366,16 +393,23 @@ export async function writeMeta(cwd: string, meta: ArchiveMeta): Promise<void> {
   }
 }
 
-export function appendEvents(cwd: string, id: string, events: AbsenceEvent[]): void {
+export function appendEvents(
+  cwd: string,
+  id: string,
+  events: AbsenceEvent[],
+  options: { observed?: boolean } = {},
+): void {
   const durable = events.filter((event) => !isStreamingEvent(event));
   if (durable.length === 0) return;
   const projectPath = toPosix(path.resolve(cwd));
+  const observed = options.observed === true;
   const entry = pending.get(id);
   if (entry) {
     entry.cwd = projectPath;
+    entry.observed = observed;
     entry.events.push(...durable);
   } else {
-    pending.set(id, { cwd: projectPath, events: durable });
+    pending.set(id, { cwd: projectPath, events: durable, observed });
   }
   scheduleFlush();
 }
@@ -439,6 +473,7 @@ function flushPending(): void {
         const row = maxSeq.get(id) as { next?: number } | undefined;
         seq = Number(row?.next ?? 1);
       }
+      const runEvents: RunEvent[] = [];
       for (const event of entry.events) {
         insertEvent.run(
           id,
@@ -448,8 +483,10 @@ function flushPending(): void {
           event.type,
           JSON.stringify(event.payload),
         );
+        runEvents.push({ seq, event });
         seq += 1;
       }
+      runIndex?.ingest(id, entry.observed, runEvents);
       committed.set(id, seq);
       touch.run(entry.events[entry.events.length - 1]!.timestamp, id);
     }
@@ -461,6 +498,9 @@ function flushPending(): void {
     } catch {
       // Nothing useful to add; the write error below is the cause.
     }
+    // The in-memory run accumulator may be ahead of the rolled-back rows.
+    // Dropping it makes the next write reload from the table.
+    runIndex?.reset();
     console.error("[absence] sqlite event write failed:", error);
   }
 }
@@ -575,10 +615,52 @@ export async function listArchives(cwd?: string): Promise<ArchiveMeta[]> {
   return rows.map(rowToMeta).filter((meta): meta is ArchiveMeta => meta !== undefined);
 }
 
+/** Run summaries for History, oldest first. */
+export async function readRuns(id: string): Promise<RunSummary[]> {
+  flushPending();
+  try {
+    return runIndex?.list(id) ?? [];
+  } catch (error) {
+    console.error("[absence] sqlite run read failed:", error);
+    return [];
+  }
+}
+
+/** The events belonging to one run, by its inclusive seq range. */
+export async function readRunEvents(
+  id: string,
+  fromSeq: number,
+  toSeq: number,
+): Promise<AbsenceEvent[]> {
+  flushPending();
+  let rows: SqlRow[];
+  try {
+    rows = open()
+      .prepare(
+        "SELECT id, ts, type, payload FROM events WHERE session_id = ? AND seq BETWEEN ? AND ? ORDER BY seq ASC",
+      )
+      .all(id, fromSeq, toSeq) as SqlRow[];
+  } catch (error) {
+    console.error("[absence] sqlite run event read failed:", error);
+    return [];
+  }
+  const events: AbsenceEvent[] = [];
+  for (const row of rows) {
+    try {
+      events.push(eventFromRow(id, row));
+    } catch {
+      // Skip a row written by an older/broken version.
+    }
+  }
+  return events;
+}
+
 /** Close the database (tests, and a clean process shutdown). */
 export function closeArchive(): void {
   flushPending();
   database?.close();
   database = undefined;
+  runIndex?.reset();
+  runIndex = undefined;
   nextSeq.clear();
 }

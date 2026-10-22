@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { isAgentBusy, type AbsenceEvent } from "@absence/core";
 import { useNow } from "../../hooks/useNow";
-import { memoBuildHistory, pickRun } from "../../lib/history";
+
 import { eventToStageItem } from "../../lib/events";
 import { buildRunFacts, renderLive, renderRun } from "../../lib/report";
 import { formatOffset } from "../../lib/format";
-import { useEvents, useSessionStore } from "../../stores/sessionStore";
+import { useSessionStore } from "../../stores/sessionStore";
+import { useSelectedRun } from "../../hooks/useSelectedRun";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useT } from "../../lib/i18n";
@@ -31,9 +32,8 @@ import type {
  */
 export function ReportOverlay() {
   const t = useT();
-  const events = useEvents();
+  const { run, events, loading } = useSelectedRun();
   const status = useSessionStore((s) => s.agent.status);
-  const selectedRunId = useUiStore((s) => s.selectedRunId);
   const reportOpen = useUiStore((s) => s.reportOpen);
   const commandFailThreshold = useSettingsStore((s) => s.commandFailThreshold);
   const commandFailLevel = useSettingsStore((s) => s.commandFailLevel);
@@ -44,9 +44,6 @@ export function ReportOverlay() {
   const toggleReport = useUiStore((s) => s.toggleReport);
   const selectRun = useUiStore((s) => s.selectRun);
   const focusEvent = useUiStore((s) => s.focusEvent);
-
-  const runs = useMemo(() => memoBuildHistory(events), [events]);
-  const run = pickRun(runs, selectedRunId);
 
   // Skip the reduction while the layer is closed so live events stay cheap.
   const attentionOptions = useMemo(
@@ -61,8 +58,11 @@ export function ReportOverlay() {
     [commandFailThreshold, commandFailLevel, commandStreakThreshold, commandStreakLevel, activityStallThreshold, activityStallLevel],
   );
   const facts = useMemo(
-    () => (reportOpen && run ? buildRunFacts(events, run, attentionOptions) : undefined),
-    [reportOpen, events, run, attentionOptions],
+    () =>
+      reportOpen && run && !loading
+        ? buildRunFacts(events, run, attentionOptions)
+        : undefined,
+    [reportOpen, events, run, loading, attentionOptions],
   );
   const running = run?.status === "running";
   // Ticks once a second so a stalled run re-renders and can cross the threshold.

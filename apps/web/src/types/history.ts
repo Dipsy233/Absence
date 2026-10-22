@@ -1,4 +1,6 @@
-import type { AbsenceEvent } from "@absence/core";
+import type { AbsenceEvent, RunCounts } from "@absence/core";
+
+export type { RunCounts } from "@absence/core";
 
 /**
  * One "run": from the user's prompt until the agent finished replying or the
@@ -23,15 +25,6 @@ export interface HistoryRun {
    * counts and Stage content are partial. See `rebase` in lib/history.
    */
   partial?: boolean;
-}
-
-export interface RunCounts {
-  read: number;
-  search: number;
-  edit: number;
-  run: number;
-  /** Files created during this run. */
-  created: number;
 }
 
 export type { AbsenceEvent };

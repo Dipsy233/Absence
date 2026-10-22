@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   createEvent,
+  isAgentBusy,
   isStreamingEvent,
   MAX_SESSION_EVENTS,
   type AgentStatus,
@@ -18,7 +19,14 @@ import {
   type SessionStatsInfo,
 } from "@absence/core";
 import { config, type AgentKind } from "../config";
-import { appendEvents, drainArchive, readEvents, readEventsPage, writeMeta } from "./archive";
+import {
+  appendEvents,
+  drainArchive,
+  readEvents,
+  readEventsPage,
+  readRuns,
+  writeMeta,
+} from "./archive";
 import { EventBus } from "../events";
 import type { AgentAdapter } from "../agents/AgentAdapter";
 import { TerminalMirror } from "./TerminalMirror";
@@ -785,22 +793,25 @@ export class AbsenceSession {
       Math.max(Math.trunc(options.eventLimit ?? SNAPSHOT_EVENT_LIMIT), 1),
       SNAPSHOT_EVENT_LIMIT,
     );
-    let events: AbsenceEvent[];
-    let eventsBefore: number | undefined;
-    let eventsHasMore = false;
-
-    if (this.events.length < limit) {
-      events = [...this.events];
-    } else {
-      const page = await readEventsPage(this.id, { limit });
-      if (page.events.length > 0) {
-        events = page.events;
-        eventsBefore = page.nextBefore;
-        eventsHasMore = page.hasMore;
+    const runs = await readRuns(this.id);
+    // Events are only needed while a run is live: History and a settled run's
+    // Activity come from the run index. Sending a tail for a finished session
+    // would be bytes the client immediately replaces with the selected run.
+    const live =
+      isAgentBusy(this.session.status) || runs[runs.length - 1]?.status === "running";
+    let events: AbsenceEvent[] = [];
+    if (live) {
+      if (this.events.length < limit) {
+        events = [...this.events];
       } else {
-        // The store is empty or unavailable (a brand-new session, or a storage
-        // failure). Fall back to the live tail; there is no cursor to page with.
-        events = this.events.slice(-limit);
+        const page = await readEventsPage(this.id, { limit });
+        if (page.events.length > 0) {
+          events = page.events;
+        } else {
+          // The store is empty or unavailable (a brand-new session, or a
+          // storage failure). Fall back to the live tail.
+          events = this.events.slice(-limit);
+        }
       }
     }
 
@@ -810,8 +821,7 @@ export class AbsenceSession {
       files: [...this.files.values()],
       chat: [...this.chat],
       events,
-      ...(eventsBefore !== undefined ? { eventsBefore } : {}),
-      ...(eventsHasMore ? { eventsHasMore: true } : {}),
+      runs,
     };
   }
 
@@ -860,7 +870,9 @@ export class AbsenceSession {
     // one reply and makes resume replay every prefix. The final non-streaming
     // event carries the whole value, so that is what the archive keeps.
     if (!isStreamingEvent(event)) {
-      appendEvents(this.session.projectPath, this.id, [event]);
+      appendEvents(this.session.projectPath, this.id, [event], {
+        observed: this.observe !== undefined,
+      });
     }
     this.scheduleMeta();
   }
