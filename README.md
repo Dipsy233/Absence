@@ -354,7 +354,9 @@ port to the public internet.
 
 - Sessions **persist to disk** and survive a restart. Pi keeps the model's
   conversation under `~/.pi/agent/sessions/`; Absence keeps the `AbsenceEvent` stream
-  under `~/.absence/sessions/` (override with `ABSENCE_STATE_DIR`). The picker's
+  in `~/.absence/absence.db` (SQLite, WAL; override the root with
+  `ABSENCE_STATE_DIR`). An older JSONL archive under `~/.absence/sessions/` is
+  imported once on first start and left in place as a backup. The picker's
   **History** reopens either: Absence's archive restores the Stage, Activity,
   files and chat; Pi's restores the model's context. Codex sessions resume through
   `thread/resume` (Absence stores the thread id). Histories live under the

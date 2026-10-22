@@ -313,6 +313,23 @@ export function createEvent<K extends AbsenceEventType>(
 }
 
 /**
+ * True for the throttled live view of a value the runtime re-sends in full:
+ * `message` / `thinking` with `streaming: true`.
+ *
+ * These are useful over the socket (the UI redraws the partial text) but are
+ * not durable facts: each one carries the whole value so far, so storing every
+ * update is quadratic in the size of a reply. The archive stores the final
+ * non-streaming event instead. Shared by the writer and the legacy importer so
+ * both make the same cut.
+ */
+export function isStreamingEvent(event: AbsenceEvent): boolean {
+  return (
+    (event.type === "message" || event.type === "thinking") &&
+    event.payload.streaming === true
+  );
+}
+
+/**
  * How many events one session keeps in memory. The server and the web client
  * must agree: a larger client window than the server's is a lie — the client
  * would cache the tail of an already-truncated stream and quietly show less

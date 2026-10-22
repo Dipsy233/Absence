@@ -100,7 +100,9 @@ apps/server/src/
                           EbpfObserver.ts（Linux 内核事件）
                           CommandIntent.ts + classify.ts + priors.ts（primary/tool）
   runtimes/config.ts      运行时路径（~/.absence/runtimes.json）
-  sessions/               SessionStore.ts  archive.ts（~/.absence/sessions）
+  sessions/               SessionStore.ts  archive.ts（门面）
+                          storage/db.ts（SQLite ~/.absence/absence.db；导入旧 JSONL）
+                          storage/legacyPaths.ts（~/.absence/sessions）
   filesystem/             FileTree.ts  FileWatcher.ts（chokidar）
   events/                 EventBus.ts
   websocket/ws.ts   api/{projects,sessions,runtimes,sounds,avatarSkins,eggFilter}.ts

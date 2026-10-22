@@ -13,6 +13,7 @@ import { runtimeRoutes } from "./api/runtimes";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
 import { applyRuntimePaths } from "./runtimes/config";
+import { closeArchive } from "./sessions/archive";
 
 export interface StartServerOptions {
   /** Port to listen on. `0` lets the OS pick a free one (the desktop shell). */
@@ -126,7 +127,11 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
     port: actualPort,
     host,
     url,
-    close: () => app.close(),
+    close: async () => {
+      await app.close();
+      // Flush the 50ms write buffer and checkpoint WAL on a clean shutdown.
+      closeArchive();
+    },
   };
 }
 

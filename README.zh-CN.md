@@ -326,8 +326,10 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
 ## 注记与限制
 
 - 会话**持久化到磁盘**，重启后还在。Pi 把模型的对话放在
-  `~/.pi/agent/sessions/`；Absence 把 `AbsenceEvent` 流放在 `~/.absence/sessions/`
-  （用 `ABSENCE_STATE_DIR` 覆盖）。选择器的 **History** 两种都能重开。Codex 会话
+  `~/.pi/agent/sessions/`；Absence 把 `AbsenceEvent` 流放在
+  `~/.absence/absence.db`（SQLite，WAL；用 `ABSENCE_STATE_DIR` 覆盖根目录）。
+  旧的 `~/.absence/sessions/` JSONL 归档会在首次启动时导入一次，并保留作为备份。
+  选择器的 **History** 两种都能重开。Codex 会话
   通过 `thread/resume` 恢复（Absence 保存 thread id）。历史保存在各平台的
   家目录下；把 `ABSENCE_STATE_DIR` 指到同一个共享路径可以合并——但绝不要
   两边同时对同一个文件跑。

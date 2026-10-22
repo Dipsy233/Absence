@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   createEvent,
+  isStreamingEvent,
   MAX_SESSION_EVENTS,
   type AgentStatus,
   type CapabilityState,
@@ -250,7 +251,7 @@ export class AbsenceSession {
       (kind, abs) => this.onFsChange(kind, abs),
       (kind, abs) => this.onOutsideFsChange(kind, abs),
     );
-    this.watcher.start();
+    await this.watcher.start();
 
     // The agent's own transcript. This is a poll over a file that only grows
     // when a tool call happens — nothing like enumerating the process table.
@@ -367,7 +368,7 @@ export class AbsenceSession {
       (kind, abs) => this.onFsChange(kind, abs),
       (kind, abs) => this.onOutsideFsChange(kind, abs),
     );
-    this.watcher.start();
+    await this.watcher.start();
 
     await this.flushMeta();
     this.scheduleState();
@@ -1178,18 +1179,6 @@ export class AbsenceSession {
       });
     }, 500);
   }
-}
-
-/**
- * True for the throttled live view of a value that the runtime re-sends in
- * full: `message`/`thinking` with `streaming: true`. The archive keeps only
- * the final non-streaming event (see SessionStore.persist).
- */
-function isStreamingEvent(event: AbsenceEvent): boolean {
-  return (
-    (event.type === "message" || event.type === "thinking") &&
-    event.payload.streaming === true
-  );
 }
 
 function statusForTool(toolName: string): AgentStatus {

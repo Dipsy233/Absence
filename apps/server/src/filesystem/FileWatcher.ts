@@ -38,7 +38,15 @@ export class FileWatcher {
     private readonly onOutsideChange?: (kind: FsChangeKind, absolutePath: string) => void,
   ) {}
 
-  start(): void {
+  /**
+   * Start watching and resolve once chokidar has finished its initial scan.
+   *
+   * `ignoreInitial` means no events are emitted for existing files, but a write
+   * that lands before the scan completes is still missed. Awaiting `ready` makes
+   * "the session has started" mean "changes from now on are observed", which is
+   * what callers (and the fsdiff check) assume.
+   */
+  async start(): Promise<void> {
     this.watcher = chokidar.watch(this.cwd, {
       ignoreInitial: true,
       depth: 8,
@@ -74,6 +82,8 @@ export class FileWatcher {
       this.outside.on("change", (p) => this.onOutsideChange!("modified", p));
       this.outside.on("unlink", (p) => this.onOutsideChange!("deleted", p));
     }
+
+    await Promise.all([whenReady(this.watcher), whenReady(this.outside)]);
   }
 
   async close(): Promise<void> {
@@ -82,6 +92,17 @@ export class FileWatcher {
     this.watcher = undefined;
     this.outside = undefined;
   }
+}
+
+/** Resolve when a chokidar watcher has completed its initial scan. */
+function whenReady(watcher: FSWatcher | undefined): Promise<void> {
+  if (!watcher) return Promise.resolve();
+  return new Promise((resolve) => {
+    // `error` also resolves: a watcher that cannot start must not wedge the
+    // session, and the rest of Absence degrades to tool events as before.
+    watcher.once("ready", () => resolve());
+    watcher.once("error", () => resolve());
+  });
 }
 
 export { isIgnoredDir };

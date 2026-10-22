@@ -118,7 +118,9 @@ apps/server/src/
                           EbpfObserver.ts (Linux kernel events)
                           CommandIntent.ts + classify.ts + priors.ts (primary vs tool)
   runtimes/config.ts      runtime paths (~/.absence/runtimes.json)
-  sessions/               SessionStore.ts  archive.ts (~/.absence/sessions)
+  sessions/               SessionStore.ts  archive.ts (facade)
+                          storage/db.ts (SQLite ~/.absence/absence.db; legacy JSONL import)
+                          storage/legacyPaths.ts (~/.absence/sessions)
   filesystem/             FileTree.ts  FileWatcher.ts (chokidar)
   events/                 EventBus.ts
   websocket/ws.ts   api/{projects,sessions,runtimes,sounds,avatarSkins,eggFilter}.ts

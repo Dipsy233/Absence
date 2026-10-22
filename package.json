@@ -24,6 +24,7 @@
     "check:shellenv": "tsx scripts/checks/check-shellenv.ts",
     "check:codexshell": "tsx scripts/checks/check-codexshell.ts",
     "check:fsdiff": "tsx scripts/checks/check-fsdiff.ts",
+    "check:storage": "tsx scripts/checks/check-storage.ts",
     "check:agentwatch": "tsx scripts/checks/check-agentwatch.ts",
     "check:ebpf": "tsx scripts/checks/check-ebpf.ts",
     "check:history": "tsx scripts/checks/check-history.ts",
