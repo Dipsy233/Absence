@@ -24,6 +24,7 @@ import {
   listArchives,
   readEvents,
   readEventsPage,
+  readFileVersions,
   readRunEvents,
   readRuns,
   writeMeta,
@@ -132,6 +133,44 @@ section("new writes");
   check(
     "history filters by project path",
     (await listArchives(project.replace(/\//g, "\\"))).some((m) => m.absenceSessionId === id),
+  );
+}
+
+section("file index");
+{
+  const id = "sess_files";
+  await writeMeta(project, {
+    version: 1,
+    absenceSessionId: id,
+    projectPath: project,
+    projectName: "project",
+    startedAt: startedAt + 20,
+    updatedAt: startedAt + 23,
+    runtime: "mock",
+    messageCount: 0,
+  });
+  appendEvents(project, id, [
+    event("evt_file_read", "file_read", { path: "f.txt", startLine: 1, endLine: 1, content: "one" }, startedAt + 20),
+    event("evt_file_write", "file_write", { path: "f.txt", content: "one\ntwo\n" }, startedAt + 21),
+    event("evt_file_edit", "file_edit", { path: "f.txt", before: "one\ntwo\n", after: "one\ntwo\nthree\n", diff: "" }, startedAt + 22),
+  ]);
+  await drainArchive();
+  const versions = await readFileVersions(id);
+  check("file versions are indexed", versions.length === 3, `${versions.length}`);
+  check(
+    "a read becomes a partial v0",
+    versions[0]?.version === 0 && versions[0]?.source === "read" && versions[0]?.complete === false,
+    JSON.stringify(versions[0]),
+  );
+  check(
+    "a write appends a complete version",
+    versions[1]?.version === 1 && versions[1]?.source === "write" && versions[1]?.content === "one\ntwo\n",
+    JSON.stringify(versions[1]),
+  );
+  check(
+    "an edit appends the next version",
+    versions[2]?.version === 2 && versions[2]?.source === "edit" && versions[2]?.content === "one\ntwo\nthree\n",
+    JSON.stringify(versions[2]),
   );
 }
 

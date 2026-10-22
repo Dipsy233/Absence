@@ -1,6 +1,7 @@
 import type {
   AbsenceEvent,
   CommandOption,
+  FileVersionInfo,
   Project,
   RunSummary,
   SessionEventPage,
@@ -93,6 +94,11 @@ export async function getSession(id: string): Promise<SessionSnapshot> {
 export async function fetchSessionHistory(path?: string): Promise<SessionHistoryEntry[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   return json<SessionHistoryEntry[]>(await fetch(`/api/sessions/history${query}`));
+}
+
+/** Every recorded file version for a session, independent of the event window. */
+export async function fetchFileVersions(sessionId: string): Promise<FileVersionInfo[]> {
+  return json<FileVersionInfo[]>(await fetch(`/api/sessions/${sessionId}/file-versions`));
 }
 
 /** Run summaries for History (no event payloads). */

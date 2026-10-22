@@ -357,6 +357,10 @@ port to the public internet.
   `22.23.4` in `.nvmrc`/CI) and every SQLite call is isolated in
   `apps/server/src/sessions/storage/db.ts`. The server filters only the SQLite
   experimental warning; other warnings still print.
+- File versions are their own index (`GET /api/sessions/:id/file-versions`),
+  not a by-product of History. Agent Folder and File History keep every version
+  the agent held, and diffs compare two recorded versions, even in a finished
+  session.
 - A session snapshot carries the **run summaries** for History; while a run is
   live it also carries the newest **2,000 events** for Activity. Selecting a
   historical run fetches only that run's events

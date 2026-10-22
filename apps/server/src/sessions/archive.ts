@@ -20,6 +20,7 @@ export {
   closeArchive,
   drainArchive,
   listArchives,
+  readFileVersions,
   readEvents,
   readEventsPage,
   readRunEvents,

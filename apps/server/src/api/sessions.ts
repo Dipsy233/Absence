@@ -8,6 +8,7 @@ import { config } from "../config";
 import {
   listArchives,
   readEventsPage,
+  readFileVersions,
   readMeta,
   readRunEvents,
   readRuns,
@@ -141,6 +142,18 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "eventLimit must be a positive integer" });
     }
     return session.snapshot({ eventLimit });
+  });
+
+  /**
+   * The file-version index: every version the agent held, independent of the
+   * event window. Agent Folder and File History read this directly.
+   */
+  app.get("/api/sessions/:id/file-versions", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!sessionStore.get(id) && !(await readMeta("", id))) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    return readFileVersions(id);
   });
 
   /**

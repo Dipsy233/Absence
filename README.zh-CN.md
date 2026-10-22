@@ -329,6 +329,9 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
   所以运行时版本是固定的（Electron `37.10.3`；Node `22.23.4` 见 `.nvmrc`/CI），
   所有 SQLite 调用都隔离在 `apps/server/src/sessions/storage/db.ts`。服务端只
   过滤 SQLite 这一条 experimental 警告，其他警告照常输出。
+- 文件版本有独立的索引（`GET /api/sessions/:id/file-versions`），不再依赖
+  History。Agent Folder 和 File History 保留 agent 持有的每个版本，Diff 比较
+  两个已记录版本；已完成的 session 也一样。
 - 会话快照携带 **run 摘要**（用于 History）；只有 run 正在运行时才额外携带
   最新 **2,000 条事件**（用于 live Activity）。选中历史 run 时只请求该 run
   的事件（`GET /api/sessions/:id/runs/:index/events`），因此浏览长会话不会把

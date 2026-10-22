@@ -5,11 +5,13 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import {
   isStreamingEvent,
   type AbsenceEvent,
+  type FileVersionInfo,
   type RunSummary,
   type SessionEventPage,
 } from "@absence/core";
 import { toPosix } from "../../util/paths";
 import { eventsFile, sessionsRoot, stateRoot } from "./legacyPaths";
+import { ensureFileVersionsMigrated, FileIndex } from "./files";
 import { ensureRunsMigrated, RunIndex, type RunEvent } from "./runs";
 
 /**
@@ -85,6 +87,7 @@ const FLUSH_MS = 50;
 
 let database: DatabaseSyncType | undefined;
 let runIndex: RunIndex | undefined;
+let fileIndex: FileIndex | undefined;
 let pending = new Map<
   string,
   { cwd: string; events: AbsenceEvent[]; observed: boolean }
@@ -156,13 +159,33 @@ function open(): DatabaseSyncType {
     );
     CREATE INDEX IF NOT EXISTS idx_runs_session ON runs(session_id, run_index);
 
+    CREATE TABLE IF NOT EXISTS file_versions (
+      session_id       TEXT NOT NULL,
+      path             TEXT NOT NULL,
+      version          INTEGER NOT NULL,
+      ts               INTEGER NOT NULL,
+      source           TEXT NOT NULL,
+      complete         INTEGER NOT NULL,
+      content          TEXT NOT NULL,
+      line_offset      INTEGER NOT NULL DEFAULT 0,
+      start_line       INTEGER,
+      end_line         INTEGER,
+      caption          TEXT,
+      known_lines_json TEXT,
+      PRIMARY KEY (session_id, path, version)
+    );
+    CREATE INDEX IF NOT EXISTS idx_file_versions_path ON file_versions(session_id, path, version);
+
     PRAGMA user_version = ${SCHEMA_VERSION};
   `);
   try {
     importLegacyArchives(db);
-    const index = new RunIndex(db);
-    ensureRunsMigrated(db, index);
-    runIndex = index;
+    const runs = new RunIndex(db);
+    ensureRunsMigrated(db, runs);
+    const files = new FileIndex(db);
+    ensureFileVersionsMigrated(db, files);
+    runIndex = runs;
+    fileIndex = files;
   } catch (error) {
     // Leave no half-open database behind: the next call must retry the import.
     db.close();
@@ -487,6 +510,7 @@ function flushPending(): void {
         seq += 1;
       }
       runIndex?.ingest(id, entry.observed, runEvents);
+      fileIndex?.ingest(id, entry.events);
       committed.set(id, seq);
       touch.run(entry.events[entry.events.length - 1]!.timestamp, id);
     }
@@ -501,6 +525,7 @@ function flushPending(): void {
     // The in-memory run accumulator may be ahead of the rolled-back rows.
     // Dropping it makes the next write reload from the table.
     runIndex?.reset();
+    fileIndex?.reset();
     console.error("[absence] sqlite event write failed:", error);
   }
 }
@@ -655,6 +680,17 @@ export async function readRunEvents(
   return events;
 }
 
+/** Every recorded file version for a session, independent of the event window. */
+export async function readFileVersions(id: string): Promise<FileVersionInfo[]> {
+  flushPending();
+  try {
+    return fileIndex?.list(id) ?? [];
+  } catch (error) {
+    console.error("[absence] sqlite file version read failed:", error);
+    return [];
+  }
+}
+
 /** Close the database (tests, and a clean process shutdown). */
 export function closeArchive(): void {
   flushPending();
@@ -662,5 +698,7 @@ export function closeArchive(): void {
   database = undefined;
   runIndex?.reset();
   runIndex = undefined;
+  fileIndex?.reset();
+  fileIndex = undefined;
   nextSeq.clear();
 }

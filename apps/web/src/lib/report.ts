@@ -25,7 +25,7 @@ import type {
   TimelineNode,
 } from "../types/report";
 import { countDiff, eventPath, firstLine } from "./events";
-import { contiguousRanges, renderKnownLines } from "./knownLines";
+import { contiguousRanges, renderKnownLines } from "@absence/core";
 
 /**
  * The Absence Report engine.

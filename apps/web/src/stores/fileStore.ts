@@ -2,7 +2,8 @@ import { create } from "zustand";
 import type { AbsenceEvent, FileState, FileTreeNode, SessionSnapshot } from "@absence/core";
 import type { FileVersion, FileView } from "../types/file";
 import { languageFromPath } from "../lib/language";
-import { renderKnownState } from "../lib/knownLines";
+import { renderKnownState, type FileVersionInfo } from "@absence/core";
+import * as api from "../lib/api";
 
 function emptyView(path: string): FileView {
   return {
@@ -127,6 +128,21 @@ function buildFileViews(
   return files;
 }
 
+/** Convert a stored version into the view model the file panels use. */
+function versionFromInfo(info: FileVersionInfo): FileVersion {
+  return {
+    version: info.version,
+    timestamp: info.timestamp,
+    source: info.source,
+    content: info.content,
+    complete: info.complete,
+    lineOffset: info.lineOffset,
+    startLine: info.startLine,
+    endLine: info.endLine,
+    caption: info.caption,
+  };
+}
+
 interface FileStore {
   tree?: FileTreeNode;
   files: Record<string, FileView>;
@@ -135,8 +151,12 @@ interface FileStore {
   ingest: (event: AbsenceEvent) => void;
   ingestEvents: (events: AbsenceEvent[]) => void;
   hydrate: (snapshot: SessionSnapshot) => void;
+  /** Load the independent file-version index (Agent Folder / File History). */
+  loadVersions: (sessionId: string) => Promise<void>;
   reset: () => void;
 }
+
+let versionsRequest = 0;
 
 export const useFileStore = create<FileStore>((set, get) => ({
   tree: undefined,
@@ -168,7 +188,52 @@ export const useFileStore = create<FileStore>((set, get) => ({
       tree: snapshot.tree,
       files: buildFileViews(snapshot.events, snapshot.files),
     });
+    void get().loadVersions(snapshot.session.id);
   },
 
-  reset: () => set({ tree: undefined, files: {} }),
+  loadVersions: async (sessionId) => {
+    const request = ++versionsRequest;
+    try {
+      const infos = await api.fetchFileVersions(sessionId);
+      if (request !== versionsRequest) return;
+      const byPath = new Map<string, FileVersionInfo[]>();
+      for (const info of infos) {
+        const list = byPath.get(info.path);
+        if (list) list.push(info);
+        else byPath.set(info.path, [info]);
+      }
+      const files = { ...get().files };
+      for (const [path, list] of byPath) {
+        const current = files[path];
+        const view = current ?? emptyView(path);
+        const latest = list[list.length - 1];
+        const history = list.map(versionFromInfo);
+        // The snapshot's current state can be newer than the index only if a
+        // write has not reached the store yet; keep it in that case.
+        const currentWins = current !== undefined && current.version > (latest?.version ?? -1);
+        files[path] = {
+          ...view,
+          path,
+          history,
+          knownLines:
+            !currentWins && latest?.source === "read"
+              ? latest.knownLines ?? {}
+              : view.knownLines,
+          content: currentWins ? current.content : latest?.content ?? view.content,
+          version: currentWins ? current.version : latest?.version ?? view.version,
+          complete: currentWins ? current.complete : latest?.complete ?? view.complete,
+          lastModifiedAt: latest?.timestamp ?? view.lastModifiedAt,
+        };
+      }
+      set({ files });
+    } catch {
+      // The current snapshot state remains usable; File History simply stays
+      // at whatever the events provided.
+    }
+  },
+
+  reset: () => {
+    versionsRequest += 1;
+    set({ tree: undefined, files: {} });
+  },
 }));
