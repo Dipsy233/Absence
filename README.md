@@ -34,6 +34,9 @@ The Stage turns events into something humans can watch.
   helper never buries the one daemon the command actually launched.
 - **Agent Folder** — the agent's own view of the project: only the files and
   the exact line ranges it has in context, with a version history per file.
+- **Resource metrics** — CPU and RSS for the agent and its primary eggs, with
+  live sparklines, session averages, selectable eggs, and historical charts
+  backed by SQLite.
 
 ## Screenshots
 
@@ -95,7 +98,7 @@ bash resources/start-server.sh daemon
 > The agent runtime is not bundled: Absence uses whichever you have installed.
 > With no Pi/Codex/DSH installed, pick the **mock** runtime for a look at the
 > UI. Details: [ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-> [RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md).
+> [RELEASE_NOTES_v0.4.0.md](docs/RELEASE_NOTES_v0.4.0.md).
 
 ## The interface
 
@@ -103,7 +106,7 @@ bash resources/start-server.sh daemon
 ┌──────────────────────────────────────────────────────────────┐
 │                         SESSION BAR                          │
 ├──────────────┬───────────────────────────────┬───────────────┤
-│    FILES     │  [FILE DIFF REPLAY]  TABLE    │     AGENT     │
+│    FILES     │ [METRICS FILE DIFF REPLAY]   │     AGENT     │
 │  (user view) │        [TERMINAL FILE LIVE]   │    (avatar)   │
 │              │                               │               │
 ├──────────────┤───────────────────────────────├───────────────┤
@@ -123,11 +126,11 @@ If the agent read lines 10–20 of a file, its FILE button shows just those
 lines — and after reads of 1–2 and 3–5 it shows 1–5, never a gap silently
 bridged; unread lines in between become explicit `⋯` markers.
 
-- **Stage** (center) — the default page is a desk world; FILE / DIFF /
-  TERMINAL / LIVE views ride on top as a translucent sheet, and REPLAY takes
-  over with full scrub controls (0.25×–10×). The Absence button flips the layering:
-  the desk floats *in front of* the content as a click-through ghost. Chat is
-  docked at the bottom — one input row, history unfolding upward, collapsible.
+- **Stage** (center) — the default page is the Metrics dashboard: CPU/RSS charts
+  for the whole agent or a selected egg, with 1m / 5m / 30m / 1h / all ranges.
+  FILE / DIFF / TERMINAL / LIVE views open as content sheets, and REPLAY takes
+  over with full scrub controls (0.25×–10×). Chat is docked at the bottom —
+  one input row, history unfolding upward, collapsible.
 - **Files → History → Activity** (left) — the project tree (● marks files the
   agent touched, right-click for inspect/diff/history), one History row per run
   with action counts `R` read · `S` search · `E` edit · `C` created · `$`
@@ -385,8 +388,8 @@ port to the public internet.
   attributed, and processes started around the shell (WMI, a scheduled task, a
   different pid namespace) are not seen yet. On a native Linux kernel the
   eBPF observer's pids agree with the `/proc` view.
-- The desk world's `DeskState` / `DeskItem` exist but are not yet driven by
-  events.
+- The live metrics ring keeps the newest 300 frames in memory. Longer ranges and
+  historical sessions are loaded from SQLite; metric retention is 30 days.
 
 ## Documentation
 
@@ -396,10 +399,11 @@ port to the public internet.
   setup.
 - [docs/TESTING.md](docs/TESTING.md) — the acceptance check scripts and what
   each one pins down.
-- [docs/RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md) — what v0.3.0
-  added: Codex support, shell takeover, PTY, approval activities — plus the
-  post-v0.3.0 changes (DSH runtime, configurable report warnings, sound sets,
-  the check-harness rework).
+- [docs/RELEASE_NOTES_v0.4.0.md](docs/RELEASE_NOTES_v0.4.0.md) — the v0.4.0
+  changes: SQLite session history, resource metrics, the Metrics Stage,
+  incremental state folding, and expanded verification.
+- [docs/RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md) — the v0.3.0
+  baseline: Codex support, shell takeover, PTY and approval activities.
 - [docs/RELEASE_NOTES_v0.2.0.md](docs/RELEASE_NOTES_v0.2.0.md) — what v0.2.0
   added: avatar skins, egg-filter profiles, the settings dialog.
 

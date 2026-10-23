@@ -136,6 +136,7 @@ apps/server/src/
                           storage/db.ts (SQLite ~/.absence/absence.db; sessions, events, runs)
                           storage/runs.ts (incremental run index for History)
                           storage/files.ts (incremental file-version index)
+                          storage/metrics.ts (SQLite metric chunks and summaries)
                           storage/legacyPaths.ts (~/.absence/sessions)
   filesystem/             FileTree.ts  FileWatcher.ts (chokidar)
   events/                 EventBus.ts
@@ -147,9 +148,9 @@ apps/web/src/
   app/App.tsx
   components/
     layout/               the shell: SessionBar  LeftRail  Stage  RightRail
-    stage/                where content goes: DeskStage  FileStage  DiffStage
+    stage/                where content goes: MetricsDashboard  FileStage  DiffStage
                           TerminalStage  ThoughtStage  ProcessStage
-                          ApprovalStage  StageWorld (the desk)  StageToolbar
+                          ApprovalStage  StageToolbar
                           ReplayBar  StageItemView.tsx  ReportOverlay.tsx (the Absence Report)
     agent/                Avatar.tsx (the WhaleBun character)  AgentPanel.tsx
                           AgentFolder.tsx  MediaAvatar.tsx (uploaded skins)
@@ -184,7 +185,8 @@ scripts/                  make-demo.mjs
   checks/                 check-history.ts  check-report.ts  check-eggs.ts
                           check-classify.ts  check-agentwatch.ts  check-ebpf.ts
                           check-codex.ts  check-codexshell.ts  check-shellenv.ts
-                          check-execserver.ts  check-fsdiff.ts
+                          check-execserver.ts  check-fsdiff.ts  check-metrics.ts
+                          check-incremental.ts  check-outside-attr.ts
                           harness.ts  run-offline.ts (shared harness + runner)
                           gen-whalebun-css.mjs (regenerates whalebun.css)
 ```
@@ -499,4 +501,3 @@ repo root (see `main.cjs`): `apps/server-bundle.cjs`, `dist/web`,
 `node_modules`, and the native helpers under `native/`. The native observer path
 is set explicitly via `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX`, because the
 server's own path heuristic assumes a checkout layout.
-

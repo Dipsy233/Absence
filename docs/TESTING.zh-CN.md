@@ -7,7 +7,11 @@ Absence 没有单元测试框架；它带一组**验收检查脚本**（`scripts
 ```bash
 node scripts/make-demo.mjs [dir] [--force]   # 搭一个 demo 项目
 npm run check:offline                        # 一次跑完全部离线检查
+npm run verify                               # 类型检查 + Web 构建 + 全部离线检查
 npx tsx scripts/checks/check-history.ts      # 需要 server 在跑
+npm run check:metrics                        # SQLite 指标存储与退出边界（纯）
+npm run check:incremental                    # 增量状态折叠与滑动窗口（纯）
+npx tsx scripts/checks/check-outside-attr.ts # agent 外部改动归因（纯）
 npx tsx scripts/checks/check-report.ts       # Absence Report 引擎（不需要 server）
 npx tsx scripts/checks/check-eggs.ts         # 进程检测（无 server，不 spawn）
 npx tsx scripts/checks/check-classify.ts     # 命令意图 + primary/tool 切分
@@ -24,7 +28,8 @@ node scripts/gen-whalebun-css.mjs            # 重新生成头像样式表
 所有离线检查共享 `scripts/checks/harness.ts`（`check()` / `finish()` /
 `waitFor()`），并由 `npm run check:offline` 逐个 spawn 着跑——离线脚本清单
 只登记在 `scripts/checks/run-offline.ts` 一处，新增检查脚本只需写好文件
-并把它加进那个数组，CI 无需改动。
+并把它加进那个数组，CI 无需改动。`npm run verify` 再把类型检查和 Web
+生产构建接在离线检查之前，适合作为提交前的完整门禁。
 
 `npm run check:process` 把全部进程相关 harness 一起跑（observer 检查在非本
 平台会自行跳过）。
@@ -39,10 +44,19 @@ server 或内核权限，保持手动。
 `notes.txt`。mock 运行时真的跑它的 shell 命令，所以一次 mock 运行也会下一只
 蛋——这就是没有 Pi 凭据也能练 Agent Eggs 面板的方法。
 
-`check-history.ts` 对一个 live mock 会话跑 **63 项断言**：运行分组、每运行的
+`check-history.ts` 对一个 live mock 会话跑 **80 项断言**：运行分组、每运行的
 Activity 范围、确定的 stage 项 id、快照 seek、Stage 回到默认页、搜索→终端
 映射、thinking 捕获（一条流式念头保持为一个 Stage 项，所以 replay 不会重新
 挂载它）、两个独立的 FILE 槽位、读累积与缺口标记、逐版本记录、新建文件计数。
+
+`check-metrics.ts` 验证指标 chunk 的读写、不同步长重采样、session 平均值，
+以及 egg 退出后不再延长生命周期或继续累计资源。
+
+`check-incremental.ts` 验证事件滑动窗口下 eggs、History 和 Activity 的增量
+折叠与完整重建一致，并钉住每事件成本不会退化成窗口大小的乘积。
+
+`check-outside-attr.ts` 验证只有写语义工具能归因外部改动，路径字段不会把
+文件内容里的路径误报为改动，且 Windows 路径大小写/分隔符保持一致。
 
 `check-report.ts` 是 Absence Report 引擎的纯 harness（无 server）：没有
 `command` 事件的失败工具仍计为一次失败命令，recovery 只在中间还有活动时消费

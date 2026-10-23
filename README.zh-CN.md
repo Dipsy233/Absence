@@ -30,6 +30,8 @@ Stage 把事件变成人可以看的东西。
   淹没命令真正启动的那个守护进程。
 - **Agent Folder** — agent 自己视角里的项目：只有它上下文里真正有的文件和
   行区间，每个文件带版本历史。
+- **资源指标** — agent 及其 primary egg 的 CPU、RSS、实时曲线、session 平均值，
+  可选择单个 egg，并通过 SQLite 查看历史时间范围。
 
 ## 截图
 
@@ -88,7 +90,7 @@ bash resources/start-server.sh daemon
 
 > 运行时（agent）不在包里：Absence 用你已装的那个。没装 Pi/Codex/DSH 时可先选
 > **mock** 运行时试看界面。细节见 [ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md)
-> 与 [RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md)。
+> 与 [RELEASE_NOTES_v0.4.0.md](docs/RELEASE_NOTES_v0.4.0.md)。
 
 ## 界面
 
@@ -96,7 +98,7 @@ bash resources/start-server.sh daemon
 ┌──────────────────────────────────────────────────────────────┐
 │                         SESSION BAR                          │
 ├──────────────┬───────────────────────────────┬───────────────┤
-│    FILES     │  [FILE DIFF REPLAY]  TABLE    │     AGENT     │
+│    FILES     │ [METRICS FILE DIFF REPLAY]   │     AGENT     │
 │  (用户视角)  │      [TERMINAL FILE LIVE]     │   (头像)      │
 │              │                               │               │
 ├──────────────┤───────────────────────────────┼───────────────┤
@@ -114,10 +116,10 @@ bash resources/start-server.sh daemon
 读过 1–2 和 3–5 之后显示 1–5，中间从不会被悄悄接上；没读过的行变成显式的
 `⋯` 标记。
 
-- **Stage**（中）— 默认页是一张桌子；FILE / DIFF / TERMINAL / LIVE 视图以
-  半透明叠层骑在上面，REPLAY 带完整的拖动控件（0.25×–10×）。Absence 按钮翻转
-  图层：桌子以可点击穿透的 ghost 浮在内容*前面*。聊天停靠在底部——一行
-  输入，历史向上展开，可收起。
+- **Stage**（中）— 默认页是 Metrics 指标看板：显示整个 agent 或选中 egg 的
+  CPU/RSS 曲线，支持 `1m` / `5m` / `30m` / `1h` / `all` 时间范围。FILE /
+  DIFF / TERMINAL / LIVE 视图作为内容页打开，REPLAY 带完整的拖动控件
+  （0.25×–10×）。聊天停靠在底部——一行输入，历史向上展开，可收起。
 - **Files → History → Activity**（左）— 项目树（`●` 标记 agent 碰过的文件，
   右键可检查/diff/历史）、每次运行一行的 History（带动作计数 `R` 读 ·
   `S` 搜索 · `E` 改 · `C` 建 · `$` 命令）、选中运行的动作——点一行放上
@@ -356,7 +358,8 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
   图表保留所有 5 秒节点；时间范围支持 `1m`、`5m`、`30m`、`1h` 和 `all`，
   横轴刻度分别为 5 秒、30 秒、150 秒和 300 秒。将鼠标移到节点即可查看
   该时刻的 CPU 与内存占用；已经结束的进程以其结束时刻作为短范围的右端点。
-- 桌子世界的 `DeskState` / `DeskItem` 存在但尚未被事件驱动。
+- 实时指标环在内存中保留最新 300 帧；更长时间范围和历史 session 从 SQLite
+  读取，指标保留 30 天。
 
 ## 文档
 
@@ -365,9 +368,10 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
   打包内部机制。
 - [docs/TESTING.zh-CN.md](docs/TESTING.zh-CN.md) — 验收检查脚本及各自钉住的
   规则。
-- [docs/RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md) — v0.3.0 带来了
-  什么：Codex 支持、shell 接管、PTY、审批即 activity；以及 v0.3.0 之后的变更
-  （DSH 运行时、可配置报告警告、音效集、检查 harness 重构）。
+- [docs/RELEASE_NOTES_v0.4.0.md](docs/RELEASE_NOTES_v0.4.0.md) — v0.4.0 带来了
+  什么：SQLite 会话历史、资源指标、Metrics Stage、增量状态折叠和扩展验证。
+- [docs/RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md) — v0.3.0 基线：
+  Codex 支持、shell 接管、PTY 和审批 activity。
 - [docs/RELEASE_NOTES_v0.2.0.md](docs/RELEASE_NOTES_v0.2.0.md) — v0.2.0 带来了
   什么：形象皮肤、Eggs 过滤配置文件、设置弹窗。
 

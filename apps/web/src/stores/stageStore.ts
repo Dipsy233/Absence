@@ -91,11 +91,19 @@ export const useStageStore = create<StageStore>((set, get) => ({
     ),
 
   openAgentFile: (item) =>
-    set((state) =>
-      state.mode === "file" &&
-      state.activeItem === state.agentFile &&
-      state.agentFile?.source?.path !== undefined &&
-      state.agentFile.source.path === item.source?.path
+    set((state) => {
+      const current = state.agentFile?.payload;
+      const next = item.payload;
+      const sameFileView =
+        current?.kind === "file" &&
+        next.kind === "file" &&
+        current.version === next.version &&
+        current.content === next.content;
+      return state.mode === "file" &&
+        state.activeItem === state.agentFile &&
+        state.agentFile?.source?.path !== undefined &&
+        state.agentFile.source.path === item.source?.path &&
+        sameFileView
         ? { mode: "live", following: true, activeItem: undefined }
         : {
             agentFile: item,
@@ -103,8 +111,8 @@ export const useStageStore = create<StageStore>((set, get) => ({
             activeItem: item,
             mode: "file",
             following: false,
-          },
-    ),
+          };
+    }),
 
   showType: (type) => {
     const item = get().lastByType[type];

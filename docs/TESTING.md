@@ -8,6 +8,7 @@ that are easy to get silently wrong. For architecture background, see
 ```bash
 node scripts/make-demo.mjs [dir] [--force]   # scaffold a demo project (default: ./absence-demo)
 npm run check:offline                        # run every offline check in one go
+npm run verify                               # typecheck + web build + every offline check
 npm run check:report                         # Absence Report engine (no server needed)
 npm run check:eggs                           # process detection (no server, nothing spawned)
 npm run check:classify                       # command intent + primary/tool split
@@ -19,6 +20,9 @@ npm run check:fsdiff                         # the file-diff engine (pure)
 npm run check:process                        # every process harness together
                                              # (observer checks self-skip off-platform)
 npm run check:history                        # needs the Absence server running
+npm run check:metrics                        # SQLite metric storage and exit boundaries
+npm run check:incremental                    # incremental folding and sliding-window state
+npx tsx scripts/checks/check-outside-attr.ts # outside-change attribution
 npx tsx scripts/checks/check-agentwatch.ts   # kernel process observer (Windows)
 npx tsx scripts/checks/check-ebpf.ts         # kernel process observer (Linux)
 node scripts/gen-whalebun-css.mjs            # regenerate the avatar's stylesheet
@@ -29,6 +33,8 @@ All offline checks share `scripts/checks/harness.ts` (`check()` / `finish()` /
 offline scripts is registered in exactly one place,
 `scripts/checks/run-offline.ts`, so a new check script only needs to be written
 and added to that array; neither `package.json` nor the CI workflow changes.
+`npm run verify` adds the workspace typechecks and production web build before
+the offline checks, making it the complete pre-commit gate.
 
 The CI workflow (`.github/workflows/ci.yml`) runs the typecheck and
 `npm run check:offline` (every offline harness, see `run-offline.ts`) on every
@@ -42,12 +48,24 @@ read, and `notes.txt` for the delete-vs-truncate case. The mock runtime runs its
 shell command for real, so a mock run also lays an egg — which is how the Agent
 Eggs panel is exercised without Pi credentials.
 
-`check-history.ts` runs **63 assertions** against a live mock session: run grouping,
+`check-history.ts` runs **80 assertions** against a live mock session: run grouping,
 per-run activity scoping, deterministic stage item ids, snapshot seek, the Stage
 returning to its default page, search→terminal mapping, thinking capture (a
 streamed thought stays one Stage item, so replay does not re-mount it), the two
 independent FILE slots, read accumulation and gap markers, per-version recording,
 and the created file count.
+
+`check-metrics.ts` verifies metric chunk round-tripping, resampling at a
+different step, session averages, and the rule that an exited egg does not
+extend its lifetime or keep accumulating resources.
+
+`check-incremental.ts` verifies that eggs, History, and Activity remain
+consistent with a full rebuild while the event window slides, and pins
+per-event work away from a window-sized product.
+
+`check-outside-attr.ts` verifies that only write-semantic tools attribute
+outside changes, path-shaped arguments do not treat file contents as paths, and
+Windows path casing/separators resolve to the same file.
 
 `check-report.ts` is a pure harness (no server) for the Absence Report engine: a
 failed tool with no `command` event still counts as a failed command, recovery

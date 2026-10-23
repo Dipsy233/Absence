@@ -277,14 +277,14 @@ const run = async () => {
   );
   useStageStore.getState().setMode("live");
   assert("LIVE resumes following", useStageStore.getState().following === true);
-  useStageStore.getState().goDesk();
+  useStageStore.getState().goMetrics();
   assert(
-    "TABLE shows the default page and stops following",
-    useStageStore.getState().mode === "desk" && !useStageStore.getState().following,
+    "METRICS shows the default page and stops following",
+    useStageStore.getState().mode === "metrics" && !useStageStore.getState().following,
     `mode=${useStageStore.getState().mode} following=${useStageStore.getState().following}`,
   );
   useStageStore.getState().setMode("live");
-  assert("LIVE takes over again after TABLE", useStageStore.getState().following === true);
+  assert("LIVE takes over again after METRICS", useStageStore.getState().following === true);
   useStageStore.getState().reset();
 
   // 8. the two FILE slots are independent, and a partial read stays partial
@@ -294,7 +294,7 @@ const run = async () => {
     timestamp: Date.now(),
     type: "file_read",
     payload: {
-      path: "src/auth.ts",
+      path: "README.md",
       startLine: 10,
       endLine: 20,
       content: "line10\nline11\nline12",
@@ -318,9 +318,9 @@ const run = async () => {
 
   const userItem = createStageItem(
     "file",
-    "src/auth.ts",
-    { kind: "file", path: "src/auth.ts", content: "WHOLE FILE", language: "typescript", lineOffset: 0 },
-    { path: "src/auth.ts" },
+    "README.md",
+    { kind: "file", path: "README.md", content: "WHOLE FILE", language: "markdown", lineOffset: 0 },
+    { path: "README.md" },
   );
   useStageStore.getState().openUserFile(userItem);
   assert("opening from the tree fills the user FILE slot", useStageStore.getState().userFile?.id === userItem.id);
@@ -341,9 +341,9 @@ const run = async () => {
   // 9. the user view reads the whole file from disk, never the agent's slice
   useSessionStore.setState({ session: snapshot.session });
   useStageStore.getState().noteItem(agentItem); // agent read only lines 10–20
-  await openUserFile("src/auth.ts");
+  await openUserFile("README.md");
   const userView = useStageStore.getState().userFile;
-  const truth = await fs.readFile("src/auth.ts", "utf8");
+  const truth = await fs.readFile("README.md", "utf8");
   assert(
     "left tree opens the whole file, not the read slice",
     userView?.payload.kind === "file" && userView.payload.content === truth,

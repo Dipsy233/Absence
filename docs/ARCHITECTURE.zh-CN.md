@@ -114,6 +114,7 @@ apps/server/src/
                           storage/db.ts（SQLite ~/.absence/absence.db；sessions、events、runs）
                           storage/runs.ts（History 的增量 run 索引）
                           storage/files.ts（增量文件版本索引）
+                          storage/metrics.ts（SQLite 指标 chunk 与 session 汇总）
                           storage/legacyPaths.ts（~/.absence/sessions）
   filesystem/             FileTree.ts  FileWatcher.ts（chokidar）
   events/                 EventBus.ts
@@ -125,9 +126,9 @@ apps/web/src/
   app/App.tsx
   components/
     layout/               外壳：SessionBar  LeftRail  Stage  RightRail
-    stage/                内容的去处：DeskStage  FileStage  DiffStage
+    stage/                内容的去处：MetricsDashboard  FileStage  DiffStage
                           TerminalStage  ThoughtStage  ProcessStage
-                          ApprovalStage  StageWorld（桌子）  StageToolbar
+                          ApprovalStage  StageToolbar
                           ReplayBar  StageItemView.tsx  ReportOverlay.tsx（Absence Report）
     agent/                Avatar.tsx（WhaleBun 角色）  AgentPanel.tsx
                           AgentFolder.tsx  MediaAvatar.tsx（上传的皮肤）
@@ -161,7 +162,8 @@ scripts/                  make-demo.mjs
   checks/                 check-history.ts  check-report.ts  check-eggs.ts
                           check-classify.ts  check-agentwatch.ts  check-ebpf.ts
                           check-codex.ts  check-codexshell.ts  check-shellenv.ts
-                          check-execserver.ts  check-fsdiff.ts
+                          check-execserver.ts  check-fsdiff.ts  check-metrics.ts
+                          check-incremental.ts  check-outside-attr.ts
                           harness.ts  run-offline.ts（共享 harness + 统一 runner）
                           gen-whalebun-css.mjs（重新生成头像样式表）
 ```
@@ -462,4 +464,3 @@ prompt。输入框左侧的 `/` 按钮在上方打开可过滤的面板——↑
 这些被映射到 SDK 调用（`setModel`、`setThinkingLevel`、`compact`、
 `setSessionName`、`getSessionStats`、`exportToHtml`/`exportToJsonl`）而不是
 委托给 Pi。
-
