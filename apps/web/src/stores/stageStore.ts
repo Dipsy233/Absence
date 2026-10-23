@@ -82,15 +82,21 @@ export const useStageStore = create<StageStore>((set, get) => ({
 
   openUserFile: (item) =>
     set((state) =>
-      state.activeItem?.id === item.id && state.mode === "file"
-        ? { mode: "live", following: true }
+      state.mode === "file" &&
+      state.activeItem === state.userFile &&
+      state.userFile?.source?.path !== undefined &&
+      state.userFile.source.path === item.source?.path
+        ? { mode: "live", following: true, activeItem: undefined }
         : { userFile: item, activeItem: item, mode: "file", following: false },
     ),
 
   openAgentFile: (item) =>
     set((state) =>
-      state.activeItem?.id === item.id && state.mode === "file"
-        ? { mode: "live", following: true }
+      state.mode === "file" &&
+      state.activeItem === state.agentFile &&
+      state.agentFile?.source?.path !== undefined &&
+      state.agentFile.source.path === item.source?.path
+        ? { mode: "live", following: true, activeItem: undefined }
         : {
             agentFile: item,
             lastByType: { ...state.lastByType, file: item },
@@ -139,7 +145,7 @@ export const useStageStore = create<StageStore>((set, get) => ({
           : { mode, following: false },
     ),
 
-  goLive: () => set({ mode: "live", following: true }),
+  goLive: () => set({ mode: "live", following: true, activeItem: undefined }),
 
   goMetrics: () => set({ mode: "metrics", following: false }),
 
