@@ -2,7 +2,7 @@
 
 English | [中文](README.zh-CN.md)
 
-> AI moves fast. Humans watch.
+> Surrender to intelligence!
 
 > AI is becoming overwhelmingly capable, and humans are slowly losing track of
 > what it does. We call this condition **Absence**.
@@ -20,9 +20,9 @@ Absence observes the events.
 The Stage turns events into something humans can watch.
 ```
 
-- **Live observation** — a desk, a monitor, a sheet of paper: the agent's every
-  read, edit and command becomes something a person can actually watch, at real
-  speed, while it happens.
+- **Live observation** — a cute agent avatar: the agent's every read, edit and
+  command becomes something a person can actually watch, at real speed, while
+  it happens.
 - **Replay** — every run is reconstructed from events + state snapshots (never
   video), scrubbable at 0.25×–10×.
 - **Absence Report** — a run reduced to facts in seconds: what changed, what ran,
@@ -81,17 +81,17 @@ start-absence.bat            :: Windows
 
 ```bat
 :: Windows: run the installer
-Absence-Setup-0.3.0.exe
+Absence-Setup-0.4.0.exe
 ```
 
 ```sh
 # Linux desktop: AppImage or tar.gz
-chmod +x Absence-0.3.0.AppImage && ./Absence-0.3.0.AppImage
+chmod +x Absence-0.4.0.AppImage && ./Absence-0.4.0.AppImage
 # or
-tar xzf Absence-0.3.0.tar.gz && cd Absence-0.3.0 && ./absence
+tar xzf Absence-0.4.0.tar.gz && cd Absence-0.4.0 && ./absence
 
 # Headless Linux server: serve the UI on :8848 only
-tar xzf Absence-0.3.0.tar.gz && cd Absence-0.3.0
+tar xzf Absence-0.4.0.tar.gz && cd Absence-0.4.0
 bash resources/start-server.sh daemon
 ```
 

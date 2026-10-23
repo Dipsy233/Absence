@@ -130,9 +130,11 @@ section("new writes");
   check("the session is listed", (await listArchives(project)).some((m) => m.absenceSessionId === id));
   const newRuns = await readRuns(id);
   check("a new run is indexed immediately", newRuns.length === 1 && newRuns[0]!.prompt === "roundtrip", `${newRuns.length}`);
+  const alternateSeparators =
+    process.platform === "win32" ? project.replace(/\//g, "\\") : project;
   check(
     "history filters by project path",
-    (await listArchives(project.replace(/\//g, "\\"))).some((m) => m.absenceSessionId === id),
+    (await listArchives(alternateSeparators)).some((m) => m.absenceSessionId === id),
   );
 }
 

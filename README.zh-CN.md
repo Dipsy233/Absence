@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-> AI moves fast. Humans watch.
+> 向智能臣服!
 
 > AI 正变得无所不能，而人类正慢慢跟不上它做了什么。我们把这种状态称为
 > **发呆症（Absence）**。
@@ -18,7 +18,7 @@ Absence 观察事件。
 Stage 把事件变成人可以看的东西。
 ```
 
-- **实时观察** — 一张桌子、一台显示器、一张纸：agent 的每一次读、改、跑
+- **实时观察** — 一个可爱的agent形象：agent 的每一次读、改、跑
   命令都变成人真正能看的东西，以真实速度实时播放。
 - **Replay** — 每次运行都从事件 + 状态快照重建（绝不是录屏），可拖动进度条
   以 0.25×–10× 回放。
@@ -74,17 +74,17 @@ start-absence.bat            :: Windows
 
 ```bat
 :: Windows：运行安装器
-Absence-Setup-0.3.0.exe
+Absence-Setup-0.4.0.exe
 ```
 
 ```sh
 # Linux 桌面：AppImage 或 tar.gz
-chmod +x Absence-0.3.0.AppImage && ./Absence-0.3.0.AppImage
+chmod +x Absence-0.4.0.AppImage && ./Absence-0.4.0.AppImage
 # 或
-tar xzf Absence-0.3.0.tar.gz && cd Absence-0.3.0 && ./absence
+tar xzf Absence-0.4.0.tar.gz && cd Absence-0.4.0 && ./absence
 
 # Linux 无头服务器：只起 server，浏览器远程访问 8848
-tar xzf Absence-0.3.0.tar.gz && cd Absence-0.3.0
+tar xzf Absence-0.4.0.tar.gz && cd Absence-0.4.0
 bash resources/start-server.sh daemon
 ```
 
