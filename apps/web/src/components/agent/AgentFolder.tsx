@@ -26,6 +26,7 @@ export function AgentFolder() {
   const t = useT();
   const files = useFileStore((s) => s.files);
   const activeId = useStageStore((s) => s.activeItem?.id);
+  const stageMode = useStageStore((s) => s.mode);
   const agentFile = useStageStore((s) => s.agentFile);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -38,7 +39,10 @@ export function AgentFolder() {
   );
 
   const shown =
-    agentFile !== undefined && activeId === agentFile.id && agentFile.payload.kind === "file"
+    stageMode === "file" &&
+    agentFile !== undefined &&
+    activeId === agentFile.id &&
+    agentFile.payload.kind === "file"
       ? agentFile.payload
       : undefined;
 
