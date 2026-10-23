@@ -399,6 +399,9 @@ port to the public internet.
   setup.
 - [docs/TESTING.md](docs/TESTING.md) — the acceptance check scripts and what
   each one pins down.
+- [docs/RELEASING.md](docs/RELEASING.md) — how a release is cut: the
+  `Release` workflow (manual dispatch or a `v*` tag), what it builds for
+  Windows and Linux, and where the release notes come from.
 - [docs/RELEASE_NOTES_v0.4.0.md](docs/RELEASE_NOTES_v0.4.0.md) — the v0.4.0
   changes: SQLite session history, resource metrics, the Metrics Stage,
   incremental state folding, and expanded verification.

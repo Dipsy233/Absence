@@ -1,6 +1,6 @@
 {
   "name": "@absence/desktop",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "ABSENCE desktop shell — runs the Absence server in-process and shows the UI in a native window.",

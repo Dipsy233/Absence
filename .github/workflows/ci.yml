@@ -4,6 +4,8 @@ on:
   push:
     branches: [master, main]
   pull_request:
+  # Manual runs from the Actions tab (same jobs, no release).
+  workflow_dispatch:
 
 jobs:
   typecheck:

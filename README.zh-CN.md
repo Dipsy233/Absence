@@ -368,6 +368,9 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
   打包内部机制。
 - [docs/TESTING.zh-CN.md](docs/TESTING.zh-CN.md) — 验收检查脚本及各自钉住的
   规则。
+- [docs/RELEASING.zh-CN.md](docs/RELEASING.zh-CN.md) — 发布流程：`Release`
+  工作流（手动触发或推 `v*` tag）、为 Windows 与 Linux 构建什么、发布说明从
+  哪里来。
 - [docs/RELEASE_NOTES_v0.4.0.md](docs/RELEASE_NOTES_v0.4.0.md) — v0.4.0 带来了
   什么：SQLite 会话历史、资源指标、Metrics Stage、增量状态折叠和扩展验证。
 - [docs/RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md) — v0.3.0 基线：

@@ -1,0 +1,308 @@
+name: Release
+
+# Build the desktop packages for Windows and Linux and publish a GitHub Release.
+#
+# Two entry points:
+#   * push a tag like v0.4.0            → build + publish automatically
+#   * Actions ▸ Release ▸ Run workflow  → pick the version, review a draft,
+#                                          publish it when you are happy
+#
+# The native process observers are committed (native/agentwatch/agentwatch.exe,
+# native/agentwatch-linux/agentwatch-linux), so the matrix only *packages* them;
+# nothing is cross-compiled and no extra build tools are needed.
+#
+# Release notes come from docs/RELEASE_NOTES_v<version>.md (or
+# docs/RELEASE_v<version>.md) when that file exists — that is the hand-written,
+# bilingual note the repo already ships. Otherwise they are generated from the
+# commit subjects between the previous tag and this one
+# (scripts/release/notes.mjs).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 0.4.0 (no leading v)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark the GitHub Release as a pre-release"
+        required: false
+        type: boolean
+        default: false
+      draft:
+        description: "Create the Release as a draft (review the notes, then publish it yourself)"
+        required: false
+        type: boolean
+        default: true
+  push:
+    # `v*` on purpose: tag filters are glob patterns (`+` is a quantifier
+    # there), so the version format is validated strictly in `prepare`
+    # instead, which fails fast on a bogus tag.
+    tags:
+      - "v*"
+
+# A release is never cancelled halfway: an in-flight run finishes, the next one
+# queues behind it.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  # The desktop packages are unsigned by design; never look for a local
+  # signing identity (electron-builder would otherwise probe the keychain).
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+jobs:
+  # ---------------------------------------------------------------- metadata
+  # Normalize the version/tag/notes once so every other job agrees on them.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      notes-file: ${{ steps.meta.outputs.notes-file }}
+      draft: ${{ steps.meta.outputs.draft }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: meta
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_DRAFT: ${{ inputs.draft }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${INPUT_VERSION#v}"
+            draft="$INPUT_DRAFT"
+            prerelease="$INPUT_PRERELEASE"
+          else
+            version="${GITHUB_REF_NAME#v}"
+            draft="false"
+            case "$version" in
+              *-*) prerelease="true" ;;
+              *)   prerelease="false" ;;
+            esac
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::'$version' is not a valid version (expected e.g. 0.4.0 or 0.4.0-beta.1)"
+            exit 1
+          fi
+          tag="v$version"
+          notes_file=""
+          for candidate in "docs/RELEASE_NOTES_${tag}.md" "docs/RELEASE_${tag}.md"; do
+            if [ -f "$candidate" ]; then notes_file="$candidate"; break; fi
+          done
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "notes-file=$notes_file" >> "$GITHUB_OUTPUT"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release $tag"
+            echo ""
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| version | \`$version\` |"
+            echo "| draft | \`$draft\` |"
+            echo "| pre-release | \`$prerelease\` |"
+            echo "| notes | ${notes_file:-generated from commits} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ------------------------------------------------------------------ gate
+  # Same gate as CI: a broken tree must never produce a release.
+  checks:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck --workspaces --if-present
+      - run: npm run check:offline
+
+  # ----------------------------------------------------------------- build
+  # electron-builder can only package for the host it runs on, so Windows and
+  # Linux each build their own installer.
+  build:
+    needs: [prepare, checks]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: absence-windows
+          - os: ubuntu-latest
+            artifact: absence-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          # Both lockfiles are hashed so a desktop-only dependency bump
+          # invalidates the cache too.
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # apps/desktop is not part of the root workspace, so it has its own tree
+      # (electron, electron-builder) and its own lockfile.
+      - name: Install desktop dependencies
+        run: npm --prefix apps/desktop ci
+
+      # The repo's package.json versions lag behind the release notes, and the
+      # installer filename is derived from them — stamp the version being
+      # released. `npm version` also keeps the lockfiles consistent; the change
+      # is build-only and never committed.
+      - name: Stamp the release version
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          npm version "$VERSION" --no-git-tag-version --workspaces --include-workspace-root --ignore-scripts
+          npm --prefix apps/desktop version "$VERSION" --no-git-tag-version --ignore-scripts
+
+      # git stores the observer as 100644, and electron-builder copies the mode
+      # as-is, so restore the executable bit before packaging on Linux.
+      - name: Make the Linux observer executable
+        if: runner.os == 'Linux'
+        run: chmod +x native/agentwatch-linux/agentwatch-linux
+
+      - name: Build the desktop package
+        run: npm run desktop:dist
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/desktop/release/*.exe
+            dist/desktop/release/*.blockmap
+            dist/desktop/release/*.AppImage
+            dist/desktop/release/*.tar.gz
+            dist/desktop/release/*.zip
+            dist/desktop/release/latest*.yml
+
+  # --------------------------------------------------------------- publish
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Write checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          cd artifacts
+          files=()
+          for f in *; do
+            case "$f" in
+              SHA256SUMS.txt) continue ;;
+              *) files+=("$f") ;;
+            esac
+          done
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no build artifacts were downloaded"
+            exit 1
+          fi
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          NOTES_FILE: ${{ needs.prepare.outputs.notes-file }}
+          DRAFT: ${{ needs.prepare.outputs.draft }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(artifacts/*)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::nothing to upload"
+            exit 1
+          fi
+
+          # `set -e` would abort on a bare `[ … ] && …` when the test is false,
+          # so the flags are built with explicit ifs.
+          flags=()
+          if [ "$DRAFT" = "true" ]; then flags+=(--draft); fi
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+
+          # No hand-written notes for this tag: derive them from the commit
+          # subjects. GitHub's own auto-generated notes group pull requests,
+          # and this repo mostly pushes to main directly.
+          if [ -z "$NOTES_FILE" ] || [ ! -f "$NOTES_FILE" ]; then
+            echo "No docs/RELEASE_NOTES_${TAG}.md — generating notes from commits."
+            node scripts/release/notes.mjs "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --label "$TAG" > release-notes.md
+            NOTES_FILE=release-notes.md
+          fi
+
+          # A re-run of a partially failed release must not fail on "already
+          # exists": refresh the assets and the notes instead.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — refreshing assets and notes."
+            gh release upload "$TAG" "${assets[@]}" --clobber
+            gh release edit "$TAG" --notes-file "$NOTES_FILE" "${flags[@]}"
+            exit 0
+          fi
+
+          # The tag is created at the commit being released. On a tag push it
+          # already exists and --target is simply ignored.
+          gh release create "$TAG" "${assets[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes-file "$NOTES_FILE" \
+            "${flags[@]}"
+
+      - name: Summarize
+        shell: bash
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          DRAFT: ${{ needs.prepare.outputs.draft }}
+        run: |
+          {
+            echo "### Release $TAG"
+            echo ""
+            if [ "$DRAFT" = "true" ]; then
+              echo "Created as a **draft**. Review it at \`Releases\`, then publish:"
+              echo ""
+              echo '```sh'
+              echo "gh release edit $TAG --draft=false"
+              echo '```'
+            else
+              echo "Published: https://github.com/${{ github.repository }}/releases/tag/$TAG"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,6 @@
 {
   "name": "absence",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -50,7 +50,8 @@
     "desktop:icons": "npm --prefix apps/desktop run icons",
     "desktop:pack": "npm run build && npm --prefix apps/desktop run pack",
     "desktop:dist": "npm run build && npm --prefix apps/desktop run dist",
-    "build:agentwatch": "cd native/agentwatch && build.bat"
+    "build:agentwatch": "cd native/agentwatch && build.bat",
+    "release:notes": "node scripts/release/notes.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
