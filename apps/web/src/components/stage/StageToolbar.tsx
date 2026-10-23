@@ -23,6 +23,8 @@ export function StageToolbar() {
   const setMode = useStageStore((s) => s.setMode);
   const goDesk = useStageStore((s) => s.goDesk);
   const agentOnStage = useUiStore((s) => s.agentOnStage);
+  const metricsOpen = useUiStore((s) => s.metricsOpen);
+  const openMetrics = useUiStore((s) => s.openMetrics);
   const replayReady = useReplayStore((s) => s.events.length > 0);
 
   const buttonClass = (active: boolean, enabled: boolean) =>
@@ -98,6 +100,14 @@ export function StageToolbar() {
         </button>
         <button type="button" onClick={() => setMode("live")} className={buttonClass(mode === "live", true)}>
           {t("LIVE")}
+        </button>
+        <button
+          type="button"
+          onClick={openMetrics}
+          title={t("Open the resource metrics dashboard")}
+          className={buttonClass(metricsOpen, true)}
+        >
+          {t("METRICS")}
         </button>
       </div>
     </div>

@@ -82,7 +82,7 @@ const nodeRequire = createRequire(import.meta.url);
 const { DatabaseSync } = nodeRequire("node:sqlite") as typeof import("node:sqlite");
 
 const DB_FILE = "absence.db";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const FLUSH_MS = 50;
 
 let database: DatabaseSyncType | undefined;
@@ -98,6 +98,14 @@ const nextSeq = new Map<string, number>();
 
 function dbFile(): string {
   return path.join(stateRoot(), DB_FILE);
+}
+
+/**
+ * The shared SQLite handle. The archive and the metric store both live in this
+ * database; keeping one opener means one schema, one WAL and one lifecycle.
+ */
+export function openDatabase(): DatabaseSyncType {
+  return open();
 }
 
 function open(): DatabaseSyncType {
@@ -175,6 +183,38 @@ function open(): DatabaseSyncType {
       PRIMARY KEY (session_id, path, version)
     );
     CREATE INDEX IF NOT EXISTS idx_file_versions_path ON file_versions(session_id, path, version);
+
+    -- v0.4: process resource metrics. One row per egg per ~30 minute chunk;
+    -- the arrays are packed binary (Float32 CPU deltas + Uint32 RSS KiB), so
+    -- a thousand eggs do not turn into a million relational rows a day.
+    CREATE TABLE IF NOT EXISTS metric_chunks (
+      session_id TEXT NOT NULL,
+      egg_pid    INTEGER NOT NULL,
+      start_ts   INTEGER NOT NULL,
+      step_ms    INTEGER NOT NULL,
+      n          INTEGER NOT NULL,
+      cpu_base   REAL NOT NULL,
+      cpu        BLOB NOT NULL,
+      rss_kib    BLOB NOT NULL,
+      PRIMARY KEY (session_id, egg_pid, start_ts)
+    ) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS idx_metric_chunks_ts
+      ON metric_chunks(session_id, start_ts);
+
+    CREATE TABLE IF NOT EXISTS egg_metric_summary (
+      session_id        TEXT NOT NULL,
+      egg_pid           INTEGER NOT NULL,
+      name              TEXT NOT NULL,
+      kind              TEXT NOT NULL,
+      status            TEXT NOT NULL,
+      first_ts          INTEGER NOT NULL,
+      last_ts           INTEGER NOT NULL,
+      cpu_seconds_start REAL NOT NULL,
+      cpu_seconds_end   REAL NOT NULL,
+      rss_integral      REAL NOT NULL,
+      samples           INTEGER NOT NULL,
+      PRIMARY KEY (session_id, egg_pid)
+    );
 
     PRAGMA user_version = ${SCHEMA_VERSION};
   `);

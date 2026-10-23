@@ -6,6 +6,7 @@ import websocket from "@fastify/websocket";
 import { config, configure, type AbsenceConfig } from "./config";
 import { projectRoutes } from "./api/projects";
 import { sessionRoutes } from "./api/sessions";
+import { metricRoutes } from "./api/metrics";
 import { eggFilterRoutes } from "./api/eggFilter";
 import { avatarSkinRoutes } from "./api/avatarSkins";
 import { soundRoutes } from "./api/sounds";
@@ -14,6 +15,7 @@ import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
 import { applyRuntimePaths } from "./runtimes/config";
 import { closeArchive } from "./sessions/archive";
+import { drainMetrics, expireMetrics } from "./sessions/storage/metrics";
 
 export interface StartServerOptions {
   /** Port to listen on. `0` lets the OS pick a free one (the desktop shell). */
@@ -77,6 +79,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   await app.register(websocket);
   await app.register(projectRoutes);
   await app.register(sessionRoutes);
+  await app.register(metricRoutes);
   await app.register(eggFilterRoutes);
   await app.register(avatarSkinRoutes);
   await app.register(soundRoutes);
@@ -119,6 +122,13 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   const actualPort = typeof address === "object" && address ? address.port : port;
   const url = `http://${host}:${actualPort}`;
 
+  // Metrics are kept for 30 days. Expire once at startup and then daily; the
+  // timer is unref'd so it never keeps a CLI process alive on its own.
+  const expire = () => expireMetrics(Date.now() - 30 * 24 * 60 * 60_000);
+  expire();
+  const expireTimer = setInterval(expire, 24 * 60 * 60_000);
+  expireTimer.unref?.();
+
   app.log.info(`ABSENCE server listening on ${url} (agent=${config.defaultAgent})`);
   app.log.info(`projects root: ${config.projectsRoot}`);
 
@@ -128,8 +138,11 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
     host,
     url,
     close: async () => {
+      clearInterval(expireTimer);
       await app.close();
-      // Flush the 50ms write buffer and checkpoint WAL on a clean shutdown.
+      // Flush metrics before the database handle is closed, then the 50ms
+      // event buffer and WAL checkpoint.
+      await drainMetrics();
       closeArchive();
     },
   };

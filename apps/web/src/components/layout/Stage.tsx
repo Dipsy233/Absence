@@ -19,6 +19,7 @@ import { MediaAvatar } from "../agent/MediaAvatar";
 import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 import { StageChat } from "../chat/StageChat";
 import { ReportOverlay } from "../stage/ReportOverlay";
+import { MetricsDashboard } from "../metrics/MetricsDashboard";
 
 /**
  * The Stage: where events become something you can look at (read02 §11).
@@ -37,6 +38,7 @@ export function Stage() {
   const liveStatus = useSessionStore((s) => s.agent.status);
   const replayStatus = useReplayStore((s) => s.view?.agentStatus);
   const agentOnStage = useUiStore((s) => s.agentOnStage);
+  const metricsOpen = useUiStore((s) => s.metricsOpen);
   const absenceMode = useUiStore((s) => s.absenceMode);
   // Whether Absence only watches this agent (see useIsObserved). With an
   // observed agent, a run end is a fact we saw, not a state we set — the
@@ -178,6 +180,9 @@ export function Stage() {
 
           {/* The Absence Report tab + overlay, below the chat so it never hides it. */}
           <ReportOverlay />
+
+          {/* The resource dashboard. Above the Stage pages, below the chat. */}
+          {metricsOpen ? <MetricsDashboard /> : null}
         </div>
 
         {/* Outside the animated area so dragging the scrubber is never interrupted. */}

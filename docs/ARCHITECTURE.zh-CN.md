@@ -51,6 +51,16 @@ Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAda
   ——一次是 `nohup`，一次是 `node`。所以 pid 单独不能表示"已处理过"；观察器
   以 **(pid, 命令行)** 对为键，第二个事件按它本来的新进程来判。Pi 保留自己的
   会话文件（这样对话可以恢复），Absence 把它观察到的 `AbsenceEvent` 流归档在旁边。
+  **资源指标（v0.4）** 不走事件流：`process/ProcessMetrics` 以自适应间隔
+  （2s→60s，按并发 primary 数选档，选中 egg 固定 2s）采样每个 egg 子树的
+  累计 CPU 与 RSS（Linux 读 `/proc`，Windows 一次 CIM 查询，其它平台 `ps`），
+  Prometheus 口径——counter 加 gauge，`rate()`/均值在客户端算。最近 300 帧
+  在内存里随快照发给新客户端，之后经 `storage/metrics.ts` 以 30 分钟二进制
+  chunk（Float32 CPU 增量 + Uint32 RSS KiB）持久化到 SQLite，保留 30 天；
+  会话平均值在 `egg_metric_summary` 里独立累计，不依赖环形缓冲。它通过
+  `metrics` WS 帧和 `GET /api/sessions/:id/metrics` 到达 UI，右栏 METRICS
+  面板与 Stage 全屏看板（uplot）共同消费它。tool 进程不逐 tick 采样，只
+  聚合成一条 `tools` 序列；退出时用 `WatchExit.cpuMs` 补最后一点。
 - `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion。
   面板是入口，Stage 是内容的归宿；Absence Report 和 Agent Eggs 都是对同一条事件
   流的归约。

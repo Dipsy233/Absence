@@ -12,6 +12,7 @@ import {
   type AbsenceEvent,
   type FileState,
   type FileTreeNode,
+  type MetricsFrame,
   type Session,
   type SessionRuntimeState,
   type SessionSnapshot,
@@ -27,6 +28,7 @@ import {
   readRuns,
   writeMeta,
 } from "./archive";
+import { appendMetricsFrame, drainMetrics } from "./storage/metrics";
 import { EventBus } from "../events";
 import type { AgentAdapter } from "../agents/AgentAdapter";
 import { TerminalMirror } from "./TerminalMirror";
@@ -36,6 +38,7 @@ import { createAdapter } from "../agents/createAdapter";
 import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
 import { ProcessWatcher } from "../process/ProcessWatcher";
+import { ProcessMetricsSampler } from "../process/ProcessMetrics";
 import { snapshotProcesses } from "../process/ProcessTable";
 import { JobMonitor } from "../process/JobMonitor";
 import { unifiedDiff } from "../util/diff";
@@ -156,6 +159,9 @@ export class AbsenceSession {
   private watcher?: FileWatcher;
   /** Reports the OS processes the agent lays; Absence owns the shell (v0.3). */
   private processWatcher: ProcessWatcher;
+  /** Samples the eggs' CPU/RSS; its frames are streamed beside the events. */
+  private readonly metricsSampler: ProcessMetricsSampler;
+  private readonly metricsListeners = new Set<(frame: MetricsFrame) => void>();
   private unsubAdapter?: () => void;
   private events: AbsenceEvent[] = [];
   private currentAction?: AbsenceEvent;
@@ -245,6 +251,16 @@ export class AbsenceSession {
     // costs half a second, so it has to be taken here rather than when the first
     // command begins.
     this.processWatcher.warm();
+    // Resource metrics ride their own channel: the event window is for facts,
+    // not for a process table sampled every two seconds.
+    this.metricsSampler = new ProcessMetricsSampler({
+      targets: () => this.processWatcher.metricsTargets(),
+      onFrame: (frame) => {
+        appendMetricsFrame(this.id, frame);
+        for (const listener of this.metricsListeners) listener(frame);
+      },
+    });
+    this.metricsSampler.start();
     this.lastActiveAt = this.session.startedAt;
   }
 
@@ -822,11 +838,24 @@ export class AbsenceSession {
       chat: [...this.chat],
       events,
       runs,
+      metrics: this.metricsSampler.snapshot(),
     };
+  }
+
+  /** Live metric frames for a new WebSocket client. */
+  onMetrics(listener: (frame: MetricsFrame) => void): () => void {
+    this.metricsListeners.add(listener);
+    return () => this.metricsListeners.delete(listener);
+  }
+
+  /** The dashboard's selected egg gets the 2s cadence back. */
+  setMetricsHotEgg(eggPid?: number): void {
+    this.metricsSampler.setHotEgg(eggPid);
   }
 
   async dispose(): Promise<void> {
     this.disposed = true;
+    this.metricsSampler.stop();
     if (this.stateTimer) clearTimeout(this.stateTimer);
     if (this.treeTimer) clearTimeout(this.treeTimer);
     if (this.metaTimer) clearTimeout(this.metaTimer);
@@ -839,6 +868,7 @@ export class AbsenceSession {
     await this.watcher?.close();
     await this.flushMeta();
     await drainArchive();
+    await drainMetrics();
   }
 
   // --------------------------------------------------------------------------

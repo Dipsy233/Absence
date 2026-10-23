@@ -18,6 +18,7 @@
     "start": "npm run start -w @absence/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:eggs": "tsx scripts/checks/check-eggs.ts",
+    "check:metrics": "tsx scripts/checks/check-metrics.ts",
     "check:classify": "tsx scripts/checks/check-classify.ts",
     "check:codex": "tsx scripts/checks/check-codex.ts",
     "check:execserver": "tsx scripts/checks/check-execserver.ts",

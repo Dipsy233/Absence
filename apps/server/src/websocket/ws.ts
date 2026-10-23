@@ -79,6 +79,24 @@ export async function wsRoutes(app: FastifyInstance): Promise<void> {
     const unsubscribeState = session.stateBus.subscribe((state) => {
       send(client, { type: "session_state", state });
     });
+    const unsubscribeMetrics = session.onMetrics((frame) => {
+      send(client, { type: "metrics", frame });
+    });
+
+    // The dashboard asks for the selected egg to be sampled at 2s while it is
+    // open. Nothing else on this socket is client-to-server.
+    client.on("message", (raw: unknown) => {
+      try {
+        const message = JSON.parse(String(raw)) as { type?: string; eggPid?: number };
+        if (message.type === "metrics_subscribe") {
+          session.setMetricsHotEgg(
+            typeof message.eggPid === "number" && message.eggPid > 0 ? message.eggPid : undefined,
+          );
+        }
+      } catch {
+        // Ignore malformed client frames; this socket is otherwise one-way.
+      }
+    });
 
     client.on("close", () => {
       if (flushTimer) clearTimeout(flushTimer);
@@ -86,6 +104,7 @@ export async function wsRoutes(app: FastifyInstance): Promise<void> {
       flushEvents();
       unsubscribeEvents();
       unsubscribeState();
+      unsubscribeMetrics();
     });
   });
 

@@ -3,6 +3,7 @@ import { parseCommandIntent, type CommandIntent } from "./CommandIntent";
 import { classifyProcess } from "./classify";
 import { isTransparentLauncher } from "./priors";
 import { JobMonitor } from "./JobMonitor";
+import type { MetricsTarget } from "./ProcessMetrics";
 import type { WatchExit, WatchStart } from "./observer";
 import { snapshotProcesses, type ProcessTable, type ProcInfo } from "./ProcessTable";
 import { detectCommand, unwrapCommandText } from "./CodexShell";
@@ -352,6 +353,32 @@ export class ProcessWatcher {
   private startObservedPoll(): void {
     if (this.tickTimer !== undefined || this.disposed) return;
     this.tickTimer = setTimeout(() => void this.pollObserved(), OBSERVE_TICK_MS);
+  }
+
+  /**
+   * The egg roots and the pids that roll into each, for the metrics sampler.
+   *
+   * `jobParent` is the same map attribution already uses: every pid the
+   * observer has seen points at the egg root it descends from, so a tree's pids
+   * are a scan of that map — no second process-table snapshot needed.
+   */
+  metricsTargets(): MetricsTarget[] {
+    const targets: MetricsTarget[] = [];
+    for (const egg of this.eggs.values()) {
+      const pids = new Set<number>([egg.info.pid]);
+      for (const [pid, root] of this.jobParent) {
+        if (root === egg.info.pid) pids.add(pid);
+      }
+      targets.push({
+        rootPid: egg.info.pid,
+        name: egg.info.name,
+        kind: egg.kind,
+        status: egg.status,
+        startedAt: egg.startedAt,
+        pids: [...pids],
+      });
+    }
+    return targets;
   }
 
   /**

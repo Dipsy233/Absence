@@ -6,11 +6,14 @@ import { useChatStore } from "../stores/chatStore";
 import { useStageStore } from "../stores/stageStore";
 import { useRunsStore } from "../stores/runsStore";
 import { useUiStore } from "../stores/uiStore";
+import { useMetricsStore } from "../stores/metricsStore";
+import type { MetricsFrame } from "@absence/core";
 
 type ServerMessage =
   | { type: "snapshot"; state: SessionSnapshot }
   | { type: "event"; event: AbsenceEvent }
   | { type: "events"; events: AbsenceEvent[] }
+  | { type: "metrics"; frame: MetricsFrame }
   | { type: "session_state"; state: SessionRuntimeState }
   | { type: "error"; message: string };
 
@@ -33,11 +36,32 @@ export function useSessionSocket(sessionId: string | undefined): void {
 
     useStageStore.getState().reset();
     useUiStore.getState().reset();
+    useMetricsStore.getState().reset();
 
     let socket: WebSocket | undefined;
     let disposed = false;
     let attempt = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    // The dashboard's selected egg gets the sampler's fast cadence back while
+    // the dashboard is open. Closing it releases the cadence again, so a
+    // session with hundreds of eggs does not keep paying for 2s sampling.
+    const sendHotEgg = () => {
+      if (socket?.readyState !== WebSocket.OPEN) return;
+      const open = useUiStore.getState().metricsOpen;
+      socket.send(
+        JSON.stringify({
+          type: "metrics_subscribe",
+          eggPid: open ? useMetricsStore.getState().selectedEggPid : undefined,
+        }),
+      );
+    };
+    const unsubscribeHotEgg = useMetricsStore.subscribe((state, previous) => {
+      if (state.selectedEggPid !== previous.selectedEggPid) sendHotEgg();
+    });
+    const unsubscribeMetricsOpen = useUiStore.subscribe((state, previous) => {
+      if (state.metricsOpen !== previous.metricsOpen) sendHotEgg();
+    });
 
     const connect = () => {
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -47,6 +71,7 @@ export function useSessionSocket(sessionId: string | undefined): void {
         if (disposed) return;
         attempt = 0;
         useSessionStore.getState().setConnected(true);
+        sendHotEgg();
       };
 
       socket.onmessage = (raw) => {
@@ -61,6 +86,7 @@ export function useSessionSocket(sessionId: string | undefined): void {
             useSessionStore.getState().hydrate(message.state);
             useFileStore.getState().hydrate(message.state);
             useChatStore.getState().hydrate(message.state);
+            useMetricsStore.getState().hydrate(message.state.metrics);
             break;
           case "event":
             useSessionStore.getState().ingestEvent(message.event);
@@ -77,6 +103,9 @@ export function useSessionSocket(sessionId: string | undefined): void {
             if (isRunBoundary(message.events)) {
               void useRunsStore.getState().loadRuns(sessionId);
             }
+            break;
+          case "metrics":
+            useMetricsStore.getState().ingest(message.frame);
             break;
           case "session_state":
             useSessionStore.getState().applyRuntimeState(message.state);
@@ -106,6 +135,8 @@ export function useSessionSocket(sessionId: string | undefined): void {
 
     return () => {
       disposed = true;
+      unsubscribeHotEgg();
+      unsubscribeMetricsOpen();
       if (retryTimer) clearTimeout(retryTimer);
       socket?.close();
       useSessionStore.getState().setConnected(false);

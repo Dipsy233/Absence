@@ -13,6 +13,8 @@ import {
 
 import { useSessionStore } from "../../stores/sessionStore";
 import { useStageStore } from "../../stores/stageStore";
+import { useMetricsStore } from "../../stores/metricsStore";
+import { useUiStore } from "../../stores/uiStore";
 import { Panel } from "../Panel";
 import { useT } from "../../lib/i18n";
 
@@ -41,6 +43,9 @@ export function AgentEggsPanel() {
   const eggMap = useSessionStore.getState().eggState.eggs;
   const openStage = useStageStore((s) => s.openStage);
   const activeItemId = useStageStore((s) => s.activeItem?.id);
+  const selectedMetricEgg = useMetricsStore((s) => s.selectedEggPid);
+  const selectMetricEgg = useMetricsStore((s) => s.selectEgg);
+  const openMetrics = useUiStore((s) => s.openMetrics);
   // Eggs describe what is running *now*, so this panel deliberately ignores
   // replay: it always folds the live session's events. The highlight follows the
   // active Stage item, which in replay would be a stale card the Stage is not
@@ -128,14 +133,14 @@ export function AgentEggsPanel() {
             // the highlight survives a running → exited transition.
             const selected = !inReplay && `process_${egg.pid}` === activeItemId;
             return (
-              <li key={egg.pid}>
+              <li key={egg.pid} className="flex items-stretch gap-1">
                 <button
                   type="button"
                   onClick={() => open(egg)}
                   title={t("Open pid {n} on the Stage", { n: egg.pid })}
                   aria-current={selected ? "true" : undefined}
                   className={[
-                    "block w-full rounded border-l-2 px-1.5 py-1 text-left font-mono text-[11px] leading-tight",
+                    "block min-w-0 flex-1 rounded border-l-2 px-1.5 py-1 text-left font-mono text-[11px] leading-tight",
                     selected
                       ? "border-l-desk-amber bg-desk-panel2"
                       : "border-l-transparent hover:bg-desk-panel2",
@@ -162,6 +167,23 @@ export function AgentEggsPanel() {
                     {egg.children > 0 ? ` · ${t("+{n} children", { n: egg.children })}` : ""}
                     {egg.kindReason ? ` · ${egg.kindReason}` : ""}
                   </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    selectMetricEgg(egg.pid);
+                    openMetrics();
+                  }}
+                  title={t("Show this egg's resource metrics")}
+                  aria-pressed={selectedMetricEgg === egg.pid}
+                  className={[
+                    "shrink-0 rounded border px-1.5 font-mono text-[10px] leading-none transition-colors",
+                    selectedMetricEgg === egg.pid
+                      ? "border-desk-amber/60 bg-desk-amber/10 text-desk-amber"
+                      : "border-desk-line text-desk-dim hover:text-desk-amber",
+                  ].join(" ")}
+                >
+                  ▤
                 </button>
               </li>
             );

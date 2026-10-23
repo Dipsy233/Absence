@@ -65,6 +65,20 @@ Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAda
   the second event is judged as the new process it is. Pi keeps
   its own session file (so a conversation can be resumed) and Absence archives the
   `AbsenceEvent` stream it observed alongside it.
+  **Resource metrics (v0.4) bypass the event stream**: `process/ProcessMetrics`
+  samples each egg's subtree for cumulative CPU and RSS on an adaptive cadence
+  (2s→60s, chosen by concurrent primary count; a selected egg pins 2s) — Linux
+  reads `/proc`, Windows asks CIM once, other platforms `ps` — in Prometheus
+  shapes: counters and gauges, with `rate()` and averages derived client-side.
+  The newest 300 frames ride the snapshot to new clients; older data persists to
+  SQLite through `storage/metrics.ts` as 30-minute binary chunks (Float32 CPU
+  deltas + Uint32 RSS KiB), kept for 30 days. Session averages accumulate
+  separately in `egg_metric_summary`, independent of the in-memory ring. It
+  reaches the UI over a `metrics` WS frame and
+  `GET /api/sessions/:id/metrics`, consumed by the right-rail METRICS panel and
+  the full-screen Stage dashboard (uplot). Tools are not sampled per tick; they
+  fold into one aggregate `tools` series, and an exit appends a final point
+  from `WatchExit.cpuMs`.
 - `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion. The
   panels are entry points and the Stage is where content lives; the Absence Report
   and Agent Eggs are both reductions of the same event stream.

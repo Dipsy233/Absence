@@ -2,6 +2,7 @@
  * Shared domain types for Absence. Kept deliberately small for v0.1.
  */
 import type { AbsenceEvent } from "./events";
+import type { MetricsFrame } from "./metrics";
 import type { RunSummary } from "./runs";
 
 /** The agent's coarse state — drives the Avatar and status text. */
@@ -261,6 +262,12 @@ export interface SessionSnapshot extends SessionRuntimeState {
   events: AbsenceEvent[];
   /** Run summaries for History; no event payloads. */
   runs?: RunSummary[];
+  /**
+   * The newest resource-metric frames, so a client that reconnects has a chart
+   * immediately instead of waiting for the next tick. Older frames come from
+   * GET /api/sessions/:id/metrics.
+   */
+  metrics?: MetricsFrame[];
 }
 
 /**

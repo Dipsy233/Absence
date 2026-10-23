@@ -45,6 +45,8 @@ interface UiStore {
   absenceMode: boolean;
   /** Whether the Absence Report overlay covers the Stage. Transient view state. */
   reportOpen: boolean;
+  /** Whether the metrics dashboard covers the Stage. */
+  metricsOpen: boolean;
   /** Event highlighted in the Activity panel after following a report link. */
   focusedEventId?: string;
 
@@ -56,6 +58,9 @@ interface UiStore {
   toggleAgentOnStage: () => void;
   toggleAbsenceMode: () => void;
   toggleReport: () => void;
+  openMetrics: () => void;
+  closeMetrics: () => void;
+  toggleMetrics: () => void;
   focusEvent: (id?: string) => void;
   reset: () => void;
 }
@@ -68,6 +73,7 @@ export const useUiStore = create<UiStore>((set) => ({
   agentOnStage: false,
   absenceMode: false,
   reportOpen: false,
+  metricsOpen: false,
   focusedEventId: undefined,
 
   openMenu: (x, y, items) => set({ menu: { x, y, items } }),
@@ -90,9 +96,19 @@ export const useUiStore = create<UiStore>((set) => ({
 
   toggleReport: () => set((s) => ({ reportOpen: !s.reportOpen })),
 
+  openMetrics: () => set({ metricsOpen: true }),
+  closeMetrics: () => set({ metricsOpen: false }),
+  toggleMetrics: () => set((s) => ({ metricsOpen: !s.metricsOpen })),
+
   focusEvent: (focusedEventId) => set({ focusedEventId }),
 
   // Deliberately keeps chatHistoryOpen: it is a user preference, not session state.
   reset: () =>
-    set({ menu: undefined, filesView: { kind: "tree" }, selectedRunId: undefined, focusedEventId: undefined }),
+    set({
+      menu: undefined,
+      filesView: { kind: "tree" },
+      selectedRunId: undefined,
+      focusedEventId: undefined,
+      metricsOpen: false,
+    }),
 }));

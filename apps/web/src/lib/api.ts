@@ -2,6 +2,7 @@ import type {
   AbsenceEvent,
   CommandOption,
   FileVersionInfo,
+  MetricsResponse,
   Project,
   RunSummary,
   SessionEventPage,
@@ -94,6 +95,22 @@ export async function getSession(id: string): Promise<SessionSnapshot> {
 export async function fetchSessionHistory(path?: string): Promise<SessionHistoryEntry[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   return json<SessionHistoryEntry[]>(await fetch(`/api/sessions/history${query}`));
+}
+
+/** Persisted metric series for a range. Live recent frames come from the socket. */
+export async function fetchMetrics(
+  sessionId: string,
+  options: { from: number; to: number; step: number; eggPid?: number },
+): Promise<MetricsResponse> {
+  const query = new URLSearchParams({
+    from: String(options.from),
+    to: String(options.to),
+    step: String(options.step),
+  });
+  if (options.eggPid !== undefined) query.set("egg", String(options.eggPid));
+  return json<MetricsResponse>(
+    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/metrics?${query.toString()}`),
+  );
 }
 
 /** Every recorded file version for a session, independent of the event window. */
