@@ -6,6 +6,7 @@ import { useStageStore } from "../../stores/stageStore";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
+import { moodFor, type AgentVisualState } from "../../lib/agent";
 import { statusFromEvent } from "../../lib/events";
 import { useT } from "../../lib/i18n";
 import { StageItemView } from "../stage/StageItemView";
@@ -14,6 +15,9 @@ import { ReplayBar } from "../stage/ReplayBar";
 import { StageChat } from "../chat/StageChat";
 import { ReportOverlay } from "../stage/ReportOverlay";
 import { MetricsDashboard } from "../metrics/MetricsDashboard";
+import { Avatar } from "../agent/Avatar";
+import { MediaAvatar } from "../agent/MediaAvatar";
+import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 
 /**
  * The Stage: where events become something you can look at (read02 §11).
@@ -32,6 +36,7 @@ export function Stage() {
   const mode = useStageStore((s) => s.mode);
   const liveStatus = useSessionStore((s) => s.agent.status);
   const replayStatus = useReplayStore((s) => s.view?.agentStatus);
+  const agentOnStage = useUiStore((s) => s.agentOnStage);
   const metricsOpen = useUiStore((s) => s.metricsOpen);
   const absenceMode = useUiStore((s) => s.absenceMode);
   // Whether Absence only watches this agent (see useIsObserved). With an
@@ -57,6 +62,8 @@ export function Stage() {
       (mode !== "replay" && mode !== "metrics" && item?.event
         ? statusFromEvent(item.event)
         : undefined)) ?? liveStatus;
+
+  const visual: AgentVisualState = { status, mood: moodFor(status) };
 
   let key: string;
   let content: React.ReactNode;
@@ -87,9 +94,10 @@ export function Stage() {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="relative min-h-0 flex-1 overflow-hidden">
-          {/* The metrics dashboard: the background by default; in ABSENCE mode a
-              translucent, click-through ghost in front of the content sheet. It
-              stays below the chat, which floats on top of everything (z-50). */}
+          {/* The Stage's background: the metrics dashboard, or the agent's avatar
+              once swapped in. In ABSENCE mode it becomes a translucent,
+              click-through ghost in front of the content sheet. It stays below
+              the chat, which floats on top of everything (z-50). */}
           <div
             className={
               ghost
@@ -97,7 +105,7 @@ export function Stage() {
                 : "absolute inset-0 z-0 isolate overflow-hidden"
             }
           >
-            <MetricsDashboard embedded />
+            {agentOnStage ? <AgentAvatar visual={visual} /> : <MetricsDashboard embedded />}
           </div>
 
           {/* The sheet frame: a persistent layer so an outgoing page always fades
@@ -188,6 +196,14 @@ export function Stage() {
 const SHEET_INSET = 8; // inset-x-2 / top-2
 const SHEET_BOTTOM = 56; // bottom-14 (3.5rem)
 const LINE_RGB = "46, 40, 34"; // --desk-line, for the animatable border colour
+
+/** The Stage's avatar honours the uploaded skin, same as the Agent panel. */
+function AgentAvatar({ visual }: { visual: AgentVisualState }) {
+  const coverage = useAvatarSkinCoverage();
+  const media = skinMediaFor(coverage, visual.status);
+  if (media) return <MediaAvatar visual={visual} src={media.src} video={media.video} />;
+  return <Avatar visual={visual} />;
+}
 
 function EmptyStage({ text }: { text: string }) {
   const t = useT();

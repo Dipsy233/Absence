@@ -45,6 +45,7 @@ const ZH: Record<string, string> = {
 
   // ── Metrics ────────────────────────────────────────────────────────────
   METRICS: "指标",
+  "Swap the agent and the metrics on the Stage": "在 Stage 上交换智能体与指标",
   "Waiting for the first sample…": "等待第一个采样…",
   CPU: "CPU",
   MEM: "内存",

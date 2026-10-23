@@ -33,6 +33,12 @@ interface UiStore {
   /** Whether the Stage chat's history unfolds on the default page. Remembered. */
   chatHistoryOpen: boolean;
   /**
+   * Swapped view: the agent becomes the Stage's default background (behind the
+   * metrics dashboard) and the compact metrics panel moves into the top-right
+   * slot. Toggled by clicking that panel.
+   */
+  agentOnStage: boolean;
+  /**
    * ABSENCE mode: the metrics dashboard floats *in front of* the Stage's
    * content page as a translucent ghost, instead of behind it.
    */
@@ -49,6 +55,7 @@ interface UiStore {
   setFilesView: (view: FilesView) => void;
   selectRun: (id?: string) => void;
   setChatHistoryOpen: (open: boolean) => void;
+  toggleAgentOnStage: () => void;
   toggleAbsenceMode: () => void;
   toggleReport: () => void;
   openMetrics: () => void;
@@ -63,6 +70,7 @@ export const useUiStore = create<UiStore>((set) => ({
   filesView: { kind: "tree" },
   selectedRunId: undefined,
   chatHistoryOpen: readChatHistoryOpen(),
+  agentOnStage: false,
   absenceMode: false,
   reportOpen: false,
   metricsOpen: false,
@@ -81,6 +89,8 @@ export const useUiStore = create<UiStore>((set) => ({
     }
     set({ chatHistoryOpen });
   },
+
+  toggleAgentOnStage: () => set((s) => ({ agentOnStage: !s.agentOnStage })),
 
   toggleAbsenceMode: () => set((s) => ({ absenceMode: !s.absenceMode })),
 
