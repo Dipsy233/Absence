@@ -33,19 +33,13 @@ interface UiStore {
   /** Whether the Stage chat's history unfolds on the default page. Remembered. */
   chatHistoryOpen: boolean;
   /**
-   * Swapped view: the agent becomes the Stage's default background and the desk
-   * world moves into the top-right panel (renamed TABLE). Toggled by clicking
-   * that panel.
-   */
-  agentOnStage: boolean;
-  /**
-   * ABSENCE mode: the desk world (or the agent, when swapped) floats *in front of*
-   * the Stage's content page as a translucent ghost, instead of behind it.
+   * ABSENCE mode: the metrics dashboard floats *in front of* the Stage's
+   * content page as a translucent ghost, instead of behind it.
    */
   absenceMode: boolean;
   /** Whether the Absence Report overlay covers the Stage. Transient view state. */
   reportOpen: boolean;
-  /** Whether the metrics dashboard covers the Stage. */
+  /** Whether the metrics dashboard covers the Stage (when not the default page). */
   metricsOpen: boolean;
   /** Event highlighted in the Activity panel after following a report link. */
   focusedEventId?: string;
@@ -55,7 +49,6 @@ interface UiStore {
   setFilesView: (view: FilesView) => void;
   selectRun: (id?: string) => void;
   setChatHistoryOpen: (open: boolean) => void;
-  toggleAgentOnStage: () => void;
   toggleAbsenceMode: () => void;
   toggleReport: () => void;
   openMetrics: () => void;
@@ -70,7 +63,6 @@ export const useUiStore = create<UiStore>((set) => ({
   filesView: { kind: "tree" },
   selectedRunId: undefined,
   chatHistoryOpen: readChatHistoryOpen(),
-  agentOnStage: false,
   absenceMode: false,
   reportOpen: false,
   metricsOpen: false,
@@ -89,8 +81,6 @@ export const useUiStore = create<UiStore>((set) => ({
     }
     set({ chatHistoryOpen });
   },
-
-  toggleAgentOnStage: () => set((s) => ({ agentOnStage: !s.agentOnStage })),
 
   toggleAbsenceMode: () => set((s) => ({ absenceMode: !s.absenceMode })),
 

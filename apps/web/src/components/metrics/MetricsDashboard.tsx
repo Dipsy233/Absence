@@ -42,7 +42,7 @@ const EMPTY: ChartSeries = { ts: [], cpuCores: [], rssMiB: [] };
  * persisted chunks from /api/sessions/:id/metrics, which is also how a
  * historical session or a replay sees its resource curve.
  */
-export function MetricsDashboard() {
+export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
   const t = useT();
   const version = useMetricsStore((s) => s.version);
   const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
@@ -157,7 +157,16 @@ export function MetricsDashboard() {
   const maxMem = chart.rssMiB.length > 0 ? Math.max(...chart.rssMiB) : 0;
 
   return (
-    <div className="absolute inset-x-0 top-0 bottom-14 z-30 flex flex-col bg-desk-panel/95 backdrop-blur-[3px]">
+    <div
+      className={[
+        "flex flex-col",
+        // Embedded is the Stage's default page: it fills the stage area behind
+        // the content sheets. Overlay mode covers them, above the report.
+        embedded
+          ? "h-full w-full bg-desk-panel"
+          : "absolute inset-x-0 top-0 bottom-14 z-30 bg-desk-panel/95 backdrop-blur-[3px]",
+      ].join(" ")}
+    >
       <header className="flex shrink-0 items-center gap-2 border-b border-desk-line px-3 py-1.5">
         <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-desk-amber">
           {t("METRICS")}
@@ -174,14 +183,16 @@ export function MetricsDashboard() {
           >
             ↻
           </button>
-          <button
-            type="button"
-            onClick={closeMetrics}
-            title={t("Close the metrics dashboard")}
-            className="rounded border border-desk-line px-2 py-0.5 font-mono text-[10px] text-desk-dim hover:text-desk-ink"
-          >
-            ✕
-          </button>
+          {embedded ? null : (
+            <button
+              type="button"
+              onClick={closeMetrics}
+              title={t("Close the metrics dashboard")}
+              className="rounded border border-desk-line px-2 py-0.5 font-mono text-[10px] text-desk-dim hover:text-desk-ink"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </header>
 
@@ -236,7 +247,9 @@ export function MetricsDashboard() {
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {options.length === 0 && !remote ? (
-          <p className="text-xs text-desk-dim">{t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")}</p>
+          <p className="py-8 text-center text-xs text-desk-dim">
+            {t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")}
+          </p>
         ) : tab === "graph" ? (
           <div className="flex flex-col gap-2">
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">

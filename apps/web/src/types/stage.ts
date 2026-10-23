@@ -3,7 +3,7 @@ import type { AbsenceEvent, ApprovalOption, FileTreeNode } from "@absence/core";
 /** Stage modes. `live` follows the agent; the rest are pinned views. */
 export type StageMode =
   | "live"
-  | "desk"
+  | "metrics"
   | "file"
   | "diff"
   | "terminal"

@@ -39,16 +39,12 @@ const ZH: Record<string, string> = {
   REPLAY: "回放",
   TERMINAL: "终端",
   LIVE: "实时",
-  TABLE: "桌面",
-  AGENT: "智能体",
   "The whole file you opened from the project tree": "你在项目树里打开的完整文件",
-  "Back to the agent — the default page": "回到智能体——默认页",
-  "Back to the desk — the default page": "回到桌面——默认页",
+  "Back to the metrics — the default page": "回到指标——默认页",
   "The content the agent has in context": "智能体上下文里的内容",
 
   // ── Metrics ────────────────────────────────────────────────────────────
   METRICS: "指标",
-  "Swap the agent and the desk on the Stage": "在 Stage 上交换智能体与桌面",
   "Waiting for the first sample…": "等待第一个采样…",
   CPU: "CPU",
   MEM: "内存",

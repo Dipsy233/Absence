@@ -1,22 +1,16 @@
 import { useEffect, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { isAgentBusy } from "@absence/core";
-import { focusFor, useReplayItem, useStageView } from "../../hooks/useStage";
+import { useReplayItem, useStageView } from "../../hooks/useStage";
 import { useStageStore } from "../../stores/stageStore";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useUiStore } from "../../stores/uiStore";
-import { moodFor, type AgentVisualState } from "../../lib/agent";
 import { statusFromEvent } from "../../lib/events";
 import { useT } from "../../lib/i18n";
 import { StageItemView } from "../stage/StageItemView";
-import { DeskStage } from "../stage/DeskStage";
 import { StageToolbar } from "../stage/StageToolbar";
 import { ReplayBar } from "../stage/ReplayBar";
-import { StageWorld } from "../stage/StageWorld";
-import { Avatar } from "../agent/Avatar";
-import { MediaAvatar } from "../agent/MediaAvatar";
-import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 import { StageChat } from "../chat/StageChat";
 import { ReportOverlay } from "../stage/ReportOverlay";
 import { MetricsDashboard } from "../metrics/MetricsDashboard";
@@ -24,11 +18,12 @@ import { MetricsDashboard } from "../metrics/MetricsDashboard";
 /**
  * The Stage: where events become something you can look at (read02 §11).
  *
- * The desk world (StageWorld) is the Stage's *default page* and is normally
- * drawn as the background, with FILE / DIFF / TERMINAL / LIVE riding on top of
- * it as a slightly translucent sheet. ABSENCE mode (the toggle in the session bar)
- * flips that: the desk — or the agent, when swapped — floats *in front of* the
- * content as a translucent ghost, and the page underneath becomes the sheet.
+ * The metrics dashboard is the Stage's *default page*: the eggs' resource view
+ * lives where the desk world used to, drawn as the background, with FILE /
+ * DIFF / TERMINAL / LIVE riding on top of it as a slightly translucent sheet.
+ * ABSENCE mode (the toggle in the session bar) flips that: the dashboard
+ * floats *in front of* the content as a translucent ghost, and the page
+ * underneath becomes the sheet.
  */
 export function Stage() {
   const { item } = useStageView();
@@ -37,7 +32,6 @@ export function Stage() {
   const mode = useStageStore((s) => s.mode);
   const liveStatus = useSessionStore((s) => s.agent.status);
   const replayStatus = useReplayStore((s) => s.view?.agentStatus);
-  const agentOnStage = useUiStore((s) => s.agentOnStage);
   const metricsOpen = useUiStore((s) => s.metricsOpen);
   const absenceMode = useUiStore((s) => s.absenceMode);
   // Whether Absence only watches this agent (see useIsObserved). With an
@@ -60,13 +54,9 @@ export function Stage() {
   // idling at whatever the live status happens to be.
   const status =
     ((mode === "replay" && replayStatus) ||
-      (mode !== "replay" && mode !== "desk" && item?.event
+      (mode !== "replay" && mode !== "metrics" && item?.event
         ? statusFromEvent(item.event)
         : undefined)) ?? liveStatus;
-
-  const focus = focusFor(mode, status, replayItem);
-
-  const visual: AgentVisualState = { status, mood: moodFor(status) };
 
   let key: string;
   let content: React.ReactNode;
@@ -76,15 +66,15 @@ export function Stage() {
     key = `replay:${replayItem?.id ?? "none"}`;
     sheet = !!replayItem;
     content = replayItem ? <StageItemView item={replayItem} /> : <EmptyStage text="Press ▶ to replay this run." />;
-  } else if (mode !== "desk" && item) {
+  } else if (mode !== "metrics" && item) {
     key = item.id;
     sheet = true;
     content = <StageItemView item={item} />;
   } else {
-    // TABLE: the default page, regardless of what is pinned.
-    key = "desk";
+    // METRICS: the default page, regardless of what is pinned.
+    key = "metrics";
     sheet = false;
-    content = <DeskStage status={status} observedLabel={observedLabel} />;
+    content = <MetricsDashboard embedded />;
   }
 
   // ABSENCE mode only means something while a content page is up; on the default
@@ -97,7 +87,7 @@ export function Stage() {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="relative min-h-0 flex-1 overflow-hidden">
-          {/* The world (desk or agent): the background by default; in ABSENCE mode a
+          {/* The metrics dashboard: the background by default; in ABSENCE mode a
               translucent, click-through ghost in front of the content sheet. It
               stays below the chat, which floats on top of everything (z-50). */}
           <div
@@ -107,7 +97,7 @@ export function Stage() {
                 : "absolute inset-0 z-0 isolate overflow-hidden"
             }
           >
-            {agentOnStage ? <AgentAvatar visual={visual} /> : <StageWorld focus={focus} />}
+            <MetricsDashboard embedded />
           </div>
 
           {/* The sheet frame: a persistent layer so an outgoing page always fades
@@ -180,9 +170,6 @@ export function Stage() {
 
           {/* The Absence Report tab + overlay, below the chat so it never hides it. */}
           <ReportOverlay />
-
-          {/* The resource dashboard. Above the Stage pages, below the chat. */}
-          {metricsOpen ? <MetricsDashboard /> : null}
         </div>
 
         {/* Outside the animated area so dragging the scrubber is never interrupted. */}
@@ -201,14 +188,6 @@ export function Stage() {
 const SHEET_INSET = 8; // inset-x-2 / top-2
 const SHEET_BOTTOM = 56; // bottom-14 (3.5rem)
 const LINE_RGB = "46, 40, 34"; // --desk-line, for the animatable border colour
-
-/** The Stage's avatar honours the uploaded skin, same as the Agent panel. */
-function AgentAvatar({ visual }: { visual: AgentVisualState }) {
-  const coverage = useAvatarSkinCoverage();
-  const media = skinMediaFor(coverage, visual.status);
-  if (media) return <MediaAvatar visual={visual} src={media.src} video={media.video} />;
-  return <Avatar visual={visual} />;
-}
 
 function EmptyStage({ text }: { text: string }) {
   const t = useT();

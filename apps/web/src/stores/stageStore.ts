@@ -16,7 +16,7 @@ function modeForItem(item: StageItem): StageMode {
     case "approval":
       return "approval";
     default:
-      return "desk";
+      return "metrics";
   }
 }
 
@@ -47,8 +47,8 @@ interface StageStore {
   showAgentFile: () => void;
   setMode: (mode: StageMode) => void;
   goLive: () => void;
-  /** Back to the default desk page. */
-  goDesk: () => void;
+  /** Back to the default metrics page. */
+  goMetrics: () => void;
   reset: () => void;
 }
 
@@ -106,7 +106,7 @@ export const useStageStore = create<StageStore>((set, get) => ({
 
   goLive: () => set({ mode: "live", following: true }),
 
-  goDesk: () => set({ mode: "desk", following: false }),
+  goMetrics: () => set({ mode: "metrics", following: false }),
 
   reset: () =>
     set({

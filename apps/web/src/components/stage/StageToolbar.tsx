@@ -1,13 +1,12 @@
 import type { StageItemType } from "../../types/stage";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
-import { useUiStore } from "../../stores/uiStore";
 import { useT } from "../../lib/i18n";
 
 /**
  * Three groups (read02 §13):
  *   left   — the user's view (whole file from the project tree, diffs, replay)
- *   centre — back to the default page (TABLE, or AGENT once the agent/desk swap is on)
+ *   centre — back to the default page (METRICS)
  *   right  — the agent's view (its terminal, the file it has in context, live)
  */
 export function StageToolbar() {
@@ -21,10 +20,7 @@ export function StageToolbar() {
   const showUserFile = useStageStore((s) => s.showUserFile);
   const showAgentFile = useStageStore((s) => s.showAgentFile);
   const setMode = useStageStore((s) => s.setMode);
-  const goDesk = useStageStore((s) => s.goDesk);
-  const agentOnStage = useUiStore((s) => s.agentOnStage);
-  const metricsOpen = useUiStore((s) => s.metricsOpen);
-  const openMetrics = useUiStore((s) => s.openMetrics);
+  const goMetrics = useStageStore((s) => s.goMetrics);
   const replayReady = useReplayStore((s) => s.events.length > 0);
 
   const buttonClass = (active: boolean, enabled: boolean) =>
@@ -71,15 +67,15 @@ export function StageToolbar() {
         {t("REPLAY")}
       </button>
 
-      {/* centre — the default page (the agent, once swapped in) */}
+      {/* centre — back to the default page (the metrics dashboard) */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         <button
           type="button"
-          onClick={goDesk}
-          title={agentOnStage ? t("Back to the agent — the default page") : t("Back to the desk — the default page")}
-          className={buttonClass(mode === "desk", true)}
+          onClick={goMetrics}
+          title={t("Back to the metrics — the default page")}
+          className={buttonClass(mode === "metrics", true)}
         >
-          {agentOnStage ? t("AGENT") : t("TABLE")}
+          {t("METRICS")}
         </button>
       </div>
 
@@ -100,14 +96,6 @@ export function StageToolbar() {
         </button>
         <button type="button" onClick={() => setMode("live")} className={buttonClass(mode === "live", true)}>
           {t("LIVE")}
-        </button>
-        <button
-          type="button"
-          onClick={openMetrics}
-          title={t("Open the resource metrics dashboard")}
-          className={buttonClass(metricsOpen, true)}
-        >
-          {t("METRICS")}
         </button>
       </div>
     </div>
