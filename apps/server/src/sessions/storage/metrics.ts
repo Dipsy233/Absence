@@ -69,6 +69,9 @@ function warn(error: unknown): void {
  */
 export function appendMetricsFrame(sessionId: string, frame: MetricsFrame): void {
   try {
+    if (frame.agent) {
+      appendEgg(sessionId, { ...frame.agent, eggPid: 0, kind: "agent", name: "Agent" }, frame);
+    }
     for (const egg of frame.eggs) {
       if (egg.kind === "primary") appendEgg(sessionId, egg, frame);
     }
@@ -455,7 +458,7 @@ export function readMetricSeries(
     series.push({
       eggPid: id,
       name: String(summary.name ?? ""),
-      kind: summary.kind === "tool" ? "tool" : "primary",
+      kind: summary.kind === "agent" ? "agent" : summary.kind === "tool" ? "tool" : "primary",
       status: summary.status === "exited" ? "exited" : "running",
       points: bucketed,
       avgCpuCoresSession: Math.max(0, (cpuEnd - cpuStart) / elapsed),

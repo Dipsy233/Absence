@@ -70,7 +70,7 @@ export const useUiStore = create<UiStore>((set) => ({
   filesView: { kind: "tree" },
   selectedRunId: undefined,
   chatHistoryOpen: readChatHistoryOpen(),
-  agentOnStage: false,
+  agentOnStage: true,
   absenceMode: false,
   reportOpen: false,
   metricsOpen: false,
@@ -110,5 +110,6 @@ export const useUiStore = create<UiStore>((set) => ({
       selectedRunId: undefined,
       focusedEventId: undefined,
       metricsOpen: false,
+      agentOnStage: true,
     }),
 }));

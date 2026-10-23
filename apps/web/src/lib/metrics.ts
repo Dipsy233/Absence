@@ -197,6 +197,11 @@ function chartFromPoints(
   const ts: number[] = [];
   const cpuCores: number[] = [];
   const rssMiB: number[] = [];
+  if (points.length > 0) {
+    ts.push(Math.round(points[0]!.ts / 1000));
+    cpuCores.push(0);
+    rssMiB.push(points[0]!.rssBytes / (1024 * 1024));
+  }
   for (let i = 1; i < points.length; i++) {
     const previous = points[i - 1]!;
     const point = points[i]!;

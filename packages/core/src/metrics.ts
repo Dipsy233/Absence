@@ -97,7 +97,7 @@ export interface MetricSeriesPoint {
 export interface MetricSeries {
   eggPid: number;
   name: string;
-  kind: "primary" | "tool";
+  kind: "agent" | "primary" | "tool";
   status: "running" | "exited";
   points: MetricSeriesPoint[];
   /** Session-to-date averages from the summary table. */

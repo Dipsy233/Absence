@@ -8,13 +8,14 @@ interface TimeSeriesChartProps {
   height?: number;
   cpuLabel: string;
   memLabel: string;
+  xTickSeconds: number;
 }
 
 /**
  * The full dashboard's chart. uPlot is a canvas time-series renderer: axes,
  * grid, cursor and two independent y scales for CPU (cores) and memory (MiB).
  */
-export function TimeSeriesChart({ data, height = 260, cpuLabel, memLabel }: TimeSeriesChartProps) {
+export function TimeSeriesChart({ data, height = 260, cpuLabel, memLabel, xTickSeconds }: TimeSeriesChartProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<uPlot | null>(null);
 
@@ -49,6 +50,13 @@ export function TimeSeriesChart({ data, height = 260, cpuLabel, memLabel }: Time
           grid: { stroke: "rgba(255, 255, 255, 0.06)" },
           ticks: { stroke: "rgba(255, 255, 255, 0.12)" },
           font: "10px ui-monospace, monospace",
+          splits: (_u, _axis, min, max) => {
+            const step = Math.max(5, xTickSeconds);
+            const first = Math.ceil(min / step) * step;
+            const splits: number[] = [];
+            for (let value = first; value <= max; value += step) splits.push(value);
+            return splits;
+          },
         },
         {
           scale: "cpu",
@@ -80,7 +88,7 @@ export function TimeSeriesChart({ data, height = 260, cpuLabel, memLabel }: Time
           range: (_u, _min, max) => [0, Math.max(1, max * 1.1)],
         },
       },
-      legend: { show: false },
+      legend: { show: true, live: false },
       cursor: {
         drag: { x: true, y: false, setScale: true },
       },
@@ -97,7 +105,7 @@ export function TimeSeriesChart({ data, height = 260, cpuLabel, memLabel }: Time
       chart.destroy();
       chartRef.current = null;
     };
-  }, [height, cpuLabel, memLabel]);
+  }, [height, cpuLabel, memLabel, xTickSeconds]);
 
   useEffect(() => {
     chartRef.current?.setData(toData(data));

@@ -11,19 +11,11 @@ export interface MetricsTarget {
   pids: number[];
 }
 
-/** How many frames the live snapshot keeps (2s × 300 ≈ 10 minutes). */
+/** How many frames the live snapshot keeps (5s × 300 ≈ 25 minutes). */
 export const METRICS_RING_FRAMES = 300;
 
-/** The interval ladder. The sampler picks the first one that fits the budget. */
-const INTERVAL_LADDER_MS = [2_000, 5_000, 10_000, 30_000, 60_000];
-
-/**
- * ~128 MB/day of persisted samples (8 bytes per sample). At the ladder's
- * coarsest step this still leaves room for a few thousand concurrent eggs;
- * beyond that the persistence layer keeps the top-N and folds the rest.
- */
-const DAILY_BUDGET_BYTES = 128 * 1024 * 1024;
-const BYTES_PER_SAMPLE = 8;
+/** Metrics are sampled on wall-clock 5-second boundaries. */
+const SAMPLE_INTERVAL_MS = 5_000;
 
 interface EggSummary {
   firstTs: number;
@@ -46,10 +38,8 @@ export interface ProcessMetricsSamplerOptions {
 /**
  * Samples the eggs' process trees and emits a `MetricsFrame` on a cadence.
  *
- * The cadence is adaptive: the more primary eggs are running, the coarser the
- * interval, so a session that lays a thousand processes does not write a
- * gigabyte a day. A selected egg can pin the cadence back to 2s (the client
- * sends `metrics_subscribe` when the dashboard opens).
+ * Samples are aligned to wall-clock boundaries so every frame is at :00, :05,
+ * :10, and so on. This keeps the x-axis stable across sessions and clients.
  */
 export class ProcessMetricsSampler {
   private readonly targets: () => MetricsTarget[];
@@ -60,8 +50,7 @@ export class ProcessMetricsSampler {
   private readonly lastEggs = new Map<number, EggMetricSample>();
   private timer?: NodeJS.Timeout;
   private disposed = false;
-  private hotEggPid?: number;
-  private intervalMs = 2_000;
+  private intervalMs = SAMPLE_INTERVAL_MS;
   private ticking = false;
 
   constructor(options: ProcessMetricsSamplerOptions) {
@@ -79,19 +68,19 @@ export class ProcessMetricsSampler {
     return this.intervalMs;
   }
 
-  /** Pin a selected egg's cadence to 2s (or release it with `undefined`). */
+  /** Kept for the socket protocol; selection never changes the global cadence. */
   setHotEgg(eggPid?: number): void {
-    this.hotEggPid = eggPid;
+    void eggPid;
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
-    this.schedule(0);
+    this.schedule(this.delayToBoundary());
   }
 
   start(): void {
     if (this.timer !== undefined || this.disposed) return;
-    this.schedule(500);
+    this.schedule(this.delayToBoundary());
   }
 
   stop(): void {
@@ -111,31 +100,24 @@ export class ProcessMetricsSampler {
     this.timer.unref?.();
   }
 
-  private chooseInterval(count: number): number {
-    const floor = process.platform === "win32" ? 5_000 : 2_000;
-    const candidates = INTERVAL_LADDER_MS.filter((ms) => ms >= floor);
-    for (const ms of candidates) {
-      const samplesPerDay = 86_400_000 / ms;
-      if (count * samplesPerDay * BYTES_PER_SAMPLE <= DAILY_BUDGET_BYTES) return ms;
-    }
-    return candidates[candidates.length - 1] ?? 60_000;
+  private delayToBoundary(): number {
+    const remainder = this.now() % SAMPLE_INTERVAL_MS;
+    return remainder === 0 ? SAMPLE_INTERVAL_MS : SAMPLE_INTERVAL_MS - remainder;
   }
 
   private async tick(): Promise<void> {
     if (this.disposed) return;
     // A slow CIM query must not stack ticks on top of each other.
     if (this.ticking) {
-      this.schedule(this.intervalMs);
+      this.schedule(this.delayToBoundary());
       return;
     }
     this.ticking = true;
-    const ts = this.now();
+    const ts = Math.floor(this.now() / SAMPLE_INTERVAL_MS) * SAMPLE_INTERVAL_MS;
     try {
       const targets = this.targets();
       const running = targets.filter((target) => target.status === "running");
-      const primaryCount = running.filter((target) => target.kind === "primary").length;
-      const base = this.chooseInterval(primaryCount);
-      this.intervalMs = this.hotEggPid !== undefined ? Math.min(base, 2_000) : base;
+      this.intervalMs = SAMPLE_INTERVAL_MS;
 
       const pids = new Set<number>();
       for (const target of running) for (const pid of target.pids) pids.add(pid);
@@ -230,7 +212,7 @@ export class ProcessMetricsSampler {
       // A failed tick is a missed sample, not a reason to stop watching.
     } finally {
       this.ticking = false;
-      this.schedule(this.intervalMs);
+      this.schedule(this.delayToBoundary());
     }
   }
 

@@ -33,7 +33,6 @@ export function MetricsPanel() {
   const version = useMetricsStore((s) => s.version);
   const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
   const selectEgg = useMetricsStore((s) => s.selectEgg);
-  const openMetrics = useUiStore((s) => s.openMetrics);
   const toggleAgentOnStage = useUiStore((s) => s.toggleAgentOnStage);
   const frames = useMetricsStore.getState().frames;
   void version;
@@ -76,29 +75,11 @@ export function MetricsPanel() {
   return (
     <Panel
       title={t("METRICS")}
-      aside={
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            toggleAgentOnStage();
-          }}
-          title={t("Swap the agent and the metrics on the Stage")}
-          className="rounded border border-desk-line px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-desk-dim hover:text-desk-ink"
-        >
-          ⇄
-        </button>
-      }
-      className="shrink-0"
+      className="shrink-0 cursor-pointer"
       bodyClassName="p-2"
+      onClick={toggleAgentOnStage}
     >
       <div
-        role="button"
-        tabIndex={0}
-        onClick={openMetrics}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") openMetrics();
-        }}
         className="cursor-pointer"
       >
         {!latest ? (

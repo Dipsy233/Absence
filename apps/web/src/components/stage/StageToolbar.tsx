@@ -24,6 +24,7 @@ export function StageToolbar() {
   const goMetrics = useStageStore((s) => s.goMetrics);
   const replayReady = useReplayStore((s) => s.events.length > 0);
   const agentOnStage = useUiStore((s) => s.agentOnStage);
+  const toggleAgentOnStage = useUiStore((s) => s.toggleAgentOnStage);
 
   const buttonClass = (active: boolean, enabled: boolean) =>
     [
@@ -73,7 +74,7 @@ export function StageToolbar() {
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         <button
           type="button"
-          onClick={goMetrics}
+          onClick={agentOnStage ? toggleAgentOnStage : goMetrics}
           title={t(agentOnStage ? "Back to the agent — the default page" : "Back to the metrics — the default page")}
           className={buttonClass(mode === "metrics", true)}
         >

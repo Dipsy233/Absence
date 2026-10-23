@@ -22,16 +22,15 @@ import {
 } from "../../lib/metrics";
 import { TimeSeriesChart } from "./TimeSeriesChart";
 
-type RangeId = "1m" | "5m" | "10m" | "15m" | "1h" | "session";
+type RangeId = "1m" | "5m" | "30m" | "1h" | "all";
 type Tab = "graph" | "table";
 
-const RANGES: Array<{ id: RangeId; label: string; ms: number; step: number }> = [
-  { id: "1m", label: "1m", ms: 60_000, step: 2_000 },
-  { id: "5m", label: "5m", ms: 5 * 60_000, step: 2_000 },
-  { id: "10m", label: "10m", ms: 10 * 60_000, step: 2_000 },
-  { id: "15m", label: "15m", ms: 15 * 60_000, step: 5_000 },
-  { id: "1h", label: "1h", ms: 60 * 60_000, step: 10_000 },
-  { id: "session", label: "session", ms: Number.MAX_SAFE_INTEGER, step: 60_000 },
+const RANGES: Array<{ id: RangeId; label: string; ms: number; step: number; tickSeconds: number }> = [
+  { id: "1m", label: "1m", ms: 60_000, step: 5_000, tickSeconds: 5 },
+  { id: "5m", label: "5m", ms: 5 * 60_000, step: 5_000, tickSeconds: 30 },
+  { id: "30m", label: "30m", ms: 30 * 60_000, step: 5_000, tickSeconds: 150 },
+  { id: "1h", label: "1h", ms: 60 * 60_000, step: 5_000, tickSeconds: 300 },
+  { id: "all", label: "all", ms: Number.MAX_SAFE_INTEGER, step: 5_000, tickSeconds: 300 },
 ];
 
 const EMPTY: ChartSeries = { ts: [], cpuCores: [], rssMiB: [] };
@@ -53,7 +52,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
   const frames = useMetricsStore.getState().frames;
   void version;
 
-  const [rangeId, setRangeId] = useState<RangeId>("5m");
+  const [rangeId, setRangeId] = useState<RangeId>("1m");
   const [tab, setTab] = useState<Tab>("graph");
   const [remote, setRemote] = useState<MetricSeries | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -67,7 +66,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
   const range = RANGES.find((entry) => entry.id === rangeId) ?? RANGES[1]!;
   // The ring only knows this session's live frames. A historical session (or a
   // range longer than the ring) must read SQLite instead.
-  const useRing = range.ms <= 10 * 60_000 && frames.length > 0;
+  const useRing = (range.id === "1m" || range.id === "5m") && frames.length > 0;
   const sessionStart = session?.startedAt ?? Date.now() - 60 * 60_000;
 
   // Long ranges and historical sessions come from SQLite. Refresh periodically
@@ -82,7 +81,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
     const wanted = selectedEggPid;
     const load = () => {
       fetchMetrics(session.id, {
-        from: range.id === "session" ? sessionStart : Date.now() - range.ms,
+        from: range.id === "all" || range.id === "30m" ? sessionStart : Date.now() - range.ms,
         to: Date.now(),
         step: range.step,
         eggPid: wanted,
@@ -103,7 +102,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
         });
     };
     load();
-    const timer = setInterval(load, 15_000);
+    const timer = setInterval(load, 5_000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -111,9 +110,21 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
   }, [useRing, selectedEggPid, session?.id, range.id, range.ms, range.step, sessionStart, refresh]);
 
   const chart = useMemo(() => {
-    if (useRing) return selected ? chartFromRing(frames, selected.eggPid) : chartFromAgentRing(frames);
+    if (useRing) {
+      const points = selected ? chartFromRing(frames, selected.eggPid) : chartFromAgentRing(frames);
+      if (range.id === "30m") return points;
+      const cutoff = selected?.status === "exited" && points.ts.length > 0
+        ? points.ts[points.ts.length - 1]! * 1000 - range.ms
+        : Date.now() - range.ms;
+      const keep = points.ts.map((ts) => ts * 1000 >= cutoff);
+      return {
+        ts: points.ts.filter((_, index) => keep[index]),
+        cpuCores: points.cpuCores.filter((_, index) => keep[index]),
+        rssMiB: points.rssMiB.filter((_, index) => keep[index]),
+      };
+    }
     return remote ? chartFromSeries(remote, range.step) : EMPTY;
-  }, [selected, useRing, frames, version, remote, range.step]);
+  }, [selected, useRing, frames, version, remote, range.id, range.ms, range.step]);
 
   const latest = latestFrame(frames);
   const egg = selected ? findEgg(frames, selected.eggPid) : undefined;
@@ -223,7 +234,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
                   : "text-desk-dim hover:text-desk-ink",
               ].join(" ")}
             >
-              {entry.id === "session" ? t("session") : entry.label}
+              {entry.label}
             </button>
           ))}
         </div>
@@ -297,6 +308,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
                   height={220}
                   cpuLabel={t("CPU")}
                   memLabel={t("MEM")}
+                  xTickSeconds={range.tickSeconds}
                 />
               )}
             </div>
@@ -351,6 +363,8 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
 }
 
 function aggregateAgentSeries(series: MetricSeries[]): MetricSeries | undefined {
+  const agent = series.find((entry) => entry.kind === "agent");
+  if (agent) return agent;
   const primary = series.filter((entry) => entry.kind === "primary");
   if (primary.length === 0) return undefined;
   const timestamps = [...new Set(primary.flatMap((entry) => entry.points.map((point) => point.ts)))].sort(
