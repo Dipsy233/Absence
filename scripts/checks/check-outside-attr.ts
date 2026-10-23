@@ -17,7 +17,7 @@
  * *content* mentions other paths must not attribute those).
  */
 import { OutsideAttribution } from "../../apps/server/src/sessions/OutsideAttribution";
-import { pathsInJson, WRITE_TOOL } from "../../apps/server/src/sessions/sessionStore";
+import { pathsInJson, WRITE_TOOL } from "../../apps/server/src/sessions/SessionStore";
 import { check, finish, section } from "./harness";
 
 const WINDOW = 120_000;
