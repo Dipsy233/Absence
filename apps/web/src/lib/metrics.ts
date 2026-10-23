@@ -180,15 +180,38 @@ export interface ChartSeries {
   ts: number[];
   cpuCores: number[];
   rssMiB: number[];
+  hostCpuPercent?: number[];
+  hostMemMiB?: number[];
 }
 
 export function chartFromRing(frames: MetricsFrame[], eggPid: number): ChartSeries {
   const points = eggPoints(frames, eggPid);
-  return chartFromPoints(points);
+  return withHostSeries(chartFromPoints(points), frames);
 }
 
 export function chartFromAgentRing(frames: MetricsFrame[]): ChartSeries {
-  return chartFromPoints(agentPoints(frames));
+  return withHostSeries(chartFromPoints(agentPoints(frames)), frames);
+}
+
+function withHostSeries(chart: ChartSeries, frames: MetricsFrame[]): ChartSeries {
+  const hostCpuPercent: number[] = [];
+  const hostMemMiB: number[] = [];
+  for (let i = 0; i < chart.ts.length; i++) {
+    const ts = chart.ts[i]! * 1000;
+    let frame = frames[0];
+    for (const candidate of frames) {
+      if (candidate.ts <= ts) frame = candidate;
+      else break;
+    }
+    if (!frame) continue;
+    const index = frames.indexOf(frame);
+    const previous = frames[Math.max(0, index - 1)]!;
+    const total = Math.max(0, frame.host.cpuSeconds - previous.host.cpuSeconds);
+    const idle = Math.max(0, frame.host.cpuIdleSeconds - previous.host.cpuIdleSeconds);
+    hostCpuPercent.push(total > 0 ? Math.max(0, Math.min(100, ((total - idle) / total) * 100)) : 0);
+    hostMemMiB.push(Math.max(0, frame.host.memTotalBytes - frame.host.memAvailableBytes) / (1024 * 1024));
+  }
+  return { ...chart, hostCpuPercent, hostMemMiB };
 }
 
 function chartFromPoints(

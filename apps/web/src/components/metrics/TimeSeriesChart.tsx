@@ -6,41 +6,47 @@ import type { ChartSeries } from "../../lib/metrics";
 interface TimeSeriesChartProps {
   data: ChartSeries;
   height?: number;
-  cpuLabel: string;
-  memLabel: string;
+  label: string;
+  metric: "cpu" | "mem";
   xTickSeconds: number;
+  hostLabel: string;
 }
 
-/**
- * The full dashboard's chart. uPlot is a canvas time-series renderer: axes,
- * grid, cursor and two independent y scales for CPU (cores) and memory (MiB).
- */
-export function TimeSeriesChart({ data, height = 260, cpuLabel, memLabel, xTickSeconds }: TimeSeriesChartProps) {
+export function TimeSeriesChart({
+  data,
+  height = 180,
+  label,
+  metric,
+  xTickSeconds,
+  hostLabel,
+}: TimeSeriesChartProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<uPlot | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    const isCpu = metric === "cpu";
+    const values = isCpu ? data.cpuCores : data.rssMiB;
+    const hostValues = isCpu ? data.hostCpuPercent : data.hostMemMiB;
+    const tooltip = tooltipRef.current;
     const options: uPlot.Options = {
       width: Math.max(240, host.clientWidth),
       height,
       series: [
         {},
         {
-          label: cpuLabel,
-          scale: "cpu",
-          stroke: "rgb(224, 163, 92)",
-          fill: "rgba(224, 163, 92, 0.10)",
-          width: 1.6,
-          points: { show: false },
+          label,
+          stroke: isCpu ? "rgb(224, 163, 92)" : "rgb(79, 179, 165)",
+          width: 1.8,
+          points: { show: true, size: 5 },
         },
         {
-          label: memLabel,
-          scale: "mem",
-          stroke: "rgb(79, 179, 165)",
-          fill: "rgba(79, 179, 165, 0.08)",
-          width: 1.4,
+          label: hostLabel,
+          stroke: "rgba(190, 190, 190, 0.75)",
+          dash: [5, 4],
+          width: 1.2,
           points: { show: false },
         },
       ],
@@ -51,50 +57,58 @@ export function TimeSeriesChart({ data, height = 260, cpuLabel, memLabel, xTickS
           ticks: { stroke: "rgba(255, 255, 255, 0.12)" },
           font: "10px ui-monospace, monospace",
           splits: (_u, _axis, min, max) => {
-            const step = Math.max(5, xTickSeconds);
-            const first = Math.ceil(min / step) * step;
+            const first = Math.ceil(min / xTickSeconds) * xTickSeconds;
             const splits: number[] = [];
-            for (let value = first; value <= max; value += step) splits.push(value);
+            for (let value = first; value <= max; value += xTickSeconds) splits.push(value);
             return splits;
           },
         },
         {
-          scale: "cpu",
-          stroke: "rgb(224, 163, 92)",
+          stroke: isCpu ? "rgb(224, 163, 92)" : "rgb(79, 179, 165)",
           grid: { stroke: "rgba(255, 255, 255, 0.06)" },
-          ticks: { stroke: "rgba(255, 255, 255, 0.12)" },
-          font: "10px ui-monospace, monospace",
-        },
-        {
-          scale: "mem",
-          side: 1,
-          stroke: "rgb(79, 179, 165)",
-          grid: { show: false },
           ticks: { stroke: "rgba(255, 255, 255, 0.12)" },
           font: "10px ui-monospace, monospace",
         },
       ],
       scales: {
         x: { time: true },
-        // Both are absolute quantities, so start at zero: an idle process at
-        // 0.00 cores should sit on the floor, not in the middle of a
-        // meaningless 0.00–0.00 window.
-        cpu: {
+        y: {
           auto: true,
-          range: (_u, _min, max) => [0, Math.max(1, max * 1.1)],
-        },
-        mem: {
-          auto: true,
-          range: (_u, _min, max) => [0, Math.max(1, max * 1.1)],
+          range: (_u, min, max) => {
+            const span = Math.max(1, max - min);
+            return [Math.max(0, min - span * 0.08), max + span * 0.08];
+          },
         },
       },
-      legend: { show: true, live: false },
+      legend: { show: false },
       cursor: {
         drag: { x: true, y: false, setScale: true },
       },
+      hooks: {
+        setCursor: [
+          (chart) => {
+            const index = chart.cursor.idx;
+            if (!tooltip || index == null || index < 0 || index >= data.ts.length) {
+              if (tooltip) tooltip.hidden = true;
+              return;
+            }
+            const target = values[index];
+            const machine = hostValues?.[index];
+            const date = new Date(data.ts[index]! * 1000);
+            tooltip.textContent = `${date.toLocaleTimeString()}  ${label}: ${formatValue(target, isCpu)}  ${hostLabel}: ${formatValue(machine, isCpu)}`;
+            tooltip.hidden = false;
+            const left = chart.valToPos(data.ts[index]!, "x");
+            tooltip.style.left = `${Math.min(Math.max(4, left), host.clientWidth - tooltip.offsetWidth - 4)}px`;
+          },
+        ],
+      },
       padding: [8, 8, 0, 8],
     };
-    const chart = new uPlot(options, toData(data), host);
+    const chart = new uPlot(options, [
+      data.ts,
+      values.map((value) => (Number.isFinite(value) ? value : null)),
+      (hostValues ?? []).map((value) => (Number.isFinite(value) ? value : null)),
+    ] as uPlot.AlignedData, host);
     chartRef.current = chart;
     const observer = new ResizeObserver(() => {
       chart.setSize({ width: Math.max(240, host.clientWidth), height });
@@ -105,20 +119,21 @@ export function TimeSeriesChart({ data, height = 260, cpuLabel, memLabel, xTickS
       chart.destroy();
       chartRef.current = null;
     };
-  }, [height, cpuLabel, memLabel, xTickSeconds]);
+  }, [data, height, hostLabel, label, metric, xTickSeconds]);
 
-  useEffect(() => {
-    chartRef.current?.setData(toData(data));
-  }, [data]);
-
-  return <div ref={hostRef} className="w-full" />;
+  return (
+    <div className="relative w-full">
+      <div ref={hostRef} className="w-full" />
+      <div
+        ref={tooltipRef}
+        hidden
+        className="pointer-events-none absolute top-1 z-10 rounded border border-desk-line bg-desk-panel px-2 py-1 font-mono text-[10px] text-desk-ink shadow-lg"
+      />
+    </div>
+  );
 }
 
-function toData(data: ChartSeries): uPlot.AlignedData {
-  // uPlot wants x in seconds; a missing CPU sample is a gap, not a zero.
-  return [
-    data.ts,
-    data.cpuCores.map((value) => (Number.isFinite(value) ? value : null)),
-    data.rssMiB.map((value) => (Number.isFinite(value) ? value : null)),
-  ] as uPlot.AlignedData;
+function formatValue(value: number | undefined, isCpu: boolean): string {
+  if (value === undefined || !Number.isFinite(value)) return "—";
+  return `${value.toFixed(isCpu ? 2 : 1)} ${isCpu ? "%" : "MiB"}`;
 }

@@ -47,7 +47,6 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
   const version = useMetricsStore((s) => s.version);
   const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
   const selectEgg = useMetricsStore((s) => s.selectEgg);
-  const closeMetrics = useUiStore((s) => s.closeMetrics);
   const session = useSessionStore((s) => s.session);
   const frames = useMetricsStore.getState().frames;
   void version;
@@ -56,7 +55,6 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
   const [tab, setTab] = useState<Tab>("graph");
   const [remote, setRemote] = useState<MetricSeries | undefined>(undefined);
   const [loading, setLoading] = useState(false);
-  const [refresh, setRefresh] = useState(0);
 
   const eggs = useMemo(() => eggList(frames), [frames, version]);
   const primary = useMemo(() => eggs.filter((egg) => egg.kind === "primary"), [eggs]);
@@ -107,7 +105,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [useRing, selectedEggPid, session?.id, range.id, range.ms, range.step, sessionStart, refresh]);
+  }, [useRing, selectedEggPid, session?.id, range.id, range.ms, range.step, sessionStart]);
 
   const chart = useMemo(() => {
     if (useRing) {
@@ -147,12 +145,6 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
   const sessionAvgMem = selected?.avgRssBytesSession ?? remote?.avgRssBytesSession ?? agentAvgMem;
   const processCount = selected ? egg?.processCount ?? 0 : agent?.processCount ?? primary.reduce((sum, entry) => sum + entry.processCount, 0);
   const eggStatus = selected ? egg?.status ?? remote?.status : undefined;
-  const options =
-    primary.length > 0 || agent
-      ? [{ eggPid: "", name: t("Agent"), status: "running" as const }, ...primary]
-      : remote
-        ? [{ eggPid: "", name: t("Agent"), status: "running" as const }, { eggPid: remote.eggPid, name: remote.name, status: remote.status }]
-        : [];
   const currentCores = chart.cpuCores[chart.cpuCores.length - 1] ?? 0;
   const currentMem = chart.rssMiB[chart.rssMiB.length - 1] ?? 0;
   const avgCores =
@@ -178,86 +170,46 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
           : "absolute inset-x-0 top-0 bottom-14 z-30 bg-desk-panel/95 backdrop-blur-[3px]",
       ].join(" ")}
     >
-      <header className="flex shrink-0 items-center gap-2 border-b border-desk-line px-3 py-1.5">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-desk-amber">
-          {t("METRICS")}
-        </span>
-        <span className="font-mono text-[10px] text-desk-dim">
-          {latest ? (latest.precision === "exact" ? t("exact") : t("sampled")) : "—"}
-        </span>
-        <div className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setRefresh((value) => value + 1)}
-            title={t("Refresh")}
-            className="rounded border border-desk-line px-2 py-0.5 font-mono text-[10px] text-desk-dim hover:text-desk-ink"
+      <div className="flex shrink-0 items-start gap-3 border-b border-desk-line/60 px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-mono text-[12px] font-semibold text-desk-amber">
+            {selected?.name ?? t("Agent")}
+          </div>
+          {selected ? <div className="font-mono text-[9px] text-desk-dim">pid {selected.eggPid}</div> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <select
+            value={rangeId}
+            onChange={(event) => setRangeId(event.target.value as RangeId)}
+            aria-label="Metrics time range"
+            className="rounded border border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[10px] text-desk-dim focus:border-desk-amber/60 focus:outline-none"
           >
-            ↻
-          </button>
-          {embedded ? null : (
-            <button
-              type="button"
-              onClick={closeMetrics}
-              title={t("Close the metrics dashboard")}
-              className="rounded border border-desk-line px-2 py-0.5 font-mono text-[10px] text-desk-dim hover:text-desk-ink"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      </header>
-
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-desk-line/60 px-3 py-1.5">
-        <select
-          value={selected?.eggPid ?? ""}
-          onChange={(event) => selectEgg(event.target.value ? Number(event.target.value) : undefined)}
-          className="max-w-[220px] rounded border border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[11px] text-desk-ink focus:border-desk-amber/60 focus:outline-none"
-        >
-          {options.length === 0 ? <option value="">{t("no eggs")}</option> : null}
-          {options.map((entry) => (
-            <option key={entry.eggPid} value={entry.eggPid}>
-              {entry.name} · {entry.eggPid} {entry.status === "exited" ? `(${t("exited")})` : ""}
-            </option>
-          ))}
-        </select>
-
-        <div className="flex items-center gap-0.5">
-          {RANGES.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              onClick={() => setRangeId(entry.id)}
-              className={[
-                "rounded px-1.5 py-0.5 font-mono text-[10px] transition-colors",
-                rangeId === entry.id
-                  ? "bg-desk-panel2 text-desk-amber"
-                  : "text-desk-dim hover:text-desk-ink",
-              ].join(" ")}
-            >
-              {entry.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="ml-auto flex items-center gap-0.5">
-          {(["graph", "table"] as Tab[]).map((entry) => (
-            <button
-              key={entry}
-              type="button"
-              onClick={() => setTab(entry)}
-              className={[
-                "rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide",
-                tab === entry ? "bg-desk-panel2 text-desk-amber" : "text-desk-dim hover:text-desk-ink",
-              ].join(" ")}
-            >
-              {t(entry === "graph" ? "Graph" : "Table")}
-            </button>
-          ))}
+            {RANGES.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.label}
+              </option>
+            ))}
+          </select>
+          <div className="flex items-center gap-0.5">
+            {(["graph", "table"] as Tab[]).map((entry) => (
+              <button
+                key={entry}
+                type="button"
+                onClick={() => setTab(entry)}
+                className={[
+                  "rounded px-1.5 py-1 font-mono text-[9px] uppercase",
+                  tab === entry ? "bg-desk-panel2 text-desk-amber" : "text-desk-dim hover:text-desk-ink",
+                ].join(" ")}
+              >
+                {t(entry === "graph" ? "Graph" : "Table")}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
-        {options.length === 0 && !remote ? (
+        {!latest && !remote ? (
           <p className="py-8 text-center text-xs text-desk-dim">
             {t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")}
           </p>
@@ -292,24 +244,19 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
 
             <div className="rounded border border-desk-line bg-desk-panel2/40 p-2">
               <div className="mb-1 flex items-center gap-3 font-mono text-[10px] text-desk-dim">
-                <span className="text-desk-amber">■ {t("CPU")} ({t("cores")})</span>
-                <span className="text-desk-teal">■ {t("MEM")} (MiB)</span>
                 <span className="ml-auto">
                   {t("host")} {formatPercent(hostCpuPercent(frames))} CPU · {formatPercent(hostMemoryPercent(frames))} MEM
                 </span>
               </div>
-              {chart.ts.length < 2 ? (
+              {chart.ts.length < 1 ? (
                 <div className="flex h-[220px] items-center justify-center text-xs text-desk-dim">
                   {loading ? t("loading…") : t("Waiting for the first sample…")}
                 </div>
               ) : (
-                <TimeSeriesChart
-                  data={chart}
-                  height={220}
-                  cpuLabel={t("CPU")}
-                  memLabel={t("MEM")}
-                  xTickSeconds={range.tickSeconds}
-                />
+                <div className="flex flex-col gap-3">
+                  <TimeSeriesChart data={chart} height={150} label={t("CPU")} metric="cpu" hostLabel={t("host")} xTickSeconds={range.tickSeconds} />
+                  <TimeSeriesChart data={chart} height={150} label={t("MEM")} metric="mem" hostLabel={t("host")} xTickSeconds={range.tickSeconds} />
+                </div>
               )}
             </div>
 
