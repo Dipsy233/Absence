@@ -352,22 +352,28 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
 function aggregateAgentSeries(series: MetricSeries[]): MetricSeries | undefined {
   const primary = series.filter((entry) => entry.kind === "primary");
   if (primary.length === 0) return undefined;
+  const timestamps = [...new Set(primary.flatMap((entry) => entry.points.map((point) => point.ts)))].sort(
+    (a, b) => a - b,
+  );
   const points = new Map<number, { cpuSeconds: number; rssBytes: number; rssMaxBytes: number }>();
-  for (const entry of primary) {
-    for (const point of entry.points) {
-      const current = points.get(point.ts);
-      if (current) {
-        current.cpuSeconds += point.cpuSeconds;
-        current.rssBytes += point.rssBytes;
-        current.rssMaxBytes += point.rssMaxBytes;
-      } else {
-        points.set(point.ts, {
-          cpuSeconds: point.cpuSeconds,
-          rssBytes: point.rssBytes,
-          rssMaxBytes: point.rssMaxBytes,
-        });
+  for (const ts of timestamps) {
+    let cpuSeconds = 0;
+    let rssBytes = 0;
+    let rssMaxBytes = 0;
+    for (const entry of primary) {
+      let latest: MetricSeries["points"][number] | undefined;
+      for (const point of entry.points) {
+        if (point.ts > ts) break;
+        latest = point;
+      }
+      if (!latest) continue;
+      cpuSeconds += latest.cpuSeconds;
+      if (entry.status === "running" || ts <= entry.lastTs) {
+        rssBytes += latest.rssBytes;
+        rssMaxBytes += latest.rssMaxBytes;
       }
     }
+    points.set(ts, { cpuSeconds, rssBytes, rssMaxBytes });
   }
   return {
     eggPid: 0,

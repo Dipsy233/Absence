@@ -57,20 +57,37 @@ export function agentPoints(frames: MetricsFrame[]): Array<{
   cpuSeconds: number;
   rssBytes: number;
 }> {
+  const state = new Map<number, { cpuSeconds: number; rssBytes: number }>();
   return frames.map((frame) => {
-    let cpuSeconds = 0;
-    let rssBytes = 0;
+    const seen = new Set<number>();
     for (const egg of frame.eggs) {
       if (egg.kind !== "primary") continue;
-      cpuSeconds += egg.cpuSeconds;
-      rssBytes += egg.rssBytes;
+      const previous = state.get(egg.eggPid);
+      state.set(egg.eggPid, {
+        // CPU is a cumulative counter. Keep the last value after exit so
+        // another egg joining or leaving cannot make the agent counter fall.
+        cpuSeconds: Math.max(previous?.cpuSeconds ?? 0, egg.cpuSeconds),
+        // An exited egg's last RSS is not current agent memory.
+        rssBytes: egg.status === "running" ? egg.rssBytes : 0,
+      });
+      seen.add(egg.eggPid);
+    }
+    for (const [eggPid, previous] of state) {
+      if (!seen.has(eggPid)) previous.rssBytes = 0;
+    }
+    let cpuSeconds = 0;
+    let rssBytes = 0;
+    for (const value of state.values()) {
+      cpuSeconds += value.cpuSeconds;
+      rssBytes += value.rssBytes;
     }
     return { ts: frame.ts, cpuSeconds, rssBytes };
   });
 }
 
 export function agentCpuCores(frames: MetricsFrame[]): number {
-  return rateCores(agentPoints(frames));
+  const points = agentPoints(frames);
+  return points.length < 2 ? 0 : rateCores(points, points.length - 2);
 }
 
 export function agentAverageCores(frames: MetricsFrame[], windowMs: number): number {
