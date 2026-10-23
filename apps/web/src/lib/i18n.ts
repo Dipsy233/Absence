@@ -78,6 +78,19 @@ const ZH: Record<string, string> = {
   processes: "进程数",
   status: "状态",
   egg: "进程",
+  threads: "线程",
+  handles: "句柄",
+  "IO read": "读 IO",
+  "IO write": "写 IO",
+  retention: "指标保留",
+  "days of process metrics": "天的进程指标",
+  "{n} {unit}, then they expire": "{n} {unit}，之后自动过期",
+  "keep every sample (bounded only by disk)": "保留所有采样（只受磁盘限制）",
+  "Set it with ABSENCE_METRICS_RETENTION_DAYS (0 keeps everything).":
+    "用 ABSENCE_METRICS_RETENTION_DAYS 设置（0 表示全部保留）。",
+  "Prometheus endpoint": "Prometheus 端点",
+  "Scrape this session's eggs with format=prometheus:": "用 format=prometheus 抓取本会话的进程：",
+  "Copy the scrape URL": "复制抓取地址",
 
   // ── Stage chips / empty ────────────────────────────────────────────────
   "● LIVE": "● 实时",

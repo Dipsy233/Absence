@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { WatchExit, WatchStart, WatchStatus } from "./observer";
+import type { WatchExit, WatchHostMetric, WatchMetric, WatchStart, WatchStatus } from "./observer";
 
 /**
  * The Windows process observer: the Absence-side half of `native/agentwatch`.
@@ -17,6 +17,10 @@ export interface SidecarEvents {
   start: (event: WatchStart) => void;
   exit: (event: WatchExit) => void;
   status: (status: WatchStatus, detail?: string) => void;
+  /** One process's counters, in answer to a `sample` request. */
+  metric: (event: WatchMetric) => void;
+  /** Host counters, once per sampling pass. */
+  host: (event: WatchHostMetric) => void;
 }
 
 type Listener<K extends keyof SidecarEvents> = SidecarEvents[K];
@@ -41,6 +45,8 @@ export class JobSidecar {
   private readonly emitter = new EventEmitter();
   private child?: ChildProcess;
   private buffer = "";
+  /** Resolvers waiting for the helper's `sample_done`. */
+  private readonly sampleWaiters = new Set<() => void>();
   private statusValue: WatchStatus = "starting";
   private disposed = false;
   private restarts = 0;
@@ -83,8 +89,10 @@ export class JobSidecar {
 
     return new Promise<void>((resolve, reject) => {
       let settled = false;
+      // stdin is the sampling channel: "sample" asks the helper for one pass
+      // over the handles it already holds (see native/agentwatch/README.md).
       const child = spawn(this.exePath, ["--target-pid", String(process.pid)], {
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
       });
       this.child = child;
@@ -124,6 +132,8 @@ export class JobSidecar {
 
       child.on("exit", () => {
         this.child = undefined;
+        // Nothing will answer a pending sample request now.
+        this.settleSamples();
         if (this.disposed) return;
         if (!settled) {
           settled = true;
@@ -177,6 +187,34 @@ export class JobSidecar {
     switch (ev) {
       case "ready":
         return { kind: "ready" };
+      case "sample_done":
+        this.settleSamples();
+        return { kind: "sample_done" };
+      case "host": {
+        this.emitter.emit("host", {
+          cpuMs: numberOrUndefined(parsed.cpuMs) ?? 0,
+          idleMs: numberOrUndefined(parsed.idleMs) ?? 0,
+          cores: numberOrUndefined(parsed.cores) ?? 1,
+          memTotalBytes: numberOrUndefined(parsed.memTotal) ?? 0,
+          memAvailableBytes: numberOrUndefined(parsed.memAvail) ?? 0,
+        } satisfies WatchHostMetric);
+        return { kind: "host" };
+      }
+      case "metric": {
+        const pid = numberOrUndefined(parsed.pid);
+        if (pid === undefined) return undefined;
+        this.emitter.emit("metric", {
+          pid,
+          cpuMs: numberOrUndefined(parsed.cpuMs) ?? 0,
+          rssBytes: numberOrUndefined(parsed.rss) ?? 0,
+          vszBytes: numberOrUndefined(parsed.vsz),
+          threads: numberOrUndefined(parsed.threads),
+          handles: numberOrUndefined(parsed.handles),
+          ioReadBytes: numberOrUndefined(parsed.ioR),
+          ioWriteBytes: numberOrUndefined(parsed.ioW),
+        } satisfies WatchMetric);
+        return { kind: "metric" };
+      }
       case "error":
         return {
           kind: "error",
@@ -217,6 +255,48 @@ export class JobSidecar {
       default:
         return undefined;
     }
+  }
+
+  private settleSamples(): void {
+    for (const resolve of this.sampleWaiters) resolve();
+    this.sampleWaiters.clear();
+  }
+
+  /**
+   * Ask the helper for one resource pass and wait for it to finish.
+   *
+   * `pids` names processes outside our job (an observed agent's tree) that the
+   * helper should borrow a handle for and measure. Resolves `false` when no
+   * answer arrives in time (a helper built before sampling existed, a wedged
+   * process, or a restart in progress), which tells the caller to fall back to
+   * reading the process table.
+   */
+  requestSample(timeoutMs = 1500, pids: number[] = []): Promise<boolean> {
+    const child = this.child;
+    const stdin = child?.stdin;
+    if (!child || !stdin || stdin.destroyed) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        this.sampleWaiters.delete(onDone);
+        clearTimeout(timer);
+        resolve(ok);
+      };
+      const onDone = () => finish(true);
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      timer.unref?.();
+      this.sampleWaiters.add(onDone);
+      try {
+        const wanted = pids.filter((pid) => Number.isInteger(pid) && pid > 0);
+        // The pid list names processes outside our job (an observed agent's
+        // tree): the helper borrows a handle and measures them too.
+        stdin.write(wanted.length > 0 ? `sample ${wanted.join(",")}\n` : "sample\n");
+      } catch {
+        finish(false);
+      }
+    });
   }
 
   private setStatus(status: WatchStatus, detail?: string): void {

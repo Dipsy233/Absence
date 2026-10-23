@@ -25,6 +25,8 @@ export interface ProcessMetricSample {
   rssBytes: number;
   vszBytes?: number;
   threads?: number;
+  /** Open handles: only the native (Windows) pass reports one. */
+  handles?: number;
   ioReadBytes?: number;
   ioWriteBytes?: number;
 }

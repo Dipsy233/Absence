@@ -116,6 +116,12 @@ export interface AbsenceConfig {
    * bound. Override with ABSENCE_MAX_EGGS; 0 means keep every finished egg.
    */
   maxEggs: number;
+  /**
+   * How many days of process metrics to keep. Chunks older than this are
+   * deleted once a day. Override with ABSENCE_METRICS_RETENTION_DAYS; 0 keeps
+   * everything (bounded only by disk).
+   */
+  metricsRetentionDays: number;
   /** Serve the built web app from this directory when present. */
   webDist: string;
 }
@@ -192,6 +198,9 @@ export const config: AbsenceConfig = {
   maxEggs: Number.isFinite(Number(process.env.ABSENCE_MAX_EGGS))
     ? Math.max(0, Math.floor(Number(process.env.ABSENCE_MAX_EGGS)))
     : 200,
+  metricsRetentionDays: Number.isFinite(Number(process.env.ABSENCE_METRICS_RETENTION_DAYS))
+    ? Math.max(0, Math.floor(Number(process.env.ABSENCE_METRICS_RETENTION_DAYS)))
+    : 30,
   // Built UI lives at the repo root under dist/web (see apps/web/vite.config.ts
   // and the desktop staging script). Override with ABSENCE_WEB_DIST if hosting
   // elsewhere.

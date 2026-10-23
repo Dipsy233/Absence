@@ -54,7 +54,8 @@ export function MetricsPanel() {
       .sort((a, b) => b.cores - a.cores)[0]?.egg;
 
   useEffect(() => {
-    if (selectedEggPid === undefined && selected) selectEgg(selected.eggPid);
+    const nextPid = selected?.eggPid;
+    if (selectedEggPid !== nextPid) selectEgg(nextPid);
   }, [selectedEggPid, selected, selectEgg]);
 
   const latest = latestFrame(frames);

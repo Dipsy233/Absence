@@ -1,6 +1,13 @@
 import { EbpfObserver } from "./EbpfObserver";
 import { JobSidecar } from "./JobSidecar";
-import type { WatchExit, WatchStart, WatchStatus } from "./observer";
+import type {
+  WatchExit,
+  WatchHostMetric,
+  WatchMetric,
+  WatchSample,
+  WatchStart,
+  WatchStatus,
+} from "./observer";
 
 /**
  * The process-wide owner of the kernel process observer.
@@ -24,19 +31,35 @@ export class JobMonitor {
   private readonly statusObservers = new Set<(status: WatchStatus, detail?: string) => void>();
   private lastStatus: WatchStatus = "starting";
   private lastDetail?: string;
+  /** In-flight sampling pass, so concurrent callers share one request. */
+  private sampling?: Promise<WatchSample | undefined>;
 
   private constructor() {
     this.sidecar =
       process.platform === "linux"
         ? new EbpfObserver({ exePath: process.env.ABSENCE_AGENTWATCH_LINUX })
         : new JobSidecar({ exePath: process.env.ABSENCE_AGENTWATCH });
-    this.sidecar.on("start", (event) => this.fanOut(event as WatchStart));
-    this.sidecar.on("exit", (event) => this.fanOut(event as WatchExit));
-    this.sidecar.on("status", (status, detail) => {
+    this.sidecarOn("start", (event) => this.fanOut(event));
+    this.sidecarOn("exit", (event) => this.fanOut(event));
+    this.sidecarOn("status", (status, detail) => {
       this.lastStatus = status;
       this.lastDetail = detail;
       for (const observer of this.statusObservers) observer(status, detail);
     });
+  }
+
+  /**
+   * `on`, narrowed per event. The two observers are structurally different
+   * (the Windows helper can sample, eBPF cannot), so the union's `on` is not
+   * callable directly.
+   */
+  private sidecarOn(event: "start", listener: (event: WatchStart) => void): () => void;
+  private sidecarOn(event: "exit", listener: (event: WatchExit) => void): () => void;
+  private sidecarOn(event: "metric", listener: (event: WatchMetric) => void): () => void;
+  private sidecarOn(event: "host", listener: (event: WatchHostMetric) => void): () => void;
+  private sidecarOn(event: "status", listener: (status: WatchStatus, detail?: string) => void): () => void;
+  private sidecarOn(event: string, listener: (...args: never[]) => void): () => void {
+    return (this.sidecar as unknown as { on(e: string, l: unknown): () => void }).on(event, listener);
   }
 
   static get(): JobMonitor {
@@ -80,6 +103,50 @@ export class JobMonitor {
   observe(listener: (event: WatchStart | WatchExit) => void): () => void {
     this.observers.add(listener);
     return () => this.observers.delete(listener);
+  }
+
+  /**
+   * True when this platform can report per-process counters from a handle the
+   * observer already holds (Windows, via the helper's sampling pass). Linux
+   * reports the same numbers through /proc, which is exact too — it just does
+   * not need the helper for it.
+   */
+  get metricsAvailable(): boolean {
+    return process.platform === "win32" && this.lastStatus === "watching";
+  }
+
+  /**
+   * One resource pass, driven by the metrics sampler's cadence. Returns
+   * `undefined` when this platform cannot sample natively, so the caller falls
+   * back to reading the process table.
+   */
+  async sampleMetrics(pids: number[] = [], timeoutMs = 1500): Promise<WatchSample | undefined> {
+    if (!this.metricsAvailable) return undefined;
+    if (this.sampling) return this.sampling;
+    const sidecar = this.sidecar as unknown as {
+      requestSample?(timeoutMs?: number, pids?: number[]): Promise<boolean>;
+    };
+    if (!sidecar.requestSample) return undefined;
+
+    const promise = (async (): Promise<WatchSample | undefined> => {
+      const processes = new Map<number, WatchMetric>();
+      let host: WatchHostMetric | undefined;
+      const offMetric = this.sidecarOn("metric", (event) => processes.set(event.pid, event));
+      const offHost = this.sidecarOn("host", (event) => {
+        host = event;
+      });
+      try {
+        const answered = await sidecar.requestSample!(timeoutMs, pids);
+        return answered ? { processes, host } : undefined;
+      } finally {
+        offMetric();
+        offHost();
+      }
+    })().finally(() => {
+      this.sampling = undefined;
+    });
+    this.sampling = promise;
+    return promise;
   }
 
   onStatus(listener: (status: WatchStatus, detail?: string) => void): () => void {

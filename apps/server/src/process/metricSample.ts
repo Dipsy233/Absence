@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import { promisify } from "node:util";
+import { JobMonitor } from "./JobMonitor";
+import type { WatchHostMetric } from "./observer";
 
 const run = promisify(execFile);
 
@@ -18,24 +20,107 @@ export interface RawProcessSample {
   rssBytes: number;
   vszBytes?: number;
   threads?: number;
+  handles?: number;
   ioReadBytes?: number;
   ioWriteBytes?: number;
 }
 
+/** Host counters in the shape the frame carries. */
+export interface RawHostSample {
+  ts: number;
+  cpuSeconds: number;
+  cpuIdleSeconds: number;
+  cpuCount: number;
+  memTotalBytes: number;
+  memAvailableBytes: number;
+  load1?: number;
+}
+
+/** One sampling pass: the processes plus the host context they ran in. */
+export interface RawSample {
+  processes: Map<number, RawProcessSample>;
+  host: RawHostSample;
+  /**
+   * `exact` when a kernel helper answered from handles it already holds,
+   * `sampled` when the numbers came from reading the process table.
+   */
+  precision: "exact" | "sampled";
+}
+
 /**
- * Read the requested pids.
+ * Read the requested pids, preferring the native path.
  *
- * Linux reads `/proc/<pid>` directly (cheap, only the pids we care about).
- * Windows asks CIM once for the whole table and filters; the fallback is a
- * `ps` snapshot. All three return the same shape, so the sampler above never
- * branches on the platform.
+ * On Windows the process observer already holds a handle per process, so one
+ * "sample" round-trip to `agentwatch` yields CPU, RSS, threads, handles and IO
+ * for every pid at once — no CIM query, no process-table enumeration. When that
+ * is unavailable (Linux, a helper predating sampling, a restart in progress)
+ * we read `/proc`, or ask CIM once and filter, or run `ps`. Every path returns
+ * the same shape, so the sampler never branches on the platform.
  */
-export async function sampleProcesses(pids: number[]): Promise<Map<number, RawProcessSample>> {
+export async function sampleSnapshot(pids: number[]): Promise<RawSample> {
   const wanted = new Set(pids.filter((pid) => Number.isInteger(pid) && pid > 0));
-  if (wanted.size === 0) return new Map();
+  const native =
+    wanted.size > 0 ? await JobMonitor.get().sampleMetrics([...wanted]) : undefined;
+  if (native) {
+    const processes = new Map<number, RawProcessSample>();
+    for (const [pid, metric] of native.processes) {
+      if (!wanted.has(pid)) continue;
+      processes.set(pid, {
+        pid,
+        ppid: 0,
+        name: "",
+        cpuSeconds: metric.cpuMs / 1000,
+        rssBytes: metric.rssBytes,
+        vszBytes: metric.vszBytes,
+        threads: metric.threads,
+        handles: metric.handles,
+        ioReadBytes: metric.ioReadBytes,
+        ioWriteBytes: metric.ioWriteBytes,
+      });
+    }
+    // The helper only samples processes it opened a handle for. A pid it never
+    // saw (a tree that predates the observer, an observed agent that is not in
+    // our job) falls back to the table — but only when the native pass covered
+    // little enough of the set that reading the table is worth half a second.
+    const missing = [...wanted].filter((pid) => !processes.has(pid));
+    let usedFallback = false;
+    if (processes.size === 0 || processes.size * 2 < wanted.size) {
+      usedFallback = missing.length > 0;
+      const fallback = await platformSample(new Set(missing));
+      for (const [pid, sample] of fallback) processes.set(pid, sample);
+    }
+    return {
+      processes,
+      host: native.host ? hostFromNative(native.host) : sampleHost(Date.now()),
+      // "exact" only when the values really came from the helper's handles; a
+      // native pass that missed the tree (an observed agent before the borrow
+      // round-trip lands) is a table read.
+      precision: usedFallback ? "sampled" : "exact",
+    };
+  }
+  const processes = wanted.size === 0 ? new Map<number, RawProcessSample>() : await platformSample(wanted);
+  return { processes, host: sampleHost(Date.now()), precision: "sampled" };
+}
+
+/** The platform's own table read, used when no native pass answered. */
+function platformSample(wanted: Set<number>): Promise<Map<number, RawProcessSample>> {
+  if (wanted.size === 0) return Promise.resolve(new Map());
   if (process.platform === "linux") return sampleLinux(wanted);
   if (process.platform === "win32") return sampleWindows(wanted);
   return samplePosix(wanted);
+}
+
+function hostFromNative(host: WatchHostMetric): RawHostSample {
+  return {
+    ts: Date.now(),
+    // Windows' kernel time includes idle; the same convention as /proc-free
+    // os.cpus() summation above.
+    cpuSeconds: host.cpuMs / 1000,
+    cpuIdleSeconds: host.idleMs / 1000,
+    cpuCount: Math.max(1, host.cores),
+    memTotalBytes: host.memTotalBytes,
+    memAvailableBytes: host.memAvailableBytes,
+  };
 }
 
 /* ── Linux: /proc ───────────────────────────────────────────────────────── */

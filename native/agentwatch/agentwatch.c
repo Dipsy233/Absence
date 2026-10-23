@@ -51,11 +51,14 @@
 #include <windows.h>
 #include <winternl.h>
 #include <tlhelp32.h>
+#include <psapi.h>
 #include <stdio.h>
 #include <wchar.h>
 #include <stdint.h>
+#include <string.h>
 
 #pragma comment(lib, "ntdll.lib")
+#pragma comment(lib, "psapi.lib")
 
 typedef LONG NTSTATUS;
 
@@ -164,6 +167,13 @@ typedef struct ProcNode {
      * object state — it cannot be dropped the way a Job-Object completion-port
      * message can. The wait is what makes an exit event unmissable. */
     HANDLE wait;
+    /* Live thread count, recomputed by each sampling pass (one Toolhelp
+     * snapshot per pass, not per process). */
+    DWORD threads;
+    /* Opened on demand for an *observed* agent's tree: a handle we sample but
+     * never report creation/exit for. Those processes belong to somebody
+     * else's job, so they get no exit wait and no events — only counters. */
+    int borrowed;
     struct ProcNode *next;
 } ProcNode;
 
@@ -200,11 +210,48 @@ static void remember(DWORD pid, HANDLE h)
         n->pid = pid;
         n->handle = h;
         n->wait = NULL;
+        n->threads = 0;
+        n->borrowed = 0;
         n->next = g_table[b];
         g_table[b] = n;
         if (!RegisterWaitForSingleObject(&n->wait, h, on_handle_signaled,
                                          (PVOID)(ULONG_PTR)pid, INFINITE, WT_EXECUTEONLYONCE)) {
             n->wait = NULL;
+        }
+    }
+    LeaveCriticalSection(&g_lock);
+}
+
+/* Find a node without removing it. Caller holds g_lock. */
+static ProcNode *find_locked(DWORD pid)
+{
+    for (ProcNode *n = g_table[bucket(pid)]; n; n = n->next) {
+        if (n->pid == pid) return n;
+    }
+    return NULL;
+}
+
+/* Sample a pid that is not in our job — an observed agent's tree. No exit wait
+ * is registered: those processes are not ours to report, only to measure. */
+static void remember_borrowed(DWORD pid)
+{
+    EnterCriticalSection(&g_lock);
+    if (!find_locked(pid)) {
+        HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+        if (h) {
+            ProcNode *n = (ProcNode *)malloc(sizeof(ProcNode));
+            if (n) {
+                n->pid = pid;
+                n->handle = h;
+                n->wait = NULL;
+                n->threads = 0;
+                n->borrowed = 1;
+                unsigned b = bucket(pid);
+                n->next = g_table[b];
+                g_table[b] = n;
+            } else {
+                CloseHandle(h);
+            }
         }
     }
     LeaveCriticalSection(&g_lock);
@@ -438,6 +485,211 @@ static void on_exit(DWORD pid)
     CloseHandle(h);
 }
 
+/* ------------------------------------------------------------------ */
+/* resource sampling                                                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The kernel events above say *when* a process exists. They say nothing about
+ * how much CPU or memory it uses, and Job-Object accounting only reports the
+ * whole job's totals — never one process. But this helper already holds a
+ * handle per process, so a metric pass is just GetProcessTimes and
+ * GetProcessMemoryInfo on handles we own: no WMI, no CIM query, no
+ * re-enumeration of the process table, no extra privilege.
+ *
+ * The server drives the cadence: it writes "sample" on stdin when its own
+ * sampler ticks, so an idle session costs nothing and a dashboard watching one
+ * egg gets exactly the interval it asked for.
+ */
+
+/* A metric pass, copied out of the table so the lock is not held while writing
+ * to stdout (a blocked write must never stall exit reporting). */
+typedef struct MetricRow {
+    DWORD pid;
+    ULONGLONG cpuMs;
+    ULONGLONG rss;
+    ULONGLONG vsz;
+    ULONGLONG ioRead;
+    ULONGLONG ioWrite;
+    DWORD threads;
+    DWORD handles;
+} MetricRow;
+
+/* A FILETIME *duration* (kernel/system times are elapsed 100-ns ticks, not
+ * timestamps) → milliseconds. */
+static ULONGLONG ft_ticks_ms(FILETIME ft)
+{
+    ULONGLONG t = ((ULONGLONG)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+    return t / 10000ULL;
+}
+
+static void emit_host_metrics(void)
+{
+    FILETIME idle, kernel, user;
+    if (!GetSystemTimes(&idle, &kernel, &user)) return;
+    MEMORYSTATUSEX mem;
+    mem.dwLength = sizeof mem;
+    if (!GlobalMemoryStatusEx(&mem)) return;
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+
+    /* GetSystemTimes reports kernel time *inclusive of* idle, so the counters
+     * stay consistent with the /proc path: cpu = busy + idle, idle separately
+     * (the server derives busy as cpu - idle). */
+    char line[320];
+    snprintf(line, sizeof line,
+        "{\"ev\":\"host\",\"cpuMs\":%llu,\"idleMs\":%llu,\"cores\":%lu,\"memTotal\":%llu,\"memAvail\":%llu}",
+        (unsigned long long)(ft_ticks_ms(kernel) + ft_ticks_ms(user)),
+        (unsigned long long)ft_ticks_ms(idle),
+        (unsigned long)info.dwNumberOfProcessors,
+        (unsigned long long)mem.ullTotalPhys,
+        (unsigned long long)mem.ullAvailPhys);
+    emit_json_line(line);
+}
+
+/* Recompute every node's thread count from one Toolhelp snapshot. Called with
+ * g_lock held. */
+static void refresh_thread_counts_locked(void)
+{
+    for (unsigned i = 0; i < BUCKETS; i++) {
+        for (ProcNode *n = g_table[i]; n; n = n->next) n->threads = 0;
+    }
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+    THREADENTRY32 te;
+    te.dwSize = sizeof te;
+    if (Thread32First(snap, &te)) {
+        do {
+            unsigned b = bucket(te.th32OwnerProcessID);
+            for (ProcNode *n = g_table[b]; n; n = n->next) {
+                if (n->pid == te.th32OwnerProcessID) {
+                    n->threads++;
+                    break;
+                }
+            }
+        } while (Thread32Next(snap, &te));
+    }
+    CloseHandle(snap);
+}
+
+static void sample_all(void)
+{
+    emit_host_metrics();
+
+    EnterCriticalSection(&g_lock);
+    DWORD count = 0;
+    for (unsigned i = 0; i < BUCKETS; i++) {
+        for (ProcNode *n = g_table[i]; n; n = n->next) count++;
+    }
+    MetricRow *rows = count ? (MetricRow *)malloc(count * sizeof(MetricRow)) : NULL;
+    DWORD found = 0;
+    /* Borrowed handles of processes that have exited since the last pass. */
+    DWORD *dead = count ? (DWORD *)malloc(count * sizeof(DWORD)) : NULL;
+    DWORD deadCount = 0;
+    if (rows) {
+        refresh_thread_counts_locked();
+        for (unsigned i = 0; i < BUCKETS; i++) {
+            for (ProcNode *n = g_table[i]; n; n = n->next) {
+                FILETIME created, exitT, kernel, user;
+                if (!GetProcessTimes(n->handle, &created, &exitT, &kernel, &user)) {
+                    if (n->borrowed && dead) dead[deadCount++] = n->pid;
+                    continue;
+                }
+                PROCESS_MEMORY_COUNTERS_EX pmc;
+                pmc.cb = sizeof pmc;
+                ULONGLONG rss = 0, vsz = 0;
+                if (GetProcessMemoryInfo(n->handle, (PROCESS_MEMORY_COUNTERS *)&pmc, sizeof pmc)) {
+                    rss = (ULONGLONG)pmc.WorkingSetSize;
+                    vsz = (ULONGLONG)pmc.PrivateUsage;
+                }
+                IO_COUNTERS io;
+                ULONGLONG ioRead = 0, ioWrite = 0;
+                if (GetProcessIoCounters(n->handle, &io)) {
+                    ioRead = (ULONGLONG)io.ReadTransferCount;
+                    ioWrite = (ULONGLONG)io.WriteTransferCount;
+                }
+                DWORD handles = 0;
+                GetProcessHandleCount(n->handle, &handles);
+                rows[found].pid = n->pid;
+                rows[found].cpuMs = ((((ULONGLONG)kernel.dwHighDateTime << 32 | kernel.dwLowDateTime) +
+                                      ((ULONGLONG)user.dwHighDateTime << 32 | user.dwLowDateTime)) / 10000ULL);
+                rows[found].rss = rss;
+                rows[found].vsz = vsz;
+                rows[found].ioRead = ioRead;
+                rows[found].ioWrite = ioWrite;
+                rows[found].threads = n->threads;
+                rows[found].handles = handles;
+                found++;
+            }
+        }
+    }
+    LeaveCriticalSection(&g_lock);
+
+    if (dead) {
+        for (DWORD i = 0; i < deadCount; i++) {
+            HANDLE h = take(dead[i]);
+            if (h) CloseHandle(h);
+        }
+        free(dead);
+    }
+
+    for (DWORD i = 0; i < found; i++) {
+        char line[288];
+        snprintf(line, sizeof line,
+            "{\"ev\":\"metric\",\"pid\":%lu,\"cpuMs\":%llu,\"rss\":%llu,\"vsz\":%llu,"
+            "\"threads\":%lu,\"handles\":%lu,\"ioR\":%llu,\"ioW\":%llu}",
+            (unsigned long)rows[i].pid,
+            (unsigned long long)rows[i].cpuMs,
+            (unsigned long long)rows[i].rss,
+            (unsigned long long)rows[i].vsz,
+            (unsigned long)rows[i].threads,
+            (unsigned long)rows[i].handles,
+            (unsigned long long)rows[i].ioRead,
+            (unsigned long long)rows[i].ioWrite);
+        emit_json_line(line);
+    }
+    if (rows) free(rows);
+    emit_json_line("{\"ev\":\"sample_done\"}");
+}
+
+static HANDLE g_sample_event = NULL;
+
+static DWORD WINAPI sampler_thread(LPVOID param)
+{
+    (void)param;
+    for (;;) {
+        WaitForSingleObject(g_sample_event, INFINITE);
+        sample_all();
+    }
+    return 0;
+}
+
+/* stdin carries one command per line. Only "sample" exists: the server asks
+ * for a metric pass, this thread wakes the sampler. Closing stdin ends the
+ * thread; the helper keeps observing either way. */
+static DWORD WINAPI stdin_thread(LPVOID param)
+{
+    (void)param;
+    char buf[4096];
+    while (fgets(buf, sizeof buf, stdin)) {
+        if (strncmp(buf, "sample", 6) != 0) continue;
+        /* Optional pid list: the observed agent's tree is not in our job, so
+         * the server names the pids it wants measured. */
+        char *rest = buf + 6;
+        while (*rest == ' ' || *rest == '	') rest++;
+        while (*rest >= '0' && *rest <= '9') {
+            char *end = rest;
+            unsigned long pid = strtoul(rest, &end, 10);
+            if (end == rest) break;
+            if (pid > 0) remember_borrowed((DWORD)pid);
+            rest = end;
+            while (*rest == ',' || *rest == ' ') rest++;
+        }
+        SetEvent(g_sample_event);
+    }
+    return 0;
+}
+
 /*
  * The thread pool fired because a process handle went signaled — the process
  * has exited. This is the reliable exit path: a process handle's signal is
@@ -482,6 +734,9 @@ static void CALLBACK on_handle_signaled(PVOID ctx, BOOLEAN timed_out)
  *   {"ev":"start","pid":..,"lost":true}      (process vanished before we could open it)
  *   {"ev":"exit","pid":..,"durMs":..,"cpuMs":..,"code":..}
  *   {"ev":"exit","pid":..}                   (no start was seen)
+ *   {"ev":"metric","pid":..,"cpuMs":..,"rss":..,"vsz":..,"threads":..,"handles":..,"ioR":..,"ioW":..}
+ *   {"ev":"host","cpuMs":..,"idleMs":..,"cores":..,"memTotal":..,"memAvail":..}
+ *   {"ev":"sample_done"}                     (one sampling pass finished)
  *   {"ev":"active_zero"}                     (job empty; informational)
  *   {"ev":"target_gone"}                     (the observed process exited)
  *   {"ev":"error","what":"..","code":..}
@@ -548,6 +803,16 @@ int wmain(int argc, wchar_t **argv)
         char b[96];
         snprintf(b, sizeof b, "{\"ev\":\"ready\",\"target\":%lu}", (unsigned long)target_pid);
         emit_json_line(b);
+    }
+
+    /* Resource sampling is driven by the server: "sample" on stdin runs one
+     * pass over the handles this helper already holds. */
+    g_sample_event = CreateEventW(NULL, FALSE, FALSE, NULL);
+    if (g_sample_event) {
+        HANDLE thread = CreateThread(NULL, 0, sampler_thread, NULL, 0, NULL);
+        if (thread) CloseHandle(thread);
+        thread = CreateThread(NULL, 0, stdin_thread, NULL, 0, NULL);
+        if (thread) CloseHandle(thread);
     }
 
     /* The event loop. A dedicated thread watches the target so an exit is

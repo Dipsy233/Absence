@@ -45,6 +45,44 @@ export interface WatchExit {
   unmatched?: boolean;
 }
 
+/**
+ * One process's resource counters, read from a handle the observer already
+ * holds. Counters are cumulative (CPU, IO) or instantaneous (RSS, threads), the
+ * Prometheus shapes the metrics sampler wants.
+ */
+export interface WatchMetric {
+  pid: number;
+  /** Cumulative CPU time in milliseconds. */
+  cpuMs: number;
+  rssBytes: number;
+  vszBytes?: number;
+  threads?: number;
+  handles?: number;
+  ioReadBytes?: number;
+  ioWriteBytes?: number;
+}
+
+/** Host-wide counters, sampled alongside the processes. */
+export interface WatchHostMetric {
+  /** Cumulative CPU time in milliseconds, *including* idle. */
+  cpuMs: number;
+  /** Cumulative idle time in milliseconds. */
+  idleMs: number;
+  cores: number;
+  memTotalBytes: number;
+  memAvailableBytes: number;
+}
+
+/**
+ * What one sampling pass returned. `undefined` from `requestSample` means the
+ * platform cannot sample natively; callers fall back to reading the process
+ * table.
+ */
+export interface WatchSample {
+  processes: Map<number, WatchMetric>;
+  host?: WatchHostMetric;
+}
+
 /** How a process observer is doing, for the UI's precision indication. */
 export type WatchStatus = "starting" | "watching" | "unavailable";
 

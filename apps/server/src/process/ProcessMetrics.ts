@@ -1,5 +1,5 @@
 import type { EggMetricSample, MetricsFrame, ProcessMetricSample } from "@absence/core";
-import { sampleHost, sampleProcesses } from "./metricSample";
+import { sampleSnapshot } from "./metricSample";
 
 /** One egg root and the pids that roll into it. */
 export interface MetricsTarget {
@@ -139,8 +139,11 @@ export class ProcessMetricsSampler {
 
       const pids = new Set<number>();
       for (const target of running) for (const pid of target.pids) pids.add(pid);
-      const raw = await sampleProcesses([...pids]);
-      const host = sampleHost(ts);
+      const snapshot = await sampleSnapshot([...pids]);
+      const raw = snapshot.processes;
+      // The frame's ts is when the sampler asked; the host counters arrived
+      // with it, so they share that timestamp on the chart's x axis.
+      const host = { ...snapshot.host, ts };
 
       const processes: ProcessMetricSample[] = [];
       const eggs: EggMetricSample[] = [];
@@ -179,6 +182,7 @@ export class ProcessMetricsSampler {
             rssBytes: sample.rssBytes,
             vszBytes: sample.vszBytes,
             threads: sample.threads,
+            handles: sample.handles,
             ioReadBytes: sample.ioReadBytes,
             ioWriteBytes: sample.ioWriteBytes,
           });
@@ -209,7 +213,7 @@ export class ProcessMetricsSampler {
         processes,
         eggs,
         host,
-        precision: "sampled",
+        precision: snapshot.precision,
       };
       this.ring.push(frame);
       if (this.ring.length > METRICS_RING_FRAMES) {

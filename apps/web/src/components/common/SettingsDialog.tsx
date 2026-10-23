@@ -14,9 +14,12 @@ import {
   activateEggFilter,
   deleteEggFilter,
   fetchEggFilter,
+  fetchMetricsInfo,
   saveEggFilter,
   type EggFilterProfileMeta,
+  type MetricsInfo,
 } from "../../lib/api";
+import { useSessionStore } from "../../stores/sessionStore";
 
 const RAIL_LABELS: Record<RailPanelId, string> = {
   agent: "Agent (WhaleBun)",
@@ -83,11 +86,98 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
         <div className="w-px shrink-0 bg-desk-line" />
 
+        {/* ════ Metrics: retention + the Prometheus endpoint ═ */}
+        <MetricsPane />
+
+        <div className="w-px shrink-0 bg-desk-line" />
+
         {/* ════ Right: egg filter profiles ══════════════════ */}
         <EggFilterPane />
       </div>
     </div>,
     document.body,
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Metrics: how long the server keeps process metrics, and the URL a
+   Prometheus server can scrape. Both are server policy, so this pane
+   reports them and explains the env var instead of pretending a browser
+   toggle can change them.
+   ══════════════════════════════════════════════════════════════════════ */
+function MetricsPane() {
+  const t = useT();
+  const session = useSessionStore((s) => s.session);
+  const [info, setInfo] = useState<MetricsInfo | undefined>(undefined);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchMetricsInfo()
+      .then((value) => {
+        if (!cancelled) setInfo(value);
+      })
+      .catch(() => {
+        if (!cancelled) setInfo(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const scrapeUrl =
+    session && info
+      ? `${window.location.origin}${info.scrapePath.replace("{id}", session.id)}&from=${
+          Date.now() - 60 * 60_000
+        }&to=${Date.now()}`
+      : undefined;
+
+  return (
+    <div className="min-w-0 flex-1 basis-0 overflow-y-auto p-4">
+      <h2 className="mb-3 font-mono text-sm tracking-widest text-desk-ink">{t("METRICS")}</h2>
+
+      <section className="mb-4">
+        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">
+          {t("retention")}
+        </h3>
+        <p className="font-mono text-[11px] leading-relaxed text-desk-ink/80">
+          {info
+            ? info.retentionDays > 0
+              ? t("{n} {unit}, then they expire", { n: info.retentionDays, unit: t("days of process metrics") })
+              : t("keep every sample (bounded only by disk)")
+            : t("loading…")}
+        </p>
+        <p className="mt-1 font-mono text-[10px] leading-relaxed text-desk-dim">
+          {t("Set it with ABSENCE_METRICS_RETENTION_DAYS (0 keeps everything).")}
+        </p>
+      </section>
+
+      <section>
+        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">
+          {t("Prometheus endpoint")}
+        </h3>
+        <p className="mb-1.5 font-mono text-[10px] leading-relaxed text-desk-dim">
+          {t("Scrape this session's eggs with format=prometheus:")}
+        </p>
+        <code className="block break-all rounded border border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[10px] text-desk-teal">
+          {scrapeUrl ?? info?.scrapePath ?? "—"}
+        </code>
+        <button
+          type="button"
+          disabled={!scrapeUrl}
+          onClick={() => {
+            if (!scrapeUrl) return;
+            void navigator.clipboard?.writeText(scrapeUrl).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            });
+          }}
+          className="mt-1.5 rounded border border-desk-line px-2 py-0.5 font-mono text-[10px] text-desk-dim hover:text-desk-amber disabled:opacity-30"
+        >
+          {copied ? t("copied") : t("Copy the scrape URL")}
+        </button>
+      </section>
+    </div>
   );
 }
 

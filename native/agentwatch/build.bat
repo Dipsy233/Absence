@@ -30,7 +30,7 @@ if not errorlevel 1 (
 where g++ >nul 2>nul
 if %errorlevel%==0 (
   echo Building agentwatch.exe with MinGW...
-  g++ -O2 -municode -o agentwatch.exe agentwatch.c -lntdll
+  g++ -O2 -municode -o agentwatch.exe agentwatch.c -lntdll -lpsapi
   if %errorlevel%==0 ( echo OK & exit /b 0 )
   echo MinGW build failed.
 )
@@ -38,7 +38,7 @@ if %errorlevel%==0 (
 where cl >nul 2>nul
 if %errorlevel%==0 (
   echo Building agentwatch.exe with MSVC...
-  cl /nologo /O2 /W4 /DWIN32_LEAN_AND_MEAN agentwatch.c /link ntdll.lib
+  cl /nologo /O2 /W4 /DWIN32_LEAN_AND_MEAN agentwatch.c /link ntdll.lib psapi.lib
   if exist agentwatch.obj del agentwatch.obj
   if %errorlevel%==0 ( echo OK & exit /b 0 )
   echo MSVC build failed.

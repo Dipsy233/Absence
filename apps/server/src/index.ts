@@ -122,9 +122,14 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   const actualPort = typeof address === "object" && address ? address.port : port;
   const url = `http://${host}:${actualPort}`;
 
-  // Metrics are kept for 30 days. Expire once at startup and then daily; the
-  // timer is unref'd so it never keeps a CLI process alive on its own.
-  const expire = () => expireMetrics(Date.now() - 30 * 24 * 60 * 60_000);
+  // Metrics expire after `metricsRetentionDays` (30 by default; 0 keeps
+  // everything). Once at startup, then daily; unref'd so it never keeps a CLI
+  // process alive on its own.
+  const expire = () => {
+    const days = config.metricsRetentionDays;
+    if (days <= 0) return;
+    expireMetrics(Date.now() - days * 24 * 60 * 60_000);
+  };
   expire();
   const expireTimer = setInterval(expire, 24 * 60 * 60_000);
   expireTimer.unref?.();

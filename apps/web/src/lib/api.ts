@@ -97,6 +97,16 @@ export async function fetchSessionHistory(path?: string): Promise<SessionHistory
   return json<SessionHistoryEntry[]>(await fetch(`/api/sessions/history${query}`));
 }
 
+/** How the server keeps metrics: retention and the Prometheus scrape path. */
+export interface MetricsInfo {
+  retentionDays: number;
+  scrapePath: string;
+}
+
+export async function fetchMetricsInfo(): Promise<MetricsInfo> {
+  return json<MetricsInfo>(await fetch("/api/metrics/info"));
+}
+
 /** Persisted metric series for a range. Live recent frames come from the socket. */
 export async function fetchMetrics(
   sessionId: string,

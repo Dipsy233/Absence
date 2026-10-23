@@ -68,7 +68,8 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
       .sort((a, b) => b.cores - a.cores)[0]?.egg;
 
   useEffect(() => {
-    if (selectedEggPid === undefined && selected) selectEgg(selected.eggPid);
+    const nextPid = selected?.eggPid;
+    if (selectedEggPid !== nextPid) selectEgg(nextPid);
   }, [selectedEggPid, selected, selectEgg]);
 
   const range = RANGES.find((entry) => entry.id === rangeId) ?? RANGES[1]!;
@@ -132,6 +133,17 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
   const latest = latestFrame(frames);
   const egg = selected ? findEgg(frames, selected.eggPid) : undefined;
   const cpuCount = latest?.host.cpuCount ?? 1;
+  // The egg's own process row in the newest frame: threads, handles and IO live
+  // there (they are per process, not persisted per series).
+  const details = useMemo(() => {
+    if (!selected) return undefined;
+    for (let i = frames.length - 1; i >= 0; i--) {
+      const row = frames[i]!.processes.find((entry) => entry.eggPid === selected.eggPid);
+      if (row) return row;
+    }
+    return undefined;
+  }, [frames, version, selected]);
+
   const sessionAvgCpu = egg?.avgCpuCoresSession ?? remote?.avgCpuCoresSession ?? 0;
   const sessionAvgMem = egg?.avgRssBytesSession ?? remote?.avgRssBytesSession ?? 0;
   const processCount = egg?.processCount ?? 0;
@@ -317,6 +329,21 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
               </span>
               <span>
                 {t("status")}: {eggStatus === "running" ? t("running") : t("exited")}
+              </span>
+              {/* Threads, handles and IO come from the native pass: the
+                  helper reads them off handles it already holds. They are not
+                  persisted, so a historical range has none. */}
+              <span>
+                {t("threads")}: {details?.threads ?? "—"}
+              </span>
+              <span>
+                {t("handles")}: {details?.handles ?? "—"}
+              </span>
+              <span>
+                {t("IO read")}: {details?.ioReadBytes !== undefined ? formatBytes(details.ioReadBytes) : "—"}
+              </span>
+              <span>
+                {t("IO write")}: {details?.ioWriteBytes !== undefined ? formatBytes(details.ioWriteBytes) : "—"}
               </span>
             </div>
           </div>
