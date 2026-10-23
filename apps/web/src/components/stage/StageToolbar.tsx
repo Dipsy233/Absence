@@ -1,6 +1,7 @@
 import type { StageItemType } from "../../types/stage";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
+import { useUiStore } from "../../stores/uiStore";
 import { useT } from "../../lib/i18n";
 
 /**
@@ -22,6 +23,7 @@ export function StageToolbar() {
   const setMode = useStageStore((s) => s.setMode);
   const goMetrics = useStageStore((s) => s.goMetrics);
   const replayReady = useReplayStore((s) => s.events.length > 0);
+  const agentOnStage = useUiStore((s) => s.agentOnStage);
 
   const buttonClass = (active: boolean, enabled: boolean) =>
     [
@@ -67,15 +69,15 @@ export function StageToolbar() {
         {t("REPLAY")}
       </button>
 
-      {/* centre — back to the default page (the metrics dashboard) */}
+      {/* centre — back to the default page for the current Stage background */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         <button
           type="button"
           onClick={goMetrics}
-          title={t("Back to the metrics — the default page")}
+          title={t(agentOnStage ? "Back to the agent — the default page" : "Back to the metrics — the default page")}
           className={buttonClass(mode === "metrics", true)}
         >
-          {t("METRICS")}
+          {agentOnStage ? t("Agent").toUpperCase() : t("METRICS")}
         </button>
       </div>
 

@@ -41,6 +41,7 @@ const ZH: Record<string, string> = {
   LIVE: "实时",
   "The whole file you opened from the project tree": "你在项目树里打开的完整文件",
   "Back to the metrics — the default page": "回到指标——默认页",
+  "Back to the agent — the default page": "回到智能体——默认页",
   "The content the agent has in context": "智能体上下文里的内容",
 
   // ── Metrics ────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ const ZH: Record<string, string> = {
   Refresh: "刷新",
   "Close the metrics dashboard": "关闭指标看板",
   "Open the resource metrics dashboard": "打开资源指标看板",
+  "whole agent": "整个智能体",
   "no eggs": "没有进程",
   "CPU now": "当前 CPU",
   "MEM now": "当前内存",

@@ -32,6 +32,9 @@ export function AgentPanel() {
   ) : (
     <Avatar visual={visual} />
   );
+  const swapToStage = () => {
+    toggleAgentOnStage();
+  };
 
   if (agentOnStage) {
     return <MetricsPanel />;
@@ -43,7 +46,7 @@ export function AgentPanel() {
       aside={model}
       className="shrink-0 cursor-pointer"
       bodyClassName="p-2"
-      onClick={toggleAgentOnStage}
+      onClick={swapToStage}
     >
       <div className="h-[184px]">{avatar}</div>
     </Panel>

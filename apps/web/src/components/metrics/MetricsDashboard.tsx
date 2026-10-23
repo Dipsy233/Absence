@@ -7,6 +7,7 @@ import { useUiStore } from "../../stores/uiStore";
 import { useT } from "../../lib/i18n";
 import {
   chartFromRing,
+  chartFromAgentRing,
   chartFromSeries,
   eggCpuCores,
   eggList,
@@ -60,22 +61,13 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
 
   const eggs = useMemo(() => eggList(frames), [frames, version]);
   const primary = useMemo(() => eggs.filter((egg) => egg.kind === "primary"), [eggs]);
-  const running = useMemo(() => primary.filter((egg) => egg.status === "running"), [primary]);
   const selected =
-    (selectedEggPid !== undefined ? primary.find((egg) => egg.eggPid === selectedEggPid) : undefined) ??
-    running
-      .map((egg) => ({ egg, cores: eggCpuCores(frames, egg.eggPid) }))
-      .sort((a, b) => b.cores - a.cores)[0]?.egg;
-
-  useEffect(() => {
-    const nextPid = selected?.eggPid;
-    if (selectedEggPid !== nextPid) selectEgg(nextPid);
-  }, [selectedEggPid, selected, selectEgg]);
+    selectedEggPid !== undefined ? primary.find((egg) => egg.eggPid === selectedEggPid) : undefined;
 
   const range = RANGES.find((entry) => entry.id === rangeId) ?? RANGES[1]!;
   // The ring only knows this session's live frames. A historical session (or a
   // range longer than the ring) must read SQLite instead.
-  const useRing = range.ms <= 10 * 60_000 && frames.length > 0 && selected !== undefined;
+  const useRing = range.ms <= 10 * 60_000 && frames.length > 0;
   const sessionStart = session?.startedAt ?? Date.now() - 60 * 60_000;
 
   // Long ranges and historical sessions come from SQLite. Refresh periodically
@@ -87,7 +79,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
     }
     let cancelled = false;
     setLoading(true);
-    const wanted = selected?.eggPid;
+    const wanted = selectedEggPid;
     const load = () => {
       fetchMetrics(session.id, {
         from: range.id === "session" ? sessionStart : Date.now() - range.ms,
@@ -97,18 +89,11 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
       })
         .then((response) => {
           if (cancelled) return;
-          // With no live egg selected (a historical session), pick the busiest
-          // primary series and follow it.
           const series =
-            (wanted !== undefined
+            wanted !== undefined
               ? response.series.find((entry) => entry.eggPid === wanted)
-              : undefined) ??
-            response.series
-              .filter((entry) => entry.kind === "primary")
-              .sort((a, b) => b.avgCpuCoresSession - a.avgCpuCoresSession)[0] ??
-            response.series[0];
+              : aggregateAgentSeries(response.series);
           setRemote(series);
-          if (wanted === undefined && series) selectEgg(series.eggPid);
         })
         .catch(() => {
           if (!cancelled) setRemote(undefined);
@@ -123,10 +108,10 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [useRing, selected?.eggPid, session?.id, range.id, range.ms, range.step, sessionStart, refresh, selectEgg]);
+  }, [useRing, selectedEggPid, session?.id, range.id, range.ms, range.step, sessionStart, refresh]);
 
   const chart = useMemo(() => {
-    if (useRing) return selected ? chartFromRing(frames, selected.eggPid) : EMPTY;
+    if (useRing) return selected ? chartFromRing(frames, selected.eggPid) : chartFromAgentRing(frames);
     return remote ? chartFromSeries(remote, range.step) : EMPTY;
   }, [selected, useRing, frames, version, remote, range.step]);
 
@@ -144,15 +129,17 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
     return undefined;
   }, [frames, version, selected]);
 
-  const sessionAvgCpu = egg?.avgCpuCoresSession ?? remote?.avgCpuCoresSession ?? 0;
-  const sessionAvgMem = egg?.avgRssBytesSession ?? remote?.avgRssBytesSession ?? 0;
-  const processCount = egg?.processCount ?? 0;
-  const eggStatus = egg?.status ?? remote?.status;
+  const agentAvgCpu = primary.reduce((sum, entry) => sum + entry.avgCpuCoresSession, 0);
+  const agentAvgMem = primary.reduce((sum, entry) => sum + entry.avgRssBytesSession, 0);
+  const sessionAvgCpu = selected?.avgCpuCoresSession ?? remote?.avgCpuCoresSession ?? agentAvgCpu;
+  const sessionAvgMem = selected?.avgRssBytesSession ?? remote?.avgRssBytesSession ?? agentAvgMem;
+  const processCount = selected ? egg?.processCount ?? 0 : primary.reduce((sum, entry) => sum + entry.processCount, 0);
+  const eggStatus = selected ? egg?.status ?? remote?.status : undefined;
   const options =
     primary.length > 0
-      ? primary
+      ? [{ eggPid: "", name: t("Agent"), status: "running" as const }, ...primary]
       : remote
-        ? [{ eggPid: remote.eggPid, name: remote.name, status: remote.status }]
+        ? [{ eggPid: "", name: t("Agent"), status: "running" as const }, { eggPid: remote.eggPid, name: remote.name, status: remote.status }]
         : [];
   const currentCores = chart.cpuCores[chart.cpuCores.length - 1] ?? 0;
   const currentMem = chart.rssMiB[chart.rssMiB.length - 1] ?? 0;
@@ -210,8 +197,8 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-desk-line/60 px-3 py-1.5">
         <select
-          value={selected?.eggPid ?? remote?.eggPid ?? ""}
-          onChange={(event) => selectEgg(Number(event.target.value) || undefined)}
+          value={selected?.eggPid ?? ""}
+          onChange={(event) => selectEgg(event.target.value ? Number(event.target.value) : undefined)}
           className="max-w-[220px] rounded border border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[11px] text-desk-ink focus:border-desk-amber/60 focus:outline-none"
         >
           {options.length === 0 ? <option value="">{t("no eggs")}</option> : null}
@@ -328,7 +315,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
                 {t("processes")}: {processCount}
               </span>
               <span>
-                {t("status")}: {eggStatus === "running" ? t("running") : t("exited")}
+                {t("status")}: {selected ? (eggStatus === "running" ? t("running") : t("exited")) : t("Agent")}
               </span>
               {/* Threads, handles and IO come from the native pass: the
                   helper reads them off handles it already holds. They are not
@@ -360,6 +347,41 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
       </div>
     </div>
   );
+}
+
+function aggregateAgentSeries(series: MetricSeries[]): MetricSeries | undefined {
+  const primary = series.filter((entry) => entry.kind === "primary");
+  if (primary.length === 0) return undefined;
+  const points = new Map<number, { cpuSeconds: number; rssBytes: number; rssMaxBytes: number }>();
+  for (const entry of primary) {
+    for (const point of entry.points) {
+      const current = points.get(point.ts);
+      if (current) {
+        current.cpuSeconds += point.cpuSeconds;
+        current.rssBytes += point.rssBytes;
+        current.rssMaxBytes += point.rssMaxBytes;
+      } else {
+        points.set(point.ts, {
+          cpuSeconds: point.cpuSeconds,
+          rssBytes: point.rssBytes,
+          rssMaxBytes: point.rssMaxBytes,
+        });
+      }
+    }
+  }
+  return {
+    eggPid: 0,
+    name: "Agent",
+    kind: "primary",
+    status: primary.some((entry) => entry.status === "running") ? "running" : "exited",
+    points: [...points.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([ts, point]) => ({ ts, ...point })),
+    avgCpuCoresSession: primary.reduce((sum, entry) => sum + entry.avgCpuCoresSession, 0),
+    avgRssBytesSession: primary.reduce((sum, entry) => sum + entry.avgRssBytesSession, 0),
+    firstTs: Math.min(...primary.map((entry) => entry.firstTs)),
+    lastTs: Math.max(...primary.map((entry) => entry.lastTs)),
+  };
 }
 
 function Stat({

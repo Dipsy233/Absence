@@ -51,6 +51,36 @@ export function eggPoints(frames: MetricsFrame[], eggPid: number): Array<{
   return points;
 }
 
+/** Aggregate the primary eggs into the agent's process tree. */
+export function agentPoints(frames: MetricsFrame[]): Array<{
+  ts: number;
+  cpuSeconds: number;
+  rssBytes: number;
+}> {
+  return frames.map((frame) => {
+    let cpuSeconds = 0;
+    let rssBytes = 0;
+    for (const egg of frame.eggs) {
+      if (egg.kind !== "primary") continue;
+      cpuSeconds += egg.cpuSeconds;
+      rssBytes += egg.rssBytes;
+    }
+    return { ts: frame.ts, cpuSeconds, rssBytes };
+  });
+}
+
+export function agentCpuCores(frames: MetricsFrame[]): number {
+  return rateCores(agentPoints(frames));
+}
+
+export function agentAverageCores(frames: MetricsFrame[], windowMs: number): number {
+  const points = agentPoints(frames);
+  if (points.length < 2) return 0;
+  const cutoff = points[points.length - 1]!.ts - windowMs;
+  const index = points.findIndex((point) => point.ts >= cutoff);
+  return rateCores(points, index < 0 ? 0 : index);
+}
+
 /** CPU cores in use between two samples. */
 export function rateCores(points: Array<{ ts: number; cpuSeconds: number }>, fromIndex = 0): number {
   if (points.length < 2) return 0;
@@ -129,6 +159,16 @@ export interface ChartSeries {
 
 export function chartFromRing(frames: MetricsFrame[], eggPid: number): ChartSeries {
   const points = eggPoints(frames, eggPid);
+  return chartFromPoints(points);
+}
+
+export function chartFromAgentRing(frames: MetricsFrame[]): ChartSeries {
+  return chartFromPoints(agentPoints(frames));
+}
+
+function chartFromPoints(
+  points: Array<{ ts: number; cpuSeconds: number; rssBytes: number }>,
+): ChartSeries {
   const ts: number[] = [];
   const cpuCores: number[] = [];
   const rssMiB: number[] = [];

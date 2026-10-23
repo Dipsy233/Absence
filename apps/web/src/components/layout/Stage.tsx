@@ -78,10 +78,12 @@ export function Stage() {
     sheet = true;
     content = <StageItemView item={item} />;
   } else {
-    // METRICS: the default page, regardless of what is pinned.
-    key = "metrics";
+    // The default page is either the metrics desk or the agent itself. When
+    // the agent is on Stage, the background already owns the full page; the
+    // overlay must stay empty or it would cover the avatar with Metrics.
+    key = agentOnStage ? "agent" : "metrics";
     sheet = false;
-    content = <MetricsDashboard embedded />;
+    content = agentOnStage ? null : <MetricsDashboard embedded />;
   }
 
   // ABSENCE mode only means something while a content page is up; on the default

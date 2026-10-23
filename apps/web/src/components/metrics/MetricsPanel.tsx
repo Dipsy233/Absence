@@ -1,8 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useMetricsStore } from "../../stores/metricsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useT } from "../../lib/i18n";
 import {
+  agentAverageCores,
+  agentCpuCores,
+  agentPoints,
   eggAverageCores,
   eggCpuCores,
   eggList,
@@ -40,29 +43,18 @@ export function MetricsPanel() {
     () => eggs.filter((egg) => egg.kind === "primary"),
     [eggs],
   );
-  const running = useMemo(
-    () => primary.filter((egg) => egg.status === "running"),
-    [primary],
-  );
-
-  // A sensible default: the busiest running egg. The user's explicit choice
-  // always wins, even after the egg exits (its last curve is still useful).
-  const selected =
-    (selectedEggPid !== undefined ? primary.find((egg) => egg.eggPid === selectedEggPid) : undefined) ??
-    running
-      .map((egg) => ({ egg, cores: eggCpuCores(frames, egg.eggPid) }))
-      .sort((a, b) => b.cores - a.cores)[0]?.egg;
-
-  useEffect(() => {
-    const nextPid = selected?.eggPid;
-    if (selectedEggPid !== nextPid) selectEgg(nextPid);
-  }, [selectedEggPid, selected, selectEgg]);
+  const running = useMemo(() => primary.filter((egg) => egg.status === "running"), [primary]);
+  const selected = selectedEggPid !== undefined
+    ? primary.find((egg) => egg.eggPid === selectedEggPid)
+    : undefined;
 
   const latest = latestFrame(frames);
   const egg = selected ? findEgg(frames, selected.eggPid) : undefined;
-  const points = selected ? eggPoints(frames, selected.eggPid) : [];
-  const instantCores = selected ? eggCpuCores(frames, selected.eggPid) : 0;
-  const averageCores = selected ? eggAverageCores(frames, selected.eggPid, 5 * 60_000) : 0;
+  const points = selected ? eggPoints(frames, selected.eggPid) : agentPoints(frames);
+  const instantCores = selected ? eggCpuCores(frames, selected.eggPid) : agentCpuCores(frames);
+  const averageCores = selected
+    ? eggAverageCores(frames, selected.eggPid, 5 * 60_000)
+    : agentAverageCores(frames, 5 * 60_000);
   const cpuCount = latest?.host.cpuCount ?? 1;
   const cpuPercent = (instantCores / Math.max(1, cpuCount)) * 100;
   const hostPercent = hostCpuPercent(frames);
@@ -72,6 +64,8 @@ export function MetricsPanel() {
     return seconds > 0 ? Math.max(0, (point.cpuSeconds - list[index - 1]!.cpuSeconds) / seconds) : 0;
   });
   const memSpark = points.slice(-150).map((point) => point.rssBytes / (1024 * 1024));
+  const agentRssBytes = primary.reduce((sum, entry) => sum + entry.rssBytes, 0);
+  const agentAvgRssBytes = primary.reduce((sum, entry) => sum + entry.avgRssBytesSession, 0);
 
   const top = running
     .map((entry) => ({ egg: entry, cores: eggCpuCores(frames, entry.eggPid) }))
@@ -110,18 +104,14 @@ export function MetricsPanel() {
           <p className="py-4 text-xs text-desk-dim">
             {t("Waiting for the first sample…")}
           </p>
-        ) : primary.length === 0 ? (
-          <p className="py-4 text-xs text-desk-dim">
-            {t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")}
-          </p>
         ) : (
           <>
             <div className="mb-1 flex items-baseline justify-between gap-2">
-              <span className="truncate font-mono text-[11px] text-desk-ink/90" title={egg?.name}>
-                {egg?.name ?? selected?.name ?? "—"}
+              <span className="truncate font-mono text-[11px] text-desk-ink/90" title={selected?.name ?? t("Agent")}>
+                {selected?.name ?? t("Agent")}
               </span>
               <span className="shrink-0 font-mono text-[10px] text-desk-dim">
-                {egg?.status === "running" ? t("running") : t("exited")} · pid {selected?.eggPid}
+                {selected ? (egg?.status === "running" ? t("running") : t("exited")) + ` · pid ${selected.eggPid}` : t("whole agent")}
               </span>
             </div>
 
@@ -147,9 +137,9 @@ export function MetricsPanel() {
             <div className="mt-2 flex items-baseline justify-between font-mono text-[10px] text-desk-dim">
               <span>{t("MEM")}</span>
               <span className="text-desk-teal">
-                {formatBytes(egg?.rssBytes ?? 0)}
+                {formatBytes(selected ? egg?.rssBytes ?? 0 : agentRssBytes)}
                 {latest.host.memTotalBytes > 0
-                  ? ` · ${formatPercent(((egg?.rssBytes ?? 0) / latest.host.memTotalBytes) * 100)}`
+                  ? ` · ${formatPercent(((selected ? egg?.rssBytes ?? 0 : agentRssBytes) / latest.host.memTotalBytes) * 100)}`
                   : ""}
               </span>
             </div>
@@ -162,7 +152,7 @@ export function MetricsPanel() {
             />
             <div className="flex justify-between font-mono text-[9px] text-desk-dim/80">
               <span>
-                {t("avg")} {formatBytes(egg?.avgRssBytesSession ?? 0)}
+                {t("avg")} {formatBytes(selected ? egg?.avgRssBytesSession ?? 0 : agentAvgRssBytes)}
               </span>
               <span>
                 {t("peak")} {formatBytes(Math.max(0, ...memSpark) * 1024 * 1024)}
