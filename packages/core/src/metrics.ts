@@ -35,7 +35,7 @@ export interface ProcessMetricSample {
 export interface EggMetricSample {
   eggPid: number;
   name: string;
-  kind: "primary" | "tool";
+  kind: "agent" | "primary" | "tool";
   status: "running" | "exited";
   /** Cumulative CPU time of the whole subtree, in seconds (counter). */
   cpuSeconds: number;
@@ -72,6 +72,8 @@ export interface MetricsFrame {
   intervalMs: number;
   processes: ProcessMetricSample[];
   eggs: EggMetricSample[];
+  /** The complete agent tree, including Absence/runtime plumbing and eggs. */
+  agent?: EggMetricSample;
   host: HostMetricSample;
   /**
    * `exact` when a kernel helper reported the values, `sampled` when they came

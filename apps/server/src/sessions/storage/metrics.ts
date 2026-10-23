@@ -35,7 +35,7 @@ interface SummaryRow {
   sessionId: string;
   eggPid: number;
   name: string;
-  kind: "primary" | "tool";
+  kind: "agent" | "primary" | "tool";
   status: "running" | "exited";
   firstTs: number;
   lastTs: number;

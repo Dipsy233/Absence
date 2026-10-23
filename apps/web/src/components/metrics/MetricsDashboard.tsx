@@ -117,6 +117,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
 
   const latest = latestFrame(frames);
   const egg = selected ? findEgg(frames, selected.eggPid) : undefined;
+  const agent = latest?.agent;
   const cpuCount = latest?.host.cpuCount ?? 1;
   // The egg's own process row in the newest frame: threads, handles and IO live
   // there (they are per process, not persisted per series).
@@ -129,14 +130,14 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
     return undefined;
   }, [frames, version, selected]);
 
-  const agentAvgCpu = primary.reduce((sum, entry) => sum + entry.avgCpuCoresSession, 0);
-  const agentAvgMem = primary.reduce((sum, entry) => sum + entry.avgRssBytesSession, 0);
+  const agentAvgCpu = agent?.avgCpuCoresSession ?? primary.reduce((sum, entry) => sum + entry.avgCpuCoresSession, 0);
+  const agentAvgMem = agent?.avgRssBytesSession ?? primary.reduce((sum, entry) => sum + entry.avgRssBytesSession, 0);
   const sessionAvgCpu = selected?.avgCpuCoresSession ?? remote?.avgCpuCoresSession ?? agentAvgCpu;
   const sessionAvgMem = selected?.avgRssBytesSession ?? remote?.avgRssBytesSession ?? agentAvgMem;
-  const processCount = selected ? egg?.processCount ?? 0 : primary.reduce((sum, entry) => sum + entry.processCount, 0);
+  const processCount = selected ? egg?.processCount ?? 0 : agent?.processCount ?? primary.reduce((sum, entry) => sum + entry.processCount, 0);
   const eggStatus = selected ? egg?.status ?? remote?.status : undefined;
   const options =
-    primary.length > 0
+    primary.length > 0 || agent
       ? [{ eggPid: "", name: t("Agent"), status: "running" as const }, ...primary]
       : remote
         ? [{ eggPid: "", name: t("Agent"), status: "running" as const }, { eggPid: remote.eggPid, name: remote.name, status: remote.status }]

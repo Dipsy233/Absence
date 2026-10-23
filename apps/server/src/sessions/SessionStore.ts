@@ -254,7 +254,10 @@ export class AbsenceSession {
     // Resource metrics ride their own channel: the event window is for facts,
     // not for a process table sampled every two seconds.
     this.metricsSampler = new ProcessMetricsSampler({
-      targets: () => this.processWatcher.metricsTargets(),
+      targets: () => [
+        this.processWatcher.metricsAgentTarget(),
+        ...this.processWatcher.metricsTargets(),
+      ],
       onFrame: (frame) => {
         appendMetricsFrame(this.id, frame);
         for (const listener of this.metricsListeners) listener(frame);

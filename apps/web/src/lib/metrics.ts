@@ -57,6 +57,14 @@ export function agentPoints(frames: MetricsFrame[]): Array<{
   cpuSeconds: number;
   rssBytes: number;
 }> {
+  const explicit = frames.some((frame) => frame.agent !== undefined);
+  if (explicit) {
+    return frames.map((frame) => ({
+      ts: frame.ts,
+      cpuSeconds: frame.agent?.cpuSeconds ?? 0,
+      rssBytes: frame.agent?.rssBytes ?? 0,
+    }));
+  }
   const state = new Map<number, { cpuSeconds: number; rssBytes: number }>();
   return frames.map((frame) => {
     const seen = new Set<number>();

@@ -381,6 +381,21 @@ export class ProcessWatcher {
     return targets;
   }
 
+  /** The complete observed agent tree, including runtime plumbing and eggs. */
+  metricsAgentTarget(): MetricsTarget {
+    const pids = new Set<number>([this.rootPid]);
+    for (const pid of this.jobParent.keys()) pids.add(pid);
+    for (const egg of this.eggs.values()) pids.add(egg.info.pid);
+    return {
+      rootPid: this.rootPid,
+      name: "Agent",
+      kind: "agent",
+      status: "running",
+      startedAt: 0,
+      pids: [...pids],
+    };
+  }
+
   /**
    * One pass over the process table, in observe mode.
    *

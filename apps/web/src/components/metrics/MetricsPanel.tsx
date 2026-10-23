@@ -49,6 +49,7 @@ export function MetricsPanel() {
     : undefined;
 
   const latest = latestFrame(frames);
+  const agent = latest?.agent;
   const egg = selected ? findEgg(frames, selected.eggPid) : undefined;
   const points = selected ? eggPoints(frames, selected.eggPid) : agentPoints(frames);
   const instantCores = selected ? eggCpuCores(frames, selected.eggPid) : agentCpuCores(frames);
@@ -64,8 +65,8 @@ export function MetricsPanel() {
     return seconds > 0 ? Math.max(0, (point.cpuSeconds - list[index - 1]!.cpuSeconds) / seconds) : 0;
   });
   const memSpark = points.slice(-150).map((point) => point.rssBytes / (1024 * 1024));
-  const agentRssBytes = primary.reduce((sum, entry) => sum + entry.rssBytes, 0);
-  const agentAvgRssBytes = primary.reduce((sum, entry) => sum + entry.avgRssBytesSession, 0);
+  const agentRssBytes = agent?.rssBytes ?? primary.reduce((sum, entry) => sum + entry.rssBytes, 0);
+  const agentAvgRssBytes = agent?.avgRssBytesSession ?? primary.reduce((sum, entry) => sum + entry.avgRssBytesSession, 0);
 
   const top = running
     .map((entry) => ({ egg: entry, cores: eggCpuCores(frames, entry.eggPid) }))
@@ -127,7 +128,7 @@ export function MetricsPanel() {
                 {t("avg 5m")} {formatPercent((averageCores / Math.max(1, cpuCount)) * 100)}
               </span>
               <span>
-                {t("session")} {formatPercent((((egg?.avgCpuCoresSession ?? 0) / Math.max(1, cpuCount)) * 100))}
+                {t("session")} {formatPercent((((selected && egg ? egg.avgCpuCoresSession : agent?.avgCpuCoresSession ?? 0) / Math.max(1, cpuCount)) * 100))}
               </span>
               <span>
                 {t("host")} {formatPercent(hostPercent)}

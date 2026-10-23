@@ -5,7 +5,7 @@ import { sampleSnapshot } from "./metricSample";
 export interface MetricsTarget {
   rootPid: number;
   name: string;
-  kind: "primary" | "tool";
+  kind: "agent" | "primary" | "tool";
   status: "running" | "exited";
   startedAt: number;
   pids: number[];
@@ -147,6 +147,7 @@ export class ProcessMetricsSampler {
 
       const processes: ProcessMetricSample[] = [];
       const eggs: EggMetricSample[] = [];
+      let agent: EggMetricSample | undefined;
       const known = new Set(targets.map((target) => target.rootPid));
       // The watcher retires finished eggs to keep its set bounded; drop their
       // last sample too so a long session's frames do not carry every egg ever.
@@ -190,7 +191,7 @@ export class ProcessMetricsSampler {
         if (processCount === 0) continue;
         const summary = this.updateSummary(target.rootPid, ts, cpuSeconds, rssBytes);
         const elapsed = Math.max(0.001, (summary.lastTs - summary.firstTs) / 1000);
-        const egg: EggMetricSample = {
+        const sample: EggMetricSample = {
           eggPid: target.rootPid,
           name: target.name,
           kind: target.kind,
@@ -201,8 +202,12 @@ export class ProcessMetricsSampler {
           avgCpuCoresSession: summary.samples > 1 ? (summary.cpuEnd - summary.cpuStart) / elapsed : 0,
           avgRssBytesSession: summary.samples > 1 ? summary.rssIntegral / elapsed : rssBytes,
         };
-        this.lastEggs.set(target.rootPid, egg);
-        eggs.push(egg);
+        if (target.kind === "agent") {
+          agent = sample;
+        } else {
+          this.lastEggs.set(target.rootPid, sample);
+          eggs.push(sample);
+        }
       }
 
       // Exited eggs keep their last summary so the panel can still show them;
@@ -212,6 +217,7 @@ export class ProcessMetricsSampler {
         intervalMs: this.intervalMs,
         processes,
         eggs,
+        agent,
         host,
         precision: snapshot.precision,
       };
