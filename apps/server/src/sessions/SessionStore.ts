@@ -24,6 +24,7 @@ import {
   appendEvents,
   drainArchive,
   readEvents,
+  readProcessEvents,
   readEventsPage,
   readRuns,
   writeMeta,
@@ -813,6 +814,7 @@ export class AbsenceSession {
       SNAPSHOT_EVENT_LIMIT,
     );
     const runs = await readRuns(this.id);
+    const processEvents = await readProcessEvents(this.session.projectPath, this.id);
     // Events are only needed while a run is live: History and a settled run's
     // Activity come from the run index. Sending a tail for a finished session
     // would be bytes the client immediately replaces with the selected run.
@@ -840,6 +842,7 @@ export class AbsenceSession {
       files: [...this.files.values()],
       chat: [...this.chat],
       events,
+      processEvents,
       runs,
       metrics: this.metricsSampler.snapshot(),
     };

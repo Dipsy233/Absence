@@ -67,7 +67,8 @@ export const ActivityItem = memo(function ActivityItem({ row, replayCurrent, top
   // of opening Stage items.
   const selected = inReplay
     ? replayCurrent === true
-    : row.stageItem !== undefined &&
+    : mode !== "live" &&
+      row.stageItem !== undefined &&
       row.stageItem.source?.eventId !== undefined &&
       row.stageItem.source.eventId === activeEventId;
 

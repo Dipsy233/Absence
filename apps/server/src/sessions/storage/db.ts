@@ -597,6 +597,30 @@ export async function readEvents(cwd: string, id: string): Promise<AbsenceEvent[
     console.error("[absence] sqlite event read failed:", error);
     return [];
   }
+
+  const events: AbsenceEvent[] = [];
+  for (const row of rows) {
+    try {
+      events.push(eventFromRow(id, row));
+    } catch {
+      // Skip a row written by an older/broken version.
+    }
+  }
+  return events;
+}
+
+/** Read only process lifecycle events for restoring the Eggs panel. */
+export async function readProcessEvents(cwd: string, id: string): Promise<AbsenceEvent[]> {
+  flushPending();
+  let rows: SqlRow[];
+  try {
+    rows = open()
+      .prepare("SELECT id, ts, type, payload FROM events WHERE session_id = ? AND type = 'process' ORDER BY seq ASC")
+      .all(id) as SqlRow[];
+  } catch (error) {
+    console.error("[absence] sqlite process event read failed:", error);
+    return [];
+  }
   const events: AbsenceEvent[] = [];
   for (const row of rows) {
     try {

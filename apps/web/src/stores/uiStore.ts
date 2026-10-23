@@ -79,7 +79,7 @@ export const useUiStore = create<UiStore>((set) => ({
   openMenu: (x, y, items) => set({ menu: { x, y, items } }),
   closeMenu: () => set({ menu: undefined }),
   setFilesView: (filesView) => set({ filesView }),
-  selectRun: (selectedRunId) => set({ selectedRunId }),
+  selectRun: (selectedRunId) => set({ selectedRunId, focusedEventId: undefined }),
 
   setChatHistoryOpen: (chatHistoryOpen) => {
     try {

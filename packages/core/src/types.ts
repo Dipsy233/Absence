@@ -260,6 +260,8 @@ export interface SessionSnapshot extends SessionRuntimeState {
   files: FileState[];
   chat: ChatMessage[];
   events: AbsenceEvent[];
+  /** Persisted process lifecycle events used to restore the Eggs panel. */
+  processEvents?: AbsenceEvent[];
   /** Run summaries for History; no event payloads. */
   runs?: RunSummary[];
   /**

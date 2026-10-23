@@ -22,6 +22,7 @@ export {
   listArchives,
   readFileVersions,
   readEvents,
+  readProcessEvents,
   readEventsPage,
   readRunEvents,
   readRuns,

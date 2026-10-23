@@ -188,7 +188,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   hydrate: (snapshot) => {
     const eggs = new Map<number, Egg>();
-    for (const event of snapshot.events) applyProcessEvent(eggs, event);
+    const processEvents = new Map<string, AbsenceEvent>();
+    for (const event of snapshot.processEvents ?? []) processEvents.set(event.id, event);
+    for (const event of snapshot.events) {
+      if (event.type === "process") processEvents.set(event.id, event);
+    }
+    for (const event of processEvents.values()) applyProcessEvent(eggs, event);
     // A hydrated snapshot is a fresh window. Reset the module-level history /
     // row caches first: a different session can have the same length and base,
     // and the incremental cache would otherwise reuse the previous session's
