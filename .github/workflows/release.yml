@@ -165,17 +165,33 @@ jobs:
       - name: Install desktop dependencies
         run: npm --prefix apps/desktop ci
 
-      # The repo's package.json versions lag behind the release notes, and the
-      # installer filename is derived from them — stamp the version being
-      # released. `npm version` also keeps the lockfiles consistent; the change
-      # is build-only and never committed.
+      # The installer filename is derived from the package versions, so stamp
+      # the version being released. When the repo already carries it this is a
+      # no-op (`npm version` errors with "Version not changed" otherwise). The
+      # change is build-only and never committed.
       - name: Stamp the release version
         shell: bash
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          npm version "$VERSION" --no-git-tag-version --workspaces --include-workspace-root --ignore-scripts
-          npm --prefix apps/desktop version "$VERSION" --no-git-tag-version --ignore-scripts
+          set -euo pipefail
+          read_version() {
+            node -p "JSON.parse(require('fs').readFileSync('$1','utf8')).version"
+          }
+
+          root_version=$(read_version package.json)
+          if [ "$root_version" = "$VERSION" ]; then
+            echo "workspaces already at $VERSION"
+          else
+            npm version "$VERSION" --no-git-tag-version --workspaces --include-workspace-root --ignore-scripts
+          fi
+
+          desktop_version=$(read_version apps/desktop/package.json)
+          if [ "$desktop_version" = "$VERSION" ]; then
+            echo "desktop already at $VERSION"
+          else
+            npm --prefix apps/desktop version "$VERSION" --no-git-tag-version --ignore-scripts
+          fi
 
       # git stores the observer as 100644, and electron-builder copies the mode
       # as-is, so restore the executable bit before packaging on Linux.
