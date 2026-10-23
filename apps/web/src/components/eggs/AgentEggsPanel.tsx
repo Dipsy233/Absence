@@ -171,7 +171,7 @@ export function AgentEggsPanel() {
                 <button
                   type="button"
                   onClick={() => {
-                    selectMetricEgg(egg.pid);
+                    selectMetricEgg(selectedMetricEgg === egg.pid ? undefined : egg.pid);
                     openMetrics();
                   }}
                   title={t("Show this egg's resource metrics")}

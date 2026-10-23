@@ -4,6 +4,7 @@ import { formatClock, formatOffset } from "../../lib/format";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useRunsStore } from "../../stores/runsStore";
 import { useUiStore } from "../../stores/uiStore";
+import { useStageStore } from "../../stores/stageStore";
 import { useT } from "../../lib/i18n";
 import { Panel } from "../Panel";
 
@@ -102,7 +103,14 @@ export function HistoryPanel() {
                 >
                   <button
                     type="button"
-                    onClick={() => selectRun(run.id)}
+                    onClick={() => {
+                      if (selectedRunId === run.id) {
+                        selectRun(undefined);
+                        useStageStore.getState().goLive();
+                      } else {
+                        selectRun(run.id);
+                      }
+                    }}
                     className="min-w-0 flex-1 px-2 py-1.5 text-left"
                   >
                     <div className="flex items-baseline gap-2 font-mono text-[11px]">

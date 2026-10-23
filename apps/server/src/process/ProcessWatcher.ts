@@ -384,6 +384,10 @@ export class ProcessWatcher {
   /** The complete observed agent tree, including runtime plumbing and eggs. */
   metricsAgentTarget(): MetricsTarget {
     const pids = new Set<number>([this.rootPid]);
+    // In observe mode, warm() seeds the already-running agent tree into
+    // jobSeen before any egg is discovered. Keep those runtime processes in
+    // the aggregate so the Agent view is meaningful even when it has no eggs.
+    for (const pid of this.jobSeen) pids.add(pid);
     for (const pid of this.jobParent.keys()) pids.add(pid);
     for (const egg of this.eggs.values()) pids.add(egg.info.pid);
     return {

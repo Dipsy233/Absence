@@ -67,42 +67,77 @@ export const useStageStore = create<StageStore>((set, get) => ({
     })),
 
   openStage: (item) =>
-    set((state) => ({
-      lastByType: { ...state.lastByType, [item.type]: item },
-      ...(item.type === "file" ? { agentFile: item } : {}),
-      activeItem: item,
-      mode: modeForItem(item),
-      following: false,
-    })),
+    set((state) => {
+      if (state.activeItem?.id === item.id && state.mode === modeForItem(item)) {
+        return { mode: "live", following: true };
+      }
+      return {
+        lastByType: { ...state.lastByType, [item.type]: item },
+        ...(item.type === "file" ? { agentFile: item } : {}),
+        activeItem: item,
+        mode: modeForItem(item),
+        following: false,
+      };
+    }),
 
-  openUserFile: (item) => set({ userFile: item, activeItem: item, mode: "file", following: false }),
+  openUserFile: (item) =>
+    set((state) =>
+      state.activeItem?.id === item.id && state.mode === "file"
+        ? { mode: "live", following: true }
+        : { userFile: item, activeItem: item, mode: "file", following: false },
+    ),
 
   openAgentFile: (item) =>
-    set((state) => ({
-      agentFile: item,
-      lastByType: { ...state.lastByType, file: item },
-      activeItem: item,
-      mode: "file",
-      following: false,
-    })),
+    set((state) =>
+      state.activeItem?.id === item.id && state.mode === "file"
+        ? { mode: "live", following: true }
+        : {
+            agentFile: item,
+            lastByType: { ...state.lastByType, file: item },
+            activeItem: item,
+            mode: "file",
+            following: false,
+          },
+    ),
 
   showType: (type) => {
     const item = get().lastByType[type];
     if (!item) return;
+    if (get().activeItem?.id === item.id && get().mode === modeForItem(item)) {
+      get().goLive();
+      return;
+    }
     set({ activeItem: item, mode: modeForItem(item), following: false });
   },
 
   showUserFile: () => {
     const item = get().userFile;
-    if (item) set({ activeItem: item, mode: "file", following: false });
+    if (!item) return;
+    if (get().activeItem?.id === item.id && get().mode === "file") {
+      get().goLive();
+      return;
+    }
+    set({ activeItem: item, mode: "file", following: false });
   },
 
   showAgentFile: () => {
     const item = get().agentFile;
-    if (item) set({ activeItem: item, mode: "file", following: false });
+    if (!item) return;
+    if (get().activeItem?.id === item.id && get().mode === "file") {
+      get().goLive();
+      return;
+    }
+    set({ activeItem: item, mode: "file", following: false });
   },
 
-  setMode: (mode) => set(mode === "live" ? { mode, following: true } : { mode, following: false }),
+  setMode: (mode) =>
+    set((state) =>
+      mode !== "live" && state.mode === mode
+        ? { mode: "live", following: true }
+        : mode === "live"
+          ? { mode, following: true }
+          : { mode, following: false },
+    ),
 
   goLive: () => set({ mode: "live", following: true }),
 
