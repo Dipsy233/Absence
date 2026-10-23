@@ -59,12 +59,18 @@ button in the Releases UI.
 
 Assets attached to the release:
 
-- `Absence Setup <version>.exe` — Windows installer (NSIS)
+- `Absence.Setup-<version>.exe` — Windows installer (NSIS)
+- `Absence-<version>.zip` — Windows portable: unzip it anywhere and run
+  `Absence.exe`, no installation or registry entries
 - `Absence-<version>.AppImage`, `Absence-<version>.tar.gz` — Linux
 - `SHA256SUMS.txt` — checksums for everything above
 
-`latest*.yml` files from electron-builder are attached too. They are only used
-by an auto-updater; Absence does not ship one yet, so they are harmless.
+Artifact names are pinned in `apps/desktop/package.json` (`win.artifactName`
+for the zip, `nsis.artifactName` for the installer) instead of the default
+`Absence Setup <version>.exe`, which GitHub would upload with dots instead of
+spaces. electron-builder also emits `.blockmap` and `latest*.yml` files; they
+are excluded on purpose, since they only matter to an auto-updater and Absence
+ships none.
 
 ## Notes on the build
 

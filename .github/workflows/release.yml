@@ -208,13 +208,13 @@ jobs:
           name: ${{ matrix.artifact }}
           if-no-files-found: error
           retention-days: 7
+          # No .blockmap / latest*.yml: those are auto-update deltas and
+          # Absence ships no updater, so they would only clutter the release.
           path: |
             dist/desktop/release/*.exe
-            dist/desktop/release/*.blockmap
+            dist/desktop/release/*.zip
             dist/desktop/release/*.AppImage
             dist/desktop/release/*.tar.gz
-            dist/desktop/release/*.zip
-            dist/desktop/release/latest*.yml
 
   # --------------------------------------------------------------- publish
   publish:

@@ -55,8 +55,9 @@
       }
     ],
     "win": {
-      "target": ["nsis"],
+      "target": ["nsis", "zip"],
       "icon": "assets/icon.ico",
+      "artifactName": "Absence-${version}.${ext}",
       "extraResources": [
         {
           "from": "../../native/agentwatch/agentwatch.exe",
@@ -83,6 +84,7 @@
       "category": "public.app-category.developer-tools"
     },
     "nsis": {
+      "artifactName": "Absence.Setup-${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }

@@ -54,12 +54,16 @@ Releases 页面里的 “Generate release notes” 按钮使用。
 
 Release 上附加的文件：
 
-- `Absence Setup <版本>.exe` —— Windows 安装器（NSIS）
+- `Absence.Setup-<版本>.exe` —— Windows 安装器（NSIS）
+- `Absence-<版本>.zip` —— Windows 免安装版：解压到任意目录后直接运行
+  `Absence.exe`，不写注册表、不需要安装
 - `Absence-<版本>.AppImage`、`Absence-<版本>.tar.gz` —— Linux
 - `SHA256SUMS.txt` —— 以上文件的校验和
 
-electron-builder 产生的 `latest*.yml` 也会一并附加。它们只供自动更新使用，
-Absence 目前没有自动更新器，留着无害。
+产物名在 `apps/desktop/package.json` 里固定（zip 用 `win.artifactName`，安装器用
+`nsis.artifactName`），避免默认的 `Absence Setup <版本>.exe`（GitHub 上传时会把
+空格换成点）。electron-builder 还会生成 `.blockmap` 和 `latest*.yml`，这里刻意
+排除了：它们只对自动更新器有用，而 Absence 目前没有自动更新器。
 
 ## 构建相关的注意点
 
