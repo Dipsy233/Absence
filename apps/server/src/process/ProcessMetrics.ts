@@ -139,6 +139,12 @@ export class ProcessMetricsSampler {
       }
       const snapshot = await sampleSnapshot([...pids]);
       const raw = snapshot.processes;
+      if (process.env.ABSENCE_DEBUG_WATCHER) {
+        process.stderr.write(
+          `[metrics] ts=${ts} targets=${targets.length} running=${running.length} pids=${pids.size} sampled=${raw.size} ` +
+            `wanted=${[...pids].slice(0, 12).join(",")} got=${[...raw.keys()].slice(0, 12).join(",")}\n`,
+        );
+      }
       // Eggs with no OS process (containers) contribute their daemon-reported
       // counters here; the per-egg fold below cannot tell the difference.
       if (this.extraSamples) {
