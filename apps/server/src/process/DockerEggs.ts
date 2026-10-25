@@ -3,6 +3,7 @@ import type { RawProcessSample } from "./metricSample";
 import type { MetricsTarget } from "./ProcessMetrics";
 import { DockerMonitor, type ContainerEvent } from "./DockerMonitor";
 import type { ProcessWatcher } from "./ProcessWatcher";
+import { eventMatchesPrediction, predictContainers } from "./DockerCommand";
 
 /**
  * A session's container eggs: the workloads the kernel observers cannot see.
@@ -40,16 +41,14 @@ export const SYNTHETIC_PID_BASE = 1_000_000_000;
  * How far past a command's return a container start may still be credited to
  * it. The daemon's event timestamp is exact — the slack covers stream delivery
  * lag, not the backgrounded-daemon window a spawned process needs — and it is
- * deliberately tighter than the kernel observer's: a container the *user*
- * started in another terminal must not drift into the agent's last command.
+ * deliberately tighter than the kernel observer's.
  */
 const CONTAINER_POST_SLACK_MS = 1_500;
 
 /**
- * A window whose command cannot drive a container cannot have laid one. The
- * daemon reports no client, so this text prior is the second gate after the
- * window: a container appearing just after `git status` is nobody's egg, while
- * `wsl docker run -d` and `docker compose up -d` pass as they should.
+ * The fallback prior, for docker-shaped commands whose words could not be read
+ * (a script, a wrapper, an unknown subcommand shape). A command that names no
+ * driver cannot lay a container, whatever its window says.
  */
 const CONTAINER_DRIVER = /\bdocker(\.exe)?\b|docker-compose|\bpodman\b|\bnerdctl\b/i;
 
@@ -175,18 +174,19 @@ export class DockerEggs {
       this.publish(egg);
       return;
     }
-    // The window is the whole case for attribution: the daemon reports no
-    // client, so a container laid outside any command window — one the user
-    // started in their own terminal, one from another session — is not this
-    // agent's work and gets no egg. Only the one-time adoption below reports
-    // unattributed containers. The command must also be able to drive a
-    // container at all: a start landing just after `git status` is nobody's.
+    // Attribution. The command's own words are the strong signal: `docker run
+    // -d --name web nginx` predicts a container named `web`, and a daemon
+    // start event that matches the prediction is this command's work while
+    // one that matches nothing is not — however close it arrived. Every open
+    // window gets to claim the event (parallel docker commands happen); a
+    // docker-shaped command whose words cannot be read falls back to the
+    // window alone; anything else gets no egg.
     let command: string | undefined;
     if (options.adopted) {
       command = undefined;
     } else {
-      command = this.watcher.commandAt(event.at, CONTAINER_POST_SLACK_MS);
-      if (command === undefined || !CONTAINER_DRIVER.test(command)) return;
+      command = this.attribute(event);
+      if (command === undefined) return;
     }
     const pid = this.nextPid++;
     const egg: ContainerEgg = {
@@ -212,6 +212,28 @@ export class DockerEggs {
     egg.exitedAt = event.at;
     if (event.exitCode !== undefined) egg.exitCode = event.exitCode;
     this.publish(egg);
+  }
+
+  /**
+   * Which open-or-recent command laid this container, if any.
+   *
+   * Each candidate window states a prediction from its own words; the first
+   * window whose prediction matches wins. A window that parses but predicts
+   * something else declines — that is the gate that keeps a foreign container
+   * out even when it landed inside the window or just after it. Only windows
+   * whose docker-shaped words could not be read fall back to the bare window.
+   */
+  private attribute(event: ContainerEvent): string | undefined {
+    let looseFallback: string | undefined;
+    for (const { command, cwd } of this.watcher.commandContexts(event.at, CONTAINER_POST_SLACK_MS)) {
+      const prediction = predictContainers(command, cwd);
+      if (prediction.parsed) {
+        if (eventMatchesPrediction(event, prediction)) return command;
+        continue;
+      }
+      if (looseFallback === undefined && CONTAINER_DRIVER.test(command)) looseFallback = command;
+    }
+    return looseFallback;
   }
 
   private publish(egg: ContainerEgg): void {

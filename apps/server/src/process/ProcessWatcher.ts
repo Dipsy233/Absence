@@ -970,23 +970,34 @@ export class ProcessWatcher {
   }
 
   /**
-   * The agent command that owns a process started at `at`, if any.
+   * The commands that could own a container started at `at`, most recent first
+   * in uncertainty — every still-open window, then the last closed one while
+   * its slack lasts.
    *
-   * The public face of `commandFor`, for observers whose subjects have no pid
-   * in this tree — a Docker container laid by `docker run -d` is started by the
-   * daemon, so its egg is attributed through the command window alone. The
-   * post-slack is caller's to choose: a container's daemon timestamp is exact,
-   * so only delivery lag needs covering, not the full backgrounded-daemon
-   * window.
+   * The public face of the window, for observers whose subjects have no pid in
+   * this tree: a Docker container is started by the daemon, so its egg is
+   * attributed by matching what the command predicts against what the daemon
+   * reports (see DockerCommand). Callers decide between the candidates; a
+   * command that names its container wins over one that merely overlaps.
    */
-  commandAt(at: number, postSlackMs?: number): string | undefined {
-    return this.commandFor(at, postSlackMs)?.command;
+  commandContexts(at: number, postSlackMs = JOB_POST_SLACK_MS): Array<{ command: string; cwd: string }> {
+    const when = at;
+    const out: Array<{ command: string; cwd: string }> = [];
+    for (const entry of this.jobOpen.values()) {
+      if (when >= entry.startedAt - JOB_PRE_SLACK_MS) {
+        out.push({ command: entry.command, cwd: entry.cwd });
+      }
+    }
+    const last = this.jobLastClosed;
+    if (last && when <= last.endedAt + postSlackMs) {
+      out.push({ command: last.command, cwd: last.cwd });
+    }
+    return out;
   }
 
   /** The command a process started at `at` belongs to, if any. */
   private commandFor(
     at: number | undefined,
-    postSlackMs = JOB_POST_SLACK_MS,
   ): { command: string; intent: CommandIntent; cwd: string } | undefined {
     const when = at ?? this.now();
     // A command still running owns everything since a moment before it began.
@@ -998,7 +1009,7 @@ export class ProcessWatcher {
     // A command that has returned still owns a backgrounded daemon's late start,
     // but only until the next command begins.
     const last = this.jobLastClosed;
-    if (last && when <= last.endedAt + postSlackMs) {
+    if (last && when <= last.endedAt + JOB_POST_SLACK_MS) {
       return { command: last.command, intent: last.intent, cwd: last.cwd };
     }
     return undefined;

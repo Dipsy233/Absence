@@ -397,15 +397,17 @@ port to the public internet.
   instead: each container becomes a first-class egg under a synthetic pid
   (≥ 10⁹, cannot collide with a real pid), attributed to the command that laid
   it — the containers of `docker run -d` and `docker compose up -d` show up in
-  Agent Eggs and Metrics just like a spawned process. Attribution follows the
-  command window with the command text as a second gate: a container started
-  outside any command window — one the user ran in their own terminal — gets
-  no egg, and a container appearing right after a non-docker command is not
-  credited to it. A container started by `docker start` has no command window;
-  only the one-time adoption at session open reports such containers, always
-  unattributed. With no docker (or `ABSENCE_DOCKER=0`) nothing changes. When
-  commands overlap (`docker ps` while `docker run` is still going), the
-  earliest open window wins — the same rule process eggs follow.
+  Agent Eggs and Metrics just like a spawned process. Attribution reads the
+  command's own words: `docker run -d --name web nginx` predicts a container
+  named `web` with image `nginx`, and a daemon start event is credited only
+  when it matches that prediction — a foreign container landing inside the
+  window at the same moment matches nothing and is not credited. compose is
+  matched through the daemon's project label; a run without `--name` through
+  its image. The window remains only as the fallback for commands whose shape
+  cannot be parsed (scripts, wrappers); a container laid outside any command
+  window gets no egg, and only the one-time adoption at session open reports
+  such containers, always unattributed. With no docker (or `ABSENCE_DOCKER=0`)
+  nothing changes.
 - The live metrics ring keeps the newest 300 frames in memory. Longer ranges and
   historical sessions are loaded from SQLite; metric retention is 30 days.
 

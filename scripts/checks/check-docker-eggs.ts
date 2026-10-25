@@ -2,9 +2,11 @@
  * Container egg check — the Docker observer (DockerMonitor + DockerEggs).
  *
  * The kernel observers cannot see past a VM boundary, so a container's egg is
- * laid from the daemon's own event stream and attributed through the command
- * window alone. This check drives one real `docker run -d` through a command
- * window and asserts the whole story end to end:
+ * laid from the daemon's own event stream and attributed by what the command
+ * *predicts*: `docker run -d --name web nginx` names its container, and the
+ * daemon's start event must match that prediction (name, image, or compose
+ * project) to be credited. This check drives real docker commands through
+ * command windows and asserts the whole story end to end:
  *
  *   command window → container start event → attributed primary egg
  *                  → per-container CPU/RSS from `docker stats`
@@ -17,6 +19,9 @@
  */
 import { check, finish } from "./harness";
 import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { ProcessPayload } from "@absence/core";
 import { JobMonitor } from "../../apps/server/src/process/JobMonitor";
 import { DockerMonitor } from "../../apps/server/src/process/DockerMonitor";
@@ -52,8 +57,10 @@ async function main(): Promise<void> {
     console.error("no reachable docker; start one before running this check.");
     process.exit(1);
   }
-  // Leave no earlier attempt behind.
-  runSync(`wsl docker rm -f ${CONTAINER} > NUL 2>&1`);
+  // Leave no earlier attempt behind, and have the foreign container's image
+  // ready so its start lands inside the window under test, not in a pull.
+  runSync(`wsl docker rm -f ${CONTAINER} absence-foreign-nginx absence-pred-nginx absence-pred-foreign > NUL 2>&1`);
+  runSync(`wsl docker pull redis:alpine > NUL 2>&1`);
 
   const monitor = JobMonitor.get();
   await monitor.start().catch(() => undefined);
@@ -164,6 +171,77 @@ async function main(): Promise<void> {
   const foreignCount = payloads.filter((payload) => payload.name === "absence-foreign-nginx").length;
   check("a container laid outside any command window gets no egg", foreignCount === 0, `${foreignCount} events`);
 
+  // --- prediction: the command's words say which containers it lays. A
+  // foreign container started *inside* the window — same moment, both docker —
+  // is not credited, because `--name` names the agent's one and nothing else. ---
+  spawn("cmd.exe", ["/d", "/s", "/c", `wsl docker run -d --name absence-pred-nginx ${IMAGE}`], {
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  const predId = watcher.begin(`wsl docker run -d --name absence-pred-nginx ${IMAGE}`);
+  watcher.noteMarker(marker);
+  await sleep(300);
+  spawn("cmd.exe", ["/d", "/s", "/c", `wsl docker run -d --name absence-pred-foreign redis:alpine`], {
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  await sleep(4_000);
+  watcher.end(predId);
+  const predEgg = payloads.find(
+    (payload) => payload.name === "absence-pred-nginx" && payload.command?.includes("absence-pred-nginx"),
+  );
+  check("the named container is credited by its command's prediction", predEgg !== undefined);
+  const predForeign = payloads.filter((payload) => payload.name === "absence-pred-foreign").length;
+  check(
+    "a foreign container inside the window is not credited — it matches nothing the command predicted",
+    predForeign === 0,
+    `${predForeign} events`,
+  );
+
+  // --- a run without --name: the image is the prediction. ---
+  const noNameText = `wsl docker run -d --rm ${IMAGE}`;
+  const noNameWindow = watcher.begin(noNameText);
+  watcher.noteMarker(marker);
+  spawn("cmd.exe", ["/d", "/s", "/c", `echo ${marker} > NUL & ${noNameText} & exit 0`], {
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  await sleep(4_000);
+  watcher.end(noNameWindow);
+  const noNameEgg = payloads.find(
+    (payload) => (payload.commandLine ?? "").includes(IMAGE) && payload.command === noNameText && payload.pid >= 1_000_000_000,
+  );
+  check(
+    "an unnamed container is credited through its image",
+    noNameEgg !== undefined && noNameEgg.command === noNameText,
+    noNameEgg ? `command=${noNameEgg.command}` : "(no egg)",
+  );
+
+  // --- compose: the daemon's project label matches the command's project. ---
+  const composeDir = path.join(os.tmpdir(), `absence-pred-compose-${Date.now()}`);
+  await fs.mkdir(composeDir, { recursive: true });
+  await fs.writeFile(path.join(composeDir, "dc.yml"), "services:\n  web:\n    image: nginx:alpine\n", "utf8");
+  const composePosix = composeDir.replace(/\\/g, "/").replace(/^([A-Za-z]):/, "/mnt/$1").toLowerCase();
+  const composeText = `wsl docker compose -f ${composePosix}/dc.yml -p absence-pred-c up -d`;
+  const composeWindow = watcher.begin(composeText);
+  watcher.noteMarker(marker);
+  spawn("cmd.exe", ["/d", "/s", "/c", `echo ${marker} > NUL & ${composeText} & exit 0`], {
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  await sleep(5_000);
+  watcher.end(composeWindow);
+  runSync(`wsl docker compose -p absence-pred-c -f ${composePosix}/dc.yml down > NUL 2>&1`);
+  const composeEggs = payloads.filter(
+    (payload) => payload.name.startsWith("absence-pred-c-") && payload.command === composeText,
+  );
+  check(
+    "a compose container is credited through the project label",
+    composeEggs.length > 0,
+    composeEggs.map((payload) => payload.name).join(", ") || "(no egg)",
+  );
+  await fs.rm(composeDir, { recursive: true, force: true }).catch(() => undefined);
+
   // --- nor one that lands in the post-command slack of a command that cannot
   // drive a container: the command text is the second gate. ---
   const quietId = watcher.begin("wsl echo quiet-plain-command");
@@ -199,7 +277,7 @@ async function main(): Promise<void> {
   );
   adopter.dispose();
 
-  runSync(`wsl docker rm -f absence-foreign-nginx absence-stray-nginx > NUL 2>&1`);
+  runSync(`wsl docker rm -f absence-foreign-nginx absence-stray-nginx absence-pred-nginx absence-pred-foreign > NUL 2>&1`);
 
   eggs.dispose();
   unsubDocker();

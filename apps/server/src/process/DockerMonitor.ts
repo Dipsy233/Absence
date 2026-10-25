@@ -31,6 +31,8 @@ export interface ContainerEvent {
   name: string;
   /** The image the container runs (`nginx:alpine`). */
   image: string;
+  /** The compose project the container belongs to, when the daemon says so. */
+  project?: string;
   /** Unix ms of the daemon's own timestamp for the event. */
   at: number;
   /** The container's exit code, on `die`. */
@@ -269,7 +271,14 @@ export class DockerMonitor {
 
     if (action === "start" || action === "restart") {
       this.ensureStats();
-      this.emitter.emit("container", { kind: "start", containerId, name, image, at } satisfies ContainerEvent);
+      this.emitter.emit("container", {
+        kind: "start",
+        containerId,
+        name,
+        image,
+        project: stringOf(attributes, "com.docker.compose.project"),
+        at,
+      } satisfies ContainerEvent);
       return;
     }
     if (action === "die" || action === "destroy") {
@@ -279,6 +288,7 @@ export class DockerMonitor {
         containerId,
         name,
         image,
+        project: stringOf(attributes, "com.docker.compose.project"),
         at,
         exitCode: action === "die" && Number.isFinite(code) ? code : undefined,
       } satisfies ContainerEvent);
