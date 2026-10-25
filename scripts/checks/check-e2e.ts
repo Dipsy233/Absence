@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   await fs.mkdir(projectDir, { recursive: true });
 
   const hasDocker = dockerAvailable();
-  const docker = hasDocker ? "wsl docker" : "";
+  const docker = hasDocker ? (process.platform === "win32" ? "wsl docker" : "docker") : "";
   console.log(`docker: ${hasDocker ? "available (container-egg assertions on)" : "absent (process-only)"}`);
 
   // Boot the server in-process of a child node: tsx runs the server itself, so
@@ -188,8 +188,13 @@ async function main(): Promise<void> {
           container.kind === "primary" && (container.pid as number) >= 1_000_000_000,
         );
       }
+      // The client the Job Object / eBPF observer sees: `wsl.exe` wraps docker
+      // on Windows; on Linux the CLI itself is the process.
+      const clientPrefix = process.platform === "win32" ? "wsl" : "docker";
       const clientEggs = [...eggs.values()].filter(
-        (payload) => String(payload.name).startsWith("wsl") && String(payload.command ?? "").includes("docker run"),
+        (payload) =>
+          String(payload.name).toLowerCase().startsWith(clientPrefix) &&
+          String(payload.command ?? "").includes("docker run"),
       );
       check(
         "the docker client process was also caught by the Job Object",
