@@ -42,6 +42,8 @@ import { ProcessWatcher } from "../process/ProcessWatcher";
 import { ProcessMetricsSampler } from "../process/ProcessMetrics";
 import { snapshotProcesses } from "../process/ProcessTable";
 import { JobMonitor } from "../process/JobMonitor";
+import { DockerMonitor } from "../process/DockerMonitor";
+import { DockerEggs } from "../process/DockerEggs";
 import { unifiedDiff } from "../util/diff";
 import { newId } from "../util/ids";
 import { toPosix } from "../util/paths";
@@ -163,6 +165,13 @@ export class AbsenceSession {
   /** Samples the eggs' CPU/RSS; its frames are streamed beside the events. */
   private readonly metricsSampler: ProcessMetricsSampler;
   private readonly metricsListeners = new Set<(frame: MetricsFrame) => void>();
+  /**
+   * Container eggs, for the workloads the kernel observers cannot reach (a
+   * container lives inside the daemon's VM). Undefined when docker watching is
+   * disabled or the machine has no docker — then nothing here changes.
+   */
+  private dockerEggs?: DockerEggs;
+  private unsubDocker?: () => void;
   private unsubAdapter?: () => void;
   private events: AbsenceEvent[] = [];
   private currentAction?: AbsenceEvent;
@@ -252,13 +261,30 @@ export class AbsenceSession {
     // costs half a second, so it has to be taken here rather than when the first
     // command begins.
     this.processWatcher.warm();
+    // Containers the kernel observers cannot see ride the daemon's own event
+    // stream. Best effort: a machine with no docker (or with it disabled)
+    // simply has no container eggs, and everything else is unchanged.
+    if (config.dockerEnabled) {
+      void DockerMonitor.get()
+        .start()
+        .catch(() => {
+          // Status was already reported by the monitor; sessions run without it.
+        });
+      this.dockerEggs = new DockerEggs(this.processWatcher, (payload) =>
+        this.handleEvent(createEvent(this.id, "process", payload)),
+      );
+      this.unsubDocker = DockerMonitor.get().onContainer((event) => this.dockerEggs?.onContainerEvent(event));
+      void this.dockerEggs.adopt();
+    }
     // Resource metrics ride their own channel: the event window is for facts,
     // not for a process table sampled every two seconds.
     this.metricsSampler = new ProcessMetricsSampler({
       targets: () => [
         this.processWatcher.metricsAgentTarget(),
         ...this.processWatcher.metricsTargets(),
+        ...(this.dockerEggs?.metricsTargets() ?? []),
       ],
+      extraSamples: this.dockerEggs ? () => this.dockerEggs!.extraSamples() : undefined,
       onFrame: (frame) => {
         appendMetricsFrame(this.id, frame);
         for (const listener of this.metricsListeners) listener(frame);
@@ -867,6 +893,8 @@ export class AbsenceSession {
     if (this.metaTimer) clearTimeout(this.metaTimer);
     // Stops watching only. Eggs the agent left running are not ours to kill.
     this.processWatcher.stop();
+    this.unsubDocker?.();
+    this.dockerEggs?.dispose();
     this.unsubAdapter?.();
     this.adapter?.dispose();
     this.terminal?.dispose();

@@ -238,6 +238,8 @@ Stage 顶部中央的标签展开一份半透明报告，完全从事件流推�
 | `ABSENCE_DSH_PROVIDER` / `ABSENCE_DSH_MODEL` | （profile 默认） | ACP 会话启动时的 provider / model |
 | `ABSENCE_LOG_LEVEL` | `info` | Fastify 日志级别 |
 | `ABSENCE_STATE_DIR` | `~/.absence` | Absence 归档会话历史的位置 |
+| `ABSENCE_DOCKER` | 开 | 观察容器（`docker events` + `docker stats`，见上"注记与限制"）。设 `0` 关闭；机器上没有 docker 时自动退回原行为 |
+| `ABSENCE_DOCKER_BIN` | （探测） | docker CLI 入口。不设置：先试 PATH 里的 `docker`，Windows 上再试 `wsl docker`（daemon 在 WSL 发行版里的形态）。可以是裸二进制，也可以是 `wsl docker` 这样的前缀 |
 | `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | 仓库 `native/` | 覆盖原生观察器二进制路径 |
 
 ### 聊天命令
@@ -354,6 +356,18 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
   （命令返回后的 `npm run dev &`）不会被归属，agent *绕过* shell 启动的
   进程（WMI、计划任务、别的 pid namespace）暂时看不见。在原生 Linux 内核上，
   eBPF 观察器上报的 pid 与 `/proc` 视图一致。
+- **Docker 容器**由 daemon 自己的事件流观察（`docker events` +
+  `docker stats`，见 `DockerMonitor`）：容器进程活在 daemon 的 VM 里，Job
+  Object 和 eBPF 都够不着，所以容器的生命周期与 CPU/内存走 daemon 的上报，
+  以合成 pid（≥ 10⁹，不会与真实 pid 撞车）成为一等的蛋，并归因到拉起它的
+  那条命令——`docker run -d`、`docker compose up -d` 的容器和它启动的
+  进程一样出现在 Agent Eggs 与 Metrics 上。归因严格跟随命令窗口，并用命令
+  文本做第二道门：窗口外启动的容器（比如用户自己在别的终端 `docker run`）
+  不会成为蛋，刚结束的非 docker 命令也不会被追认；`docker start` 启动的
+  旧容器没有命令窗口，只有会话开始时的一次性收养会以未归因的蛋报告它们。
+  没有 docker（或 `ABSENCE_DOCKER=0`）时一切如旧。并行命令的窗口重叠时
+  （如 `docker ps` 与 `docker run` 同时跑），归因取最早打开的窗口，与进程
+  蛋的行为一致。
 - Metrics 面板按墙上时钟每 5 秒采样一次（整分钟的 `00/05/10...` 秒），
   图表保留所有 5 秒节点；时间范围支持 `1m`、`5m`、`30m`、`1h` 和 `all`，
   横轴刻度分别为 5 秒、30 秒、150 秒和 300 秒。将鼠标移到节点即可查看

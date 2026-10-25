@@ -122,6 +122,22 @@ export interface AbsenceConfig {
    * everything (bounded only by disk).
    */
   metricsRetentionDays: number;
+  /**
+   * Watch Docker containers through the daemon's own event stream (see
+   * process/DockerMonitor.ts). A container's processes live inside the
+   * daemon's VM, where neither the Job Object nor eBPF can reach, so its
+   * lifecycle and resource usage ride `docker events` and `docker stats`
+   * instead. On by default; ABSENCE_DOCKER=0 turns it off, and a machine with
+   * no docker at all degrades to exactly today's behavior.
+   */
+  dockerEnabled: boolean;
+  /**
+   * The docker CLI to drive, when the default resolution is not enough
+   * (ABSENCE_DOCKER_BIN). Absence tries `docker` on PATH first, then — on
+   * Windows only — `wsl docker` for a daemon that lives in a WSL distro. The
+   * variable may be a bare binary or a prefix such as `wsl docker`.
+   */
+  dockerBin?: string;
   /** Serve the built web app from this directory when present. */
   webDist: string;
 }
@@ -201,6 +217,8 @@ export const config: AbsenceConfig = {
   metricsRetentionDays: Number.isFinite(Number(process.env.ABSENCE_METRICS_RETENTION_DAYS))
     ? Math.max(0, Math.floor(Number(process.env.ABSENCE_METRICS_RETENTION_DAYS)))
     : 30,
+  dockerEnabled: envFlag(process.env.ABSENCE_DOCKER, true),
+  dockerBin: process.env.ABSENCE_DOCKER_BIN,
   // Built UI lives at the repo root under dist/web (see apps/web/vite.config.ts
   // and the desktop staging script). Override with ABSENCE_WEB_DIST if hosting
   // elsewhere.

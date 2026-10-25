@@ -249,6 +249,8 @@ avatar-skin details.
 | `ABSENCE_DSH_PROVIDER` / `ABSENCE_DSH_MODEL` | (profile default) | Provider / model the ACP session starts on |
 | `ABSENCE_LOG_LEVEL` | `info` | Fastify log level |
 | `ABSENCE_STATE_DIR` | `~/.absence` | Where Absence archives session history (env-var prefix kept as `ABSENCE_` for compatibility) |
+| `ABSENCE_DOCKER` | on | Watch containers (`docker events` + `docker stats`, see "Notes & limits"). `0` turns it off; a machine with no docker falls back to today's behavior |
+| `ABSENCE_DOCKER_BIN` | (probed) | The docker CLI entry. Unset: a `docker` on PATH first, then — on Windows — `wsl docker` (the daemon-lives-in-a-WSL-distro shape). May be a bare binary or a prefix such as `wsl docker` |
 | `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | repo `native/` | Override the native observer binary path |
 
 ### Chat commands
@@ -388,6 +390,22 @@ port to the public internet.
   attributed, and processes started around the shell (WMI, a scheduled task, a
   different pid namespace) are not seen yet. On a native Linux kernel the
   eBPF observer's pids agree with the `/proc` view.
+- **Docker containers** are watched through the daemon's own event stream
+  (`docker events` + `docker stats`, see `DockerMonitor`). A container's
+  processes live inside the daemon's VM, out of reach of both the Job Object
+  and eBPF, so container lifecycle and CPU/memory ride the daemon's reports
+  instead: each container becomes a first-class egg under a synthetic pid
+  (≥ 10⁹, cannot collide with a real pid), attributed to the command that laid
+  it — the containers of `docker run -d` and `docker compose up -d` show up in
+  Agent Eggs and Metrics just like a spawned process. Attribution follows the
+  command window with the command text as a second gate: a container started
+  outside any command window — one the user ran in their own terminal — gets
+  no egg, and a container appearing right after a non-docker command is not
+  credited to it. A container started by `docker start` has no command window;
+  only the one-time adoption at session open reports such containers, always
+  unattributed. With no docker (or `ABSENCE_DOCKER=0`) nothing changes. When
+  commands overlap (`docker ps` while `docker run` is still going), the
+  earliest open window wins — the same rule process eggs follow.
 - The live metrics ring keeps the newest 300 frames in memory. Longer ranges and
   historical sessions are loaded from SQLite; metric retention is 30 days.
 

@@ -59,7 +59,18 @@ const WINDOW_SLACK_MS = 1500;
 const POST_SLACK_MS = 2500;
 
 /** Windows console plumbing: given to console processes, never an egg. */
-const CONSOLE_HOSTS = new Set(["conhost.exe", "openconsole.exe", "windowsterminal.exe", "wt.exe"]);
+const CONSOLE_HOSTS = new Set(["conhost.exe", "openconsole.exe", "windowsterminal.exe", "wt.exe", "wslhost.exe"]);
+
+/**
+ * The docker observer's own stats stream (see DockerMonitor). It is a child of
+ * the server, spawned at the very moment a container egg is being laid, so the
+ * Job Object reports it right into the open command's window. It is plumbing —
+ * the same class of thing the console hosts are — and must never be an egg.
+ * The signature is the observer's exact invocation; an agent running it
+ * verbatim would be hidden too, which is the trade a fixed name list always
+ * carries.
+ */
+const DOCKER_STATS_STREAM = "docker stats --no-trunc --format";
 
 /**
  * How long after a command returns an event may still belong to it. Only used in
@@ -768,9 +779,16 @@ export class ProcessWatcher {
   }
 
   private onJobStart(event: WatchStart): void {
+    if (process.env.ABSENCE_DEBUG_WATCHER) {
+      process.stderr.write(`[watcher] start pid=${event.pid} ppid=${event.ppid} name=${nameOf(event)} cmd=${(event.commandLine ?? "").slice(0, 80)}\n`);
+    }
     const pid = event.pid;
     if (pid === this.rootPid) return;
     if (isConsoleHost(nameOf(event))) return;
+    if (this.isDockerStream(event)) {
+      this.jobSeen.add(pid);
+      return;
+    }
     if (this.observedRoot) {
       this.onObservedStart(event);
       return;
@@ -951,9 +969,24 @@ export class ProcessWatcher {
     }
   }
 
+  /**
+   * The agent command that owns a process started at `at`, if any.
+   *
+   * The public face of `commandFor`, for observers whose subjects have no pid
+   * in this tree — a Docker container laid by `docker run -d` is started by the
+   * daemon, so its egg is attributed through the command window alone. The
+   * post-slack is caller's to choose: a container's daemon timestamp is exact,
+   * so only delivery lag needs covering, not the full backgrounded-daemon
+   * window.
+   */
+  commandAt(at: number, postSlackMs?: number): string | undefined {
+    return this.commandFor(at, postSlackMs)?.command;
+  }
+
   /** The command a process started at `at` belongs to, if any. */
   private commandFor(
     at: number | undefined,
+    postSlackMs = JOB_POST_SLACK_MS,
   ): { command: string; intent: CommandIntent; cwd: string } | undefined {
     const when = at ?? this.now();
     // A command still running owns everything since a moment before it began.
@@ -965,7 +998,7 @@ export class ProcessWatcher {
     // A command that has returned still owns a backgrounded daemon's late start,
     // but only until the next command begins.
     const last = this.jobLastClosed;
-    if (last && when <= last.endedAt + JOB_POST_SLACK_MS) {
+    if (last && when <= last.endedAt + postSlackMs) {
       return { command: last.command, intent: last.intent, cwd: last.cwd };
     }
     return undefined;
@@ -975,6 +1008,11 @@ export class ProcessWatcher {
     if (!commandLine || this.markers.size === 0) return false;
     for (const marker of this.markers) if (commandLine.includes(marker)) return true;
     return false;
+  }
+
+  /** The docker observer's own stats stream, whichever form the CLI takes. */
+  private isDockerStream(event: WatchStart): boolean {
+    return (event.commandLine ?? "").includes(DOCKER_STATS_STREAM);
   }
 
   /**

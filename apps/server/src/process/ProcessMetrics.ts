@@ -1,5 +1,6 @@
 import type { EggMetricSample, MetricsFrame, ProcessMetricSample } from "@absence/core";
-import { sampleSnapshot } from "./metricSample";
+import { sampleSnapshot, type RawProcessSample } from "./metricSample";
+import { SYNTHETIC_PID_BASE } from "./DockerEggs";
 
 /** One egg root and the pids that roll into it. */
 export interface MetricsTarget {
@@ -32,6 +33,13 @@ interface EggSummary {
 export interface ProcessMetricsSamplerOptions {
   targets: () => MetricsTarget[];
   onFrame: (frame: MetricsFrame) => void;
+  /**
+   * Counters for eggs that have no OS process behind them — a Docker
+   * container's CPU and memory come from the daemon's stats stream, keyed by
+   * its synthetic pid. Merged into the raw table before the per-egg fold, so
+   * such an egg samples exactly like a real one.
+   */
+  extraSamples?: () => Map<number, RawProcessSample>;
   now?: () => number;
 }
 
@@ -44,6 +52,7 @@ export interface ProcessMetricsSamplerOptions {
 export class ProcessMetricsSampler {
   private readonly targets: () => MetricsTarget[];
   private readonly onFrame: (frame: MetricsFrame) => void;
+  private readonly extraSamples?: () => Map<number, RawProcessSample>;
   private readonly now: () => number;
   private readonly ring: MetricsFrame[] = [];
   private readonly summaries = new Map<number, EggSummary>();
@@ -56,6 +65,7 @@ export class ProcessMetricsSampler {
   constructor(options: ProcessMetricsSamplerOptions) {
     this.targets = options.targets;
     this.onFrame = options.onFrame;
+    this.extraSamples = options.extraSamples;
     this.now = options.now ?? Date.now;
   }
 
@@ -121,8 +131,19 @@ export class ProcessMetricsSampler {
 
       const pids = new Set<number>();
       for (const target of running) for (const pid of target.pids) pids.add(pid);
+      // Container pids are synthetic — no OS process exists to read, and their
+      // counters arrive through extraSamples. Asking the platform for them
+      // would spend a CIM query every tick on pids that can never answer.
+      for (const pid of pids) {
+        if (pid >= SYNTHETIC_PID_BASE) pids.delete(pid);
+      }
       const snapshot = await sampleSnapshot([...pids]);
       const raw = snapshot.processes;
+      // Eggs with no OS process (containers) contribute their daemon-reported
+      // counters here; the per-egg fold below cannot tell the difference.
+      if (this.extraSamples) {
+        for (const [pid, sample] of this.extraSamples()) raw.set(pid, sample);
+      }
       // The frame's ts is when the sampler asked; the host counters arrived
       // with it, so they share that timestamp on the chart's x axis.
       const host = { ...snapshot.host, ts };
