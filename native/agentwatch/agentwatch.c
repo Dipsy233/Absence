@@ -193,7 +193,9 @@ static void remember(DWORD pid, HANDLE h)
     unsigned b = bucket(pid);
     for (ProcNode *n = g_table[b]; n; n = n->next) {
         if (n->pid == pid) {
-            if (n->wait) { UnregisterWaitEx(n->wait, INVALID_HANDLE_VALUE); n->wait = NULL; }
+            /* NULL, never INVALID_HANDLE_VALUE: this runs under g_lock, and
+             * the blocking form would wait on a callback that needs g_lock. */
+            if (n->wait) { UnregisterWaitEx(n->wait, NULL); n->wait = NULL; }
             CloseHandle(n->handle);
             n->handle = h;
             n->wait = NULL;
@@ -270,9 +272,13 @@ static HANDLE take(DWORD pid)
             /* WT_EXECUTEONLYONCE has already auto-unregistered the wait when
              * this runs from the callback, so the call fails harmlessly. When
              * it runs from the completion-port path the wait is still live and
-             * must be cancelled. INVALID_HANDLE_VALUE = do not block, which is
-             * also what makes this safe to call from inside a callback. */
-            if (dead->wait) { UnregisterWaitEx(dead->wait, INVALID_HANDLE_VALUE); dead->wait = NULL; }
+             * must be cancelled. NULL = do not block: the blocking form
+             * (INVALID_HANDLE_VALUE) waits for a pending callback to complete,
+             * and that callback needs g_lock to run — a deadlock we lose
+             * whenever the completion-port message beats the thread pool to an
+             * exit, which under pid churn happens within minutes. The two exit
+             * paths already race safely (whoever arrives first owns the node). */
+            if (dead->wait) { UnregisterWaitEx(dead->wait, NULL); dead->wait = NULL; }
             *link = dead->next;
             free(dead);
             break;
