@@ -825,7 +825,13 @@ export class ProcessWatcher {
       return;
     }
 
-    const window = this.commandFor(event.createdAt);
+    // Attribution: prefer the window whose words this process actually ran —
+    // parallel commands overlap, and the first open window is not always the
+    // owner. The shell forwards the command text verbatim, so the child's
+    // command line contains it (minus the interpreter's own path). Fall back
+    // to the window order when no window's words match.
+    const exact = this.commandForExact(event.createdAt, event.commandLine);
+    const window = exact ?? this.commandFor(event.createdAt);
     if (window === undefined) {
       // Outside any command window. An env-marked process is still the
       // runtime's shell tree (a detached daemon, most likely), so it is
@@ -996,8 +1002,7 @@ export class ProcessWatcher {
   }
 
   /** The command a process started at `at` belongs to, if any. */
-  private commandFor(
-    at: number | undefined,
+  private commandFor(    at: number | undefined,
   ): { command: string; intent: CommandIntent; cwd: string } | undefined {
     const when = at ?? this.now();
     // A command still running owns everything since a moment before it began.
@@ -1011,6 +1016,43 @@ export class ProcessWatcher {
     const last = this.jobLastClosed;
     if (last && when <= last.endedAt + JOB_POST_SLACK_MS) {
       return { command: last.command, intent: last.intent, cwd: last.cwd };
+    }
+    return undefined;
+  }
+
+  /**
+   * The window whose command text this process verbatim ran, among the windows
+   * that could own a process started at `at`.
+   *
+   * Parallel commands overlap, and the first open window is not always the
+   * owner — `wsl docker run -d --name a …` and `wsl docker run -d --name b …`
+   * running together would both credit their clients to `a` by window order
+   * alone. The shell forwards the command text verbatim, so the child's
+   * command line contains everything after the interpreter's own path; a tail
+   * short enough to be ambiguous (a bare `ps`) does not qualify.
+   */
+  private commandForExact(
+    at: number | undefined,
+    commandLine: string | undefined,
+  ): { command: string; intent: CommandIntent; cwd: string } | undefined {
+    if (!commandLine) return undefined;
+    const line = commandLine.toLowerCase();
+    const candidates: Array<{ command: string; intent: CommandIntent; cwd: string }> = [];
+    const when = at ?? this.now();
+    for (const entry of this.jobOpen.values()) {
+      if (when >= entry.startedAt - JOB_PRE_SLACK_MS) {
+        candidates.push({ command: entry.command, intent: entry.intent, cwd: entry.cwd });
+      }
+    }
+    const last = this.jobLastClosed;
+    if (last && when <= last.endedAt + JOB_POST_SLACK_MS) {
+      candidates.push({ command: last.command, intent: last.intent, cwd: last.cwd });
+    }
+    for (const candidate of candidates) {
+      const text = candidate.command.toLowerCase().trim();
+      const firstSpace = text.indexOf(" ");
+      const tail = firstSpace > 0 ? text.slice(firstSpace + 1) : text;
+      if (tail.length > 8 && line.includes(tail)) return candidate;
     }
     return undefined;
   }
