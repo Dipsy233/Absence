@@ -48,6 +48,8 @@ export class JobSidecar {
   /** Resolvers waiting for the helper's `sample_done`. */
   private readonly sampleWaiters = new Set<() => void>();
   private statusValue: WatchStatus = "starting";
+  /** True once a helper has reported `ready` — post-ready errors get logged. */
+  private ready = false;
   private disposed = false;
   private restarts = 0;
   private readonly exePath: string;
@@ -108,6 +110,7 @@ export class JobSidecar {
           const resolved = this.handleLine(line);
           if (resolved && !settled && resolved.kind === "ready") {
             settled = true;
+            this.ready = true;
             this.setStatus("watching");
             resolve();
           } else if (resolved && !settled && resolved.kind === "error") {
@@ -162,10 +165,12 @@ export class JobSidecar {
   private scheduleRestart(): void {
     if (this.restartTimer !== undefined) return;
     if (this.restarts >= this.maxRestarts) {
+      process.stderr.write(`[agentwatch] helper kept dying; gave up after ${this.restarts} restarts\n`);
       this.setStatus("unavailable", `agentwatch stopped after ${this.restarts} restarts`);
       return;
     }
     this.restarts += 1;
+    process.stderr.write(`[agentwatch] helper exited without warning; restarting (${this.restarts}/${this.maxRestarts})\n`);
     this.setStatus("starting", "restarting agentwatch");
     this.restartTimer = setTimeout(() => {
       this.restartTimer = undefined;
@@ -215,12 +220,16 @@ export class JobSidecar {
         } satisfies WatchMetric);
         return { kind: "metric" };
       }
-      case "error":
-        return {
-          kind: "error",
-          what: typeof parsed.what === "string" ? parsed.what : "unknown",
-          code: typeof parsed.code === "number" ? parsed.code : 0,
-        };
+      case "error": {
+        // Post-ready errors change nothing about the contract, but a helper
+        // that starts failing silently is un-debuggable — say something.
+        const what = typeof parsed.what === "string" ? parsed.what : "unknown";
+        const code = typeof parsed.code === "number" ? parsed.code : 0;
+        if (this.ready) {
+          process.stderr.write(`[agentwatch] helper error: ${what} (code ${code})\n`);
+        }
+        return { kind: "error", what, code };
+      }
       case "start": {
         const pid = numberOrUndefined(parsed.pid);
         if (pid === undefined) return undefined;

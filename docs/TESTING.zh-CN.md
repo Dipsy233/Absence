@@ -22,6 +22,9 @@ npx tsx scripts/checks/check-execserver.ts   # 真实 WebSocket 上的 Codex exe
 npx tsx scripts/checks/check-fsdiff.ts       # 文件 diff 引擎（纯）
 npx tsx scripts/checks/check-agentwatch.ts   # 内核进程观察器（Windows）
 npx tsx scripts/checks/check-ebpf.ts         # 内核进程观察器（Linux）
+npx tsx scripts/checks/check-docker.ts       # docker 命令的进程边界（Windows + WSL docker）
+npx tsx scripts/checks/check-docker-eggs.ts  # 容器蛋：事件归因 + stats 指标 + 退出码
+npx tsx scripts/checks/check-e2e.ts          # 全链路：自起 server + mock 会话，无需模型
 node scripts/gen-whalebun-css.mjs            # 重新生成头像样式表
 ```
 

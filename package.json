@@ -40,6 +40,7 @@
     "check:incremental": "tsx scripts/checks/check-incremental.ts",
     "bench:incremental": "tsx scripts/checks/check-incremental-bench.ts",
     "check:offline": "tsx scripts/checks/run-offline.ts",
+    "check:e2e": "tsx scripts/checks/check-e2e.ts",
     "check:report": "tsx scripts/checks/check-report.ts",
     "check:process": "npm run check:eggs && npm run check:classify && npm run check:codex && npm run check:codexshell && npm run check:execserver && npm run check:shellenv && npm run check:fsdiff && npm run --if-present check:agentwatch && npm run --if-present check:ebpf",
     "desktop:install": "npm --prefix apps/desktop install",

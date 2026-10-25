@@ -162,13 +162,13 @@ export class MockAdapter extends BaseAdapter {
   }
 
   /** Run a command for real and collect its output, the way Pi's tool does. */
-  private async runCommand(command: string): Promise<{ stdout: string; exitCode: number }> {
+  private async runCommand(command: string, timeoutMs = 20_000): Promise<{ stdout: string; exitCode: number }> {
     const chunks: Buffer[] = [];
     try {
       const shell = await this.shellOperations();
       const { exitCode } = await shell.exec(command, this.cwd, {
         onData: (data) => chunks.push(data),
-        timeout: 20_000,
+        timeout: timeoutMs,
       });
       return { stdout: Buffer.concat(chunks).toString("utf8"), exitCode: exitCode ?? -1 };
     } catch (error) {
@@ -178,9 +178,54 @@ export class MockAdapter extends BaseAdapter {
     }
   }
 
+  /**
+   * A scripted prompt drives the shell directly: every line starting with
+   * `$ ` runs as a real command through the same AbsenceShell a real agent
+   * uses, so watchers, eggs and metrics see exactly what they would see from
+   * a real runtime — deterministically, with no model, no credentials. The
+   * rest of the prompt is ignored. This is the fast path for end-to-end
+   * checks; the demo script below remains the default when no `$` line is
+   * present.
+   */
+  private async runScripted(commands: string[]): Promise<void> {
+    const emit = <K extends AbsenceEventType>(type: K, payload: AbsenceEventPayloadMap[K]) =>
+      this.emitAbsence(type, payload);
+
+    emit("agent_start", { model: this.model });
+    let failures = 0;
+    for (const [index, command] of commands.entries()) {
+      if (this.aborted) return this.finish("aborted");
+      const toolCallId = `mock_scripted_${index}`;
+      emit("tool_start", { toolCallId, toolName: "bash", args: { command } });
+      const ran = await this.runCommand(command, 120_000);
+      if (ran.exitCode !== 0) failures += 1;
+      emit("command", { command, stdout: ran.stdout, stderr: "", exitCode: ran.exitCode });
+      emit("tool_end", { toolCallId, toolName: "bash", isError: ran.exitCode !== 0 });
+    }
+    const answer =
+      `Ran ${commands.length} scripted command${commands.length === 1 ? "" : "s"}` +
+      (failures > 0 ? `, ${failures} exited non-zero.` : ", all exited zero.");
+    this.resetMessage();
+    this.emitMessageDelta(answer);
+    this.flushMessage(answer);
+    this.finish("completed");
+  }
+
   async prompt(_text: string): Promise<void> {
     this.aborted = false;
     this.busy = true;
+
+    const scripted = _text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("$ "))
+      .map((line) => line.slice(2).trim())
+      .filter(Boolean);
+    if (scripted.length > 0) {
+      await this.runScripted(scripted);
+      return;
+    }
+
     const emit = <K extends AbsenceEventType>(type: K, payload: AbsenceEventPayloadMap[K]) =>
       this.emitAbsence(type, payload);
 
