@@ -263,7 +263,11 @@ export class AbsenceSession {
     this.processWatcher.warm();
     // Containers the kernel observers cannot see ride the daemon's own event
     // stream. Best effort: a machine with no docker (or with it disabled)
-    // simply has no container eggs, and everything else is unchanged.
+    // simply has no container eggs, and everything else is unchanged. Only
+    // containers laid during one of this session's command windows become
+    // eggs — the daemon reports every container on the machine, so adopting
+    // whatever was already running would show another session's (or the
+    // user's own) containers in this one.
     if (config.dockerEnabled) {
       void DockerMonitor.get()
         .start()
@@ -274,7 +278,6 @@ export class AbsenceSession {
         this.handleEvent(createEvent(this.id, "process", payload)),
       );
       this.unsubDocker = DockerMonitor.get().onContainer((event) => this.dockerEggs?.onContainerEvent(event));
-      void this.dockerEggs.adopt();
     }
     // Resource metrics ride their own channel: the event window is for facts,
     // not for a process table sampled every two seconds.
@@ -391,6 +394,10 @@ export class AbsenceSession {
       this.events = events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events;
       // A resumed session is not mid-run: the agent is idle again.
       this.setStatus("listening");
+      // Containers this session laid may still be running. The archive already
+      // holds their eggs, but the live observer that sampled them died with the
+      // old session (or the server); re-attach before the snapshot is served.
+      await this.dockerEggs?.restore(events);
     }
 
     if (this.observe) {

@@ -46,6 +46,22 @@ export interface ContainerResource {
   rssBytes: number;
 }
 
+/** The daemon's current state for one container, as `docker inspect` reports it. */
+export interface ContainerState {
+  /** Full 64-hex container id. */
+  id: string;
+  /** Human name, without the leading slash docker prints. */
+  name: string;
+  /** Image reference (`nginx:alpine`), when the daemon reports it. */
+  image?: string;
+  running: boolean;
+  exitCode?: number;
+  /** Unix ms of the daemon's `StartedAt` (a restart resets it). */
+  startedAt?: number;
+  /** Unix ms of the daemon's `FinishedAt`, when it has one. */
+  finishedAt?: number;
+}
+
 interface DockerCommand {
   file: string;
   args: string[];
@@ -131,33 +147,6 @@ export class DockerMonitor {
   }
 
   /**
-   * Containers already running when Absence attaches. They have no command to
-   * be attributed to; the session lays them as unattributed eggs so the panel
-   * is not blind to work that predates it.
-   */
-  async listRunning(): Promise<Array<{ containerId: string; name: string; image: string }>> {
-    const command = await this.command_(); // also the availability probe
-    const { stdout } = await run(command.file, [...command.args, "ps", "--no-trunc", "--format", "{{json .}}"], {
-      timeout: 15_000,
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    const out: Array<{ containerId: string; name: string; image: string }> = [];
-    for (const line of stdout.split("\n")) {
-      const parsed = parseJsonObject(line);
-      if (!parsed) continue;
-      const id = stringOf(parsed, "ID") ?? stringOf(parsed, "Id");
-      const names = stringOf(parsed, "Names") ?? stringOf(parsed, "Name");
-      if (!id || !names) continue;
-      out.push({
-        containerId: id,
-        name: names.split(",")[0] ?? names,
-        image: stringOf(parsed, "Image") ?? "",
-      });
-    }
-    return out;
-  }
-
-  /**
    * The stats stream's latest counters for one container, when it has any.
    *
    * "Latest" is enforced: a reading older than `STATS_STALE_MS` means the
@@ -170,6 +159,56 @@ export class DockerMonitor {
     if (!entry) return undefined;
     if (Date.now() - entry.at > STATS_STALE_MS) return undefined;
     return { cpuSeconds: entry.cpuSeconds, rssBytes: entry.rssBytes };
+  }
+
+  /**
+   * What the daemon says about one container right now, by full or short id.
+   *
+   * `undefined` means the container is gone (removed while nobody watched).
+   * It is not an availability signal: the caller has already started the
+   * monitor, so a failed inspect is a fact about this one container.
+   */
+  async inspectContainer(containerId: string): Promise<ContainerState | undefined> {
+    const command = await this.command_();
+    try {
+      const { stdout } = await run(
+        command.file,
+        [...command.args, "inspect", "--format", "{{json .}}", containerId],
+        { timeout: 15_000, maxBuffer: 16 * 1024 * 1024 },
+      );
+      const line = stdout.split("\n").find((candidate) => candidate.trim().startsWith("{"));
+      const parsed = parseJsonObject(line ?? "");
+      if (!parsed) return undefined;
+      const state = isRecord(parsed.State) ? parsed.State : undefined;
+      const config = isRecord(parsed.Config) ? parsed.Config : undefined;
+      const startedRaw = stringOf(state, "StartedAt");
+      const started = startedRaw ? Date.parse(startedRaw) : NaN;
+      const finishedRaw = stringOf(state, "FinishedAt");
+      const finished = finishedRaw ? Date.parse(finishedRaw) : NaN;
+      return {
+        id: stringOf(parsed, "Id") ?? containerId,
+        name: (stringOf(parsed, "Name") ?? "").replace(/^\//, ""),
+        image: stringOf(config, "Image"),
+        running: state?.Running === true,
+        exitCode: numberOr(state, "ExitCode"),
+        startedAt: Number.isFinite(started) && started > 0 ? started : undefined,
+        finishedAt: Number.isFinite(finished) && finished > 0 ? finished : undefined,
+      };
+    } catch {
+      // `docker inspect` exits non-zero for a container that no longer exists.
+      return undefined;
+    }
+  }
+
+  /**
+   * Open the stats stream if it is not already open.
+   *
+   * The stream normally starts with the first container `start` event. A
+   * resumed session revives containers that started before this process did,
+   * so no such event will arrive; it calls this instead.
+   */
+  ensureStatsStream(): void {
+    this.ensureStats();
   }
 
   dispose(): void {
@@ -290,8 +329,11 @@ export class DockerMonitor {
 
     if (action === "start" || action === "restart") {
       // A new container lifetime is also a fresh stats-stream budget: whatever
-      // happened to the last child, this start is worth a new attempt.
+      // happened to the last child, this start is worth a new attempt. A
+      // restart also resets the container's CPU counter, so drop the old
+      // cumulative reading instead of integrating across two lifetimes.
       this.statsRestarts = 0;
+      this.resources.delete(containerId);
       this.ensureStats();
       this.emitter.emit("container", {
         kind: "start",

@@ -11,6 +11,8 @@
  *   command window → container start event → attributed primary egg
  *                  → per-container CPU/RSS from `docker stats`
  *                  → die event → exited egg with the real exit code
+ *                  → resume: re-attach while running, correct an exit that
+ *                    happened while the session was closed
  *
  *   npx tsx scripts/checks/check-docker-eggs.ts
  *
@@ -22,7 +24,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ProcessPayload } from "@absence/core";
+import type { AbsenceEvent, ProcessPayload } from "@absence/core";
 import { JobMonitor } from "../../apps/server/src/process/JobMonitor";
 import { DockerMonitor } from "../../apps/server/src/process/DockerMonitor";
 import { DockerEggs } from "../../apps/server/src/process/DockerEggs";
@@ -85,10 +87,6 @@ async function main(): Promise<void> {
     if (event.name === CONTAINER && event.kind === "start") startedContainerId = event.containerId;
   });
 
-  // Adopt whatever is running first; our container is not among it yet.
-  await eggs.adopt();
-  const adoptedBefore = payloads.length;
-
   // One command window, exactly the shape AbsenceShell produces.
   const commandText = `wsl docker run -d --name ${CONTAINER} ${IMAGE}`;
   const marker = `absence-${Math.random().toString(16).slice(2, 10)}`;
@@ -103,7 +101,7 @@ async function main(): Promise<void> {
   let startEgg: ProcessPayload | undefined;
   for (let attempt = 0; attempt < 40 && !startEgg; attempt++) {
     await sleep(250);
-    startEggs: for (const payload of payloads.slice(adoptedBefore)) {
+    startEggs: for (const payload of payloads) {
       if (payload.name === CONTAINER && payload.status === "running") {
         startEgg = payload;
         break startEggs;
@@ -152,18 +150,65 @@ async function main(): Promise<void> {
   // container integrates ~0 CPU, so the assertion watches the freshness of
   // the underlying reading, not its magnitude. ---
   const cache = (docker as unknown as { resources: Map<string, { at: number }> }).resources;
-  const preKillAt = cache.get(startedContainerId)?.at;
+  const preKillAt = startedContainerId ? cache.get(startedContainerId)?.at : undefined;
   (docker as unknown as { statsChild?: { kill(): void } }).statsChild?.kill();
   await sleep(6_000);
-  const postKillAt = cache.get(startedContainerId)?.at;
+  const postKillAt = startedContainerId ? cache.get(startedContainerId)?.at : undefined;
   const fresh = postKillAt !== undefined && Date.now() - postKillAt < 6_000;
   check(
     "a killed stats stream respawns and resumes fresh readings",
     fresh && (preKillAt === undefined || postKillAt! > preKillAt),
     preKillAt && postKillAt
-      ? `last line ${((Date.now() - postKillAt) / 1000).toFixed(1)}s ago (was ${(Date.now() - preKillAt).toFixed(0) >= 5_000 ? "stale" : "fresh"})`
+      ? `last line ${((Date.now() - postKillAt) / 1000).toFixed(1)}s ago (was ${Date.now() - preKillAt >= 5_000 ? "stale" : "fresh"})`
       : "(no readings)",
   );
+
+  // --- persistence: a resumed session re-attaches to the container it laid
+  // while it is still running, and corrects an egg whose container ended while
+  // the session was closed. The archive is the record; the daemon is the truth.
+  const archived = payloads.map(
+    (payload, index) =>
+      ({
+        id: `check-${index}`,
+        sessionId: "check",
+        timestamp: payload.exitedAt ?? payload.startedAt,
+        type: "process",
+        payload,
+      }) as AbsenceEvent,
+  );
+  const resumedPayloads: ProcessPayload[] = [];
+  const resumed = new DockerEggs(watcher, (payload) => resumedPayloads.push(payload));
+  const unsubResumed = docker.onContainer((event) => resumed.onContainerEvent(event));
+  await resumed.restore(archived);
+  const resumedTarget = resumed.metricsTargets().find((target) => target.rootPid === startEgg?.pid);
+  check(
+    "a resumed session re-attaches to the still-running container",
+    resumedTarget?.status === "running" && resumedTarget.startedAt === startEgg?.startedAt,
+    resumedTarget
+      ? `pid=${resumedTarget.rootPid} status=${resumedTarget.status} started=${resumedTarget.startedAt}`
+      : "(no target)",
+  );
+
+  // A container can be restarted while the session is closed: the archive's
+  // last word is `exited`, but the daemon says it is running again. Resume
+  // must revive it and publish the new lifetime.
+  const restartedPayloads: ProcessPayload[] = [];
+  const restarted = new DockerEggs(watcher, (payload) => restartedPayloads.push(payload));
+  const exitedArchive = archived.map((event) =>
+    event.type === "process" && event.payload.name === CONTAINER
+      ? {
+          ...event,
+          payload: { ...event.payload, status: "exited" as const, exitedAt: Date.now(), exitCode: 0 },
+        }
+      : event,
+  );
+  await restarted.restore(exitedArchive);
+  check(
+    "a container restarted while the session was closed is revived as running",
+    restartedPayloads.some((payload) => payload.name === CONTAINER && payload.status === "running"),
+    restartedPayloads.map((payload) => `${payload.name}:${payload.status}`).join(", ") || "(no event)",
+  );
+  restarted.dispose();
 
   // Stop the container; the die event carries the real exit code.
   runSync(`wsl docker rm -f ${CONTAINER} > NUL 2>&1`);
@@ -182,6 +227,60 @@ async function main(): Promise<void> {
       `exit=${exitEgg.exitCode}`,
     );
   }
+
+  const resumedExit = resumedPayloads.find(
+    (payload) => payload.name === CONTAINER && payload.status === "exited",
+  );
+  check(
+    "the resumed session reports the container's exit",
+    resumedExit !== undefined && resumedExit.exitCode !== undefined,
+    resumedExit ? `exit=${resumedExit.exitCode}` : "(no exit)",
+  );
+  resumed.dispose();
+  unsubResumed();
+
+  // The archive's last word was "running", but the container was removed while
+  // the session was closed: the resumed egg must be corrected, not frozen.
+  const gonePayloads: ProcessPayload[] = [];
+  const gone = new DockerEggs(watcher, (payload) => gonePayloads.push(payload));
+  await gone.restore(archived);
+  check(
+    "a container that disappeared while the session was closed is corrected to exited",
+    gonePayloads.some((payload) => payload.name === CONTAINER && payload.status === "exited"),
+    gonePayloads.map((payload) => `${payload.name}:${payload.status}`).join(", ") || "(no correction)",
+  );
+  gone.dispose();
+
+  // An egg from the old blanket adoption carries no command and was never this
+  // session's work; resume retires it so it leaves the live panel.
+  const legacyPayloads: ProcessPayload[] = [];
+  const legacy = new DockerEggs(watcher, (payload) => legacyPayloads.push(payload));
+  await legacy.restore([
+    {
+      id: "legacy-adopted",
+      sessionId: "check",
+      timestamp: Date.now(),
+      type: "process",
+      payload: {
+        pid: 1_000_000_777,
+        ppid: 0,
+        name: "legacy_adopted",
+        commandLine: "nginx:alpine (container 0123456789ab)",
+        status: "running",
+        startedAt: Date.now(),
+        children: 0,
+        kind: "primary",
+        kindReason: "docker container",
+      },
+    } as AbsenceEvent,
+  ]);
+  check(
+    "an old unattributed container egg is retired on resume",
+    legacyPayloads.some((payload) => payload.retired === true),
+    legacyPayloads.map((payload) => `${payload.name}:${payload.retired ? "retired" : payload.status}`).join(", ") ||
+      "(no event)",
+  );
+  legacy.dispose();
 
   // --- a container the *user* started — no command window anywhere — must not
   // become an egg. The daemon reports every container on the machine; the
@@ -286,19 +385,6 @@ async function main(): Promise<void> {
     strayCount === 0,
     `${strayCount} events`,
   );
-
-  // --- adoption: a session opening while containers run still sees them,
-  // unattributed — visible and honest, but never credited to a command. ---
-  const adopted: ProcessPayload[] = [];
-  const adopter = new DockerEggs(watcher, (payload) => adopted.push(payload));
-  await adopter.adopt();
-  const adoptedForeign = adopted.find((payload) => payload.name === "absence-foreign-nginx");
-  check(
-    "a session opening later adopts the running container unattributed",
-    adoptedForeign !== undefined && adoptedForeign.command === undefined,
-    adoptedForeign ? `command=${adoptedForeign.command ?? "(none)"}` : "(no egg)",
-  );
-  adopter.dispose();
 
   runSync(`wsl docker rm -f absence-foreign-nginx absence-stray-nginx absence-pred-nginx absence-pred-foreign > NUL 2>&1`);
 

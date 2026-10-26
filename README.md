@@ -433,9 +433,13 @@ port to the public internet.
   matched through the daemon's project label; a run without `--name` through
   its image. The window remains only as the fallback for commands whose shape
   cannot be parsed (scripts, wrappers); a container laid outside any command
-  window gets no egg, and only the one-time adoption at session open reports
-  such containers, always unattributed. With no docker (or `ABSENCE_DOCKER=0`)
-  nothing changes.
+  window gets no egg, so a container the user started in their own terminal —
+  or one left running by an earlier session — never appears in the panel. A
+  resumed session re-attaches to the containers it laid that are still running
+  (same synthetic pid; a restart resets the start time, stats resume); ones that
+  exited or were removed while the session was closed are corrected to `exited`
+  from the daemon's own state. With no docker (or `ABSENCE_DOCKER=0`) nothing
+  changes.
 - The live metrics ring keeps the newest 300 frames in memory. Longer ranges and
   historical sessions are loaded from SQLite; metric retention is 30 days.
 

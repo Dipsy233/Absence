@@ -128,6 +128,12 @@ export interface ProcessPayload {
   /** The shell command that laid it. */
   command?: string;
   /**
+   * The daemon's full container id, on a container egg only. Real processes
+   * have no such field. The archive keeps it so a resumed session can ask the
+   * daemon about the container without re-parsing `commandLine`.
+   */
+  containerId?: string;
+  /**
    * `primary` is a process worth tracking on its own (a daemon, server, script,
    * build root); `tool` is a short-lived helper such as `cat`, `grep` or `sleep`.
    * The UI folds tools into a count instead of listing each one.

@@ -26,7 +26,7 @@ npx tsx scripts/checks/check-outside-attr.ts # outside-change attribution
 npx tsx scripts/checks/check-agentwatch.ts   # kernel process observer (Windows)
 npx tsx scripts/checks/check-ebpf.ts         # kernel process observer (Linux)
 npx tsx scripts/checks/check-docker.ts       # process boundary of docker commands (Windows + WSL docker)
-npx tsx scripts/checks/check-docker-eggs.ts  # container eggs: event attribution + stats metrics + exit code
+npx tsx scripts/checks/check-docker-eggs.ts  # container eggs: attribution + stats metrics + resume
 npx tsx scripts/checks/check-e2e.ts          # full pipeline: boots its own server + mock session, no model
 node scripts/gen-whalebun-css.mjs            # regenerate the avatar's stylesheet
 ```

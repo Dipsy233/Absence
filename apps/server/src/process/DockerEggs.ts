@@ -1,7 +1,7 @@
-import type { ProcessPayload } from "@absence/core";
+import type { AbsenceEvent, ProcessPayload } from "@absence/core";
 import type { RawProcessSample } from "./metricSample";
 import type { MetricsTarget } from "./ProcessMetrics";
-import { DockerMonitor, type ContainerEvent } from "./DockerMonitor";
+import { DockerMonitor, type ContainerEvent, type ContainerState } from "./DockerMonitor";
 import type { ProcessWatcher } from "./ProcessWatcher";
 import { eventMatchesPrediction, predictContainers } from "./DockerCommand";
 
@@ -20,8 +20,8 @@ import { eventMatchesPrediction, predictContainers } from "./DockerCommand";
  *    `docker compose up -d` credit their containers the same way a spawned
  *    process is credited. A container laid outside any command window gets **no
  *    egg**: the daemon reports no client, so a container the user started in
- *    their own terminal is not this agent's work, and only the one-time
- *    adoption at session open reports unattributed containers;
+ *    their own terminal — or one left running by an earlier session — is not
+ *    this agent's work and never enters the panel;
  *  - `kind` is always `primary`, because a container is by definition the
  *    workload itself, and only primary eggs reach metrics storage.
  *
@@ -55,6 +55,9 @@ const CONTAINER_DRIVER = /\bdocker(\.exe)?\b|docker-compose|\bpodman\b|\bnerdctl
 /** BuildKit's build containers are the builder's plumbing, never the workload. */
 const BUILD_INFRASTRUCTURE = /^buildx_buildkit_/;
 
+/** The container identity every container egg's `commandLine` carries. */
+const CONTAINER_LINE = /^(.*?)\s+\(container ([0-9a-f]{12})\)$/i;
+
 interface ContainerEgg {
   pid: number;
   containerId: string;
@@ -65,6 +68,50 @@ interface ContainerEgg {
   status: "running" | "exited";
   exitedAt?: number;
   exitCode?: number;
+}
+
+/** The last archived state of one container egg, as the resume path reads it. */
+interface ArchivedContainerEgg {
+  pid: number;
+  containerId?: string;
+  name: string;
+  image: string;
+  commandLine: string;
+  startedAt: number;
+  command?: string;
+  status: "running" | "exited";
+  exitedAt?: number;
+  exitCode?: number;
+  retired?: true;
+}
+
+/**
+ * Fold a session's archived process events into the last state of each
+ * container egg. Only synthetic pids are considered: a real process can never
+ * reach that range, so the archive's kernel eggs are untouched.
+ */
+function archivedContainerEggs(events: AbsenceEvent[]): ArchivedContainerEgg[] {
+  const last = new Map<number, ArchivedContainerEgg>();
+  for (const event of events) {
+    if (event.type !== "process") continue;
+    const payload = event.payload;
+    if (payload.pid < SYNTHETIC_PID_BASE) continue;
+    const match = CONTAINER_LINE.exec(payload.commandLine);
+    last.set(payload.pid, {
+      pid: payload.pid,
+      containerId: payload.containerId ?? match?.[2],
+      name: payload.name,
+      image: match?.[1] ?? "",
+      commandLine: payload.commandLine,
+      startedAt: payload.startedAt,
+      command: payload.command,
+      status: payload.status,
+      exitedAt: payload.exitedAt,
+      exitCode: payload.exitCode,
+      retired: payload.retired,
+    });
+  }
+  return [...last.values()];
 }
 
 export class DockerEggs {
@@ -79,33 +126,6 @@ export class DockerEggs {
     private readonly emit: (payload: ProcessPayload) => void,
   ) {}
 
-  /**
-   * Adopt the containers that were already running when the session opened.
-   * They have no command window to be attributed to, so they arrive
-   * unattributed — visible, honest about it, and not dropped.
-   */
-  async adopt(): Promise<void> {
-    let running: Array<{ containerId: string; name: string; image: string }>;
-    try {
-      running = await DockerMonitor.get().listRunning();
-    } catch {
-      return; // no docker: nothing to adopt, and nothing else changes
-    }
-    for (const container of running) {
-      if (this.byContainer.has(container.containerId)) continue;
-      this.lay(
-        {
-          kind: "start",
-          containerId: container.containerId,
-          name: container.name,
-          image: container.image,
-          at: Date.now(),
-        },
-        { adopted: true },
-      );
-    }
-  }
-
   /** One daemon event, attributed and republished as a process egg. */
   onContainerEvent(event: ContainerEvent): void {
     if (this.disposed) return;
@@ -114,6 +134,76 @@ export class DockerEggs {
       return;
     }
     this.reap(event);
+  }
+
+  /**
+   * Re-attach to the containers this session laid that are still running.
+   *
+   * A resumed session replays its archive, so the Eggs panel already knows the
+   * container eggs — but the live observer that sampled them died with the old
+   * session (or with the server). This walks the archive's last state per
+   * container, asks the daemon what actually happened while nobody watched,
+   * and rebuilds exactly that much live state:
+   *
+   *  - running now → same pid and command; stats resume. A container that was
+   *    restarted while the session was closed gets the daemon's new start time;
+   *  - exited or removed meanwhile → an `exited` egg with the real exit code;
+   *  - an old unattributed egg (the removed blanket-adoption behavior) → a
+   *    `retired` event, so the resumed panel drops what was never ours.
+   *
+   * Attribution is not re-derived: the archive records which command laid the
+   * container, and only eggs that carry one are revived.
+   */
+  async restore(events: AbsenceEvent[]): Promise<void> {
+    if (this.disposed) return;
+    const archived = archivedContainerEggs(events);
+    if (archived.length === 0) return;
+    // Keep future synthetic pids clear of every pid the archive already used,
+    // exited ones included: a new egg must not overwrite a dead one in the UI.
+    this.nextPid = Math.max(this.nextPid, ...archived.map((entry) => entry.pid + 1));
+
+    // Old unattributed eggs need no daemon: retire them first, so resuming on
+    // a machine without docker is not delayed by a probe just to drop them.
+    for (const entry of archived) {
+      if (entry.retired || entry.command !== undefined) continue;
+      this.retire(entry);
+    }
+
+    const candidates = archived.filter(
+      (entry) =>
+        !entry.retired && entry.command !== undefined && entry.containerId !== undefined,
+    );
+    if (candidates.length === 0) return;
+    const monitor = DockerMonitor.get();
+    try {
+      // No docker: the archived running eggs stay as the archive left them.
+      await monitor.start();
+    } catch {
+      return;
+    }
+
+    const states = new Map<number, ContainerState | undefined>();
+    await Promise.all(
+      candidates.map(async (entry) => {
+        states.set(entry.pid, await monitor.inspectContainer(entry.containerId!));
+      }),
+    );
+
+    let anyRunning = false;
+    for (const entry of candidates) {
+      if (this.disposed) return;
+      const state = states.get(entry.pid);
+      if (state?.running) {
+        const egg = this.revive(entry, state);
+        anyRunning = true;
+        // The archive's last word was `exited`: the container was restarted
+        // while the session was closed, so tell recipients it is alive again.
+        if (entry.status !== "running") this.publish(egg);
+      } else if (entry.status === "running") {
+        this.correctExit(entry, state);
+      }
+    }
+    if (anyRunning) monitor.ensureStatsStream();
   }
 
   /** The container eggs, in the metrics sampler's target shape. */
@@ -159,7 +249,7 @@ export class DockerEggs {
 
   // --------------------------------------------------------------------------
 
-  private lay(event: ContainerEvent, options: { adopted?: boolean } = {}): void {
+  private lay(event: ContainerEvent): void {
     // BuildKit's build containers belong to the builder, not to any command.
     if (BUILD_INFRASTRUCTURE.test(event.name)) return;
     const existing = this.byContainer.get(event.containerId);
@@ -181,13 +271,8 @@ export class DockerEggs {
     // window gets to claim the event (parallel docker commands happen); a
     // docker-shaped command whose words cannot be read falls back to the
     // window alone; anything else gets no egg.
-    let command: string | undefined;
-    if (options.adopted) {
-      command = undefined;
-    } else {
-      command = this.attribute(event);
-      if (command === undefined) return;
-    }
+    const command = this.attribute(event);
+    if (command === undefined) return;
     const pid = this.nextPid++;
     const egg: ContainerEgg = {
       pid,
@@ -236,6 +321,63 @@ export class DockerEggs {
     return looseFallback;
   }
 
+  private revive(entry: ArchivedContainerEgg, state: ContainerState): ContainerEgg {
+    const egg: ContainerEgg = {
+      pid: entry.pid,
+      containerId: state.id,
+      name: state.name || entry.name,
+      image: state.image || entry.image,
+      // A restart while the session was closed resets the lifetime; otherwise
+      // the archived start (the daemon's event timestamp) is the honest one.
+      startedAt: entry.status === "running" ? entry.startedAt : state.startedAt ?? entry.startedAt,
+      command: entry.command,
+      status: "running",
+    };
+    this.eggs.set(entry.pid, egg);
+    this.byContainer.set(state.id, entry.pid);
+    return egg;
+  }
+
+  /** The container ended while the session was closed: correct the stale egg. */
+  private correctExit(entry: ArchivedContainerEgg, state: ContainerState | undefined): void {
+    const egg: ContainerEgg = {
+      pid: entry.pid,
+      containerId: state?.id ?? entry.containerId ?? "",
+      name: state?.name || entry.name,
+      image: state?.image || entry.image,
+      startedAt: entry.startedAt,
+      command: entry.command,
+      status: "exited",
+      exitedAt: state?.finishedAt ?? Date.now(),
+      exitCode: state?.exitCode,
+    };
+    this.eggs.set(entry.pid, egg);
+    this.publish(egg);
+  }
+
+  /**
+   * Drop an egg that was never this session's work from the resumed live view.
+   * The archive keeps the original record; `retired` only tells recipients to
+   * drop the pid (the same shape ProcessWatcher uses for bounded history).
+   */
+  private retire(entry: ArchivedContainerEgg): void {
+    this.emit({
+      pid: entry.pid,
+      ppid: 0,
+      name: entry.name,
+      commandLine: entry.commandLine,
+      status: "exited",
+      startedAt: entry.startedAt,
+      exitedAt: entry.exitedAt ?? entry.startedAt,
+      exitCode: entry.exitCode,
+      children: 0,
+      command: entry.command,
+      kind: "primary",
+      kindReason: "docker container",
+      retired: true,
+    });
+  }
+
   private publish(egg: ContainerEgg): void {
     this.emit({
       pid: egg.pid,
@@ -248,6 +390,7 @@ export class DockerEggs {
       exitCode: egg.exitCode,
       children: 0,
       command: egg.command,
+      containerId: egg.containerId,
       kind: "primary",
       kindReason: "docker container",
     });
