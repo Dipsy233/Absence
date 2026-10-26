@@ -93,11 +93,11 @@ function load(): Settings {
       leftOrder: normalizeIds(parsed.leftOrder, LEFT_PANEL_IDS) as LeftPanelId[],
       displayInActivity: parsed.displayInActivity ?? DEFAULTS.displayInActivity,
       collapseChatOnContent: parsed.collapseChatOnContent ?? DEFAULTS.collapseChatOnContent,
-      commandFailThreshold: normalizeThreshold(parsed.commandFailThreshold),
+      commandFailThreshold: normalizeThreshold(parsed.commandFailThreshold, DEFAULTS.commandFailThreshold),
       commandFailLevel: normalizeLevel(parsed.commandFailLevel),
-      commandStreakThreshold: normalizeThreshold(parsed.commandStreakThreshold),
+      commandStreakThreshold: normalizeThreshold(parsed.commandStreakThreshold, DEFAULTS.commandStreakThreshold),
       commandStreakLevel: normalizeLevel(parsed.commandStreakLevel),
-      activityStallThreshold: normalizeThreshold(parsed.activityStallThreshold),
+      activityStallThreshold: normalizeThreshold(parsed.activityStallThreshold, DEFAULTS.activityStallThreshold),
       activityStallLevel: normalizeLevel(parsed.activityStallLevel),
     };
   } catch {
@@ -105,9 +105,16 @@ function load(): Settings {
   }
 }
 
-function normalizeThreshold(value: unknown): number {
+/**
+ * A positive integer threshold, or `fallback` when the value is unusable.
+ *
+ * The fallback is per field on purpose: sharing one default made clearing the
+ * stall field restore 5 *seconds* (the failed-command default) instead of
+ * 3600, and clearing the streak field restore 5 instead of 3.
+ */
+function normalizeThreshold(value: unknown, fallback: number): number {
   const n = typeof value === "number" ? Math.floor(value) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : DEFAULTS.commandFailThreshold;
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 const FAIL_LEVELS: CommandFailLevel[] = ["none", "low", "medium", "high"];
@@ -155,19 +162,20 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   setTheme: (theme) => set((s) => persistIt(s, { theme })),
   setRailOrder: (railOrder) =>
     set((s) => persistIt(s, { railOrder: normalizeIds(railOrder, RAIL_PANEL_IDS) as RailPanelId[] })),
-  moveRailPanel: (id, dir) => set((s) => ({ railOrder: movePanel(s.railOrder, id, dir) })),
+  moveRailPanel: (id, dir) => set((s) => persistIt(s, { railOrder: movePanel(s.railOrder, id, dir) })),
   setLeftOrder: (leftOrder) =>
     set((s) => persistIt(s, { leftOrder: normalizeIds(leftOrder, LEFT_PANEL_IDS) as LeftPanelId[] })),
-  moveLeftPanel: (id, dir) => set((s) => ({ leftOrder: movePanel(s.leftOrder, id, dir) })),
+  moveLeftPanel: (id, dir) => set((s) => persistIt(s, { leftOrder: movePanel(s.leftOrder, id, dir) })),
   setDisplayInActivity: (value) => set((s) => persistIt(s, { displayInActivity: value })),
   setCollapseChatOnContent: (value) => set((s) => persistIt(s, { collapseChatOnContent: value })),
-  setCommandFailThreshold: (value) => set((s) => persistIt(s, { commandFailThreshold: normalizeThreshold(value) })),
+  setCommandFailThreshold: (value) =>
+    set((s) => persistIt(s, { commandFailThreshold: normalizeThreshold(value, DEFAULTS.commandFailThreshold) })),
   setCommandFailLevel: (value) => set((s) => persistIt(s, { commandFailLevel: normalizeLevel(value) })),
   setCommandStreakThreshold: (value) =>
-    set((s) => persistIt(s, { commandStreakThreshold: normalizeThreshold(value) })),
+    set((s) => persistIt(s, { commandStreakThreshold: normalizeThreshold(value, DEFAULTS.commandStreakThreshold) })),
   setCommandStreakLevel: (value) => set((s) => persistIt(s, { commandStreakLevel: normalizeLevel(value) })),
   setActivityStallThreshold: (value) =>
-    set((s) => persistIt(s, { activityStallThreshold: normalizeThreshold(value) })),
+    set((s) => persistIt(s, { activityStallThreshold: normalizeThreshold(value, DEFAULTS.activityStallThreshold) })),
   setActivityStallLevel: (value) => set((s) => persistIt(s, { activityStallLevel: normalizeLevel(value) })),
   reset: () => set((s) => persistIt(s, DEFAULTS)),
 }));

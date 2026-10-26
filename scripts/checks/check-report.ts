@@ -53,6 +53,19 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   check("failed tool has no `command` but is still detected", facts.commandFacts.length === 1);
   check("unresolved failure → outcome failed", facts.outcome === "failed");
   check("unresolved failure → attention high", facts.attention.level === "high");
+  // Silencing `command_failed` never silences an unresolved failure at rest:
+  // that one stays high and reports itself as `unresolved_error`.
+  const silenced = buildRunFacts(events, runOf(events, 0), {
+    commandFailThreshold: 1,
+    commandFailLevel: "none",
+  });
+  check("unresolved failure stays high when command_failed is silenced", silenced.attention.level === "high");
+  check(
+    "and reports unresolved_error, not command_failed",
+    silenced.attention.reasons.includes("unresolved_error") &&
+      !silenced.attention.reasons.includes("command_failed"),
+    silenced.attention.reasons.join(","),
+  );
   check("report says exactly one command failed", renderRun(facts).execution.failed === 1);
 }
 
@@ -80,6 +93,26 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   check(
     "recovered run → attention low with threshold 1",
     buildRunFacts(events, runOf(events, 0), { commandFailThreshold: 1 }).attention.level === "low",
+  );
+  // "none" is the user's mute switch: it must silence the reason, not just its
+  // level. The recovered-failure branch used to list `command_failed` anyway.
+  const muted = buildRunFacts(events, runOf(events, 0), {
+    commandFailThreshold: 1,
+    commandFailLevel: "none",
+  });
+  check("recovered failure with level none → no command_failed reason", !muted.attention.reasons.includes("command_failed"));
+  check("recovered failure with level none → attention none", muted.attention.level === "none");
+  // A live unresolved failure at a chosen level reports that level, and the
+  // reason agrees with it (it used to be "medium" while claiming a level).
+  const live = renderLive(
+    buildRunFacts(events, runOf(events, 0, "running"), { commandFailThreshold: 1, commandFailLevel: "medium" }),
+    { busy: true },
+    { commandFailThreshold: 1, commandFailLevel: "medium" },
+  );
+  check(
+    "live unresolved failure speaks at the chosen level",
+    live.attention.level === "medium" && live.attention.reasons.includes("command_failed"),
+    `${live.attention.level} · ${live.attention.reasons.join(",")}`,
   );
   check("executions list the commands that ran", renderRun(facts).executions.length === 3);
 }

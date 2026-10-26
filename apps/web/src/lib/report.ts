@@ -956,16 +956,26 @@ function computeAttention(input: {
     if (!needsYou && (failLevel === "none" || underThreshold)) {
       // below the user's bar: no attention from this branch (the streak and
       // stall checks below still apply on their own terms)
+    } else if (needsYou) {
+      level = "high";
+      reasons.push("unresolved_error");
+      evidence = input.unresolvedIds;
     } else {
-      level = needsYou ? "high" : level === "high" ? "high" : failLevel === "none" ? "medium" : failLevel;
-      reasons.push(needsYou ? "unresolved_error" : "command_failed");
+      // `failLevel` cannot be "none" here (that is the silenced case above),
+      // so the reason and its level always agree.
+      if (level === "none" || rank(failLevel) > rank(level)) level = failLevel;
+      reasons.push("command_failed");
       evidence = input.unresolvedIds;
     }
   } else if (failedOverThreshold(input)) {
+    // A recovered failure only speaks at the level the user chose; "none"
+    // silences the reason as well as its level (it used to be listed anyway).
     const failLevel = normalizeFailLevel(input.attentionOptions?.commandFailLevel);
-    if (failLevel !== "none" && (level === "none" || rank(failLevel) > rank(level))) level = failLevel;
-    reasons.push("command_failed");
-    evidence = input.failedIds;
+    if (failLevel !== "none") {
+      if (level === "none" || rank(failLevel) > rank(level)) level = failLevel;
+      reasons.push("command_failed");
+      evidence = input.failedIds;
+    }
   } else if (input.errorCount > 0) {
     if (level === "none") level = "medium";
     reasons.push("unresolved_error");
