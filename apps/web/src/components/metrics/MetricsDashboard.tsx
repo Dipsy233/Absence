@@ -128,16 +128,6 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
   const egg = selected ? findEgg(frames, selected.eggPid) : undefined;
   const agent = latest?.agent;
   const cpuCount = latest?.host.cpuCount ?? 1;
-  // The egg's own process row in the newest frame: threads, handles and IO live
-  // there (they are per process, not persisted per series).
-  const details = useMemo(() => {
-    if (!selected) return undefined;
-    for (let i = frames.length - 1; i >= 0; i--) {
-      const row = frames[i]!.processes.find((entry) => entry.eggPid === selected.eggPid);
-      if (row) return row;
-    }
-    return undefined;
-  }, [frames, version, selected]);
 
   const agentAvgCpu = agent?.avgCpuCoresSession ?? primary.reduce((sum, entry) => sum + entry.avgCpuCoresSession, 0);
   const agentAvgMem = agent?.avgRssBytesSession ?? primary.reduce((sum, entry) => sum + entry.avgRssBytesSession, 0);
@@ -276,21 +266,6 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
               </span>
               <span>
                 {t("status")}: {selected ? (eggStatus === "running" ? t("running") : t("exited")) : t("Agent")}
-              </span>
-              {/* Threads, handles and IO come from the native pass: the
-                  helper reads them off handles it already holds. They are not
-                  persisted, so a historical range has none. */}
-              <span>
-                {t("threads")}: {details?.threads ?? "—"}
-              </span>
-              <span>
-                {t("handles")}: {details?.handles ?? "—"}
-              </span>
-              <span>
-                {t("IO read")}: {details?.ioReadBytes !== undefined ? formatBytes(details.ioReadBytes) : "—"}
-              </span>
-              <span>
-                {t("IO write")}: {details?.ioWriteBytes !== undefined ? formatBytes(details.ioWriteBytes) : "—"}
               </span>
             </div>
           </div>
