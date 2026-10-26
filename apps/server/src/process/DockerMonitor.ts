@@ -58,6 +58,12 @@ const MAX_RESTARTS = 5;
 const RESTART_DELAY_MS = 500;
 /** A `docker events` that exits this fast after a clean spawn never really watched. */
 const START_GRACE_MS = 3_000;
+/**
+ * Older than this, a cached reading is a frozen number rather than a
+ * measurement: the stats stream reports about once a second, so ten quiet
+ * seconds mean the stream is down.
+ */
+const STATS_STALE_MS = 10_000;
 
 export class DockerMonitor {
   private static instance?: DockerMonitor;
@@ -80,6 +86,9 @@ export class DockerMonitor {
   private restarts = 0;
   private restartTimer?: NodeJS.Timeout;
   private readonly resources = new Map<string, ContainerResource & { at: number }>();
+  /** Restart bookkeeping for the stats stream, same shape as the events stream. */
+  private statsRestarts = 0;
+  private statsRestartTimer?: NodeJS.Timeout;
 
   get available(): boolean {
     return this.statusValue === "watching";
@@ -148,10 +157,18 @@ export class DockerMonitor {
     return out;
   }
 
-  /** The stats stream's latest counters for one container, when it has any. */
+  /**
+   * The stats stream's latest counters for one container, when it has any.
+   *
+   * "Latest" is enforced: a reading older than `STATS_STALE_MS` means the
+   * stream is down, and a stale value is a frozen lie rather than a
+   * measurement — the caller gets nothing, and the egg drops out of the
+   * metrics frame until real data resumes.
+   */
   resourceOf(containerId: string): ContainerResource | undefined {
     const entry = this.resources.get(containerId);
     if (!entry) return undefined;
+    if (Date.now() - entry.at > STATS_STALE_MS) return undefined;
     return { cpuSeconds: entry.cpuSeconds, rssBytes: entry.rssBytes };
   }
 
@@ -159,6 +176,8 @@ export class DockerMonitor {
     this.disposed = true;
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = undefined;
+    if (this.statsRestartTimer) clearTimeout(this.statsRestartTimer);
+    this.statsRestartTimer = undefined;
     this.eventsChild?.kill();
     this.statsChild?.kill();
     this.eventsChild = undefined;
@@ -270,6 +289,9 @@ export class DockerMonitor {
     const at = timeNano ? Math.floor(timeNano / 1e6) : Date.now();
 
     if (action === "start" || action === "restart") {
+      // A new container lifetime is also a fresh stats-stream budget: whatever
+      // happened to the last child, this start is worth a new attempt.
+      this.statsRestarts = 0;
       this.ensureStats();
       this.emitter.emit("container", {
         kind: "start",
@@ -301,6 +323,8 @@ export class DockerMonitor {
   /**
    * The stats stream is only worth its own process while something is actually
    * running; the first container start opens it, and it stops with the monitor.
+   * When it dies it is restarted, like the events stream — a running container
+   * whose counters went quiet must not stay quiet.
    */
   private ensureStats(): void {
     if (this.statsChild || this.disposed || !this.command) return;
@@ -325,8 +349,25 @@ export class DockerMonitor {
 
     child.on("exit", () => {
       this.statsChild = undefined;
-      // The stream ends when the daemon goes away; a later start reopens it.
+      if (this.disposed) return;
+      this.scheduleStatsRestart();
     });
+  }
+
+  private scheduleStatsRestart(): void {
+    if (this.statsRestartTimer !== undefined) return;
+    if (this.statsRestarts >= MAX_RESTARTS) {
+      process.stderr.write(
+        "[docker] stats stream kept dying; container metrics pause until the next container starts\n",
+      );
+      return;
+    }
+    this.statsRestarts += 1;
+    this.statsRestartTimer = setTimeout(() => {
+      this.statsRestartTimer = undefined;
+      if (this.disposed || !this.command) return;
+      this.ensureStats();
+    }, RESTART_DELAY_MS);
   }
 
   private handleStatsLine(line: string): void {
@@ -346,6 +387,9 @@ export class DockerMonitor {
     const dt = previous ? Math.min(120, Math.max(0, (now - previous.at) / 1000)) : 0;
     const cpuSeconds = (previous?.cpuSeconds ?? 0) + (cpuPercent / 100) * dt;
     this.resources.set(containerId, { cpuSeconds, rssBytes, at: now });
+    // A line that parsed and named a container is proof the stream is healthy:
+    // the restart budget is for consecutive failures, not for lifetime totals.
+    this.statsRestarts = 0;
   }
 
   private scheduleRestart(): void {

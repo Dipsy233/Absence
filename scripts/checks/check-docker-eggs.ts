@@ -79,6 +79,11 @@ async function main(): Promise<void> {
   const eggs = new DockerEggs(watcher, (payload) => payloads.push(payload));
   // The wiring a SessionStore does: daemon events feed the session's eggs.
   const unsubDocker = docker.onContainer((event) => eggs.onContainerEvent(event));
+  // The full container id of the check's own container, as the stats stream keys it.
+  let startedContainerId: string | undefined;
+  const unsubTap = docker.onContainer((event) => {
+    if (event.name === CONTAINER && event.kind === "start") startedContainerId = event.containerId;
+  });
 
   // Adopt whatever is running first; our container is not among it yet.
   await eggs.adopt();
@@ -140,6 +145,24 @@ async function main(): Promise<void> {
   check(
     "the container is a metrics target",
     targets.some((target) => target.rootPid === startEgg?.pid && target.kind === "primary" && target.status === "running"),
+  );
+
+  // --- the stats stream is supervised: a killed child respawns, and the
+  // readings resume fresh instead of freezing at the last value. An idle
+  // container integrates ~0 CPU, so the assertion watches the freshness of
+  // the underlying reading, not its magnitude. ---
+  const cache = (docker as unknown as { resources: Map<string, { at: number }> }).resources;
+  const preKillAt = cache.get(startedContainerId)?.at;
+  (docker as unknown as { statsChild?: { kill(): void } }).statsChild?.kill();
+  await sleep(6_000);
+  const postKillAt = cache.get(startedContainerId)?.at;
+  const fresh = postKillAt !== undefined && Date.now() - postKillAt < 6_000;
+  check(
+    "a killed stats stream respawns and resumes fresh readings",
+    fresh && (preKillAt === undefined || postKillAt! > preKillAt),
+    preKillAt && postKillAt
+      ? `last line ${((Date.now() - postKillAt) / 1000).toFixed(1)}s ago (was ${(Date.now() - preKillAt).toFixed(0) >= 5_000 ? "stale" : "fresh"})`
+      : "(no readings)",
   );
 
   // Stop the container; the die event carries the real exit code.
@@ -281,6 +304,7 @@ async function main(): Promise<void> {
 
   eggs.dispose();
   unsubDocker();
+  unsubTap();
   watcher.stop();
   monitor.dispose();
   docker.dispose();
