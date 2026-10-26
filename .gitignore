@@ -10,6 +10,11 @@ node_modules/
 # live elsewhere.
 .playwright-cli/
 
+# Local editor / agent-tool state (VS Code workspace settings, plan scratch
+# files). Per-machine, never part of a build.
+.vscode/
+.zcode/
+
 # All build output lives under the repo-root dist/ (git ignored):
 #   dist/web                    the built UI (apps/web/vite.config.ts)
 #   dist/desktop/build          the server bundle + staged prod node_modules
