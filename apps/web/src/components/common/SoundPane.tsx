@@ -33,8 +33,6 @@ function ChimeSwitches() {
   const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
   const volume = useSettingsStore((s) => s.soundVolume);
   const setVolume = useSettingsStore((s) => s.setSoundVolume);
-  const lowAttention = useSettingsStore((s) => s.soundLowAttention);
-  const setLowAttention = useSettingsStore((s) => s.setSoundLowAttention);
   const complete = useSettingsStore((s) => s.soundComplete);
   const setComplete = useSettingsStore((s) => s.setSoundComplete);
   const approval = useSettingsStore((s) => s.soundApproval);
@@ -74,13 +72,6 @@ function ChimeSwitches() {
       <div className={`mt-1 flex flex-wrap items-center gap-x-3 gap-y-1${off}`}>
         <Switch label={t("run finished")} checked={complete} disabled={!soundEnabled} onChange={setComplete} />
         <Switch label={t("approval waiting")} checked={approval} disabled={!soundEnabled} onChange={setApproval} />
-        <Switch
-          label={t("also at low")}
-          title={t("Low is where most runs sit for harmless reasons, so a step into low is silent by default.")}
-          checked={lowAttention}
-          disabled={!soundEnabled}
-          onChange={setLowAttention}
-        />
       </div>
     </div>
   );

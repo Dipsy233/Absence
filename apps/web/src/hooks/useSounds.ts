@@ -7,7 +7,6 @@ import { attentionChimeFor, playApproval, playAttention, playComplete, startSoun
 import { memoBuildHistory } from "../lib/history";
 import { buildRunFacts, renderLive } from "../lib/report";
 import { attentionOptionsNow } from "./useAttentionOptions";
-import { useSettingsStore } from "../stores/settingsStore";
 
 /**
  * Absence's voice, such as it is: three chimes hooked onto the event stream.
@@ -15,7 +14,8 @@ import { useSettingsStore } from "../stores/settingsStore";
  * - **attention change** — the live Human-attention level moved across a
  *   threshold (into, or out of, medium/high). Driven from a live reduction of
  *   the current run, not from the report overlay, so it works while the report
- *   is closed. A step into *low* stays silent unless the user asked for it.
+ *   is closed. A step into *low* stays silent: low is where most runs sit for
+ *   harmless reasons.
  * - **approval waiting** — the runtime raised an approval prompt and is blocked
  *   on the user's decision. Rung once per approval id, because the agent cannot
  *   make progress without an answer and the user may be looking elsewhere.
@@ -103,7 +103,7 @@ export function useSounds(): void {
 
 /** Ring the chime a level change calls for (see `attentionChimeFor`). */
 function playForLevel(previous: AttentionLevel, level: AttentionLevel): void {
-  const chime = attentionChimeFor(previous, level, useSettingsStore.getState().soundLowAttention);
+  const chime = attentionChimeFor(previous, level);
   if (chime) playAttention(chime);
 }
 

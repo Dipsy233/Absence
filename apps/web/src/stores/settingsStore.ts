@@ -100,12 +100,6 @@ export interface Settings {
   soundEnabled: boolean;
   /** Chime volume, 0–100 (default 80). */
   soundVolume: number;
-  /**
-   * Ring for a *low* attention change too (default off). Low is the level most
-   * runs sit at for harmless reasons (a lockfile next door), so it is silent
-   * until asked for.
-   */
-  soundLowAttention: boolean;
   /** Ring when a run finishes (default on). */
   soundComplete: boolean;
   /** Ring when the runtime blocks on an approval (default on). */
@@ -139,7 +133,6 @@ const DEFAULTS: Settings = {
   commandRetryLoopLevel: "medium",
   soundEnabled: true,
   soundVolume: 80,
-  soundLowAttention: false,
   soundComplete: true,
   soundApproval: true,
 };
@@ -180,7 +173,6 @@ export function normalizeSettings(parsed: Partial<Settings>): Settings {
     commandRetryLoopLevel: normalizeLevel(parsed.commandRetryLoopLevel, DEFAULTS.commandRetryLoopLevel),
     soundEnabled: parsed.soundEnabled ?? DEFAULTS.soundEnabled,
     soundVolume: normalizeVolume(parsed.soundVolume),
-    soundLowAttention: parsed.soundLowAttention ?? DEFAULTS.soundLowAttention,
     soundComplete: parsed.soundComplete ?? DEFAULTS.soundComplete,
     soundApproval: parsed.soundApproval ?? DEFAULTS.soundApproval,
   };
@@ -292,7 +284,6 @@ interface SettingsStore extends Settings {
   setCommandRetryLoopLevel: (value: CommandFailLevel) => void;
   setSoundEnabled: (value: boolean) => void;
   setSoundVolume: (value: number) => void;
-  setSoundLowAttention: (value: boolean) => void;
   setSoundComplete: (value: boolean) => void;
   setSoundApproval: (value: boolean) => void;
   reset: () => void;
@@ -345,7 +336,6 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   setCommandRetryLoopLevel: (value) => set((s) => persistIt(s, { commandRetryLoopLevel: normalizeLevel(value, DEFAULTS.commandRetryLoopLevel) })),
   setSoundEnabled: (value) => set((s) => persistIt(s, { soundEnabled: value })),
   setSoundVolume: (value) => set((s) => persistIt(s, { soundVolume: normalizeVolume(value) })),
-  setSoundLowAttention: (value) => set((s) => persistIt(s, { soundLowAttention: value })),
   setSoundComplete: (value) => set((s) => persistIt(s, { soundComplete: value })),
   setSoundApproval: (value) => set((s) => persistIt(s, { soundApproval: value })),
   reset: () => set((s) => persistIt(s, DEFAULTS)),

@@ -13,34 +13,27 @@ import { attentionChimeFor } from "../../apps/web/src/lib/sounds";
 const LEVELS = ["none", "low", "medium", "high"] as const;
 
 // A. every step up rings at its own urgency.
-check("none → medium rings medium", attentionChimeFor("none", "medium", false) === "medium");
-check("none → high rings high", attentionChimeFor("none", "high", false) === "high");
-check("low → medium rings medium", attentionChimeFor("low", "medium", false) === "medium");
-check("low → high rings high", attentionChimeFor("low", "high", false) === "high");
-check("medium → high rings high", attentionChimeFor("medium", "high", false) === "high");
+check("none → medium rings medium", attentionChimeFor("none", "medium") === "medium");
+check("none → high rings high", attentionChimeFor("none", "high") === "high");
+check("low → medium rings medium", attentionChimeFor("low", "medium") === "medium");
+check("low → high rings high", attentionChimeFor("low", "high") === "high");
+check("medium → high rings high", attentionChimeFor("medium", "high") === "high");
 
-// B. a step into low is silent unless asked for; the chime is the softer one.
-check("none → low is silent by default", attentionChimeFor("none", "low", false) === undefined);
-check("none → low rings when low is enabled", attentionChimeFor("none", "low", true) === "medium");
-check(
-  "medium → low is silent by default",
-  attentionChimeFor("medium", "low", false) === undefined,
-);
-check(
-  "medium → low rings when low is enabled",
-  attentionChimeFor("medium", "low", true) === "medium",
-);
+// B. a step into low is always silent: low is where most runs sit for
+//    harmless reasons, so it never rings.
+check("none → low is silent", attentionChimeFor("none", "low") === undefined);
+check("medium → low is silent", attentionChimeFor("medium", "low") === undefined);
 
 // C. a release out of high is audible, so the user hears the run relax.
-check("high → medium rings medium", attentionChimeFor("high", "medium", false) === "medium");
-check("high → low rings when low is enabled", attentionChimeFor("high", "low", true) === "medium");
-check("high → none rings medium", attentionChimeFor("high", "none", false) === "medium");
+check("high → medium rings medium", attentionChimeFor("high", "medium") === "medium");
+check("high → low rings medium", attentionChimeFor("high", "low") === "medium");
+check("high → none rings medium", attentionChimeFor("high", "none") === "medium");
 
 // D. a release that never touched high stays quiet, and so does no change.
-check("medium → none is silent", attentionChimeFor("medium", "none", false) === undefined);
-check("low → none is silent", attentionChimeFor("low", "none", false) === undefined);
+check("medium → none is silent", attentionChimeFor("medium", "none") === undefined);
+check("low → none is silent", attentionChimeFor("low", "none") === undefined);
 for (const level of LEVELS) {
-  check(`${level} → ${level} is silent`, attentionChimeFor(level, level, true) === undefined);
+  check(`${level} → ${level} is silent`, attentionChimeFor(level, level) === undefined);
 }
 
 finish();

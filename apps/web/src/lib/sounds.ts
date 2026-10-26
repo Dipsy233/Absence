@@ -160,20 +160,18 @@ function playStored(event: string): boolean {
  * Which chime an attention change should ring, or undefined for none.
  *
  * Pure, so the rules can be pinned without an AudioContext. Medium and high
- * always ring; a step *into* low rings only when the user asked for it
- * (`lowEnabled`) — low is where most runs sit for harmless reasons — and a
- * release out of high always rings, so the user hears the run relax.
+ * always ring; a step *into* low never does — low is where most runs sit for
+ * harmless reasons — and a release out of high always rings, so the user hears
+ * the run relax.
  */
 export function attentionChimeFor(
   previous: "none" | "low" | "medium" | "high",
   level: "none" | "low" | "medium" | "high",
-  lowEnabled: boolean,
 ): "medium" | "high" | undefined {
   if (level === previous) return undefined;
   if (level === "high") return "high";
   if (level === "medium") return "medium";
-  if (level === "low") return lowEnabled ? "medium" : undefined;
-  // Back to none: only a release from high is audible.
+  // Back to low or none: only a release from high is audible.
   return previous === "high" ? "medium" : undefined;
 }
 
