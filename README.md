@@ -238,6 +238,10 @@ The `⚙ settings` button in the session bar opens a four-pane dialog:
 - **Sound sets** — upload an audio file per event (`attention` / `complete` /
   `approval`) to replace the synthesised chime; events without a file keep the
   built-in tone. `Apply` activates the set; `Default` restores the synth chimes.
+  The **chimes** switch below is the master mute, **volume** scales every chime
+  (0–100), `run finished` / `approval waiting` can be switched off separately,
+  and **also at low** makes a step into *low* audible — it is silent by default,
+  because most runs sit at low for harmless reasons.
 - **Agent Eggs filter profiles (right)** — a small file manager over named
   profiles of helper command names; the classifier treats a listed name as a
   tool (a `force` option extends this to the command's declared subject, e.g.

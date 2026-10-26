@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../lib/i18n";
+import { useSettingsStore } from "../../stores/settingsStore";
 import {
   activateSoundSet,
   createSoundSet,
@@ -24,6 +25,93 @@ const EVENT_LABELS: Record<string, string> = {
 };
 
 const AUDIO_RE = /\.(mp3|wav|ogg|oga|m4a|aac|flac|webm|mp4)$/i;
+
+/** Which events ring, and how loudly — independent of which set is active. */
+function ChimeSwitches() {
+  const t = useT();
+  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
+  const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
+  const volume = useSettingsStore((s) => s.soundVolume);
+  const setVolume = useSettingsStore((s) => s.setSoundVolume);
+  const lowAttention = useSettingsStore((s) => s.soundLowAttention);
+  const setLowAttention = useSettingsStore((s) => s.setSoundLowAttention);
+  const complete = useSettingsStore((s) => s.soundComplete);
+  const setComplete = useSettingsStore((s) => s.setSoundComplete);
+  const approval = useSettingsStore((s) => s.soundApproval);
+  const setApproval = useSettingsStore((s) => s.setSoundApproval);
+
+  const box = "accent-[rgb(var(--desk-accent))]";
+  const off = soundEnabled ? "" : " opacity-40";
+
+  return (
+    <div className="mt-2 shrink-0 rounded border border-desk-line/70 px-2 py-1.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <label className="flex items-center gap-1.5 text-[11px] text-desk-dim">
+          <input
+            type="checkbox"
+            checked={soundEnabled}
+            onChange={(e) => setSoundEnabled(e.target.checked)}
+            className={box}
+          />
+          <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">{t("chimes")}</span>
+        </label>
+        <label className={`flex items-center gap-1.5 text-[11px] text-desk-dim${off}`}>
+          <span className="font-mono text-[10px] uppercase tracking-wide">{t("volume")}</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={volume}
+            disabled={!soundEnabled}
+            onChange={(e) => setVolume(Number(e.target.value))}
+            className="w-24 accent-[rgb(var(--desk-accent))]"
+            title={t("Chime volume")}
+          />
+          <span className="w-8 shrink-0 text-right font-mono text-[10px] text-desk-dim">{volume}</span>
+        </label>
+      </div>
+      <div className={`mt-1 flex flex-wrap items-center gap-x-3 gap-y-1${off}`}>
+        <Switch label={t("run finished")} checked={complete} disabled={!soundEnabled} onChange={setComplete} />
+        <Switch label={t("approval waiting")} checked={approval} disabled={!soundEnabled} onChange={setApproval} />
+        <Switch
+          label={t("also at low")}
+          title={t("Low is where most runs sit for harmless reasons, so a step into low is silent by default.")}
+          checked={lowAttention}
+          disabled={!soundEnabled}
+          onChange={setLowAttention}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Switch({
+  label,
+  title,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  title?: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-[11px] text-desk-dim" title={title}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="accent-[rgb(var(--desk-accent))] disabled:opacity-40"
+      />
+      <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">{label}</span>
+    </label>
+  );
+}
 
 /**
  * The sound-set manager (a pane of the Settings dialog), shaped like the
@@ -340,6 +428,8 @@ export function SoundPane() {
         className="hidden"
         onChange={(e) => void onFileChosen(e.target.files?.[0])}
       />
+
+      <ChimeSwitches />
 
       <div className="mt-3 flex shrink-0 items-center justify-end gap-2">
         {message ? (

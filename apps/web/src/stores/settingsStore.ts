@@ -87,6 +87,23 @@ export interface Settings {
   commandRetryLoopThreshold: number;
   /** The attention level a command retry loop raises (default "medium"). */
   commandRetryLoopLevel: CommandFailLevel;
+
+  /* ── Chimes ──────────────────────────────────────────────────────────── */
+
+  /** Master switch for every chime (default on). */
+  soundEnabled: boolean;
+  /** Chime volume, 0–100 (default 80). */
+  soundVolume: number;
+  /**
+   * Ring for a *low* attention change too (default off). Low is the level most
+   * runs sit at for harmless reasons (a lockfile next door), so it is silent
+   * until asked for.
+   */
+  soundLowAttention: boolean;
+  /** Ring when a run finishes (default on). */
+  soundComplete: boolean;
+  /** Ring when the runtime blocks on an approval (default on). */
+  soundApproval: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -113,39 +130,59 @@ const DEFAULTS: Settings = {
   fileVersionLoopLevel: "medium",
   commandRetryLoopThreshold: 2,
   commandRetryLoopLevel: "medium",
+  soundEnabled: true,
+  soundVolume: 80,
+  soundLowAttention: false,
+  soundComplete: true,
+  soundApproval: true,
 };
+
+/**
+ * Normalise whatever a previous version wrote into a complete `Settings`.
+ *
+ * Exported and pure so the fallbacks can be pinned: every field has to survive
+ * a missing, stale or junk value, and the per-field defaults matter — they are
+ * what a cleared input box restores.
+ */
+export function normalizeSettings(parsed: Partial<Settings>): Settings {
+  return {
+    language: parsed.language === "zh" ? "zh" : "en",
+    theme: parsed.theme ?? DEFAULTS.theme,
+    // Keep only known ids; append anything missing so each rail always renders all panels.
+    railOrder: normalizeIds(parsed.railOrder, RAIL_PANEL_IDS) as RailPanelId[],
+    leftOrder: normalizeIds(parsed.leftOrder, LEFT_PANEL_IDS) as LeftPanelId[],
+    displayInActivity: parsed.displayInActivity ?? DEFAULTS.displayInActivity,
+    collapseChatOnContent: parsed.collapseChatOnContent ?? DEFAULTS.collapseChatOnContent,
+    commandFailThreshold: normalizeThreshold(parsed.commandFailThreshold, DEFAULTS.commandFailThreshold),
+    commandFailLevel: normalizeLevel(parsed.commandFailLevel, DEFAULTS.commandFailLevel),
+    commandStreakThreshold: normalizeThreshold(parsed.commandStreakThreshold, DEFAULTS.commandStreakThreshold),
+    commandStreakLevel: normalizeLevel(parsed.commandStreakLevel, DEFAULTS.commandStreakLevel),
+    activityStallThreshold: normalizeThreshold(parsed.activityStallThreshold, DEFAULTS.activityStallThreshold),
+    activityStallLevel: normalizeLevel(parsed.activityStallLevel, DEFAULTS.activityStallLevel),
+    agentStoppedLevel: normalizeLevel(parsed.agentStoppedLevel, DEFAULTS.agentStoppedLevel),
+    unresolvedErrorLevel: normalizeLevel(parsed.unresolvedErrorLevel, DEFAULTS.unresolvedErrorLevel),
+    processLeftRunningLevel: normalizeLevel(parsed.processLeftRunningLevel, DEFAULTS.processLeftRunningLevel),
+    processLeftRunningMinSeconds: normalizeCount(parsed.processLeftRunningMinSeconds, DEFAULTS.processLeftRunningMinSeconds),
+    processLeftRunningIgnore: normalizeList(parsed.processLeftRunningIgnore),
+    outsideChangeLevel: normalizeLevel(parsed.outsideChangeLevel, DEFAULTS.outsideChangeLevel),
+    outsideChangeIgnore: normalizeList(parsed.outsideChangeIgnore),
+    fileVersionLoopThreshold: normalizeThreshold(parsed.fileVersionLoopThreshold, DEFAULTS.fileVersionLoopThreshold),
+    fileVersionLoopLevel: normalizeLevel(parsed.fileVersionLoopLevel, DEFAULTS.fileVersionLoopLevel),
+    commandRetryLoopThreshold: normalizeThreshold(parsed.commandRetryLoopThreshold, DEFAULTS.commandRetryLoopThreshold),
+    commandRetryLoopLevel: normalizeLevel(parsed.commandRetryLoopLevel, DEFAULTS.commandRetryLoopLevel),
+    soundEnabled: parsed.soundEnabled ?? DEFAULTS.soundEnabled,
+    soundVolume: normalizeVolume(parsed.soundVolume),
+    soundLowAttention: parsed.soundLowAttention ?? DEFAULTS.soundLowAttention,
+    soundComplete: parsed.soundComplete ?? DEFAULTS.soundComplete,
+    soundApproval: parsed.soundApproval ?? DEFAULTS.soundApproval,
+  };
+}
 
 function load(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return DEFAULTS;
-    const parsed = JSON.parse(raw) as Partial<Settings>;
-    return {
-      language: parsed.language === "zh" ? "zh" : "en",
-      theme: parsed.theme ?? DEFAULTS.theme,
-      // Keep only known ids; append anything missing so each rail always renders all panels.
-      railOrder: normalizeIds(parsed.railOrder, RAIL_PANEL_IDS) as RailPanelId[],
-      leftOrder: normalizeIds(parsed.leftOrder, LEFT_PANEL_IDS) as LeftPanelId[],
-      displayInActivity: parsed.displayInActivity ?? DEFAULTS.displayInActivity,
-      collapseChatOnContent: parsed.collapseChatOnContent ?? DEFAULTS.collapseChatOnContent,
-      commandFailThreshold: normalizeThreshold(parsed.commandFailThreshold, DEFAULTS.commandFailThreshold),
-      commandFailLevel: normalizeLevel(parsed.commandFailLevel),
-      commandStreakThreshold: normalizeThreshold(parsed.commandStreakThreshold, DEFAULTS.commandStreakThreshold),
-      commandStreakLevel: normalizeLevel(parsed.commandStreakLevel),
-      activityStallThreshold: normalizeThreshold(parsed.activityStallThreshold, DEFAULTS.activityStallThreshold),
-      activityStallLevel: normalizeLevel(parsed.activityStallLevel),
-      agentStoppedLevel: normalizeLevel(parsed.agentStoppedLevel),
-      unresolvedErrorLevel: normalizeLevel(parsed.unresolvedErrorLevel),
-      processLeftRunningLevel: normalizeLevel(parsed.processLeftRunningLevel),
-      processLeftRunningMinSeconds: normalizeCount(parsed.processLeftRunningMinSeconds, DEFAULTS.processLeftRunningMinSeconds),
-      processLeftRunningIgnore: normalizeList(parsed.processLeftRunningIgnore),
-      outsideChangeLevel: normalizeLevel(parsed.outsideChangeLevel),
-      outsideChangeIgnore: normalizeList(parsed.outsideChangeIgnore),
-      fileVersionLoopThreshold: normalizeThreshold(parsed.fileVersionLoopThreshold, DEFAULTS.fileVersionLoopThreshold),
-      fileVersionLoopLevel: normalizeLevel(parsed.fileVersionLoopLevel),
-      commandRetryLoopThreshold: normalizeThreshold(parsed.commandRetryLoopThreshold, DEFAULTS.commandRetryLoopThreshold),
-      commandRetryLoopLevel: normalizeLevel(parsed.commandRetryLoopLevel),
-    };
+    return normalizeSettings(JSON.parse(raw) as Partial<Settings>);
   } catch {
     return DEFAULTS;
   }
@@ -169,6 +206,12 @@ function normalizeCount(value: unknown, fallback: number): number {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+/** A 0–100 volume, clamped; anything unusable falls back to the default. */
+function normalizeVolume(value: unknown): number {
+  const n = typeof value === "number" ? Math.round(value) : NaN;
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : DEFAULTS.soundVolume;
+}
+
 /** A string list, trimmed, with blanks and duplicates dropped. */
 function normalizeList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -183,12 +226,23 @@ function normalizeList(value: unknown): string[] {
 
 const FAIL_LEVELS: CommandFailLevel[] = ["none", "low", "medium", "high"];
 
-function normalizeLevel(value: unknown): CommandFailLevel {
-  return FAIL_LEVELS.includes(value as CommandFailLevel) ? (value as CommandFailLevel) : DEFAULTS.commandFailLevel;
+/**
+ * A level, or `fallback` when the value is not one of them.
+ *
+ * The fallback is per field for the same reason the thresholds' is: a junk
+ * `outsideChangeLevel` should restore low, not the failed-command default — and
+ * the two differ, so sharing one silently changed what a corrupt entry meant.
+ */
+function normalizeLevel(value: unknown, fallback: CommandFailLevel): CommandFailLevel {
+  return FAIL_LEVELS.includes(value as CommandFailLevel) ? (value as CommandFailLevel) : fallback;
 }
 
 function normalizeIds(order: unknown, ids: string[]): string[] {
-  const list = Array.isArray(order) ? order.filter((id): id is string => ids.includes(id)) : [];
+  // De-duplicate as well as filter: a repeated id in a stale entry would render
+  // the same panel twice and hide another.
+  const list = Array.isArray(order)
+    ? [...new Set(order.filter((id): id is string => typeof id === "string" && ids.includes(id)))]
+    : [];
   for (const id of ids) if (!list.includes(id)) list.push(id);
   return list;
 }
@@ -227,6 +281,11 @@ interface SettingsStore extends Settings {
   setFileVersionLoopLevel: (value: CommandFailLevel) => void;
   setCommandRetryLoopThreshold: (value: number) => void;
   setCommandRetryLoopLevel: (value: CommandFailLevel) => void;
+  setSoundEnabled: (value: boolean) => void;
+  setSoundVolume: (value: number) => void;
+  setSoundLowAttention: (value: boolean) => void;
+  setSoundComplete: (value: boolean) => void;
+  setSoundApproval: (value: boolean) => void;
   reset: () => void;
 }
 
@@ -245,17 +304,17 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   setCollapseChatOnContent: (value) => set((s) => persistIt(s, { collapseChatOnContent: value })),
   setCommandFailThreshold: (value) =>
     set((s) => persistIt(s, { commandFailThreshold: normalizeThreshold(value, DEFAULTS.commandFailThreshold) })),
-  setCommandFailLevel: (value) => set((s) => persistIt(s, { commandFailLevel: normalizeLevel(value) })),
+  setCommandFailLevel: (value) => set((s) => persistIt(s, { commandFailLevel: normalizeLevel(value, DEFAULTS.commandFailLevel) })),
   setCommandStreakThreshold: (value) =>
     set((s) => persistIt(s, { commandStreakThreshold: normalizeThreshold(value, DEFAULTS.commandStreakThreshold) })),
-  setCommandStreakLevel: (value) => set((s) => persistIt(s, { commandStreakLevel: normalizeLevel(value) })),
+  setCommandStreakLevel: (value) => set((s) => persistIt(s, { commandStreakLevel: normalizeLevel(value, DEFAULTS.commandStreakLevel) })),
   setActivityStallThreshold: (value) =>
     set((s) => persistIt(s, { activityStallThreshold: normalizeThreshold(value, DEFAULTS.activityStallThreshold) })),
-  setActivityStallLevel: (value) => set((s) => persistIt(s, { activityStallLevel: normalizeLevel(value) })),
-  setAgentStoppedLevel: (value) => set((s) => persistIt(s, { agentStoppedLevel: normalizeLevel(value) })),
-  setUnresolvedErrorLevel: (value) => set((s) => persistIt(s, { unresolvedErrorLevel: normalizeLevel(value) })),
+  setActivityStallLevel: (value) => set((s) => persistIt(s, { activityStallLevel: normalizeLevel(value, DEFAULTS.activityStallLevel) })),
+  setAgentStoppedLevel: (value) => set((s) => persistIt(s, { agentStoppedLevel: normalizeLevel(value, DEFAULTS.agentStoppedLevel) })),
+  setUnresolvedErrorLevel: (value) => set((s) => persistIt(s, { unresolvedErrorLevel: normalizeLevel(value, DEFAULTS.unresolvedErrorLevel) })),
   setProcessLeftRunningLevel: (value) =>
-    set((s) => persistIt(s, { processLeftRunningLevel: normalizeLevel(value) })),
+    set((s) => persistIt(s, { processLeftRunningLevel: normalizeLevel(value, DEFAULTS.processLeftRunningLevel) })),
   setProcessLeftRunningMinSeconds: (value) =>
     set((s) =>
       persistIt(s, {
@@ -264,16 +323,21 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     ),
   setProcessLeftRunningIgnore: (value) =>
     set((s) => persistIt(s, { processLeftRunningIgnore: normalizeList(value) })),
-  setOutsideChangeLevel: (value) => set((s) => persistIt(s, { outsideChangeLevel: normalizeLevel(value) })),
+  setOutsideChangeLevel: (value) => set((s) => persistIt(s, { outsideChangeLevel: normalizeLevel(value, DEFAULTS.outsideChangeLevel) })),
   setOutsideChangeIgnore: (value) => set((s) => persistIt(s, { outsideChangeIgnore: normalizeList(value) })),
   setFileVersionLoopThreshold: (value) =>
     set((s) => persistIt(s, { fileVersionLoopThreshold: normalizeThreshold(value, DEFAULTS.fileVersionLoopThreshold) })),
-  setFileVersionLoopLevel: (value) => set((s) => persistIt(s, { fileVersionLoopLevel: normalizeLevel(value) })),
+  setFileVersionLoopLevel: (value) => set((s) => persistIt(s, { fileVersionLoopLevel: normalizeLevel(value, DEFAULTS.fileVersionLoopLevel) })),
   setCommandRetryLoopThreshold: (value) =>
     set((s) =>
       persistIt(s, { commandRetryLoopThreshold: normalizeThreshold(value, DEFAULTS.commandRetryLoopThreshold) }),
     ),
-  setCommandRetryLoopLevel: (value) => set((s) => persistIt(s, { commandRetryLoopLevel: normalizeLevel(value) })),
+  setCommandRetryLoopLevel: (value) => set((s) => persistIt(s, { commandRetryLoopLevel: normalizeLevel(value, DEFAULTS.commandRetryLoopLevel) })),
+  setSoundEnabled: (value) => set((s) => persistIt(s, { soundEnabled: value })),
+  setSoundVolume: (value) => set((s) => persistIt(s, { soundVolume: normalizeVolume(value) })),
+  setSoundLowAttention: (value) => set((s) => persistIt(s, { soundLowAttention: value })),
+  setSoundComplete: (value) => set((s) => persistIt(s, { soundComplete: value })),
+  setSoundApproval: (value) => set((s) => persistIt(s, { soundApproval: value })),
   reset: () => set((s) => persistIt(s, DEFAULTS)),
 }));
 

@@ -3,10 +3,11 @@ import type { AbsenceEvent } from "@absence/core";
 import { isAgentBusy } from "@absence/core";
 import type { AttentionLevel } from "../types/report";
 import { useEvents, useSessionStore } from "../stores/sessionStore";
-import { playApproval, playAttention, playComplete, startSoundCoveragePolling } from "../lib/sounds";
+import { attentionChimeFor, playApproval, playAttention, playComplete, startSoundCoveragePolling } from "../lib/sounds";
 import { memoBuildHistory } from "../lib/history";
 import { buildRunFacts, renderLive } from "../lib/report";
 import { attentionOptionsNow } from "./useAttentionOptions";
+import { useSettingsStore } from "../stores/settingsStore";
 
 /**
  * Absence's voice, such as it is: three chimes hooked onto the event stream.
@@ -14,7 +15,7 @@ import { attentionOptionsNow } from "./useAttentionOptions";
  * - **attention change** — the live Human-attention level moved across a
  *   threshold (into, or out of, medium/high). Driven from a live reduction of
  *   the current run, not from the report overlay, so it works while the report
- *   is closed.
+ *   is closed. A step into *low* stays silent unless the user asked for it.
  * - **approval waiting** — the runtime raised an approval prompt and is blocked
  *   on the user's decision. Rung once per approval id, because the agent cannot
  *   make progress without an answer and the user may be looking elsewhere.
@@ -76,12 +77,8 @@ export function useSounds(): void {
       attentionTimer.current = undefined;
       lastAttentionAt.current = Date.now();
       const level = liveAttentionLevel(useSessionStore.getState().events);
-      if (
-        level !== prevAttention.current &&
-        (level === "medium" || level === "high" || prevAttention.current === "high")
-      ) {
-        playAttention(level === "high" ? "high" : "medium");
-      }
+      const previous = prevAttention.current;
+      if (level !== previous) playForLevel(previous, level);
       prevAttention.current = level;
     };
     const since = Date.now() - lastAttentionAt.current;
@@ -102,6 +99,12 @@ export function useSounds(): void {
     },
     [],
   );
+}
+
+/** Ring the chime a level change calls for (see `attentionChimeFor`). */
+function playForLevel(previous: AttentionLevel, level: AttentionLevel): void {
+  const chime = attentionChimeFor(previous, level, useSettingsStore.getState().soundLowAttention);
+  if (chime) playAttention(chime);
 }
 
 /**

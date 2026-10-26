@@ -332,6 +332,7 @@ const ZH: Record<string, string> = {
   failed: "失败",
   // attention levels
   low: "低",
+  medium: "中",
   high: "高",
   // attention reasons
   "A command failed": "有命令失败",
@@ -514,6 +515,15 @@ const ZH: Record<string, string> = {
   "Upload a file for {event}": "为 {event} 上传文件",
   upload: "上传",
   "uploading…": "上传中…",
+  // chime switches (sound pane)
+  chimes: "提示音",
+  volume: "音量",
+  "Chime volume": "提示音音量",
+  "run finished": "运行结束",
+  "approval waiting": "等待确认",
+  "also at low": "低等级也响",
+  "Low is where most runs sit for harmless reasons, so a step into low is silent by default.":
+    "多数运行都因无害原因停在低等级,因此默认进入低等级时不发声。",
   "applying…": "应用中…",
   "Use \"{name}\" as the app’s chimes": "把 “{name}” 设为应用的铃声",
   // avatar skin pane

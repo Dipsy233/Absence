@@ -21,6 +21,8 @@ const OFFLINE = [
   "check-eggs.ts",
   "check-classify.ts",
   "check-report.ts",
+  "check-chimes.ts",
+  "check-settings.ts",
   "check-codex.ts",
   "check-codexshell.ts",
   "check-shellenv.ts",

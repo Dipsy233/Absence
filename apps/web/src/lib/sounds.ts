@@ -18,7 +18,13 @@
  * uploaded audio file, served at /sound/<event>. When the active set has a file
  * for an event, that file plays; otherwise the synthesised chime above rings,
  * so a half-finished set still works.
+ *
+ * Which events ring, and how loudly, is the user's call (Settings → REPORT WARN
+ * for the levels that trigger `attention`, Settings → SOUND SETS for the chimes
+ * themselves). Every entry point here is a no-op when its switch is off.
  */
+
+import { useSettingsStore } from "../stores/settingsStore";
 
 let ctx: AudioContext | undefined;
 
@@ -38,12 +44,23 @@ function tone(at: AudioContext, start: number, frequency: number, duration: numb
   const env = at.createGain();
   osc.type = "sine";
   osc.frequency.value = frequency;
+  // The synth gains were tuned by ear at full scale; the user's volume scales
+  // them, so a quiet desk can keep the chimes as a nudge rather than an alarm.
+  const level = gain * volumeScale();
+  if (level <= 0) return;
   env.gain.setValueAtTime(0, at.currentTime + start);
-  env.gain.linearRampToValueAtTime(gain, at.currentTime + start + 0.02);
+  env.gain.linearRampToValueAtTime(level, at.currentTime + start + 0.02);
   env.gain.exponentialRampToValueAtTime(0.0001, at.currentTime + start + duration);
   osc.connect(env).connect(at.destination);
   osc.start(at.currentTime + start);
   osc.stop(at.currentTime + start + duration + 0.05);
+}
+
+/** The master volume as a 0–1 multiplier (0 when chimes are switched off). */
+function volumeScale(): number {
+  const { soundEnabled, soundVolume } = useSettingsStore.getState();
+  if (!soundEnabled) return 0;
+  return Math.min(100, Math.max(0, soundVolume)) / 100;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -122,9 +139,11 @@ function customFileFor(event: string): boolean {
  */
 function playStored(event: string): boolean {
   if (!customFileFor(event)) return false;
+  const volume = volumeScale();
+  if (volume <= 0) return false;
   try {
     const el = new Audio(`/sound/${event}?v=${encodeURIComponent(coverage!.active)}`);
-    el.volume = 1;
+    el.volume = volume;
     void el.play().catch(() => {
       // Autoplay blocked or decode error — fall back to the synth chime.
       playAttentionSynth("medium");
@@ -137,8 +156,30 @@ function playStored(event: string): boolean {
 
 /* ── Public entry points (custom file first, synth fallback) ──────────────── */
 
+/**
+ * Which chime an attention change should ring, or undefined for none.
+ *
+ * Pure, so the rules can be pinned without an AudioContext. Medium and high
+ * always ring; a step *into* low rings only when the user asked for it
+ * (`lowEnabled`) — low is where most runs sit for harmless reasons — and a
+ * release out of high always rings, so the user hears the run relax.
+ */
+export function attentionChimeFor(
+  previous: "none" | "low" | "medium" | "high",
+  level: "none" | "low" | "medium" | "high",
+  lowEnabled: boolean,
+): "medium" | "high" | undefined {
+  if (level === previous) return undefined;
+  if (level === "high") return "high";
+  if (level === "medium") return "medium";
+  if (level === "low") return lowEnabled ? "medium" : undefined;
+  // Back to none: only a release from high is audible.
+  return previous === "high" ? "medium" : undefined;
+}
+
 /** Human attention changed level — urgent when it reached high. */
 export function playAttention(level: "medium" | "high"): void {
+  if (volumeScale() <= 0) return;
   const file = attentionFileFor(level);
   if (file && playStored(file)) return;
   playAttentionSynth(level);
@@ -146,6 +187,7 @@ export function playAttention(level: "medium" | "high"): void {
 
 /** The run finished — a resolved, descending third. */
 export function playComplete(): void {
+  if (!useSettingsStore.getState().soundComplete || volumeScale() <= 0) return;
   if (playStored("complete")) return;
   playCompleteSynth();
 }
@@ -158,6 +200,7 @@ export function playComplete(): void {
  * so a blocked agent announces itself even when the user is looking elsewhere.
  */
 export function playApproval(): void {
+  if (!useSettingsStore.getState().soundApproval || volumeScale() <= 0) return;
   if (playStored("approval")) return;
   playApprovalSynth();
 }
