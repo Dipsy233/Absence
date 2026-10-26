@@ -187,11 +187,35 @@ parsing:
 
 Human attention watches for the agent defeating itself: a **file version loop**
 (a newer version byte-identical to an earlier one — an edit undone) and a
-**command retry loop** (the same command failed twice or more) raise attention
-to *medium*; a change **outside the project** to *low*; an egg **still running**
-after the run ends to *high*. The live attention level also sounds a chime when
-it crosses medium/high, an approval prompt rings when the runtime blocks on your
-decision, and a run-complete chime sounds when a run finishes.
+**command retry loop** (the same command failing over and over); a **failure
+streak** (commands failing back-to-back with no success between them, 3 by
+default) raises `command_failure_streak`; an egg **still running** after the run
+ends, an **unrecovered failure** and a run that **ended in error** are *high*.
+
+**Every reason is individually configurable** in the settings dialog's REPORT
+WARN pane, in five groups:
+
+- **failed commands** — the per-run failure count that raises `command_failed`
+  (default 5), the back-to-back streak count (default 3), and the
+  no-activity window for `activity_stalled` (default 3600 s), each with its
+  own level;
+- **errors** — `unresolved_error` (default high) and `agent_stopped`
+  (default high);
+- **leftover eggs** — `process_left_running`'s level (default high), a minimum
+  lifetime in seconds (0 reports every egg; a longer one skips helpers that were
+  about to exit), and a "never report" list matched against the process name or
+  its command line;
+- **outside the project** — `outside_change`'s level (default low) and ignore
+  globs (`*` within a folder, `**` across them; a pattern with no slash also
+  matches the file name, so `*.log` means every log next door);
+- **loops** — the file-version repeat count (default 1) and level, and the
+  command-retry repeat count (default 2) and level.
+
+A level of *silent* drops that reason from the report entirely (the chimes
+follow the level that actually fires, so it goes quiet too). The live attention
+level also sounds a chime when it crosses medium/high, an approval prompt rings
+when the runtime blocks on your decision, and a run-complete chime sounds when a
+run finishes.
 
 ## Personalization
 

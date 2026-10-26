@@ -8,7 +8,7 @@ import { buildRunFacts, renderLive, renderRun } from "../../lib/report";
 import { formatOffset } from "../../lib/format";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useSelectedRun } from "../../hooks/useSelectedRun";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { useUiStore } from "../../stores/uiStore";
 import { useT } from "../../lib/i18n";
 import { StageItemView } from "./StageItemView";
@@ -35,28 +35,13 @@ export function ReportOverlay() {
   const { run, events, loading } = useSelectedRun();
   const status = useSessionStore((s) => s.agent.status);
   const reportOpen = useUiStore((s) => s.reportOpen);
-  const commandFailThreshold = useSettingsStore((s) => s.commandFailThreshold);
-  const commandFailLevel = useSettingsStore((s) => s.commandFailLevel);
-  const commandStreakThreshold = useSettingsStore((s) => s.commandStreakThreshold);
-  const commandStreakLevel = useSettingsStore((s) => s.commandStreakLevel);
-  const activityStallThreshold = useSettingsStore((s) => s.activityStallThreshold);
-  const activityStallLevel = useSettingsStore((s) => s.activityStallLevel);
   const toggleReport = useUiStore((s) => s.toggleReport);
   const selectRun = useUiStore((s) => s.selectRun);
   const focusEvent = useUiStore((s) => s.focusEvent);
 
-  // Skip the reduction while the layer is closed so live events stay cheap.
-  const attentionOptions = useMemo(
-    () => ({
-      commandFailThreshold,
-      commandFailLevel,
-      commandStreakThreshold,
-      commandStreakLevel,
-      activityStallThreshold,
-      activityStallLevel,
-    }),
-    [commandFailThreshold, commandFailLevel, commandStreakThreshold, commandStreakLevel, activityStallThreshold, activityStallLevel],
-  );
+  // Every configurable attention reason in one object; the chime hook reads the
+  // same one, so the report and the sound never disagree.
+  const attentionOptions = useAttentionOptions();
   const facts = useMemo(
     () =>
       reportOpen && run && !loading

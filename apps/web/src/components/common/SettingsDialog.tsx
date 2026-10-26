@@ -375,117 +375,316 @@ function AppearancePane() {
   );
 }
 
-/**
- * Failed-command warning controls: how many commands must fail in one run
- * before the Absence Report raises `command_failed`, and at what level.
- */
-function CommandFailSettings() {
+/* ══════════════════════════════════════════════════════════════════════
+   Report warning controls.
+
+   One row per reason the Absence Report can raise, each with the level it
+   should ring at — "silent" keeps that reason off the report entirely. The
+   reasons that are noisy in ordinary work (leftover eggs, outside changes,
+   loops) also take a filter, so the dev server the whole session revolves
+   around or a lockfile next door stops being news.
+   ══════════════════════════════════════════════════════════════════════ */
+
+function LevelSelect({
+  value,
+  onChange,
+  title,
+}: {
+  value: CommandFailLevel;
+  onChange: (value: CommandFailLevel) => void;
+  title: string;
+}) {
   const t = useT();
-  const threshold = useSettingsStore((s) => s.commandFailThreshold);
-  const setThreshold = useSettingsStore((s) => s.setCommandFailThreshold);
-  const level = useSettingsStore((s) => s.commandFailLevel);
-  const setLevel = useSettingsStore((s) => s.setCommandFailLevel);
-  const streakThreshold = useSettingsStore((s) => s.commandStreakThreshold);
-  const setStreakThreshold = useSettingsStore((s) => s.setCommandStreakThreshold);
-  const streakLevel = useSettingsStore((s) => s.commandStreakLevel);
-  const setStreakLevel = useSettingsStore((s) => s.setCommandStreakLevel);
-  const stallThreshold = useSettingsStore((s) => s.activityStallThreshold);
-  const setStallThreshold = useSettingsStore((s) => s.setActivityStallThreshold);
-  const stallLevel = useSettingsStore((s) => s.activityStallLevel);
-  const setStallLevel = useSettingsStore((s) => s.setActivityStallLevel);
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as CommandFailLevel)}
+      title={title}
+      className="w-24 shrink-0 rounded border border-desk-line bg-desk-panel2 px-1.5 py-0.5 font-mono text-[11px] text-desk-ink focus:border-desk-amber/60 focus:outline-none"
+    >
+      {FAIL_LEVELS.map((id) => (
+        <option key={id} value={id}>
+          {t(FAIL_LEVEL_TEXT[id])}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function NumberField({
+  value,
+  onChange,
+  min,
+  max,
+  title,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  min: number;
+  max: number;
+  title: string;
+}) {
+  return (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      title={title}
+      className="w-20 shrink-0 rounded border border-desk-line bg-desk-panel2 px-1.5 py-0.5 font-mono text-[11px] text-desk-ink focus:border-desk-amber/60 focus:outline-none"
+    />
+  );
+}
+
+/** The text a list field shows for a value, and the value for that text. */
+const listText = (value: string[]) => value.join("\n");
+const listValue = (text: string): string[] =>
+  text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+/**
+ * A "one entry per line" list (globs, process names). Kept in local state while
+ * the user types so a half-written line is not committed on every keystroke; it
+ * is pushed to the store on blur or Enter.
+ */
+function LineList({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string[];
+  onChange: (value: string[]) => void;
+  placeholder: string;
+}) {
+  const [draft, setDraft] = useState(listText(value));
+  // Re-seed when the value changes elsewhere (a reset, or another pane).
+  const committed = listText(value);
+  useEffect(() => {
+    setDraft(committed);
+  }, [committed]);
+
+  const commit = () => {
+    const next = listValue(draft);
+    if (listText(next) !== committed) onChange(next);
+  };
 
   return (
-    <div className="space-y-4">
-      <label className="block text-[11px] text-desk-dim">
-        <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">{t("command failed per run")}</span>
-        <input
-          type="number"
+    <textarea
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      spellCheck={false}
+      rows={2}
+      placeholder={placeholder}
+      className="mb-1 w-full resize-y rounded border border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[10px] leading-snug text-desk-ink placeholder:text-desk-dim/60 focus:border-desk-amber/60 focus:outline-none"
+    />
+  );
+}
+
+/** A titled block of rows, so the pane reads as sections rather than a form. */
+function WarnSection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  const t = useT();
+  return (
+    <section className="mb-4 border-t border-desk-line/70 pt-3 first:border-t-0 first:pt-0">
+      <p className="mb-1 font-mono text-[10px] uppercase tracking-wide text-desk-ink/80">{t(title)}</p>
+      {hint ? <p className="mb-2 text-[10px] leading-snug text-desk-dim/80">{t(hint)}</p> : null}
+      {children}
+    </section>
+  );
+}
+
+/** One "reason · level" row. */
+function LevelRow({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: CommandFailLevel;
+  onChange: (value: CommandFailLevel) => void;
+}) {
+  const t = useT();
+  return (
+    <div className="mb-1 flex items-center gap-2" title={t(hint)}>
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-desk-ink">{t(label)}</span>
+      <LevelSelect value={value} onChange={onChange} title={t(hint)} />
+    </div>
+  );
+}
+
+/** One "reason · count · level" row (a threshold and the level it raises). */
+function CountRow({
+  label,
+  hint,
+  count,
+  min,
+  max,
+  onCount,
+  level,
+  onLevel,
+}: {
+  label: string;
+  hint: string;
+  count: number;
+  min: number;
+  max: number;
+  onCount: (value: number) => void;
+  level: CommandFailLevel;
+  onLevel: (value: CommandFailLevel) => void;
+}) {
+  const t = useT();
+  return (
+    <div className="mb-1 flex items-center gap-2" title={t(hint)}>
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-desk-ink">{t(label)}</span>
+      <NumberField value={count} onChange={onCount} min={min} max={max} title={t(hint)} />
+      <LevelSelect value={level} onChange={onLevel} title={t(hint)} />
+    </div>
+  );
+}
+
+function CommandFailSettings() {
+  const t = useT();
+  const s = useSettingsStore();
+
+  return (
+    <div>
+      <WarnSection title="failed commands" hint="How many failures in one run are worth a look, and how loudly.">
+        <CountRow
+          label="command failed per run"
+          hint="The run raises command_failed once this many commands failed."
+          count={s.commandFailThreshold}
           min={1}
           max={99}
-          value={threshold}
-          onChange={(e) => setThreshold(Number(e.target.value))}
-          className="w-24 rounded border border-desk-line bg-desk-panel2 px-1.5 py-1 font-mono text-[11px] text-desk-ink focus:border-desk-amber/60 focus:outline-none"
+          onCount={s.setCommandFailThreshold}
+          level={s.commandFailLevel}
+          onLevel={s.setCommandFailLevel}
         />
-      </label>
-      <label className="block text-[11px] text-desk-dim">
-        <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">{t("attention level")}</span>
-        <select
-          value={level}
-          onChange={(e) => setLevel(e.target.value as CommandFailLevel)}
-          className="w-32 rounded border border-desk-line bg-desk-panel2 px-1.5 py-1 font-mono text-[11px] text-desk-ink focus:border-desk-amber/60 focus:outline-none"
-        >
-          {FAIL_LEVELS.map((id) => (
-            <option key={id} value={id}>
-              {t(FAIL_LEVEL_TEXT[id])}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="border-t border-desk-line/70 pt-3">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-desk-ink/80">{t("failure streak")}</p>
-        <label className="mb-2 block text-[11px] text-desk-dim">
-          <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">{t("consecutive failed")}</span>
-          <input
-            type="number"
-            min={1}
-            max={99}
-            value={streakThreshold}
-            onChange={(e) => setStreakThreshold(Number(e.target.value))}
-            className="w-24 rounded border border-desk-line bg-desk-panel2 px-1.5 py-1 font-mono text-[11px] text-desk-ink focus:border-desk-amber/60 focus:outline-none"
-          />
-        </label>
-        <label className="block text-[11px] text-desk-dim">
-          <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">{t("attention level")}</span>
-          <select
-            value={streakLevel}
-            onChange={(e) => setStreakLevel(e.target.value as CommandFailLevel)}
-            className="w-32 rounded border border-desk-line bg-desk-panel2 px-1.5 py-1 font-mono text-[11px] text-desk-ink focus:border-desk-amber/60 focus:outline-none"
-          >
-            {FAIL_LEVELS.map((id) => (
-              <option key={id} value={id}>
-                {t(FAIL_LEVEL_TEXT[id])}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="border-t border-desk-line/70 pt-3">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-desk-ink/80">{t("activity time")}</p>
-        <label className="mb-2 block text-[11px] text-desk-dim">
-          <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">
-            {t("no activity for (seconds)")}
+        <CountRow
+          label="consecutive failed"
+          hint="Back-to-back failures with no success between them: the agent may be flailing."
+          count={s.commandStreakThreshold}
+          min={1}
+          max={99}
+          onCount={s.setCommandStreakThreshold}
+          level={s.commandStreakLevel}
+          onLevel={s.setCommandStreakLevel}
+        />
+        <CountRow
+          label="no activity for (seconds)"
+          hint="No event at all for this long while a run is live: a hung command or a wedged prompt."
+          count={s.activityStallThreshold}
+          min={1}
+          max={86400}
+          onCount={s.setActivityStallThreshold}
+          level={s.activityStallLevel}
+          onLevel={s.setActivityStallLevel}
+        />
+      </WarnSection>
+
+      <WarnSection title="warn: errors" hint="A failure nothing recovered from, and a run that died outright.">
+        <LevelRow
+          label="unresolved error"
+          hint="A failure with no later successful command behind it. A bare error event never rises above medium."
+          value={s.unresolvedErrorLevel}
+          onChange={s.setUnresolvedErrorLevel}
+        />
+        <LevelRow
+          label="agent stopped"
+          hint="The run ended in error rather than finishing its task."
+          value={s.agentStoppedLevel}
+          onChange={s.setAgentStoppedLevel}
+        />
+      </WarnSection>
+
+      <WarnSection
+        title="leftover eggs"
+        hint="A process the agent started is still alive after the run ended. Ignored names match the process name or its command line."
+      >
+        <LevelRow
+          label="process left running"
+          hint="Something the agent laid is still alive and unwatched."
+          value={s.processLeftRunningLevel}
+          onChange={s.setProcessLeftRunningLevel}
+        />
+        <div className="mb-1 flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-desk-ink">
+            {t("only after (seconds)")}
           </span>
-          <input
-            type="number"
-            min={1}
+          <NumberField
+            value={s.processLeftRunningMinSeconds}
+            onChange={s.setProcessLeftRunningMinSeconds}
+            min={0}
             max={86400}
-            value={stallThreshold}
-            onChange={(e) => setStallThreshold(Number(e.target.value))}
-            className="w-24 rounded border border-desk-line bg-desk-panel2 px-1.5 py-1 font-mono text-[11px] text-desk-ink focus:border-desk-amber/60 focus:outline-none"
+            title={t("0 reports any leftover egg; a longer lifetime skips helpers that were about to exit.")}
           />
-        </label>
-        <label className="block text-[11px] text-desk-dim">
-          <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide">{t("attention level")}</span>
-          <select
-            value={stallLevel}
-            onChange={(e) => setStallLevel(e.target.value as CommandFailLevel)}
-            className="w-32 rounded border border-desk-line bg-desk-panel2 px-1.5 py-1 font-mono text-[11px] text-desk-ink focus:border-desk-amber/60 focus:outline-none"
-          >
-            {FAIL_LEVELS.map((id) => (
-              <option key={id} value={id}>
-                {t(FAIL_LEVEL_TEXT[id])}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+        </div>
+        <p className="mb-0.5 font-mono text-[10px] uppercase tracking-wide text-desk-dim">{t("never report")}</p>
+        <LineList
+          value={s.processLeftRunningIgnore}
+          onChange={s.setProcessLeftRunningIgnore}
+          placeholder={"vite\ndev-server"}
+        />
+      </WarnSection>
+
+      <WarnSection
+        title="outside the project"
+        hint="A watched change outside the project root. Globs use * within a folder and two stars across folders."
+      >
+        <LevelRow
+          label="outside change"
+          hint="A file next door changed while the agent worked."
+          value={s.outsideChangeLevel}
+          onChange={s.setOutsideChangeLevel}
+        />
+        <p className="mb-0.5 font-mono text-[10px] uppercase tracking-wide text-desk-dim">{t("ignore paths")}</p>
+        <LineList
+          value={s.outsideChangeIgnore}
+          onChange={s.setOutsideChangeIgnore}
+          placeholder={"*.log\n**/node_modules/**"}
+        />
+      </WarnSection>
+
+      <WarnSection
+        title="warn: loops"
+        hint="The agent repeating itself without effect: undoing a file, or retrying a command that keeps failing."
+      >
+        <CountRow
+          label="file version loop"
+          hint="How many times a path must return to an earlier state before it counts as a loop."
+          count={s.fileVersionLoopThreshold}
+          min={1}
+          max={99}
+          onCount={s.setFileVersionLoopThreshold}
+          level={s.fileVersionLoopLevel}
+          onLevel={s.setFileVersionLoopLevel}
+        />
+        <CountRow
+          label="command retry loop"
+          hint="How many times one identical command must fail before it counts as a loop."
+          count={s.commandRetryLoopThreshold}
+          min={2}
+          max={99}
+          onCount={s.setCommandRetryLoopThreshold}
+          level={s.commandRetryLoopLevel}
+          onLevel={s.setCommandRetryLoopLevel}
+        />
+      </WarnSection>
+
       <p className="text-[10px] leading-snug text-desk-dim/80">
         {t(
-          "The Absence Report raises <code> once this many commands have failed in one run, <streak> once this many failed back-to-back, and <stall> once no event has arrived for this many seconds; unresolved failures always stay high.",
-        )
-          .replace("<code>", "command_failed")
-          .replace("<streak>", "command_failure_streak")
-          .replace("<stall>", "activity_stalled")}
+          "Every reason above can be silenced. The chimes follow the level that actually fires, so silencing a reason also silences its sound.",
+        )}
       </p>
     </div>
   );

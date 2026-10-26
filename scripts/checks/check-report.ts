@@ -587,4 +587,200 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   );
 }
 
+// P. every reason that used to be hard-coded now honours a configured level.
+{
+  // agent_stopped: a run that ended in error.
+  const died = [stamp(ev("agent_start", { model: "p/m" })), stamp(ev("agent_end", { reason: "error" }))];
+  const stopped = buildRunFacts(died, { ...runOf(died, 0, "error") });
+  check("agent_stopped fires by default at high", stopped.attention.level === "high");
+  check(
+    "agent_stopped can be raised to a chosen level",
+    buildRunFacts(died, { ...runOf(died, 0, "error") }, { agentStoppedLevel: "low" }).attention.level === "low",
+  );
+  check(
+    "agent_stopped can be silenced",
+    !buildRunFacts(died, { ...runOf(died, 0, "error") }, { agentStoppedLevel: "none" }).attention.reasons.includes(
+      "agent_stopped",
+    ),
+  );
+
+  // unresolved_error at rest: high by default, the user's level when chosen.
+  const failed = [bashStart("b1", "npm test"), bashEnd("b1", true)];
+  const unresolved = (options?: Parameters<typeof buildRunFacts>[2]) =>
+    buildRunFacts(failed, runOf(failed, 0), { commandFailThreshold: 1, ...options });
+  check("unresolved error is high by default", unresolved().attention.level === "high");
+  check(
+    "unresolved error takes a chosen level",
+    unresolved({ unresolvedErrorLevel: "low" }).attention.level === "low",
+    unresolved({ unresolvedErrorLevel: "low" }).attention.level,
+  );
+  check(
+    "unresolved error can be silenced",
+    !unresolved({ unresolvedErrorLevel: "none" }).attention.reasons.includes("unresolved_error"),
+  );
+}
+
+// Q. a leftover egg: level, minimum lifetime, and the ignore list.
+{
+  const events = [
+    bashStart("b1", "npm run dev"),
+    bashEnd("b1"),
+    cmd("b1", "npm run dev", 0),
+    stamp(
+      ev("process", {
+        pid: 5001,
+        ppid: 1000,
+        name: "node",
+        commandLine: "node server.js",
+        status: "running",
+        startedAt: 1_000,
+        children: 0,
+        command: "npm run dev",
+      }),
+    ),
+    stamp(ev("agent_end", { reason: "completed" })),
+  ];
+  const run = runOf(events, 0);
+  const egg = (options?: Parameters<typeof buildRunFacts>[2]) => buildRunFacts(events, run, options);
+
+  check("leftover egg is high by default", egg().attention.level === "high");
+  check(
+    "leftover egg takes a chosen level",
+    egg({ processLeftRunningLevel: "low" }).attention.level === "low",
+  );
+  check(
+    "leftover egg can be silenced",
+    !egg({ processLeftRunningLevel: "none" }).attention.reasons.includes("process_left_running"),
+  );
+  // Silencing the attention must not hide the egg itself: the fact stays.
+  check(
+    "a silenced leftover egg is still a fact",
+    egg({ processLeftRunningLevel: "none" }).processes.runningAtEnd === 1,
+  );
+  // Ignore list: name, command line, and command all match, case-insensitively.
+  for (const ignore of [["node"], ["SERVER.JS"], ["npm run dev"]]) {
+    check(
+      `ignoring ${ignore.join(",")} drops the reason`,
+      !egg({ processLeftRunningIgnore: ignore }).attention.reasons.includes("process_left_running"),
+    );
+  }
+  check(
+    "an unrelated ignore entry keeps it",
+    egg({ processLeftRunningIgnore: ["redis"] }).attention.reasons.includes("process_left_running"),
+  );
+  // Minimum lifetime: the run is 10s of stamped clock, so 60s filters it out.
+  check(
+    "a short-lived egg can be filtered by lifetime",
+    !egg({ processLeftRunningMinSeconds: 600 }).attention.reasons.includes("process_left_running"),
+  );
+  check(
+    "a lifetime of 0 keeps everything",
+    egg({ processLeftRunningMinSeconds: 0 }).attention.reasons.includes("process_left_running"),
+  );
+}
+
+// R. an outside change: level and ignore globs.
+{
+  const events = [
+    stamp(ev("file_edit", { path: "a.ts", before: "x", after: "y", diff: "+y\n-x" })),
+    stamp(ev("file_change", { path: "E:/elsewhere/notes.md", kind: "modified", outside: true })),
+    stamp(ev("file_change", { path: "E:/elsewhere/debug.log", kind: "modified", outside: true })),
+  ];
+  const run = runOf(events, 0);
+  const outside = (options?: Parameters<typeof buildRunFacts>[2]) => buildRunFacts(events, run, options);
+
+  check("outside changes are low by default", outside().attention.level === "low");
+  check(
+    "outside changes take a chosen level",
+    outside({ outsideChangeLevel: "medium" }).attention.level === "medium",
+  );
+  check(
+    "outside changes can be silenced",
+    !outside({ outsideChangeLevel: "none" }).attention.reasons.includes("outside_change"),
+  );
+  // A glob filters the reason and the fact layer's attention payload together.
+  check(
+    "a *.log glob drops only the log",
+    outside({ outsideChangeIgnore: ["*.log"] }).outsideChanges.every((c) => !c.path.endsWith(".log")),
+    outside({ outsideChangeIgnore: ["*.log"] }).outsideChanges.map((c) => c.path).join(","),
+  );
+  check(
+    "an ignored log is still not an attention reason when it is the only change left",
+    (() => {
+      const onlyLog = [
+        stamp(ev("file_edit", { path: "a.ts", before: "x", after: "y", diff: "+y\n-x" })),
+        stamp(ev("file_change", { path: "E:/elsewhere/debug.log", kind: "modified", outside: true })),
+      ];
+      const facts = buildRunFacts(onlyLog, runOf(onlyLog, 0), { outsideChangeIgnore: ["*.log"] });
+      return facts.outsideChanges.length === 0 && !facts.attention.reasons.includes("outside_change");
+    })(),
+  );
+  // `**` spans folders, `*` does not.
+  check(
+    "a ** glob spans folders",
+    outside({ outsideChangeIgnore: ["**/elsewhere/notes.md"] }).outsideChanges.every(
+      (c) => !c.path.endsWith("notes.md"),
+    ),
+  );
+  check(
+    "a single * matches the file name, not the folders",
+    outside({ outsideChangeIgnore: ["*notes.md"] }).outsideChanges.every((c) => !c.path.endsWith("notes.md")),
+  );
+}
+
+// S. loops: the two repeat counts and their levels.
+{
+  const reverted = [
+    stamp(ev("file_read", { path: "a.ts", startLine: 1, endLine: 1, content: "x" })),
+    stamp(ev("file_write", { path: "a.ts", content: "x" })),
+  ];
+  const versionLoop = (options?: Parameters<typeof buildRunFacts>[2]) =>
+    buildRunFacts(reverted, runOf(reverted, 0), options);
+  check("a single revert loops by default", versionLoop().loops.length === 1);
+  check(
+    "a higher version-loop threshold defers it",
+    versionLoop({ fileVersionLoopThreshold: 2 }).loops.length === 0,
+  );
+  check(
+    "a version loop takes a chosen level",
+    versionLoop({ fileVersionLoopLevel: "high" }).attention.level === "high",
+  );
+  check(
+    "a version loop can be silenced",
+    !versionLoop({ fileVersionLoopLevel: "none" }).attention.reasons.includes("file_version_loop"),
+  );
+
+  const retried = [
+    bashStart("b1", "npm test"),
+    bashEnd("b1"),
+    cmd("b1", "npm test", 1),
+    stamp(ev("file_edit", { path: "a.ts", before: "x", after: "y", diff: "+y\n-x" })),
+    bashStart("b2", "npm test"),
+    bashEnd("b2"),
+    cmd("b2", "npm test", 1),
+  ];
+  const retryLoop = (options?: Parameters<typeof buildRunFacts>[2]) =>
+    buildRunFacts(retried, runOf(retried, 0), options);
+  check("two identical failures loop by default", retryLoop().loops.some((l) => l.kind === "command_retry_loop"));
+  check(
+    "a higher retry threshold defers it",
+    !retryLoop({ commandRetryLoopThreshold: 3 }).loops.some((l) => l.kind === "command_retry_loop"),
+  );
+  // The two failures are also back-to-back (streak medium), so the retry loop
+  // can only *beat* medium by going higher; its own floor is what "low" would
+  // have set, which the streak already outranks.
+  check(
+    "a retry loop can be raised above the streak",
+    retryLoop({ commandRetryLoopLevel: "high", commandStreakLevel: "none" }).attention.level === "high",
+    retryLoop({ commandRetryLoopLevel: "high", commandStreakLevel: "none" }).attention.level,
+  );
+  check(
+    "a retry loop can be silenced independently of the version loop",
+    (() => {
+      const facts = retryLoop({ commandRetryLoopLevel: "none" });
+      return !facts.attention.reasons.includes("command_retry_loop");
+    })(),
+  );
+}
+
 finish();

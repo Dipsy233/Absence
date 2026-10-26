@@ -410,12 +410,49 @@ const ZH: Record<string, string> = {
   "Move down": "下移",
   "REPORT WARN": "报告提醒",
   "command failed per run": "单次运行失败命令数",
-  "attention level": "提醒级别",
   silent: "关闭",
-  "failure streak": "连续失败",
   "consecutive failed": "连续失败次数",
-  "activity time": "活动时间",
   "no activity for (seconds)": "无活动时长(秒)",
+  "failed commands": "失败命令",
+  "How many failures in one run are worth a look, and how loudly.": "一次运行里多少失败值得看一眼,以及提醒多强。",
+  "The run raises command_failed once this many commands failed.": "失败命令达到该数量时提出 command_failed。",
+  "Back-to-back failures with no success between them: the agent may be flailing.":
+    "接连失败、中间没有一次成功:智能体可能在乱撞。",
+  "No event at all for this long while a run is live: a hung command or a wedged prompt.":
+    "运行中超过该秒数没有任何事件:卡住的命令或卡死的提示。",
+  "warn: errors": "错误",
+  "A failure nothing recovered from, and a run that died outright.": "没有任何恢复的失败,以及直接死掉的运行。",
+  "unresolved error": "未解决的错误",
+  "A failure with no later successful command behind it. A bare error event never rises above medium.":
+    "失败后没有随后的成功命令。单纯的错误事件最高只到中等级。",
+  "agent stopped": "智能体中止",
+  "The run ended in error rather than finishing its task.": "运行以错误结束,而不是完成任务。",
+  "leftover eggs": "遗留进程",
+  "A process the agent started is still alive after the run ended. Ignored names match the process name or its command line.":
+    "运行结束后智能体启动的进程仍然活着。忽略名单匹配进程名或其命令行。",
+  "process left running": "进程仍在运行",
+  "Something the agent laid is still alive and unwatched.": "智能体产下的东西还活着,且无人看管。",
+  "only after (seconds)": "仅在存活超过(秒)",
+  "0 reports any leftover egg; a longer lifetime skips helpers that were about to exit.":
+    "0 表示任何遗留进程都报告;设定更长存活时间可跳过马上就要退出的辅助进程。",
+  "never report": "永不报告",
+  "outside the project": "项目之外",
+  "A watched change outside the project root. Globs use * within a folder and two stars across folders.":
+    "项目根目录之外的被监视变更。通配 * 匹配单层,两个星号跨层匹配。",
+  "outside change": "外部变更",
+  "A file next door changed while the agent worked.": "智能体工作时隔壁的文件被改动。",
+  "ignore paths": "忽略路径",
+  "warn: loops": "循环",
+  "The agent repeating itself without effect: undoing a file, or retrying a command that keeps failing.":
+    "智能体在做无效的重复:把文件改回去,或反复重试同样失败的命令。",
+  "file version loop": "文件版本循环",
+  "How many times a path must return to an earlier state before it counts as a loop.":
+    "一个文件要回到早前状态多少次才算循环。",
+  "command retry loop": "命令重试循环",
+  "How many times one identical command must fail before it counts as a loop.":
+    "同一条命令要失败多少次才算循环。",
+  "Every reason above can be silenced. The chimes follow the level that actually fires, so silencing a reason also silences its sound.":
+    "以上每种原因都可以关掉。提示音跟随实际触发的级别,因此关掉某种原因也就关掉了它的声音。",
   "The Absence Report raises <code> once this many commands have failed in one run, <streak> once this many failed back-to-back, and <stall> once no event has arrived for this many seconds; unresolved failures always stay high.":
     "发呆报告在单次运行中失败命令达到该数量时提出 <code>,在连续失败达到该数量时提出 <streak>,在超过该秒数没有任何事件时提出 <stall>;未解决的失败始终是高等级。",
   "EGGS FILTER": "进程蛋筛选",

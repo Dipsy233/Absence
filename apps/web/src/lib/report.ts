@@ -468,15 +468,26 @@ export function buildRunFacts(
 
   const recoveries = findRecoveries(commands, slice);
 
-  // Loops: the agent undoing itself or repeating a failing command.
+  // Loops: the agent undoing itself or repeating a failing command. The two
+  // repeat counts are the user's call — one revert is a loop by default (an
+  // agent that wrote a file back to its own read state), and one repeated
+  // failure is not (bad luck on the first try is ordinary).
+  const versionLoopThreshold = loopThreshold(
+    attentionOptions.fileVersionLoopThreshold,
+    DEFAULT_FILE_VERSION_LOOP_THRESHOLD,
+  );
+  const retryLoopThreshold = loopThreshold(
+    attentionOptions.commandRetryLoopThreshold,
+    DEFAULT_COMMAND_RETRY_LOOP_THRESHOLD,
+  );
   const loops: LoopFact[] = [];
   for (const reverted of revertedPaths.values()) {
-    if (reverted.count >= 1) {
+    if (reverted.count >= versionLoopThreshold) {
       loops.push({ kind: "file_version_loop", path: reverted.path, count: reverted.count, evidence: reverted.evidence });
     }
   }
   for (const failed of failedCommands.values()) {
-    if (failed.count >= 2) {
+    if (failed.count >= retryLoopThreshold) {
       loops.push({
         kind: "command_retry_loop",
         command: failed.command,
@@ -485,7 +496,7 @@ export function buildRunFacts(
       });
     }
   }
-  const loopAttention = loopAttentionFor(loops);
+  const loopAttention = loopAttentionFor(loops, attentionOptions);
 
   const failedIds = commands.filter((command) => command.status === "failed").map((command) => command.eventId);
   const recoveredSet = new Set(recoveries.map((recovery) => recovery.failedCommandId));
@@ -495,16 +506,26 @@ export function buildRunFacts(
   const processFacts = [...processByPid.values()];
   const primaries = processFacts.filter((fact) => fact.kind === "primary");
   const runningAtEnd = primaries.filter((fact) => fact.running);
+  /**
+   * Which of those the user still wants to be told about. The fact layer keeps
+   * every egg (the report shows what happened); only the attention verdict is
+   * filtered, so ignoring a noisy helper does not hide it from the run.
+   */
+  const leftoverIds = runningAtEnd
+    .filter((fact) => countsAsLeftoverProcess(fact, run, attentionOptions))
+    .map((fact) => fact.evidence[0] ?? "");
   const lastActivityAt = slice.length > 0 ? slice[slice.length - 1]!.timestamp : run.startedAt;
   const noChanges =
     created.keys().length + modified.keys().length + deleted.keys().length + observed.keys().length === 0;
 
   const outcome = outcomeFor(run, unresolvedIds.length, counts.failed, noChanges);
-  const outsideFacts: OutsideChangeFact[] = [...outsideChanges.entries()].map(([path, seen]) => ({
-    path,
-    count: seen.count,
-    evidence: seen.evidence,
-  }));
+  const outsideFacts: OutsideChangeFact[] = [...outsideChanges.entries()]
+    .filter(([path]) => !ignoredOutsidePath(path, attentionOptions.outsideChangeIgnore))
+    .map(([path, seen]) => ({
+      path,
+      count: seen.count,
+      evidence: seen.evidence,
+    }));
   const attention = computeAttention({
     unresolved: unresolvedIds.length,
     failed: counts.failed,
@@ -515,7 +536,7 @@ export function buildRunFacts(
     unresolvedIds,
     failedIds,
     errorIds: errorEvidence,
-    runningProcessIds: runningAtEnd.map((fact) => fact.evidence[0] ?? ""),
+    runningProcessIds: leftoverIds,
     loopAttention,
     outsideChangeIds: outsideFacts.flatMap((fact) => fact.evidence),
     attentionOptions,
@@ -626,18 +647,32 @@ function noteFileVersion(
 /**
  * Attention from loops alone, merged into the main verdict. A version loop
  * means the agent undid its own work; a repeated identical failure means it is
- * stuck. Either way a human should glance at it — medium when the run is still
- * the caller's problem to weigh.
+ * stuck. Either way a human should glance at it; the two kinds keep separate
+ * levels so a self-undoing file can be quieter than a command that never works.
  */
-function loopAttentionFor(loops: LoopFact[]): { level: AttentionLevel; reasons: AttentionReason[]; evidence: string[] } {
-  if (loops.length === 0) return { level: "none", reasons: [], evidence: [] };
+function loopAttentionFor(
+  loops: LoopFact[],
+  options?: ReportAttentionOptions,
+): { level: AttentionLevel; reasons: AttentionReason[]; evidence: string[] } {
+  // Filter first: a loop the user silenced entirely contributes nothing, not
+  // even to the floor both kinds otherwise share.
+  const versionLevel = levelOr(options?.fileVersionLoopLevel, DEFAULT_FILE_VERSION_LOOP_LEVEL);
+  const retryLevel = levelOr(options?.commandRetryLoopLevel, DEFAULT_COMMAND_RETRY_LOOP_LEVEL);
+  const live = loops.filter((loop) =>
+    loop.kind === "file_version_loop" ? versionLevel !== "none" : retryLevel !== "none",
+  );
+  if (live.length === 0) return { level: "none", reasons: [], evidence: [] };
+
   const reasons: AttentionReason[] = [];
   const evidence: string[] = [];
-  for (const loop of loops) {
+  let level: AttentionLevel = "none";
+  for (const loop of live) {
+    const loopLevel = loop.kind === "file_version_loop" ? versionLevel : retryLevel;
+    if (level === "none" || rank(loopLevel) > rank(level)) level = loopLevel;
     reasons.push(loop.kind);
     evidence.push(...loop.evidence);
   }
-  return { level: "medium", reasons, evidence };
+  return { level, reasons, evidence };
 }
 
 /**
@@ -876,6 +911,34 @@ export const DEFAULT_COMMAND_STREAK_THRESHOLD = 3;
 /** Default: warn after the agent sat on one action this many seconds. */
 export const DEFAULT_ACTIVITY_STALL_THRESHOLD = 3600;
 
+/** Default: a path that reverted once is already a version loop. */
+export const DEFAULT_FILE_VERSION_LOOP_THRESHOLD = 1;
+
+/** Default: one failing command is ordinary; the second identical failure is a loop. */
+export const DEFAULT_COMMAND_RETRY_LOOP_THRESHOLD = 2;
+
+/** The level each reason raises when the user has not chosen one. */
+export const DEFAULT_AGENT_STOPPED_LEVEL: AttentionLevel = "high";
+export const DEFAULT_UNRESOLVED_ERROR_LEVEL: AttentionLevel = "high";
+export const DEFAULT_PROCESS_LEFT_RUNNING_LEVEL: AttentionLevel = "high";
+export const DEFAULT_OUTSIDE_CHANGE_LEVEL: AttentionLevel = "low";
+export const DEFAULT_FILE_VERSION_LOOP_LEVEL: AttentionLevel = "medium";
+export const DEFAULT_COMMAND_RETRY_LOOP_LEVEL: AttentionLevel = "medium";
+
+/** A positive repeat count, or `fallback` when the value is unusable. */
+function loopThreshold(value: unknown, fallback: number): number {
+  const n = typeof value === "number" ? Math.floor(value) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * A configured level, or `fallback` when the value is missing or not a level.
+ * Unlike `??` this also rejects the junk a stale localStorage entry can hold.
+ */
+function levelOr(value: unknown, fallback: AttentionLevel): AttentionLevel {
+  return typeof value === "string" && value in LEVEL_RANK ? (value as AttentionLevel) : fallback;
+}
+
 /** Whether `command_failed` should fire for this many failures. */
 function failedOverThreshold(input: {
   failed: number;
@@ -938,9 +1001,14 @@ function computeAttention(input: {
   let level: AttentionLevel = "none";
   let evidence: string[] = [];
 
+  const options = input.attentionOptions;
+
   if (input.ended && input.runError) {
-    level = "high";
-    reasons.push("agent_stopped");
+    const stoppedLevel = levelOr(options?.agentStoppedLevel, DEFAULT_AGENT_STOPPED_LEVEL);
+    if (stoppedLevel !== "none") {
+      if (level === "none" || rank(stoppedLevel) > rank(level)) level = stoppedLevel;
+      reasons.push("agent_stopped");
+    }
   }
   if (input.unresolved > 0) {
     const needsYou = input.ended || input.busy === false;
@@ -951,15 +1019,20 @@ function computeAttention(input: {
     // this one. The one exception is a run that has already ended (or is
     // waiting on the user): an unresolved failure at rest always needs a
     // look, regardless of thresholds.
-    const failLevel = normalizeFailLevel(input.attentionOptions?.commandFailLevel);
+    const failLevel = normalizeFailLevel(options?.commandFailLevel);
     const underThreshold = !failedOverThreshold(input);
     if (!needsYou && (failLevel === "none" || underThreshold)) {
       // below the user's bar: no attention from this branch (the streak and
       // stall checks below still apply on their own terms)
     } else if (needsYou) {
-      level = "high";
-      reasons.push("unresolved_error");
-      evidence = input.unresolvedIds;
+      // An unresolved failure at rest is the loudest everyday signal, but even
+      // this one is the user's to quieten — the default stays high.
+      const restLevel = levelOr(options?.unresolvedErrorLevel, DEFAULT_UNRESOLVED_ERROR_LEVEL);
+      if (restLevel !== "none") {
+        if (level === "none" || rank(restLevel) > rank(level)) level = restLevel;
+        reasons.push("unresolved_error");
+        evidence = input.unresolvedIds;
+      }
     } else {
       // `failLevel` cannot be "none" here (that is the silenced case above),
       // so the reason and its level always agree.
@@ -970,24 +1043,30 @@ function computeAttention(input: {
   } else if (failedOverThreshold(input)) {
     // A recovered failure only speaks at the level the user chose; "none"
     // silences the reason as well as its level (it used to be listed anyway).
-    const failLevel = normalizeFailLevel(input.attentionOptions?.commandFailLevel);
+    const failLevel = normalizeFailLevel(options?.commandFailLevel);
     if (failLevel !== "none") {
       if (level === "none" || rank(failLevel) > rank(level)) level = failLevel;
       reasons.push("command_failed");
       evidence = input.failedIds;
     }
   } else if (input.errorCount > 0) {
-    if (level === "none") level = "medium";
-    reasons.push("unresolved_error");
-    evidence = input.errorIds;
+    // A bare `error` event has no failed command behind it, so it is the weaker
+    // signal: its own level, but capped at medium unless the user raised it.
+    const errorLevel = levelOr(options?.unresolvedErrorLevel, DEFAULT_UNRESOLVED_ERROR_LEVEL);
+    const capped: AttentionLevel = rank(errorLevel) > rank("medium") ? "medium" : errorLevel;
+    if (capped !== "none") {
+      if (level === "none" || rank(capped) > rank(level)) level = capped;
+      reasons.push("unresolved_error");
+      evidence = input.errorIds;
+    }
   }
 
   // A streak of back-to-back failures is its own signal: even when individual
   // failures stay under the total threshold, N failures in a row with no
   // success between them means the agent is flailing.
   const streak = input.failureStreak;
-  if (streak && streakOverThreshold(streak.count, input.attentionOptions)) {
-    const streakLevel = normalizeFailLevel(input.attentionOptions?.commandStreakLevel);
+  if (streak && streakOverThreshold(streak.count, options)) {
+    const streakLevel = normalizeFailLevel(options?.commandStreakLevel);
     if (streakLevel !== "none") {
       if (level === "none" || rank(streakLevel) > rank(level)) level = streakLevel;
       reasons.push("command_failure_streak");
@@ -1000,8 +1079,8 @@ function computeAttention(input: {
   // a hung command, an unbuffered prompt, a network stall. Only meaningful
   // live (a settled run has no "now" to be stalled against).
   const stall = input.stalledFor;
-  if (stall && stallOverThreshold(stall.seconds, input.attentionOptions)) {
-    const stallLevel = input.attentionOptions?.activityStallLevel ?? "medium";
+  if (stall && stallOverThreshold(stall.seconds, options)) {
+    const stallLevel = levelOr(options?.activityStallLevel, "medium");
     if (stallLevel !== "none") {
       if (level === "none" || rank(stallLevel) > rank(level)) level = stallLevel;
       reasons.push("activity_stalled");
@@ -1010,32 +1089,117 @@ function computeAttention(input: {
   }
 
   const leftRunning = input.runningProcessIds ?? [];
-  if (input.ended && leftRunning.length > 0) {
+  const leftRunningLevel = levelOr(options?.processLeftRunningLevel, DEFAULT_PROCESS_LEFT_RUNNING_LEVEL);
+  if (input.ended && leftRunning.length > 0 && leftRunningLevel !== "none") {
     // An egg still running after the conversation has ended is the loudest
     // everyday signal: something the agent laid is still alive and unwatched.
-    level = "high";
+    // Which eggs count is the caller's filter (`processLeftRunning*`).
+    if (level === "none" || rank(leftRunningLevel) > rank(level)) level = leftRunningLevel;
     reasons.push("process_left_running");
     evidence = [...evidence, ...leftRunning];
   }
 
   // A change outside the project is a floor of low: rare, and never the
   // agent's business, but usually explainable (a lockfile, a log next door).
+  // The user can quieten it or list the paths they do not care about.
   const outside = input.outsideChangeIds ?? [];
-  if (outside.length > 0) {
-    if (level === "none") level = "low";
+  const outsideLevel = levelOr(options?.outsideChangeLevel, DEFAULT_OUTSIDE_CHANGE_LEVEL);
+  if (outside.length > 0 && outsideLevel !== "none") {
+    if (level === "none" || rank(outsideLevel) > rank(level)) level = outsideLevel;
     reasons.push("outside_change");
     evidence = [...evidence, ...outside];
   }
 
-  // Loops raise the floor to medium — self-defeating activity is worth a look
-  // even when every individual step "succeeded".
+  // Loops are worth a look even when every individual step "succeeded", but
+  // the level is the caller's: `loopAttentionFor` has already applied the
+  // per-kind levels and dropped the kinds the user silenced.
   if (input.loopAttention && input.loopAttention.reasons.length > 0) {
     reasons.push(...input.loopAttention.reasons);
     evidence = [...evidence, ...input.loopAttention.evidence];
-    if (level === "none" || level === "low") level = "medium";
+    if (level === "none" || rank(input.loopAttention.level) > rank(level)) {
+      level = input.loopAttention.level;
+    }
   }
 
   return { level, reasons: [...new Set(reasons)], evidence };
+}
+
+/**
+ * Whether a process still running at the end of a run should be reported as a
+ * leftover egg. Two filters, both the user's: a minimum lifetime (a helper that
+ * is about to exit on its own is noise) and a name deny-list (the dev server
+ * the whole session revolves around is not news).
+ */
+function countsAsLeftoverProcess(
+  fact: ProcessFact,
+  run: HistoryRun,
+  options?: ReportAttentionOptions,
+): boolean {
+  const raw = options?.processLeftRunningMinSeconds;
+  const minSeconds = typeof raw === "number" && raw >= 0 ? Math.floor(raw) : 0;
+  if (minSeconds > 0) {
+    // A running egg's "exited at" is now; measure against the end of the run
+    // (or the newest evidence) rather than wall-clock, so the fact layer stays
+    // deterministic and a replayed run reports the same thing.
+    const at = fact.exitedAt ?? run.endedAt ?? fact.startedAt;
+    if ((at - fact.startedAt) / 1000 < minSeconds) return false;
+  }
+  const ignore = options?.processLeftRunningIgnore ?? [];
+  if (ignore.length === 0) return true;
+  const haystack = `${fact.name}\n${fact.commandLine}\n${fact.command ?? ""}`.toLowerCase();
+  return !ignore.some((needle) => needle.trim() && haystack.includes(needle.trim().toLowerCase()));
+}
+
+/**
+ * Whether an outside-project change matches one of the user's ignore globs.
+ *
+ * Tiny on purpose — `*` matches within a path segment, `**` across them, `?`
+ * one character — because this only ever filters a handful of watcher paths and
+ * a regex engine dependency for it would be absurd.
+ *
+ * A pattern without a `/` is matched against the file *name* as well as the full
+ * path, which is what a user means by `*.log`: every log next door, wherever it
+ * lives. A pattern that names a folder (`build/**`) has to match the path.
+ */
+function ignoredOutsidePath(path: string, globs: string[] | undefined): boolean {
+  if (!globs || globs.length === 0) return false;
+  const normalised = path.replace(/\\/g, "/");
+  const name = normalised.slice(normalised.lastIndexOf("/") + 1);
+  return globs.some((glob) => {
+    const pattern = glob.trim();
+    if (!pattern) return false;
+    const re = globToRegExp(pattern.replace(/\\/g, "/"));
+    if (re.test(normalised)) return true;
+    // A bare pattern (no slash) also matches just the file name.
+    return !pattern.includes("/") && re.test(name);
+  });
+}
+
+/** Compile a glob to a whole-string RegExp (see `ignoredOutsidePath`). */
+function globToRegExp(glob: string): RegExp {
+  let out = "";
+  for (let i = 0; i < glob.length; i++) {
+    const char = glob[i]!;
+    if (char === "*") {
+      if (glob[i + 1] === "*") {
+        // `**/` also matches nothing, so `**/dist` matches `dist` too.
+        if (glob[i + 2] === "/") {
+          out += "(?:.*/)?";
+          i += 2;
+        } else {
+          out += ".*";
+          i += 1;
+        }
+      } else {
+        out += "[^/]*";
+      }
+    } else if (char === "?") {
+      out += "[^/]";
+    } else {
+      out += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  return new RegExp(`^${out}$`);
 }
 
 /** The live view while a run is in flight (doc §12). */

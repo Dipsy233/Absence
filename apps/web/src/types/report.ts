@@ -329,10 +329,14 @@ export interface RenderLiveOptions {
 }
 
 /**
- * How loudly failed commands should ring the human-attention bell. The report
- * only raises the `command_failed` reason once at least `commandFailThreshold`
- * commands have failed in the run, and then only to `commandFailLevel`.
- * Defaults live in the settings store (5, "low"); "none" silences the reason.
+ * How loudly the report should ring the human-attention bell.
+ *
+ * Every reason the report can raise is tunable: the six that started out
+ * hard-coded (`agent_stopped`, `unresolved_error`, `process_left_running`,
+ * `outside_change`, `file_version_loop`, `command_retry_loop`) each take a
+ * level, and the ones that can be noisy in normal work take a filter too.
+ * Defaults live in the settings store; an absent field falls back to the
+ * engine's own default, so a partial object is always safe.
  */
 export interface ReportAttentionOptions {
   commandFailThreshold?: number;
@@ -345,4 +349,36 @@ export interface ReportAttentionOptions {
   activityStallThreshold?: number;
   /** The attention level a stall warning raises. */
   activityStallLevel?: AttentionLevel;
+
+  /** `agent_stopped` — the run ended in error. */
+  agentStoppedLevel?: AttentionLevel;
+  /**
+   * `unresolved_error` — a failure nothing recovered from. Applies both to a
+   * run at rest (default high) and to a plain `error` event with no failed
+   * command behind it, which never rises above medium because it is the weaker
+   * signal of the two.
+   */
+  unresolvedErrorLevel?: AttentionLevel;
+
+  /** `process_left_running` — an egg the agent laid is still alive at the end. */
+  processLeftRunningLevel?: AttentionLevel;
+  /** Only report a leftover egg that lived at least this long (0 = any, the default). */
+  processLeftRunningMinSeconds?: number;
+  /** Case-insensitive names or command fragments never reported as leftover eggs. */
+  processLeftRunningIgnore?: string[];
+
+  /** `outside_change` — a watcher change outside the project root. */
+  outsideChangeLevel?: AttentionLevel;
+  /** Path globs whose outside changes are ignored — e.g. `*.log`, or `dist` prefixed with two stars. */
+  outsideChangeIgnore?: string[];
+
+  /** `file_version_loop` — how many times a path must revert before it is a loop. */
+  fileVersionLoopThreshold?: number;
+  /** The attention level a file version loop raises. */
+  fileVersionLoopLevel?: AttentionLevel;
+
+  /** `command_retry_loop` — how many times one command must fail before it is a loop. */
+  commandRetryLoopThreshold?: number;
+  /** The attention level a command retry loop raises. */
+  commandRetryLoopLevel?: AttentionLevel;
 }

@@ -24,10 +24,9 @@ const RAIL_PANEL_IDS: RailPanelId[] = ["agent", "folder", "eggs"];
 const LEFT_PANEL_IDS: LeftPanelId[] = ["files", "history", "activity"];
 
 /**
- * How loudly failed commands should ring the report's human-attention bell:
- * the `command_failed` reason only fires once at least `commandFailThreshold`
- * commands have failed in one run, and then at `commandFailLevel`. `none`
- * keeps the reason off the report entirely.
+ * How loudly a report reason should ring the human-attention bell. `none`
+ * keeps that reason off the report entirely (and, because the chime follows the
+ * level, silent too).
  */
 export type CommandFailLevel = "none" | "low" | "medium" | "high";
 
@@ -63,6 +62,31 @@ export interface Settings {
   activityStallThreshold: number;
   /** The attention level a stall warning raises (default "medium"). */
   activityStallLevel: CommandFailLevel;
+
+  /* ── The reasons that used to be hard-coded ───────────────────────────── */
+
+  /** `agent_stopped` — the run ended in error (default "high"). */
+  agentStoppedLevel: CommandFailLevel;
+  /** `unresolved_error` — a failure nothing recovered from (default "high"). */
+  unresolvedErrorLevel: CommandFailLevel;
+  /** `process_left_running` — an egg the agent laid is still alive (default "high"). */
+  processLeftRunningLevel: CommandFailLevel;
+  /** Only report a leftover egg that lived at least this long, in seconds (0 = any). */
+  processLeftRunningMinSeconds: number;
+  /** Names or command fragments (one per line) never reported as leftover eggs. */
+  processLeftRunningIgnore: string[];
+  /** `outside_change` — a watcher change outside the project root (default "low"). */
+  outsideChangeLevel: CommandFailLevel;
+  /** Path globs (one per line) whose outside changes are ignored. */
+  outsideChangeIgnore: string[];
+  /** How many times a path must revert before it is a `file_version_loop` (default 1). */
+  fileVersionLoopThreshold: number;
+  /** The attention level a file version loop raises (default "medium"). */
+  fileVersionLoopLevel: CommandFailLevel;
+  /** How many times one command must fail before it is a `command_retry_loop` (default 2). */
+  commandRetryLoopThreshold: number;
+  /** The attention level a command retry loop raises (default "medium"). */
+  commandRetryLoopLevel: CommandFailLevel;
 }
 
 const DEFAULTS: Settings = {
@@ -78,6 +102,17 @@ const DEFAULTS: Settings = {
   commandStreakLevel: "medium",
   activityStallThreshold: 3600,
   activityStallLevel: "medium",
+  agentStoppedLevel: "high",
+  unresolvedErrorLevel: "high",
+  processLeftRunningLevel: "high",
+  processLeftRunningMinSeconds: 0,
+  processLeftRunningIgnore: [],
+  outsideChangeLevel: "low",
+  outsideChangeIgnore: [],
+  fileVersionLoopThreshold: 1,
+  fileVersionLoopLevel: "medium",
+  commandRetryLoopThreshold: 2,
+  commandRetryLoopLevel: "medium",
 };
 
 function load(): Settings {
@@ -99,6 +134,17 @@ function load(): Settings {
       commandStreakLevel: normalizeLevel(parsed.commandStreakLevel),
       activityStallThreshold: normalizeThreshold(parsed.activityStallThreshold, DEFAULTS.activityStallThreshold),
       activityStallLevel: normalizeLevel(parsed.activityStallLevel),
+      agentStoppedLevel: normalizeLevel(parsed.agentStoppedLevel),
+      unresolvedErrorLevel: normalizeLevel(parsed.unresolvedErrorLevel),
+      processLeftRunningLevel: normalizeLevel(parsed.processLeftRunningLevel),
+      processLeftRunningMinSeconds: normalizeCount(parsed.processLeftRunningMinSeconds, DEFAULTS.processLeftRunningMinSeconds),
+      processLeftRunningIgnore: normalizeList(parsed.processLeftRunningIgnore),
+      outsideChangeLevel: normalizeLevel(parsed.outsideChangeLevel),
+      outsideChangeIgnore: normalizeList(parsed.outsideChangeIgnore),
+      fileVersionLoopThreshold: normalizeThreshold(parsed.fileVersionLoopThreshold, DEFAULTS.fileVersionLoopThreshold),
+      fileVersionLoopLevel: normalizeLevel(parsed.fileVersionLoopLevel),
+      commandRetryLoopThreshold: normalizeThreshold(parsed.commandRetryLoopThreshold, DEFAULTS.commandRetryLoopThreshold),
+      commandRetryLoopLevel: normalizeLevel(parsed.commandRetryLoopLevel),
     };
   } catch {
     return DEFAULTS;
@@ -115,6 +161,24 @@ function load(): Settings {
 function normalizeThreshold(value: unknown, fallback: number): number {
   const n = typeof value === "number" ? Math.floor(value) : NaN;
   return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Like `normalizeThreshold`, but zero is a legal value (0 = no minimum). */
+function normalizeCount(value: unknown, fallback: number): number {
+  const n = typeof value === "number" ? Math.floor(value) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+/** A string list, trimmed, with blanks and duplicates dropped. */
+function normalizeList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (trimmed && !out.includes(trimmed)) out.push(trimmed);
+  }
+  return out;
 }
 
 const FAIL_LEVELS: CommandFailLevel[] = ["none", "low", "medium", "high"];
@@ -152,6 +216,17 @@ interface SettingsStore extends Settings {
   setCommandStreakLevel: (value: CommandFailLevel) => void;
   setActivityStallThreshold: (value: number) => void;
   setActivityStallLevel: (value: CommandFailLevel) => void;
+  setAgentStoppedLevel: (value: CommandFailLevel) => void;
+  setUnresolvedErrorLevel: (value: CommandFailLevel) => void;
+  setProcessLeftRunningLevel: (value: CommandFailLevel) => void;
+  setProcessLeftRunningMinSeconds: (value: number) => void;
+  setProcessLeftRunningIgnore: (value: string[]) => void;
+  setOutsideChangeLevel: (value: CommandFailLevel) => void;
+  setOutsideChangeIgnore: (value: string[]) => void;
+  setFileVersionLoopThreshold: (value: number) => void;
+  setFileVersionLoopLevel: (value: CommandFailLevel) => void;
+  setCommandRetryLoopThreshold: (value: number) => void;
+  setCommandRetryLoopLevel: (value: CommandFailLevel) => void;
   reset: () => void;
 }
 
@@ -177,6 +252,28 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   setActivityStallThreshold: (value) =>
     set((s) => persistIt(s, { activityStallThreshold: normalizeThreshold(value, DEFAULTS.activityStallThreshold) })),
   setActivityStallLevel: (value) => set((s) => persistIt(s, { activityStallLevel: normalizeLevel(value) })),
+  setAgentStoppedLevel: (value) => set((s) => persistIt(s, { agentStoppedLevel: normalizeLevel(value) })),
+  setUnresolvedErrorLevel: (value) => set((s) => persistIt(s, { unresolvedErrorLevel: normalizeLevel(value) })),
+  setProcessLeftRunningLevel: (value) =>
+    set((s) => persistIt(s, { processLeftRunningLevel: normalizeLevel(value) })),
+  setProcessLeftRunningMinSeconds: (value) =>
+    set((s) =>
+      persistIt(s, {
+        processLeftRunningMinSeconds: normalizeCount(value, DEFAULTS.processLeftRunningMinSeconds),
+      }),
+    ),
+  setProcessLeftRunningIgnore: (value) =>
+    set((s) => persistIt(s, { processLeftRunningIgnore: normalizeList(value) })),
+  setOutsideChangeLevel: (value) => set((s) => persistIt(s, { outsideChangeLevel: normalizeLevel(value) })),
+  setOutsideChangeIgnore: (value) => set((s) => persistIt(s, { outsideChangeIgnore: normalizeList(value) })),
+  setFileVersionLoopThreshold: (value) =>
+    set((s) => persistIt(s, { fileVersionLoopThreshold: normalizeThreshold(value, DEFAULTS.fileVersionLoopThreshold) })),
+  setFileVersionLoopLevel: (value) => set((s) => persistIt(s, { fileVersionLoopLevel: normalizeLevel(value) })),
+  setCommandRetryLoopThreshold: (value) =>
+    set((s) =>
+      persistIt(s, { commandRetryLoopThreshold: normalizeThreshold(value, DEFAULTS.commandRetryLoopThreshold) }),
+    ),
+  setCommandRetryLoopLevel: (value) => set((s) => persistIt(s, { commandRetryLoopLevel: normalizeLevel(value) })),
   reset: () => set((s) => persistIt(s, DEFAULTS)),
 }));
 
@@ -190,23 +287,25 @@ function movePanel<T>(order: T[], id: T, dir: "up" | "down"): T[] {
   return next;
 }
 
-/** Merge a patch, persist, and return the state for zustand's set. */
+/** The persisted keys — everything in Settings except the store's actions. */
+const SETTING_KEYS = Object.keys(DEFAULTS) as (keyof Settings)[];
+
+/**
+ * Merge a patch, persist, and return the state for zustand's set.
+ *
+ * The persisted object is rebuilt from `SETTING_KEYS` rather than by hand: the
+ * hand-written list had to be edited for every new setting and silently dropped
+ * the whole field when it was forgotten.
+ */
 function persistIt(state: Settings, patch: Partial<Settings>): Partial<SettingsStore> {
   const next = { ...state, ...patch };
-  persist({
-    language: next.language,
-    theme: next.theme,
-    railOrder: next.railOrder,
-    leftOrder: next.leftOrder,
-    displayInActivity: next.displayInActivity,
-    collapseChatOnContent: next.collapseChatOnContent,
-    commandFailThreshold: next.commandFailThreshold,
-    commandFailLevel: next.commandFailLevel,
-    commandStreakThreshold: next.commandStreakThreshold,
-    commandStreakLevel: next.commandStreakLevel,
-    activityStallThreshold: next.activityStallThreshold,
-    activityStallLevel: next.activityStallLevel,
-  });
+  const stored = {} as Settings;
+  for (const key of SETTING_KEYS) {
+    // Each key is looked up on the merged object, so the assignment is sound
+    // even though TS cannot correlate the loop variable with the value type.
+    (stored as unknown as Record<string, unknown>)[key] = next[key];
+  }
+  persist(stored);
   return patch;
 }
 
