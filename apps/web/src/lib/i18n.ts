@@ -80,15 +80,6 @@ const ZH: Record<string, string> = {
   processes: "进程数",
   status: "状态",
   egg: "进程",
-  retention: "指标保留",
-  "days of process metrics": "天的进程指标",
-  "{n} {unit}, then they expire": "{n} {unit}，之后自动过期",
-  "keep every sample (bounded only by disk)": "保留所有采样（只受磁盘限制）",
-  "Set it with ABSENCE_METRICS_RETENTION_DAYS (0 keeps everything).":
-    "用 ABSENCE_METRICS_RETENTION_DAYS 设置（0 表示全部保留）。",
-  "Prometheus endpoint": "Prometheus 端点",
-  "Scrape this session's eggs with format=prometheus:": "用 format=prometheus 抓取本会话的进程：",
-  "Copy the scrape URL": "复制抓取地址",
 
   // ── Stage chips / empty ────────────────────────────────────────────────
   "● LIVE": "● 实时",
@@ -142,6 +133,13 @@ const ZH: Record<string, string> = {
   Run: "运行",
   Stop: "停止",
   Send: "发送",
+  md: "md",
+  raw: "原文",
+  "Render the agent's replies as Markdown": "把智能体的回复渲染为 Markdown",
+  "Show the agent's replies as raw text": "以原文显示智能体的回复",
+  copy: "复制",
+  "Copy this block": "复制这段代码",
+  "Open {path} on the Stage": "在 Stage 打开 {path}",
 
   // ── Activity ───────────────────────────────────────────────────────────
   Activity: "动态",
@@ -401,6 +399,9 @@ const ZH: Record<string, string> = {
   "collapse on content": "内容页自动折叠",
   "fold the chat history away whenever the Stage shows a file, diff, terminal or the report. Off (the default) keeps the chat exactly as you left it.":
     "当 Stage 显示文件、差异、终端或报告时,自动收起对话历史。关闭(默认)时对话保持原样。",
+  "render markdown": "渲染 Markdown",
+  "draw the agent's replies as Markdown — headings, lists, code blocks, tables — instead of raw text. Links and paths open on the Stage.":
+    "把智能体的回复按 Markdown 绘制——标题、列表、代码块、表格——而不是纯文本。链接和路径会在 Stage 打开。",
   "Left rail panel order": "左侧栏面板顺序",
   "Right rail panel order": "右侧栏面板顺序",
   "Move up": "上移",
@@ -517,9 +518,6 @@ const ZH: Record<string, string> = {
   "Chime volume": "提示音音量",
   "run finished": "运行结束",
   "approval waiting": "等待确认",
-  "also at low": "低等级也响",
-  "Low is where most runs sit for harmless reasons, so a step into low is silent by default.":
-    "多数运行都因无害原因停在低等级,因此默认进入低等级时不发声。",
   "applying…": "应用中…",
   "Use \"{name}\" as the app’s chimes": "把 “{name}” 设为应用的铃声",
   // avatar skin pane

@@ -230,6 +230,8 @@ function AppearancePane() {
   const moveLeftPanel = useSettingsStore((s) => s.moveLeftPanel);
   const collapseChatOnContent = useSettingsStore((s) => s.collapseChatOnContent);
   const setCollapseChatOnContent = useSettingsStore((s) => s.setCollapseChatOnContent);
+  const chatMarkdown = useSettingsStore((s) => s.chatMarkdown);
+  const setChatMarkdown = useSettingsStore((s) => s.setChatMarkdown);
 
   return (
     <div className="min-w-0 flex-1 basis-0 overflow-y-auto p-4">
@@ -299,6 +301,23 @@ function AppearancePane() {
             {" — "}
             {t(
               "fold the chat history away whenever the Stage shows a file, diff, terminal or the report. Off (the default) keeps the chat exactly as you left it.",
+            )}
+          </span>
+        </label>
+        <label className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-desk-dim">
+          <input
+            type="checkbox"
+            checked={chatMarkdown}
+            onChange={(e) => setChatMarkdown(e.target.checked)}
+            className="mt-0.5 accent-[rgb(var(--desk-accent))]"
+          />
+          <span>
+            <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">
+              {t("render markdown")}
+            </span>
+            {" — "}
+            {t(
+              "draw the agent's replies as Markdown — headings, lists, code blocks, tables — instead of raw text. Links and paths open on the Stage.",
             )}
           </span>
         </label>

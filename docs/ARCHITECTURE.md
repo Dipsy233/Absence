@@ -81,7 +81,12 @@ Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAda
   from `WatchExit.cpuMs`.
 - `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion. The
   panels are entry points and the Stage is where content lives; the Absence Report
-  and Agent Eggs are both reductions of the same event stream.
+  and Agent Eggs are both reductions of the same event stream. Chat renders the
+  agent's replies as Markdown through a hand-written parser (`lib/markdown.ts` →
+  `components/common/Markdown.tsx`): it produces a typed tree that is rendered as
+  React elements, so no HTML string ever reaches the DOM and no sanitiser is
+  needed. Paths and links in a reply open the file on the Stage, and the header
+  toggle shows the raw text when the rendering gets in the way.
 
 ```
 absence/                     npm workspaces: packages/*  apps/server  apps/web
@@ -159,12 +164,13 @@ apps/web/src/
                           dead / all)
     files/  history/  activity/  chat/  ProjectPicker/  Panel.tsx
     common/               SettingsDialog.tsx (the four-pane dialog)  AvatarSkinPane
-                          SoundPane  EggFilterPane
+                          SoundPane  EggFilterPane  Markdown.tsx (chat rich text)
   stores/                 session  file  stage  replay  chat  ui  settings  reset
   hooks/                  useSessionSocket  useStage  useReplay  useNow
                           useSounds
   lib/                    events (event → Stage item / Activity row)
                           report (the Absence Report engine)   eggs (process → eggs)
+                          markdown (the chat's Markdown reader)
                           replay  history  context  commands  agent  format  …
   types/                  stage  history  replay  report  chat  file
   index.css

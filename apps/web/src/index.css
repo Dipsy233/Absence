@@ -55,6 +55,132 @@ body {
   .label {
     @apply text-[10px] uppercase tracking-[0.18em] text-desk-dim;
   }
+
+  /* ── Markdown in Chat (lib/markdown.ts → components/common/Markdown.tsx) ──
+     Agent replies are Markdown; the parser returns a tree and the component
+     renders elements, so all styling lives here instead of in class strings.
+     Scoped under `.md` so plain chat text keeps its old look. */
+  .md {
+    @apply min-w-0 break-words text-xs leading-relaxed text-desk-ink/90;
+  }
+  .md > * + * {
+    @apply mt-2;
+  }
+  /* While the agent streams, the caret hangs off the last block instead of the
+     bubble: inside a paragraph it sits after the final word, which is where a
+     reader expects it. */
+  .md-streaming > :last-child::after {
+    content: "▍";
+    @apply ml-0.5 text-desk-amber;
+    animation: absence-blink 1.2s steps(1) infinite;
+  }
+  .md p {
+    @apply whitespace-pre-wrap;
+  }
+  .md h1 {
+    @apply text-sm font-semibold text-desk-ink;
+  }
+  .md h2 {
+    @apply text-[13px] font-semibold text-desk-ink;
+  }
+  .md h3,
+  .md h4,
+  .md h5,
+  .md h6 {
+    @apply text-xs font-semibold uppercase tracking-wide text-desk-ink;
+  }
+  .md h1 + *,
+  .md h2 + *,
+  .md h3 + *,
+  .md h4 + *,
+  .md h5 + *,
+  .md h6 + * {
+    @apply mt-1;
+  }
+  .md strong {
+    @apply font-semibold text-desk-ink;
+  }
+  .md em {
+    @apply italic;
+  }
+  .md del {
+    @apply text-desk-dim line-through;
+  }
+  .md ul {
+    @apply list-disc pl-4 marker:text-desk-dim;
+  }
+  .md ol {
+    @apply list-decimal pl-4 marker:text-desk-dim;
+  }
+  .md li + li {
+    @apply mt-1;
+  }
+  .md li > * + * {
+    @apply mt-1;
+  }
+  .md li ul,
+  .md li ol {
+    @apply mt-1;
+  }
+  /* A task item draws its own marker; the negative margin puts it back where
+     the bullet was so the text still lines up with the other items. */
+  .md li.md-task {
+    @apply -ml-4 flex list-none items-start gap-1.5;
+  }
+  .md .md-check {
+    @apply mt-0.5 shrink-0 font-mono text-[10px] text-desk-dim;
+  }
+  .md .md-check-on {
+    @apply text-desk-teal;
+  }
+  .md blockquote {
+    @apply border-l-2 border-desk-line pl-2.5 text-desk-dim;
+  }
+  .md hr {
+    @apply border-t border-desk-line;
+  }
+  .md a {
+    @apply text-desk-teal underline decoration-desk-teal/40 underline-offset-2 hover:decoration-desk-teal;
+  }
+  .md code {
+    @apply rounded bg-desk-panel2 px-1 py-0.5 font-mono text-[11px] text-desk-ink/90;
+  }
+  .md .md-file {
+    @apply cursor-pointer rounded bg-desk-panel2 px-1 py-0.5 font-mono text-[11px] text-desk-teal hover:bg-desk-teal/10 hover:underline;
+  }
+  .md .md-code {
+    @apply overflow-hidden rounded border border-desk-line bg-desk-deep/60;
+  }
+  .md .md-code-bar {
+    @apply flex items-center justify-between gap-2 border-b border-desk-line/70 px-2 py-0.5;
+  }
+  .md .md-code-lang {
+    @apply font-mono text-[10px] uppercase tracking-[0.12em] text-desk-dim;
+  }
+  .md .md-code-bar button {
+    @apply rounded px-1 py-0.5 font-mono text-[10px] text-desk-dim hover:text-desk-amber;
+  }
+  .md .md-code pre {
+    @apply overflow-x-auto px-2 py-1.5;
+  }
+  .md .md-code pre code {
+    @apply block bg-transparent p-0 font-mono text-[11px] leading-relaxed text-desk-ink/85;
+  }
+  .md .md-table {
+    @apply overflow-x-auto rounded border border-desk-line;
+  }
+  .md table {
+    @apply w-full border-collapse text-[11px];
+  }
+  .md th {
+    @apply border-b border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[10px] uppercase tracking-wide text-desk-dim;
+  }
+  .md td {
+    @apply border-b border-desk-line/60 px-2 py-1 align-top;
+  }
+  .md tr:last-child td {
+    @apply border-b-0;
+  }
 }
 
 /* Frameless desktop window: top bars marked .absence-drag move the window;

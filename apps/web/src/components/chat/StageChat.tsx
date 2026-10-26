@@ -18,6 +18,7 @@ import { useUiStore } from "../../stores/uiStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
 import { ContextChip } from "./ContextChip";
+import { Markdown } from "../common/Markdown";
 
 /**
  * Chat docked at the bottom of the Stage (read02 §30). It floats over the Stage
@@ -61,6 +62,10 @@ export function StageChat({ expanded }: { expanded: boolean }) {
   const historyOpen = useUiStore((s) => s.chatHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setChatHistoryOpen);
   const collapseChatOnContent = useSettingsStore((s) => s.collapseChatOnContent);
+  // Agent replies are Markdown; the toggle in the header shows the raw text
+  // instead when the rendering gets in the way.
+  const chatMarkdown = useSettingsStore((s) => s.chatMarkdown);
+  const setChatMarkdown = useSettingsStore((s) => s.setChatMarkdown);
   // `expanded` marks the Stage's default (desk) page. By default the chat stays
   // put no matter which page is up; only the "collapse on content" setting makes
   // a content page fold the history away.
@@ -291,14 +296,31 @@ export function StageChat({ expanded }: { expanded: boolean }) {
           >
             <div className="flex shrink-0 items-center justify-between border-b border-desk-line/70 px-2 py-1">
               <span className="label">{t("Chat")}</span>
-              <button
-                type="button"
-                onClick={() => setFull((value) => !value)}
-                title={full ? t("Collapse the history") : t("Expand the full history")}
-                className="rounded px-1.5 py-0.5 font-mono text-[10px] text-desk-dim hover:bg-desk-panel2 hover:text-desk-ink"
-              >
-                {full ? t("▼ collapse") : t("▲ expand")}
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setChatMarkdown(!chatMarkdown)}
+                  title={
+                    chatMarkdown
+                      ? t("Show the agent's replies as raw text")
+                      : t("Render the agent's replies as Markdown")
+                  }
+                  className={[
+                    "rounded px-1.5 py-0.5 font-mono text-[10px] hover:bg-desk-panel2",
+                    chatMarkdown ? "text-desk-teal" : "text-desk-dim hover:text-desk-ink",
+                  ].join(" ")}
+                >
+                  {chatMarkdown ? t("md") : t("raw")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFull((value) => !value)}
+                  title={full ? t("Collapse the history") : t("Expand the full history")}
+                  className="rounded px-1.5 py-0.5 font-mono text-[10px] text-desk-dim hover:bg-desk-panel2 hover:text-desk-ink"
+                >
+                  {full ? t("▼ collapse") : t("▲ expand")}
+                </button>
+              </div>
             </div>
             <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-auto px-3 py-2">
               {messages.length === 0 ? (
@@ -317,16 +339,22 @@ export function StageChat({ expanded }: { expanded: boolean }) {
                     </div>
                     <div
                       className={[
-                        "whitespace-pre-wrap rounded px-2 py-1.5 text-xs leading-relaxed",
+                        "rounded px-2 py-1.5 text-xs leading-relaxed",
                         message.role === "user"
-                          ? "bg-desk-panel2 text-desk-ink"
+                          ? "whitespace-pre-wrap bg-desk-panel2 text-desk-ink"
                           : message.role === "system"
-                            ? "border border-desk-line/60 bg-desk-panel2/40 font-mono text-[11px] text-desk-dim"
+                            ? "whitespace-pre-wrap border border-desk-line/60 bg-desk-panel2/40 font-mono text-[11px] text-desk-dim"
                             : "border border-desk-line bg-desk-bg text-desk-ink/90",
                       ].join(" ")}
                     >
-                      {message.content}
-                      {message.streaming ? <span className="ml-0.5 animate-pulse text-desk-amber">▍</span> : null}
+                      {message.role === "assistant" && chatMarkdown ? (
+                        <Markdown text={message.content} streaming={message.streaming} />
+                      ) : (
+                        <>
+                          <span className="whitespace-pre-wrap">{message.content}</span>
+                          {message.streaming ? <span className="ml-0.5 animate-pulse text-desk-amber">▍</span> : null}
+                        </>
+                      )}
                     </div>
                   </div>
                 ))

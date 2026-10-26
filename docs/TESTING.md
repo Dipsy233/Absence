@@ -10,6 +10,7 @@ node scripts/make-demo.mjs [dir] [--force]   # scaffold a demo project (default:
 npm run check:offline                        # run every offline check in one go
 npm run verify                               # typecheck + web build + every offline check
 npm run check:report                         # Absence Report engine (no server needed)
+npm run check:markdown                       # the chat's Markdown reader (pure)
 npm run check:eggs                           # process detection (no server, nothing spawned)
 npm run check:classify                       # command intent + primary/tool split
 npm run check:codex                          # Codex command parsing + approvals (pure)
@@ -84,6 +85,14 @@ baseline, a twice-failed command is a `command_retry_loop` that names the
 command, one failure is not a loop, a change outside the project is an
 `outside_change` fact at low attention marked `OUTSIDE` on the Timeline, and a
 still-running egg (high) outranks an outside change (low).
+
+`check-markdown.ts` is the pure harness for the Chat panel's Markdown reader: the
+block and inline constructs agents actually emit (headings, nested lists, task
+lists, tables, fenced code) parse, while a half-written construct — an
+unterminated fence, `**`, `[` — degrades to text instead of swallowing the rest
+of a streaming reply. It also pins what must *not* become markup: arithmetic
+(`2 * 3 * 4`), `snake_case`, raw HTML, and `javascript:` links all stay literal,
+which is what makes rendering the tree safe without an HTML sanitiser.
 
 `check-eggs.ts` is the pure harness for process detection (no server, nothing
 spawned): the command window decides what is a candidate, the ancestor chain

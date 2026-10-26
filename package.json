@@ -42,6 +42,7 @@
     "check:offline": "tsx scripts/checks/run-offline.ts",
     "check:e2e": "tsx scripts/checks/check-e2e.ts",
     "check:report": "tsx scripts/checks/check-report.ts",
+    "check:markdown": "tsx scripts/checks/check-markdown.ts",
     "check:chimes": "tsx scripts/checks/check-chimes.ts",
     "check:settings": "tsx scripts/checks/check-settings.ts",
     "check:process": "npm run check:eggs && npm run check:classify && npm run check:codex && npm run check:codexshell && npm run check:execserver && npm run check:shellenv && npm run check:fsdiff && npm run --if-present check:agentwatch && npm run --if-present check:ebpf",

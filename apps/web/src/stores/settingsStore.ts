@@ -50,6 +50,12 @@ export interface Settings {
    * user left it, so switching pages never hides the conversation.
    */
   collapseChatOnContent: boolean;
+  /**
+   * Render the agent's replies as Markdown (headings, lists, code, tables). On
+   * by default; off shows the raw text, which is what a reader wants when the
+   * model writes something the parser cannot make sense of.
+   */
+  chatMarkdown: boolean;
   /** Minimum failed commands in one run before the report warns (default 5). */
   commandFailThreshold: number;
   /** The attention level a command-failure warning raises (default "low"). */
@@ -113,6 +119,7 @@ const DEFAULTS: Settings = {
   leftOrder: ["files", "history", "activity"],
   displayInActivity: false,
   collapseChatOnContent: false,
+  chatMarkdown: true,
   commandFailThreshold: 5,
   commandFailLevel: "low",
   commandStreakThreshold: 3,
@@ -153,6 +160,7 @@ export function normalizeSettings(parsed: Partial<Settings>): Settings {
     leftOrder: normalizeIds(parsed.leftOrder, LEFT_PANEL_IDS) as LeftPanelId[],
     displayInActivity: parsed.displayInActivity ?? DEFAULTS.displayInActivity,
     collapseChatOnContent: parsed.collapseChatOnContent ?? DEFAULTS.collapseChatOnContent,
+    chatMarkdown: parsed.chatMarkdown ?? DEFAULTS.chatMarkdown,
     commandFailThreshold: normalizeThreshold(parsed.commandFailThreshold, DEFAULTS.commandFailThreshold),
     commandFailLevel: normalizeLevel(parsed.commandFailLevel, DEFAULTS.commandFailLevel),
     commandStreakThreshold: normalizeThreshold(parsed.commandStreakThreshold, DEFAULTS.commandStreakThreshold),
@@ -264,6 +272,7 @@ interface SettingsStore extends Settings {
   moveLeftPanel: (id: LeftPanelId, dir: "up" | "down") => void;
   setDisplayInActivity: (value: boolean) => void;
   setCollapseChatOnContent: (value: boolean) => void;
+  setChatMarkdown: (value: boolean) => void;
   setCommandFailThreshold: (value: number) => void;
   setCommandFailLevel: (value: CommandFailLevel) => void;
   setCommandStreakThreshold: (value: number) => void;
@@ -302,6 +311,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   moveLeftPanel: (id, dir) => set((s) => persistIt(s, { leftOrder: movePanel(s.leftOrder, id, dir) })),
   setDisplayInActivity: (value) => set((s) => persistIt(s, { displayInActivity: value })),
   setCollapseChatOnContent: (value) => set((s) => persistIt(s, { collapseChatOnContent: value })),
+  setChatMarkdown: (value) => set((s) => persistIt(s, { chatMarkdown: value })),
   setCommandFailThreshold: (value) =>
     set((s) => persistIt(s, { commandFailThreshold: normalizeThreshold(value, DEFAULTS.commandFailThreshold) })),
   setCommandFailLevel: (value) => set((s) => persistIt(s, { commandFailLevel: normalizeLevel(value, DEFAULTS.commandFailLevel) })),

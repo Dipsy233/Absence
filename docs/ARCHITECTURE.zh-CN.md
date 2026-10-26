@@ -63,7 +63,10 @@ Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAda
   聚合成一条 `tools` 序列；退出时用 `WatchExit.cpuMs` 补最后一点。
 - `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion。
   面板是入口，Stage 是内容的归宿；Absence Report 和 Agent Eggs 都是对同一条事件
-  流的归约。
+  流的归约。Chat 用自己写的解析器把智能体的回复渲染成 Markdown
+  （`lib/markdown.ts` → `components/common/Markdown.tsx`）：解析器产出带类型的树，
+  再由 React 元素渲染，因此没有任何 HTML 字符串进入 DOM，也就不需要消毒器。回复里
+  的路径和链接会在 Stage 打开对应文件，标题栏的开关可在渲染碍事时切回原文。
 
 ```
 absence/                     npm workspaces: packages/*  apps/server  apps/web
@@ -136,11 +139,13 @@ apps/web/src/
     eggs/                 AgentEggsPanel.tsx（primary；tool 折叠；running /
                           dead / all）
     files/  history/  activity/  chat/  ProjectPicker/  common/  Panel.tsx
+                          common 里的 Markdown.tsx 是对话的富文本渲染
   stores/                 session  file  stage  replay  chat  ui  settings  reset
   hooks/                  useSessionSocket  useStage  useReplay  useNow
                           useSounds
   lib/                    events（事件 → Stage 项 / Activity 行）
                           report（Absence Report 引擎）   eggs（进程 → eggs）
+                          markdown（对话的 Markdown 解析器）
                           replay  history  context  commands  agent  format  …
   types/                  stage  history  replay  report  chat  file
   index.css

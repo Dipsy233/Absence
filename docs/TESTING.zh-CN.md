@@ -13,6 +13,7 @@ npm run check:metrics                        # SQLite 指标存储与退出边�
 npm run check:incremental                    # 增量状态折叠与滑动窗口（纯）
 npx tsx scripts/checks/check-outside-attr.ts # agent 外部改动归因（纯）
 npx tsx scripts/checks/check-report.ts       # Absence Report 引擎（不需要 server）
+npx tsx scripts/checks/check-markdown.ts     # 对话的 Markdown 解析器（纯）
 npx tsx scripts/checks/check-eggs.ts         # 进程检测（无 server，不 spawn）
 npx tsx scripts/checks/check-classify.ts     # 命令意图 + primary/tool 切分
 npx tsx scripts/checks/check-codex.ts        # Codex 命令解析 + 审批（纯）
@@ -71,6 +72,12 @@ phase 在 recovery 之后落到 `verifying`，Timeline 按事件顺序每个活�
 永远不是环路基准，失败两次的同一条命令是一次带命令文本的 `command_retry_loop`，
 失败一次不算环路，项目外的改动是一次 `outside_change`、低级关注、Timeline 上
 标 `OUTSIDE`，而还在跑的蛋（high）压过项目外改动（low）。
+
+`check-markdown.ts` 是 Chat 面板 Markdown 解析器的纯 harness：智能体真正常写的
+块级与行内结构（标题、嵌套列表、任务列表、表格、围栏代码）都能解析，而写了一半
+的结构——未闭合的围栏、`**`、`[`——会退化成文本，而不是吞掉流式回复的剩余部分。
+它也钉住那些**不该**变成标记的东西：算式（`2 * 3 * 4`）、`snake_case`、原始 HTML、
+`javascript:` 链接都保持字面量——这正是渲染这棵树无需 HTML 消毒器的原因。
 
 `check-eggs.ts` 是进程检测的纯 harness（无 server，不 spawn 任何东西）：
 命令窗口决定谁是候选，祖先链决定谁是我们的，Absence 放在自己 shell 上的标记
