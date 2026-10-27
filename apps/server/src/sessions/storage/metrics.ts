@@ -1,5 +1,6 @@
 import type {
   EggMetricSample,
+  HostMetricSeriesPoint,
   MetricSeries,
   MetricSeriesPoint,
   MetricsFrame,
@@ -31,6 +32,30 @@ interface OpenChunk {
   rssKiB: number[];
 }
 
+/**
+ * The machine's own counters, chunked exactly like an egg's.
+ *
+ * Host samples have no pid, so they get their own table rather than a sentinel
+ * egg row. CPU and idle are cumulative counters (stored as deltas from a base,
+ * for the same precision reasons as the eggs); memory is a gauge.
+ */
+interface OpenHostChunk {
+  sessionId: string;
+  startTs: number;
+  bucketStart: number;
+  stepMs: number;
+  cpuBase: number;
+  idleBase: number;
+  lastCpu: number;
+  lastIdle: number;
+  cpuDeltas: number[];
+  idleDeltas: number[];
+  memUsedKiB: number[];
+  memTotalKiB: number[];
+  /** The core count the machine reported; written once per chunk. */
+  cpuCount: number;
+}
+
 interface SummaryRow {
   sessionId: string;
   eggPid: number;
@@ -49,12 +74,59 @@ interface SummaryRow {
 }
 
 const openChunks = new Map<string, OpenChunk>();
+const openHostChunks = new Map<string, OpenHostChunk>();
 const summaries = new Map<string, SummaryRow>();
 let flushTimer: NodeJS.Timeout | undefined;
 let failed = false;
 
 function keyOf(sessionId: string, eggPid: number): string {
   return `${sessionId}:${eggPid}`;
+}
+
+/** Sessions whose summaries have been read back from SQLite. */
+const summariesLoaded = new Set<string>();
+
+/**
+ * Bring a reopened session's running totals back before its first new frame.
+ *
+ * The summaries hold the session-to-date averages and are memory-only by design
+ * (see `flushMetrics`). A session closed and reopened later would otherwise
+ * start a fresh summary at the reopen and the session average in the UI would
+ * reset to the second half of the story. Reading the persisted row first keeps
+ * it continuous and keeps the `firstTs` baseline, so the CPU counter does not
+ * appear to jump.
+ */
+function ensureSummariesLoaded(sessionId: string): void {
+  if (summariesLoaded.has(sessionId)) return;
+  summariesLoaded.add(sessionId);
+  try {
+    const rows = openDatabase()
+      .prepare("SELECT * FROM egg_metric_summary WHERE session_id = ?")
+      .all(sessionId) as Array<Record<string, unknown>>;
+    for (const row of rows) {
+      const eggPid = Number(row.egg_pid ?? 0);
+      const cpuEnd = Number(row.cpu_seconds_end ?? 0);
+      const lastTs = Number(row.last_ts ?? 0);
+      summaries.set(keyOf(sessionId, eggPid), {
+        sessionId,
+        eggPid,
+        name: String(row.name ?? ""),
+        kind: row.kind === "agent" ? "agent" : row.kind === "tool" ? "tool" : "primary",
+        status: row.status === "exited" ? "exited" : "running",
+        firstTs: Number(row.first_ts ?? 0),
+        lastTs,
+        prevTs: lastTs,
+        cpuStart: Number(row.cpu_seconds_start ?? 0),
+        prevCpu: cpuEnd,
+        cpuEnd,
+        rssIntegral: Number(row.rss_integral ?? 0),
+        prevRss: 0,
+        samples: Number(row.samples ?? 0),
+      });
+    }
+  } catch {
+    // No store (or an older schema): a fresh summary is the honest fallback.
+  }
 }
 
 function warn(error: unknown): void {
@@ -69,6 +141,7 @@ function warn(error: unknown): void {
  */
 export function appendMetricsFrame(sessionId: string, frame: MetricsFrame): void {
   try {
+    ensureSummariesLoaded(sessionId);
     if (frame.agent) {
       appendEgg(sessionId, { ...frame.agent, eggPid: 0, kind: "agent", name: "Agent" }, frame);
     }
@@ -77,10 +150,57 @@ export function appendMetricsFrame(sessionId: string, frame: MetricsFrame): void
     }
     const tools = frame.eggs.filter((egg) => egg.kind === "tool" && egg.status === "running");
     if (tools.length > 0) appendEgg(sessionId, aggregateTools(tools), frame);
+    appendHost(sessionId, frame);
     scheduleFlush();
   } catch (error) {
     warn(error);
   }
+}
+
+/**
+ * Queue the frame's host counters. No summary is kept: the machine's session
+ * average is not something the UI shows, and the ring/chart derives whatever
+ * it needs from the points themselves.
+ */
+function appendHost(sessionId: string, frame: MetricsFrame): void {
+  const host = frame.host;
+  const bucketStart = Math.floor(frame.ts / CHUNK_MS) * CHUNK_MS;
+  let chunk = openHostChunks.get(sessionId);
+  const reset =
+    chunk === undefined ||
+    chunk.stepMs !== frame.intervalMs ||
+    chunk.bucketStart !== bucketStart ||
+    chunk.cpuDeltas.length >= MAX_SAMPLES ||
+    host.cpuSeconds < chunk.lastCpu - 1e-6 ||
+    host.cpuIdleSeconds < chunk.lastIdle - 1e-6;
+  const memUsed = Math.max(0, host.memTotalBytes - host.memAvailableBytes);
+
+  if (reset) {
+    if (chunk) flushHostChunk(sessionId, chunk);
+    openHostChunks.set(sessionId, {
+      sessionId,
+      startTs: frame.ts,
+      bucketStart,
+      stepMs: frame.intervalMs,
+      cpuBase: host.cpuSeconds,
+      idleBase: host.cpuIdleSeconds,
+      lastCpu: host.cpuSeconds,
+      lastIdle: host.cpuIdleSeconds,
+      cpuDeltas: [0],
+      idleDeltas: [0],
+      memUsedKiB: [toKiB(memUsed)],
+      memTotalKiB: [toKiB(host.memTotalBytes)],
+      cpuCount: Math.max(1, host.cpuCount),
+    });
+    return;
+  }
+
+  chunk.cpuDeltas.push(Math.max(0, host.cpuSeconds - chunk.lastCpu));
+  chunk.idleDeltas.push(Math.max(0, host.cpuIdleSeconds - chunk.lastIdle));
+  chunk.lastCpu = host.cpuSeconds;
+  chunk.lastIdle = host.cpuIdleSeconds;
+  chunk.memUsedKiB.push(toKiB(memUsed));
+  chunk.memTotalKiB.push(toKiB(host.memTotalBytes));
 }
 
 function aggregateTools(tools: EggMetricSample[]): EggMetricSample {
@@ -218,10 +338,12 @@ export function flushMetrics(): void {
     clearTimeout(flushTimer);
     flushTimer = undefined;
   }
-  if (openChunks.size === 0 && summaries.size === 0) return;
+  if (openChunks.size === 0 && openHostChunks.size === 0 && summaries.size === 0) return;
   const chunks = [...openChunks.entries()];
+  const hostChunks = [...openHostChunks.values()];
   const rows = [...summaries.values()];
   openChunks.clear();
+  openHostChunks.clear();
   // Summaries stay in memory: they hold the whole session's running totals, so
   // a later exit can flip the status without losing the average, and each flush
   // writes absolute values rather than increments.
@@ -231,6 +353,12 @@ export function flushMetrics(): void {
       INSERT OR REPLACE INTO metric_chunks
         (session_id, egg_pid, start_ts, step_ms, n, cpu_base, cpu, rss_kib)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertHostChunk = db.prepare(`
+      INSERT OR REPLACE INTO host_metric_chunks
+        (session_id, start_ts, step_ms, n, cpu_base, cpu_idle_base,
+         cpu, cpu_idle, mem_used_kib, mem_total_kib, cpu_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertSummary = db.prepare(`
       INSERT INTO egg_metric_summary
@@ -251,6 +379,7 @@ export function flushMetrics(): void {
     db.exec("BEGIN IMMEDIATE");
     try {
       for (const [, chunk] of chunks) writeChunk(insertChunk, chunk);
+      for (const chunk of hostChunks) writeHostChunk(insertHostChunk, chunk);
       for (const row of rows) {
         insertSummary.run(
           row.sessionId,
@@ -293,6 +422,22 @@ function writeChunk(statement: StatementSync, chunk: OpenChunk): void {
   );
 }
 
+function writeHostChunk(statement: StatementSync, chunk: OpenHostChunk): void {
+  statement.run(
+    chunk.sessionId,
+    chunk.startTs,
+    chunk.stepMs,
+    chunk.cpuDeltas.length,
+    chunk.cpuBase,
+    chunk.idleBase,
+    f32(chunk.cpuDeltas),
+    f32(chunk.idleDeltas),
+    u32(chunk.memUsedKiB),
+    u32(chunk.memTotalKiB),
+    chunk.cpuCount,
+  );
+}
+
 function flushChunk(key: string, chunk: OpenChunk): void {
   openChunks.delete(key);
   try {
@@ -302,6 +447,24 @@ function flushChunk(key: string, chunk: OpenChunk): void {
         INSERT OR REPLACE INTO metric_chunks
           (session_id, egg_pid, start_ts, step_ms, n, cpu_base, cpu, rss_kib)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `),
+      chunk,
+    );
+  } catch (error) {
+    warn(error);
+  }
+}
+
+function flushHostChunk(sessionId: string, chunk: OpenHostChunk): void {
+  openHostChunks.delete(sessionId);
+  try {
+    const db = openDatabase();
+    writeHostChunk(
+      db.prepare(`
+        INSERT OR REPLACE INTO host_metric_chunks
+          (session_id, start_ts, step_ms, n, cpu_base, cpu_idle_base,
+           cpu, cpu_idle, mem_used_kib, mem_total_kib, cpu_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `),
       chunk,
     );
@@ -361,6 +524,20 @@ interface SummarySqlRow {
   samples?: unknown;
 }
 
+interface HostChunkRow {
+  session_id?: unknown;
+  start_ts?: unknown;
+  step_ms?: unknown;
+  n?: unknown;
+  cpu_base?: unknown;
+  cpu_idle_base?: unknown;
+  cpu?: unknown;
+  cpu_idle?: unknown;
+  mem_used_kib?: unknown;
+  mem_total_kib?: unknown;
+  cpu_count?: unknown;
+}
+
 /**
  * Read a session's persisted series, bucketed to `step` for a uniform x axis.
  * Live recent frames are served from the in-memory ring by the snapshot; this
@@ -370,6 +547,14 @@ export function readMetricSeries(
   sessionId: string,
   options: { from: number; to: number; step: number; eggPid?: number },
 ): MetricSeries[] {
+  return readMetrics(sessionId, options).series;
+}
+
+/** The persisted eggs **and** the host's own counters over the same buckets. */
+export function readMetrics(
+  sessionId: string,
+  options: { from: number; to: number; step: number; eggPid?: number },
+): { series: MetricSeries[]; host: HostMetricSeriesPoint[] } {
   flushMetrics();
   const from = Math.max(0, Math.min(options.from, options.to));
   const to = Math.max(from + 1, Math.max(options.from, options.to));
@@ -380,11 +565,12 @@ export function readMetricSeries(
     db = openDatabase();
   } catch (error) {
     warn(error);
-    return [];
+    return { series: [], host: [] };
   }
 
   let summaries: SummarySqlRow[];
   let chunks: ChunkRow[];
+  let hostChunks: HostChunkRow[];
   try {
     summaries = (
       eggPid === undefined
@@ -410,9 +596,14 @@ export function readMetricSeries(
             )
             .all(sessionId, eggPid, to, from)
     ) as ChunkRow[];
+    hostChunks = db
+      .prepare(
+        "SELECT * FROM host_metric_chunks WHERE session_id = ? AND start_ts < ? AND start_ts + (n * step_ms) > ? ORDER BY start_ts ASC",
+      )
+      .all(sessionId, to, from) as HostChunkRow[];
   } catch (error) {
     warn(error);
-    return [];
+    return { series: [], host: [] };
   }
 
   // Decode every chunk into raw points, grouped by egg.
@@ -467,7 +658,71 @@ export function readMetricSeries(
       lastTs,
     });
   }
-  return series;
+  return { series, host: readHostPoints(hostChunks, from, to, step) };
+}
+
+/**
+ * Decode the host chunks into bucketed points.
+ *
+ * The last sample of each bucket wins for the counters (the same rule as the
+ * eggs' `bucket`), so a rate computed between two buckets is the rate between
+ * the two samples the eggs' own rates used. Missing buckets are simply absent:
+ * the chart draws a gap rather than inventing a value.
+ */
+function readHostPoints(
+  chunks: HostChunkRow[],
+  from: number,
+  to: number,
+  step: number,
+): HostMetricSeriesPoint[] {
+  const buckets = new Map<
+    number,
+    { cpu: number; idle: number; memUsed: number; memTotal: number; cpuCount: number }
+  >();
+  for (const row of chunks) {
+    const n = Number(row.n ?? 0);
+    const stepMs = Number(row.step_ms ?? 0);
+    const startTs = Number(row.start_ts ?? 0);
+    let cpu = Number(row.cpu_base ?? 0);
+    let idle = Number(row.cpu_idle_base ?? 0);
+    if (
+      n <= 0 ||
+      stepMs <= 0 ||
+      !(row.cpu instanceof Uint8Array) ||
+      !(row.cpu_idle instanceof Uint8Array) ||
+      !(row.mem_used_kib instanceof Uint8Array) ||
+      !(row.mem_total_kib instanceof Uint8Array)
+    ) {
+      continue;
+    }
+    const cpuDeltas = decodeF32(row.cpu, n);
+    const idleDeltas = decodeF32(row.cpu_idle, n);
+    const memUsed = decodeU32(row.mem_used_kib, n);
+    const memTotal = decodeU32(row.mem_total_kib, n);
+    for (let i = 0; i < n; i++) {
+      cpu += cpuDeltas[i] ?? 0;
+      idle += idleDeltas[i] ?? 0;
+      const ts = startTs + i * stepMs;
+      if (ts < from || ts > to) continue;
+      buckets.set(Math.floor((ts - from) / step), {
+        cpu,
+        idle,
+        memUsed: (memUsed[i] ?? 0) * 1024,
+        memTotal: (memTotal[i] ?? 0) * 1024,
+        cpuCount: Math.max(1, Number(row.cpu_count ?? 1)),
+      });
+    }
+  }
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([index, value]) => ({
+      ts: from + index * step,
+      cpuSeconds: value.cpu,
+      cpuIdleSeconds: value.idle,
+      memUsedBytes: value.memUsed,
+      memTotalBytes: value.memTotal,
+      cpuCount: value.cpuCount,
+    }));
 }
 
 function bucket(
@@ -512,6 +767,7 @@ export function expireMetrics(beforeTs: number): void {
   try {
     const db = openDatabase();
     db.prepare("DELETE FROM metric_chunks WHERE start_ts < ?").run(beforeTs);
+    db.prepare("DELETE FROM host_metric_chunks WHERE start_ts < ?").run(beforeTs);
     db.prepare("DELETE FROM egg_metric_summary WHERE last_ts < ?").run(beforeTs);
   } catch (error) {
     warn(error);
@@ -526,9 +782,12 @@ export function deleteSessionMetrics(sessionId: string): void {
   for (const key of [...openChunks.keys()]) {
     if (key.startsWith(`${sessionId}:`)) openChunks.delete(key);
   }
+  openHostChunks.delete(sessionId);
+  summariesLoaded.delete(sessionId);
   try {
     const db = openDatabase();
     db.prepare("DELETE FROM metric_chunks WHERE session_id = ?").run(sessionId);
+    db.prepare("DELETE FROM host_metric_chunks WHERE session_id = ?").run(sessionId);
     db.prepare("DELETE FROM egg_metric_summary WHERE session_id = ?").run(sessionId);
   } catch (error) {
     warn(error);

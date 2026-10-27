@@ -22,6 +22,7 @@ npm run check:process                        # every process harness together
                                              # (observer checks self-skip off-platform)
 npm run check:history                        # needs the Absence server running
 npm run check:metrics                        # SQLite metric storage and exit boundaries
+npm run check:metrics-persist                # persisted egg + host series survive a restart
 npm run check:incremental                    # incremental folding and sliding-window state
 npx tsx scripts/checks/check-outside-attr.ts # outside-change attribution
 npx tsx scripts/checks/check-agentwatch.ts   # kernel process observer (Windows)
@@ -62,6 +63,20 @@ and the created file count.
 `check-metrics.ts` verifies metric chunk round-tripping, resampling at a
 different step, session averages, and the rule that an exited egg does not
 extend its lifetime or keep accumulating resources.
+
+`check-metrics-persist.ts` verifies the dashboard's history path: eggs and the
+machine's own counters (the dashed host line) come back from SQLite, a window
+with no samples returns no points, and the two are read through the same call
+the UI makes.
+
+`check-metrics-restart.ts` (live, ~90s) boots a real server, runs a workload,
+restarts the server, and reads the same session back — the curve and the host
+line must still be there.
+
+`check-session-close.ts` (live, ~45s) pins "change project" as *leaving* the
+session: after `POST /api/sessions/:id/close` the sample count stops growing
+(an in-flight sample is dropped, not written), the recorded samples survive, and
+reopening the session restores them.
 
 `check-incremental.ts` verifies that eggs, History, and Activity remain
 consistent with a full rebuild while the event window slides, and pins

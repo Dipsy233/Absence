@@ -107,10 +107,35 @@ export interface MetricSeries {
   lastTs: number;
 }
 
+/**
+ * The machine's own counters over the requested range, bucketed like the egg
+ * series.
+ *
+ * Kept as cumulative counters for the same reason the eggs are: the client
+ * derives `rate()`, so the arrow of time stays in one place. It is persisted
+ * alongside the eggs so an expanded dashboard can draw the host as a dashed
+ * reference line for a session that is no longer live.
+ */
+export interface HostMetricSeriesPoint {
+  ts: number;
+  /** Cumulative host CPU time, in seconds (counter). */
+  cpuSeconds: number;
+  /** Cumulative host idle time, in seconds (counter). */
+  cpuIdleSeconds: number;
+  /** Total memory in use by the machine, in bytes (gauge). */
+  memUsedBytes: number;
+  /** Installed memory, in bytes (gauge). */
+  memTotalBytes: number;
+  /** Cores the machine reported when this sample was taken. */
+  cpuCount: number;
+}
+
 /** GET /api/sessions/:id/metrics response. */
 export interface MetricsResponse {
   from: number;
   to: number;
   step: number;
   series: MetricSeries[];
+  /** The host's counters over the same buckets; empty when nothing was stored. */
+  host: HostMetricSeriesPoint[];
 }

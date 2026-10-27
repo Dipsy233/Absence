@@ -307,6 +307,27 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
+  /**
+   * Leave the session without deleting it.
+   *
+   * "Change project" means the user is done watching this agent. The live
+   * session is what owns the metrics sampler, the process watcher and the
+   * runtime; leaving it in the store would keep sampling a process tree nobody
+   * is looking at and keep appending frames to the database forever. Disposing
+   * it flushes what it has and stops the cadence, while the archive and the
+   * metric chunks stay on disk so reopening the session later gets its whole
+   * history back.
+   */
+  app.post("/api/sessions/:id/close", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!sessionStore.get(id)) {
+      // Already closed (or the server restarted): the desired state holds.
+      return { ok: true };
+    }
+    await sessionStore.remove(id);
+    return { ok: true };
+  });
+
   app.delete("/api/sessions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     if (!sessionStore.get(id)) return reply.code(404).send({ error: "session not found" });

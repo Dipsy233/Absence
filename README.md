@@ -440,8 +440,16 @@ port to the public internet.
   exited or were removed while the session was closed are corrected to `exited`
   from the daemon's own state. With no docker (or `ABSENCE_DOCKER=0`) nothing
   changes.
-- The live metrics ring keeps the newest 300 frames in memory. Longer ranges and
-  historical sessions are loaded from SQLite; metric retention is 30 days.
+- The live metrics ring keeps the newest 300 frames in memory and is only the
+  freshest tail: every range reads SQLite as well, and the two are merged, so a
+  session closed and reopened later still shows its whole curve. Time nothing
+  sampled is a hole in the chart, not a straight line across it. The machine's
+  own CPU and memory are persisted next to the eggs (`host_metric_chunks`) and
+  drawn as the dashed reference line. Metric retention is 30 days.
+- "Change project" leaves the session: the server stops its metrics sampler and
+  process watcher (an in-flight sample is dropped rather than written), flushes
+  what it has, and keeps the archive, so reopening the session restores its
+  history instead of appending to a watcher nobody is looking at.
 
 ## Documentation
 

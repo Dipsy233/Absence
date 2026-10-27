@@ -138,6 +138,11 @@ export class ProcessMetricsSampler {
         if (pid >= SYNTHETIC_PID_BASE) pids.delete(pid);
       }
       const snapshot = await sampleSnapshot([...pids]);
+      // The session may have been closed while the sample was in flight (close
+      // disposes the sampler). Emitting this frame then would write one more
+      // sample for an agent nobody is watching — exactly what closing must
+      // stop. Drop it.
+      if (this.disposed) return;
       const raw = snapshot.processes;
       if (process.env.ABSENCE_DEBUG_WATCHER) {
         process.stderr.write(

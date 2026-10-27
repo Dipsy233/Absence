@@ -70,10 +70,16 @@ Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAda
   (2s→60s, chosen by concurrent primary count; a selected egg pins 2s) — Linux
   reads `/proc`, Windows asks CIM once, other platforms `ps` — in Prometheus
   shapes: counters and gauges, with `rate()` and averages derived client-side.
-  The newest 300 frames ride the snapshot to new clients; older data persists to
-  SQLite through `storage/metrics.ts` as 30-minute binary chunks (Float32 CPU
-  deltas + Uint32 RSS KiB), kept for 30 days. Session averages accumulate
-  separately in `egg_metric_summary`, independent of the in-memory ring. It
+  Everything persists to SQLite through `storage/metrics.ts` as 30-minute binary
+  chunks (Float32 CPU deltas + Uint32 RSS KiB), kept for 30 days. The newest 300
+  frames ride the snapshot to new clients and are only the freshest tail: the
+  dashboard merges them onto the persisted points, so a session closed and
+  reopened later keeps its whole curve and the sampled silence stays a hole.
+  The machine's own counters persist to `host_metric_chunks` next to the eggs,
+  which is what lets the expanded dashboard draw the host as a dashed reference
+  line for a session that is no longer live. Session averages accumulate
+  separately in `egg_metric_summary`, independent of the in-memory ring, and are
+  re-read from it when a session is reopened so they stay continuous. It
   reaches the UI over a `metrics` WS frame and
   `GET /api/sessions/:id/metrics`, consumed by the right-rail METRICS panel and
   the full-screen Stage dashboard (uplot). Tools are not sampled per tick; they

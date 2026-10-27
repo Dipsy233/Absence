@@ -6,7 +6,7 @@ import { WindowControls } from "../common/WindowControls";
 import { SettingsDialog } from "../common/SettingsDialog";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
-import { resetAllStores } from "../../stores/reset";
+import { leaveSession } from "../../stores/reset";
 
 /** The session bar across the top (read02 §4). Inside the desktop shell it
  * doubles as the frameless window's title bar: drag region + window controls. */
@@ -98,7 +98,7 @@ export function SessionBar() {
 
       <button
         type="button"
-        onClick={resetAllStores}
+        onClick={() => void leaveSession()}
         className="shrink-0 rounded border border-desk-line px-2 py-0.5 text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
         title={t("Close this session and pick another project")}
       >

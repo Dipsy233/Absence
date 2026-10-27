@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
+import type { MetricSeries, MetricsResponse } from "@absence/core";
 import { config } from "../config";
 import { readMeta } from "../sessions/archive";
-import { readMetricSeries } from "../sessions/storage/metrics";
+import { readMetrics } from "../sessions/storage/metrics";
 import { sessionStore } from "../sessions/SessionStore";
 
 /** A query-string positive integer, or undefined when absent/invalid. */
@@ -66,13 +67,14 @@ export async function metricRoutes(app: FastifyInstance): Promise<void> {
     if (from >= to) return reply.code(400).send({ error: "from must be before to" });
     const step = parsePositive(query.step) ?? defaultStep(to - from);
     const eggPid = parsePositive(query.egg);
-    const series = readMetricSeries(id, { from, to, step, eggPid });
+    const { series, host } = readMetrics(id, { from, to, step, eggPid });
 
     if (query.format === "prometheus" || query.format === "text") {
       reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
       return renderPrometheusText(id, series);
     }
-    return { from, to, step, series };
+    const response: MetricsResponse = { from, to, step, series, host };
+    return response;
   });
 }
 
@@ -86,7 +88,7 @@ export async function metricRoutes(app: FastifyInstance): Promise<void> {
  */
 function renderPrometheusText(
   sessionId: string,
-  series: ReturnType<typeof readMetricSeries>,
+  series: MetricSeries[],
 ): string {
   const lines: string[] = [];
   const header = (name: string, type: "counter" | "gauge", help: string) => {

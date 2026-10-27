@@ -1,4 +1,9 @@
-import type { EggMetricSample, MetricSeries, MetricsFrame } from "@absence/core";
+import type {
+  EggMetricSample,
+  HostMetricSeriesPoint,
+  MetricSeries,
+  MetricsFrame,
+} from "@absence/core";
 
 /** The newest frame in the ring, if any. */
 export function latestFrame(frames: MetricsFrame[]): MetricsFrame | undefined {
@@ -178,86 +183,164 @@ export function formatPercent(percent: number): string {
 /** A series for the full dashboard: points from the ring or from the API. */
 export interface ChartSeries {
   ts: number[];
-  cpuCores: number[];
-  rssMiB: number[];
-  hostCpuPercent?: number[];
-  hostMemMiB?: number[];
+  /** Cores in use, or null where nothing was sampled (a gap, not a zero). */
+  cpuCores: Array<number | null>;
+  /** RSS in MiB, or null where nothing was sampled. */
+  rssMiB: Array<number | null>;
+  /** The machine's CPU usage, 0–100, or null where nothing was sampled. */
+  hostCpuPercent?: Array<number | null>;
+  /** The machine's used memory, in MiB, or null where nothing was sampled. */
+  hostMemMiB?: Array<number | null>;
 }
 
-export function chartFromRing(frames: MetricsFrame[], eggPid: number): ChartSeries {
-  const points = eggPoints(frames, eggPid);
-  return withHostSeries(chartFromPoints(points), frames);
+/** A raw point shared by the ring and the API paths. */
+export interface SeriesPoint {
+  ts: number;
+  cpuSeconds: number;
+  rssBytes: number;
 }
 
-export function chartFromAgentRing(frames: MetricsFrame[]): ChartSeries {
-  return withHostSeries(chartFromPoints(agentPoints(frames)), frames);
+/**
+ * A chart from raw egg points.
+ *
+ * `times` is the x axis. When it is given, a slot with no sample becomes a
+ * `null` rather than a straight line across a silence — which is the whole
+ * reason the samples are persisted: a session closed and reopened later must
+ * show the time in between as empty, not as "the agent was busy".
+ */
+export function chartFromPoints(points: SeriesPoint[], times?: number[], step?: number): ChartSeries {
+  const axis = times ?? points.map((point) => point.ts);
+  void step;
+  const cpuCores: Array<number | null> = [];
+  const rssMiB: Array<number | null> = [];
+  let previous: SeriesPoint | undefined;
+  let index = 0;
+  for (const time of axis) {
+    // Consume every sample at or before this slot; the newest one wins.
+    let current: SeriesPoint | undefined;
+    while (index < points.length && points[index]!.ts <= time) {
+      current = points[index]!;
+      index += 1;
+    }
+    if (!current) {
+      // Nothing sampled yet at this x: leave a hole, both series.
+      cpuCores.push(null);
+      rssMiB.push(null);
+      continue;
+    }
+    if (!previous) {
+      // The first sample is a baseline, not a rate.
+      cpuCores.push(0);
+    } else {
+      const seconds = (current.ts - previous.ts) / 1000;
+      cpuCores.push(seconds > 0 ? Math.max(0, (current.cpuSeconds - previous.cpuSeconds) / seconds) : 0);
+    }
+    rssMiB.push(current.rssBytes / (1024 * 1024));
+    previous = current;
+  }
+  return { ts: axis.map((ts) => Math.round(ts / 1000)), cpuCores, rssMiB };
 }
 
+export function chartFromRing(frames: MetricsFrame[], eggPid: number, times?: number[]): ChartSeries {
+  return withHostSeries(chartFromPoints(eggPoints(frames, eggPid), times), frames);
+}
+
+export function chartFromAgentRing(frames: MetricsFrame[], times?: number[]): ChartSeries {
+  return withHostSeries(chartFromPoints(agentPoints(frames), times), frames);
+}
+
+/** The machine's own line for a ring, aligned to an existing x axis. */
+export function hostSeriesFromFrames(
+  times: number[],
+  frames: MetricsFrame[],
+): { hostCpuPercent: Array<number | null>; hostMemMiB: Array<number | null> } {
+  const chart = withHostSeries({ ts: times.map((ts) => Math.round(ts / 1000)), cpuCores: [], rssMiB: [] }, frames);
+  return { hostCpuPercent: chart.hostCpuPercent ?? [], hostMemMiB: chart.hostMemMiB ?? [] };
+}
+
+/** The machine's own line, aligned to an existing chart's x axis. */
 function withHostSeries(chart: ChartSeries, frames: MetricsFrame[]): ChartSeries {
-  const hostCpuPercent: number[] = [];
-  const hostMemMiB: number[] = [];
-  for (let i = 0; i < chart.ts.length; i++) {
-    const ts = chart.ts[i]! * 1000;
-    let frame = frames[0];
-    for (const candidate of frames) {
-      if (candidate.ts <= ts) frame = candidate;
+  const hostCpuPercent: Array<number | null> = [];
+  const hostMemMiB: Array<number | null> = [];
+  for (const second of chart.ts) {
+    const ts = second * 1000;
+    let index = -1;
+    for (let i = 0; i < frames.length; i++) {
+      if (frames[i]!.ts <= ts) index = i;
       else break;
     }
-    if (!frame) continue;
-    const index = frames.indexOf(frame);
-    const previous = frames[Math.max(0, index - 1)]!;
+    const frame = frames[index];
+    if (!frame) {
+      hostCpuPercent.push(null);
+      hostMemMiB.push(null);
+      continue;
+    }
+    const previous = frames[Math.max(0, index - 1)];
+    hostMemMiB.push(Math.max(0, frame.host.memTotalBytes - frame.host.memAvailableBytes) / (1024 * 1024));
+    if (!previous || frame.ts === previous.ts) {
+      hostCpuPercent.push(0);
+      continue;
+    }
     const total = Math.max(0, frame.host.cpuSeconds - previous.host.cpuSeconds);
     const idle = Math.max(0, frame.host.cpuIdleSeconds - previous.host.cpuIdleSeconds);
     hostCpuPercent.push(total > 0 ? Math.max(0, Math.min(100, ((total - idle) / total) * 100)) : 0);
-    hostMemMiB.push(Math.max(0, frame.host.memTotalBytes - frame.host.memAvailableBytes) / (1024 * 1024));
   }
   return { ...chart, hostCpuPercent, hostMemMiB };
 }
 
-function chartFromPoints(
-  points: Array<{ ts: number; cpuSeconds: number; rssBytes: number }>,
-): ChartSeries {
-  const ts: number[] = [];
-  const cpuCores: number[] = [];
-  const rssMiB: number[] = [];
-  if (points.length > 0) {
-    ts.push(Math.round(points[0]!.ts / 1000));
-    cpuCores.push(0);
-    rssMiB.push(points[0]!.rssBytes / (1024 * 1024));
+/**
+ * The host's own line for a persisted range, aligned to the egg chart's axis.
+ *
+ * Host points carry cumulative counters, so the rate is derived here exactly the
+ * way it is for an egg. A whole machine's percentage needs no core count: it is
+ * already the machine's own share.
+ */
+export function chartHostFromSeries(host: HostMetricSeriesPoint[], times: number[]): {
+  hostCpuPercent: Array<number | null>;
+  hostMemMiB: Array<number | null>;
+} {
+  const hostCpuPercent: Array<number | null> = [];
+  const hostMemMiB: Array<number | null> = [];
+  let index = 0;
+  let previous: HostMetricSeriesPoint | undefined;
+  for (const time of times) {
+    let current: HostMetricSeriesPoint | undefined;
+    while (index < host.length && host[index]!.ts <= time) {
+      current = host[index]!;
+      index += 1;
+    }
+    if (!current) {
+      hostCpuPercent.push(null);
+      hostMemMiB.push(null);
+      continue;
+    }
+    if (!previous) {
+      hostCpuPercent.push(0);
+    } else {
+      const seconds = (current.ts - previous.ts) / 1000;
+      const total = current.cpuSeconds - previous.cpuSeconds;
+      const idle = current.cpuIdleSeconds - previous.cpuIdleSeconds;
+      hostCpuPercent.push(
+        seconds > 0 && total > 0 ? Math.max(0, Math.min(100, ((total - idle) / total) * 100)) : 0,
+      );
+    }
+    hostMemMiB.push(Math.max(0, current.memUsedBytes) / (1024 * 1024));
+    previous = current;
   }
-  for (let i = 1; i < points.length; i++) {
-    const previous = points[i - 1]!;
-    const point = points[i]!;
-    const seconds = (point.ts - previous.ts) / 1000;
-    if (seconds <= 0) continue;
-    ts.push(Math.round(point.ts / 1000));
-    cpuCores.push(Math.max(0, (point.cpuSeconds - previous.cpuSeconds) / seconds));
-    rssMiB.push(point.rssBytes / (1024 * 1024));
-  }
-  return { ts, cpuCores, rssMiB };
+  return { hostCpuPercent, hostMemMiB };
 }
 
-/** Resample API points into uniform chart arrays. */
-export function chartFromSeries(series: MetricSeries, step: number): ChartSeries {
-  const ts: number[] = [];
-  const cpuCores: number[] = [];
-  const rssMiB: number[] = [];
-  const points = series.points;
-  for (let i = 1; i < points.length; i++) {
-    const previous = points[i - 1]!;
-    const point = points[i]!;
-    const seconds = (point.ts - previous.ts) / 1000;
-    if (seconds <= 0) continue;
-    ts.push(Math.round(point.ts / 1000));
-    cpuCores.push(Math.max(0, (point.cpuSeconds - previous.cpuSeconds) / seconds));
-    rssMiB.push(point.rssBytes / (1024 * 1024));
-  }
-  // A single point is not a rate; show memory at least.
-  if (points.length === 1) {
-    ts.push(Math.round(points[0]!.ts / 1000));
-    cpuCores.push(0);
-    rssMiB.push(points[0]!.rssBytes / (1024 * 1024));
-  }
-  void step;
-  return { ts, cpuCores, rssMiB };
+/**
+ * Resample API points onto the dashboard's shared x axis.
+ *
+ * `times` is the union of the egg points and the host chunks, so the two lines
+ * line up and the empty stretches stay empty.
+ */
+export function chartFromSeries(
+  series: MetricSeries,
+  times: number[],
+  host: HostMetricSeriesPoint[] = [],
+): ChartSeries {
+  return { ...chartFromPoints(series.points, times), ...chartHostFromSeries(host, times) };
 }
+

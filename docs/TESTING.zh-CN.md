@@ -10,6 +10,7 @@ npm run check:offline                        # 一次跑完全部离线检查
 npm run verify                               # 类型检查 + Web 构建 + 全部离线检查
 npx tsx scripts/checks/check-history.ts      # 需要 server 在跑
 npm run check:metrics                        # SQLite 指标存储与退出边界（纯）
+npm run check:metrics-persist                # 落盘的蛋与整机序列能跨重启读回
 npm run check:incremental                    # 增量状态折叠与滑动窗口（纯）
 npx tsx scripts/checks/check-outside-attr.ts # agent 外部改动归因（纯）
 npx tsx scripts/checks/check-report.ts       # Absence Report 引擎（不需要 server）
@@ -55,6 +56,17 @@ Activity 范围、确定的 stage 项 id、快照 seek、Stage 回到默认页�
 
 `check-metrics.ts` 验证指标 chunk 的读写、不同步长重采样、session 平均值，
 以及 egg 退出后不再延长生命周期或继续累计资源。
+
+`check-metrics-persist.ts` 验证看板的历史路径：蛋与整机自身的 counter（图表
+里的整机虚线）都能从 SQLite 读回，没有采样点的窗口返回空点（图上留空），且
+走的是 UI 实际调用的同一个接口。
+
+`check-metrics-restart.ts`（需要真实服务器，约 90 秒）启动服务器、跑一段负载、
+重启服务器，再读同一个 session——曲线与整机虚线必须还在。
+
+`check-session-close.ts`（需要真实服务器，约 45 秒）把“切换项目”钉成**离开**
+会话：`POST /api/sessions/:id/close` 之后采样点数量不再增长（飞行中的那一次
+采样直接丢弃、不落盘），已记录的采样点保留，重开 session 能恢复它们。
 
 `check-incremental.ts` 验证事件滑动窗口下 eggs、History 和 Activity 的增量
 折叠与完整重建一致，并钉住每事件成本不会退化成窗口大小的乘积。

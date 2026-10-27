@@ -82,7 +82,7 @@ const nodeRequire = createRequire(import.meta.url);
 const { DatabaseSync } = nodeRequire("node:sqlite") as typeof import("node:sqlite");
 
 const DB_FILE = "absence.db";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const FLUSH_MS = 50;
 
 let database: DatabaseSyncType | undefined;
@@ -215,6 +215,27 @@ function open(): DatabaseSyncType {
       samples           INTEGER NOT NULL,
       PRIMARY KEY (session_id, egg_pid)
     );
+
+    -- The machine's own counters, so an expanded dashboard can draw the host as
+    -- a dashed reference line over a session that is no longer live. Same
+    -- packed-chunk shape as metric_chunks, keyed by session and start time only
+    -- (the host has no pid).
+    CREATE TABLE IF NOT EXISTS host_metric_chunks (
+      session_id    TEXT NOT NULL,
+      start_ts      INTEGER NOT NULL,
+      step_ms       INTEGER NOT NULL,
+      n             INTEGER NOT NULL,
+      cpu_base      REAL NOT NULL,
+      cpu_idle_base REAL NOT NULL,
+      cpu           BLOB NOT NULL,
+      cpu_idle      BLOB NOT NULL,
+      mem_used_kib  BLOB NOT NULL,
+      mem_total_kib BLOB NOT NULL,
+      cpu_count     INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (session_id, start_ts)
+    ) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS idx_host_metric_chunks_ts
+      ON host_metric_chunks(session_id, start_ts);
 
     PRAGMA user_version = ${SCHEMA_VERSION};
   `);

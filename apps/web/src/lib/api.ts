@@ -164,6 +164,15 @@ export async function abortSession(id: string): Promise<void> {
   await json(await fetch(`/api/sessions/${id}/abort`, { method: "POST" }));
 }
 
+/**
+ * Leave a session: stop its watchers and metrics sampling, keep its archive.
+ * Best effort — the UI leaves either way, but a failure is worth a console line
+ * because it means the server will keep sampling in the background.
+ */
+export async function closeSession(id: string): Promise<void> {
+  await fetch(`/api/sessions/${encodeURIComponent(id)}/close`, { method: "POST" });
+}
+
 export interface FileContent {
   path: string;
   content: string;

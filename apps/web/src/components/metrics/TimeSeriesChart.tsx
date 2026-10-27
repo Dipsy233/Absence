@@ -41,6 +41,9 @@ export function TimeSeriesChart({
           stroke: isCpu ? "rgb(224, 163, 92)" : "rgb(79, 179, 165)",
           width: 1.8,
           points: { show: true, size: 5 },
+          // A slot with no sample is null, and uPlot leaves a hole instead of
+          // drawing a straight line across a silence.
+          spanGaps: false,
         },
         {
           label: hostLabel,
@@ -48,6 +51,7 @@ export function TimeSeriesChart({
           dash: [5, 4],
           width: 1.2,
           points: { show: false },
+          spanGaps: false,
         },
       ],
       axes: [
@@ -106,8 +110,8 @@ export function TimeSeriesChart({
     };
     const chart = new uPlot(options, [
       data.ts,
-      values.map((value) => (Number.isFinite(value) ? value : null)),
-      (hostValues ?? []).map((value) => (Number.isFinite(value) ? value : null)),
+      values.map((value) => (typeof value === "number" && Number.isFinite(value) ? value : null)),
+      (hostValues ?? []).map((value) => (typeof value === "number" && Number.isFinite(value) ? value : null)),
     ] as uPlot.AlignedData, host);
     chartRef.current = chart;
     const observer = new ResizeObserver(() => {
@@ -133,7 +137,7 @@ export function TimeSeriesChart({
   );
 }
 
-function formatValue(value: number | undefined, isCpu: boolean): string {
-  if (value === undefined || !Number.isFinite(value)) return "—";
+function formatValue(value: number | null | undefined, isCpu: boolean): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return `${value.toFixed(isCpu ? 2 : 1)} ${isCpu ? "%" : "MiB"}`;
 }
