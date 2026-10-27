@@ -7,6 +7,7 @@ import { useT } from "../../lib/i18n";
 import { useNow } from "../../hooks/useNow";
 import { formatDuration } from "../../lib/format";
 import {
+  RANGES,
   chartFromSeries,
   eggList,
   findEgg,
@@ -15,21 +16,14 @@ import {
   formatPercent,
   hostSeriesFromFrames,
   latestFrame,
+  rangeStart,
   type ChartSeries,
+  type RangeId,
   type SeriesPoint,
 } from "../../lib/metrics";
 import { TimeSeriesChart } from "./TimeSeriesChart";
 
-type RangeId = "1m" | "5m" | "30m" | "1h" | "all";
 type Tab = "graph" | "table";
-
-const RANGES: Array<{ id: RangeId; label: string; ms: number; step: number; tickSeconds: number }> = [
-  { id: "1m", label: "1m", ms: 60_000, step: 5_000, tickSeconds: 5 },
-  { id: "5m", label: "5m", ms: 5 * 60_000, step: 5_000, tickSeconds: 30 },
-  { id: "30m", label: "30m", ms: 30 * 60_000, step: 5_000, tickSeconds: 150 },
-  { id: "1h", label: "1h", ms: 60 * 60_000, step: 5_000, tickSeconds: 300 },
-  { id: "all", label: "all", ms: Number.MAX_SAFE_INTEGER, step: 5_000, tickSeconds: 300 },
-];
 
 /** At most this many x slots, so "all" over a day stays readable. */
 const MAX_SLOTS = 720;
@@ -66,15 +60,18 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
     selectedEggPid !== undefined ? primary.find((egg) => egg.eggPid === selectedEggPid) : undefined;
 
   const range = RANGES.find((entry) => entry.id === rangeId) ?? RANGES[1]!;
+  // Each range is its own window, floored to its own step so it only moves when
+  // the clock crosses a step boundary (reading Date.now() every render would
+  // change the request URL constantly and refetch in a loop).
+  //
+  // Only "all" anchors to the session's start. "30m" and "1h" used to as well,
+  // which made them collapse onto the same short window as "1m" whenever the
+  // session was younger than the range — the chart looked identical no matter
+  // which one was picked.
   const sessionStart = session?.startedAt;
-  // A bounded range's start is floored to the range's own step so it only moves
-  // when the clock crosses a step boundary. Reading Date.now() on every render
-  // would make the request URL change constantly and refetch in a loop.
   const nowSlot = Math.floor(now / range.step) * range.step;
   const rangeFrom =
-    range.id === "all" || range.id === "30m" || range.id === "1h"
-      ? (sessionStart ?? nowSlot - 60 * 60_000)
-      : nowSlot - range.ms;
+    range.id === "all" ? (sessionStart ?? nowSlot - 60 * 60_000) : nowSlot - range.ms;
 
   // The persisted chunks are the backbone of every range; the ring only adds the
   // samples the 15s flush has not written yet.
@@ -182,21 +179,40 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
   // The observed process: the selected egg, or the agent's whole tree.
   const egg = selected ? findEgg(frames, selected.eggPid) : undefined;
   const observationName = selected?.name ?? agent?.name ?? "Agent";
-  const observationStarted = useSessionStore((s) =>
-    selected ? s.eggState.eggs.get(selected.eggPid)?.startedAt : s.session?.startedAt,
-  );
-  const observationEnded = useSessionStore((s) =>
-    selected ? s.eggState.eggs.get(selected.eggPid)?.exitedAt : undefined,
-  );
+  /**
+   * How long the observed process has been (or was) alive — its own lifetime,
+   * not how long Absence has been watching.
+   *
+   * For an egg that is the process it spawned:
+   * started at `startedAt`, stops at `exitedAt`. A python script the agent
+   * started therefore counts up while it runs and freezes the moment it ends,
+   * which is the only definition that answers "how long did that process run?".
+   * The whole agent's tree has no single lifetime, so it falls back to the visit.
+   */
+  const observedLifetime = useSessionStore((s) => {
+    if (!selected) return undefined;
+    const entry = s.eggState.eggs.get(selected.eggPid);
+    if (!entry) return undefined;
+    return { startedAt: entry.startedAt, exitedAt: entry.exitedAt, status: entry.status };
+  });
   void eggVersion;
-  const observationDuration =
-    observationStarted !== undefined && observationStarted !== null
-      ? Math.max(0, (observationEnded ?? now) - observationStarted)
-      : 0;
+  const observationDuration = observedLifetime
+    ? Math.max(0, (observedLifetime.exitedAt ?? now) - observedLifetime.startedAt)
+    : 0;
+  const observationRunning = observedLifetime ? observedLifetime.status === "running" : false;
   // Every process this agent spawned in the session: live eggs plus the ones the
   // watcher retired to keep the live view bounded. Tools count — they were spawned.
   const spawned = useSessionStore((s) => s.eggState.eggs.size + s.eggState.retired);
-  const sessionDuration = session ? Math.max(0, now - session.startedAt) : 0;
+  /**
+   * Time actually spent in this session.
+   *
+   * Dwell time, not wall time since creation: leaving the project and coming
+   * back later continues the clock instead of counting the hours in between
+   * (the server accrues it; see `Session.dwellMs`).
+   */
+  const sessionDuration = session
+    ? Math.max(0, (session.dwellMs ?? 0) + (session.openedAt ? now - session.openedAt : 0))
+    : 0;
 
   return (
     <div
@@ -225,7 +241,7 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
           >
             {RANGES.map((entry) => (
               <option key={entry.id} value={entry.id}>
-                {entry.label}
+                {entry.id}
               </option>
             ))}
           </select>
@@ -324,14 +340,14 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
               <Stat
                 label={t("observed for")}
                 value={observationDuration > 0 ? formatDuration(observationDuration) : "—"}
-                detail={selected ? (egg?.status === "exited" ? t("exited") : t("running")) : t("Agent")}
+                detail={selected ? (observationRunning ? t("running") : t("exited")) : t("whole agent")}
                 accent="ink"
               />
               <Stat label={t("spawned processes")} value={String(spawned)} detail={t("this session")} accent="ink" />
               <Stat
                 label={t("session duration")}
                 value={sessionDuration > 0 ? formatDuration(sessionDuration) : "—"}
-                detail={session ? t("since {time}", { time: new Date(session.startedAt).toLocaleTimeString() }) : ""}
+                detail={t("time spent in this session")}
                 accent="ink"
               />
             </div>

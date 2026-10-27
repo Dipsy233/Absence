@@ -48,6 +48,15 @@ export interface ArchiveMeta {
   piSessionId?: string;
   messageCount: number;
   firstPrompt?: string;
+  /**
+   * Dwell time this session had accrued when it was last closed, in ms.
+   *
+   * A session's "duration" is how long the user actually spent in it, not how
+   * much wall time has passed since it was created: leaving the project and
+   * coming back later continues the clock instead of restarting it or counting
+   * the hours in between. Absent on archives written before this was tracked.
+   */
+  dwellMs?: number;
 }
 
 type SqlRow = Record<string, unknown>;
@@ -436,7 +445,27 @@ function rowToMeta(row: SqlRow): ArchiveMeta | undefined {
     piSessionId: typeof row.pi_session_id === "string" ? row.pi_session_id : undefined,
     messageCount: Number(row.message_count ?? 0),
     firstPrompt: typeof row.first_prompt === "string" ? row.first_prompt : undefined,
+    dwellMs: readDwell(row),
   };
+}
+
+/**
+ * The accrued dwell time, from the meta blob the row round-trips.
+ *
+ * It lives in `meta_json` rather than its own column on purpose: it is a value
+ * the session writes as a whole, not something the archive queries, and adding a
+ * column would mean a migration for one number. The dedicated columns exist for
+ * the fields history sorts and filters on.
+ */
+function readDwell(row: SqlRow): number | undefined {
+  if (typeof row.meta_json !== "string") return undefined;
+  try {
+    const meta = JSON.parse(row.meta_json) as { dwellMs?: unknown };
+    const dwell = Number(meta.dwellMs);
+    return Number.isFinite(dwell) && dwell > 0 ? dwell : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function readMeta(cwd: string, id: string): Promise<ArchiveMeta | undefined> {

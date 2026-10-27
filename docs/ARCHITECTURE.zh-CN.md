@@ -63,7 +63,16 @@ Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAda
   session 画出整机虚线参考曲线。会话平均值在 `egg_metric_summary` 里独立累计，
   不依赖环形缓冲；session 重开时会从它读回，保证平均值连续。它通过
   `metrics` WS 帧和 `GET /api/sessions/:id/metrics` 到达 UI，右栏 METRICS
-  面板与 Stage 全屏看板（uplot）共同消费它。tool 进程不逐 tick 采样，只
+  面板与 Stage 全屏看板（uplot）共同消费它。看板的时间范围放在
+  `lib/metrics.ts`（`RANGES` / `rangeStart`）而不是组件里：只有 `all` 锚定到
+  session 起点，其余都相对现在——以前它们也锚定到 session，于是当 session 比
+  范围还年轻时，30m/1h 会塌成 1m 的窗口。
+  看板上有两个时钟故意**不是**墙上时间。“当前观察时长”是选中蛋自身的生命周期
+  （`startedAt` → `exitedAt`，退出后就冻结），因为要回答的是那个进程跑了多久。
+  “会话时长”是**停留**时间：`Session.dwellMs` 是此前几次访问累计的总和，
+  `openedAt` 标记本次；所以离开项目后再回来，计时是接着走，而不是重来、也不计入
+  中间隔了多久。服务端负责累计（`AbsenceSession.dwellNow`），每次 meta flush 写进
+  存档的 `meta_json`，因此重开能从它继续，崩溃也不会丢。tool 进程不逐 tick 采样，只
   聚合成一条 `tools` 序列；退出时用 `WatchExit.cpuMs` 补最后一点。
 - `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion。
   面板是入口，Stage 是内容的归宿；Absence Report 和 Agent Eggs 都是对同一条事件

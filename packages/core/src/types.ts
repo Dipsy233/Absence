@@ -47,6 +47,19 @@ export interface Session {
   /** True when we fell back to the mock runtime because Pi was unavailable. */
   degraded?: boolean;
   /**
+   * How long this session had been open *before* the current visit, in ms.
+   *
+   * A session is dwell time, not wall time: leaving the project and coming back
+   * later must continue the clock rather than restart it or count the hours in
+   * between. This is the accrued total; add `openedAt` → now for the live value.
+   */
+  dwellMs?: number;
+  /**
+   * When the current visit opened. Absent for a session that is not open (or an
+   * older server), in which case the session is not accumulating dwell time.
+   */
+  openedAt?: number;
+  /**
    * How the OS processes the agent lays are being observed. "exact" means the
    * kernel reports each creation and exit (Windows Job Object); "sampled" means
    * Absence polls, which can miss short-lived processes. Absent when monitoring is

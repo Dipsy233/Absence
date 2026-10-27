@@ -11,6 +11,7 @@ npm run verify                               # 类型检查 + Web 构建 + 全�
 npx tsx scripts/checks/check-history.ts      # 需要 server 在跑
 npm run check:metrics                        # SQLite 指标存储与退出边界（纯）
 npm run check:metrics-persist                # 落盘的蛋与整机序列能跨重启读回
+npm run check:metrics-ranges                 # 每个时间范围是它自己的窗口
 npm run check:incremental                    # 增量状态折叠与滑动窗口（纯）
 npx tsx scripts/checks/check-outside-attr.ts # agent 外部改动归因（纯）
 npx tsx scripts/checks/check-report.ts       # Absence Report 引擎（不需要 server）
@@ -61,12 +62,23 @@ Activity 范围、确定的 stage 项 id、快照 seek、Stage 回到默认页�
 里的整机虚线）都能从 SQLite 读回，没有采样点的窗口返回空点（图上留空），且
 走的是 UI 实际调用的同一个接口。
 
+`check-metrics-ranges.ts` 直接导入看板的 `RANGES` / `rangeStart`（而不是复制
+一份），钉住：在**很年轻的会话**上 30m、1h、`all` 各自是自己的窗口——这正是它们
+曾全部塌成 1m 那几秒的场景；窗口在一个 step 内稳定，跨 step 才移动。
+
 `check-metrics-restart.ts`（需要真实服务器，约 90 秒）启动服务器、跑一段负载、
 重启服务器，再读同一个 session——曲线与整机虚线必须还在。
 
 `check-session-close.ts`（需要真实服务器，约 45 秒）把“切换项目”钉成**离开**
 会话：`POST /api/sessions/:id/close` 之后采样点数量不再增长（飞行中的那一次
 采样直接丢弃、不落盘），已记录的采样点保留，重开 session 能恢复它们。
+
+`check-session-dwell.ts`（需要真实服务器，约 25 秒）把会话时长钉成**停留**时间：
+打开 → 停留 → 离开 → 再回来，计时接着走；关闭期间的空档不计入；原始创建时间不变。
+
+`check-observed-lifetime.ts`（需要真实服务器，约 40 秒）把“当前观察时长”钉成
+进程自身的生命周期：蛋的计时从 `startedAt` 开始、到 `exitedAt` 停止，且进程结束
+后记录的时长不再增长。
 
 `check-incremental.ts` 验证事件滑动窗口下 eggs、History 和 Activity 的增量
 折叠与完整重建一致，并钉住每事件成本不会退化成窗口大小的乘积。

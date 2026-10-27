@@ -344,3 +344,52 @@ export function chartFromSeries(
   return { ...chartFromPoints(series.points, times), ...chartHostFromSeries(host, times) };
 }
 
+/**
+ * The dashboard's time ranges: the label, the window it covers, and how finely
+ * to sample its x axis.
+ *
+ * Shared by the dashboard and the range check so the numbers the UI asks for are
+ * the numbers the check asserts — a check that mirrored this table could stay
+ * green while the UI drifted away from it.
+ */
+export type RangeId = "1m" | "5m" | "30m" | "1h" | "all";
+
+export interface RangeSpec {
+  id: RangeId;
+  /** Milliseconds of history to show. `all` means "the whole session". */
+  ms: number;
+  /** Bucket size asked of the server. */
+  step: number;
+  /** Spacing of the x axis labels, in seconds. */
+  tickSeconds: number;
+}
+
+export const RANGES: RangeSpec[] = [
+  { id: "1m", ms: 60_000, step: 5_000, tickSeconds: 5 },
+  { id: "5m", ms: 5 * 60_000, step: 5_000, tickSeconds: 30 },
+  { id: "30m", ms: 30 * 60_000, step: 5_000, tickSeconds: 150 },
+  { id: "1h", ms: 60 * 60_000, step: 5_000, tickSeconds: 300 },
+  { id: "all", ms: Number.MAX_SAFE_INTEGER, step: 5_000, tickSeconds: 300 },
+];
+
+/**
+ * Where a range starts.
+ *
+ * A fixed range is relative to *now*, floored to its own step so the window only
+ * moves when the clock crosses a step boundary — reading `Date.now()` on every
+ * render would change the request URL constantly and refetch in a loop.
+ *
+ * Only `all` anchors to the session's start. Anchoring 30m/1h there too made
+ * them collapse onto the same few seconds as 1m whenever the session was
+ * younger than the range, so all four charts looked identical.
+ */
+export function rangeStart(
+  id: RangeId,
+  now: number,
+  sessionStart: number | undefined,
+): number {
+  const range = RANGES.find((entry) => entry.id === id) ?? RANGES[1]!;
+  const nowSlot = Math.floor(now / range.step) * range.step;
+  if (id === "all") return sessionStart ?? nowSlot - 60 * 60_000;
+  return nowSlot - range.ms;
+}

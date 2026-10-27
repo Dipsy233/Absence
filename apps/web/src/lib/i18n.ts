@@ -83,6 +83,7 @@ const ZH: Record<string, string> = {
   "observed for": "当前观察时长",
   "spawned processes": "唤起进程总数",
   "session duration": "会话时长",
+  "time spent in this session": "本次会话停留时间",
   "this session": "本会话",
   "since {time}": "自 {time} 起",
   "this process": "本进程",

@@ -24,6 +24,7 @@ import {
   appendEvents,
   drainArchive,
   readEvents,
+  readMeta,
   readProcessEvents,
   readEventsPage,
   readRuns,
@@ -127,6 +128,8 @@ export interface AbsenceResume {
   piSessionFile?: string;
   piSessionId?: string;
   startedAt?: number;
+  /** Dwell time accrued before this visit (see `Session.dwellMs`). */
+  dwellMs?: number;
 }
 
 /**
@@ -203,6 +206,10 @@ export class AbsenceSession {
   private treeDirty = true;
   private assistantStreamId?: string;
   private lastActiveAt: number;
+  /** Dwell time accrued before this visit, in ms. */
+  private readonly dwellBase: number;
+  /** When this visit opened; the live dwell time is `dwellBase` + now - this. */
+  private readonly openedAt: number;
   private promptCount = 0;
   private firstPrompt?: string;
   private piSessionFile?: string;
@@ -228,6 +235,10 @@ export class AbsenceSession {
     observe?: { pid: number; label: string; terminal?: TerminalMirror; transcript?: string },
   ) {
     this.id = resume?.absenceSessionId ?? newId("sess");
+    // Dwell time is accrued across visits: a session reopened later continues
+    // the clock instead of restarting it (see `Session.dwellMs`).
+    this.dwellBase = Math.max(0, resume?.dwellMs ?? 0);
+    this.openedAt = Date.now();
     this.session = {
       id: this.id,
       projectPath,
@@ -235,6 +246,8 @@ export class AbsenceSession {
       startedAt: resume?.startedAt ?? Date.now(),
       agentRuntime: kind,
       status: "listening",
+      dwellMs: this.dwellBase,
+      openedAt: this.openedAt,
     };
     this.piSessionFile = resume?.piSessionFile;
     this.piSessionId = resume?.piSessionId;
@@ -956,6 +969,11 @@ export class AbsenceSession {
     }, 800);
   }
 
+  /** Dwell time accrued by this visit so far, in ms. */
+  private dwellNow(at = Date.now()): number {
+    return this.dwellBase + Math.max(0, at - this.openedAt);
+  }
+
   private async flushMeta(): Promise<void> {
     await writeMeta(this.session.projectPath, {
       version: 1,
@@ -970,6 +988,9 @@ export class AbsenceSession {
       piSessionId: this.piSessionId,
       messageCount: this.promptCount,
       firstPrompt: this.firstPrompt,
+      // Persisted while the visit is open so a crash still keeps the clock, not
+      // only a clean close.
+      dwellMs: this.dwellNow(),
     });
   }
 
@@ -1405,7 +1426,15 @@ export class SessionStore {
     const resumeId = resume?.absenceSessionId;
     const existing = resumeId !== undefined ? this.sessions.get(resumeId) : undefined;
     if (existing) return existing;
-    const session = new AbsenceSession(projectPath, kind, resume);
+    // A reopen continues the archive's own clock: the original creation time and
+    // the dwell time already accrued. Both are read here rather than trusted from
+    // the request, so a client resuming by id alone gets them too.
+    const restored = resumeId !== undefined ? await readMeta("", resumeId) : undefined;
+    const session = new AbsenceSession(projectPath, kind, {
+      ...resume,
+      startedAt: resume?.startedAt ?? restored?.startedAt,
+      dwellMs: resume?.dwellMs ?? restored?.dwellMs,
+    });
     this.sessions.set(session.id, session);
     try {
       await session.start();

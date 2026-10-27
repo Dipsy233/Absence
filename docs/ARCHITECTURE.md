@@ -82,9 +82,22 @@ Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAda
   re-read from it when a session is reopened so they stay continuous. It
   reaches the UI over a `metrics` WS frame and
   `GET /api/sessions/:id/metrics`, consumed by the right-rail METRICS panel and
-  the full-screen Stage dashboard (uplot). Tools are not sampled per tick; they
+  the full-screen Stage dashboard (uplot). The dashboard's ranges live in
+  `lib/metrics.ts` (`RANGES` / `rangeStart`) rather than in the component:
+  only `all` anchors to the session's start, every other range is relative to
+  now — anchoring them to the session too made 30m/1h collapse onto 1m's window
+  whenever the session was younger than the range. Tools are not sampled per tick; they
   fold into one aggregate `tools` series, and an exit appends a final point
   from `WatchExit.cpuMs`.
+  Two clocks on the dashboard are deliberately **not** wall time. "Observed
+  for" is the selected egg's own lifetime (`startedAt` → `exitedAt`, frozen once
+  it exits), because the question is how long that process ran. "Session
+  duration" is *dwell* time: `Session.dwellMs` is the total accrued by earlier
+  visits and `openedAt` marks this one, so leaving the project and returning
+  later continues the clock instead of restarting it or counting the hours in
+  between. The server accrues it (`AbsenceSession.dwellNow`) and writes it into
+  the archive's `meta_json` on every meta flush, so a reopen resumes from it and
+  a crash does not lose it.
 - `apps/web` — React + Vite + Tailwind + Zustand + Monaco + Framer Motion. The
   panels are entry points and the Stage is where content lives; the Absence Report
   and Agent Eggs are both reductions of the same event stream. Chat renders the

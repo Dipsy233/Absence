@@ -23,6 +23,7 @@ npm run check:process                        # every process harness together
 npm run check:history                        # needs the Absence server running
 npm run check:metrics                        # SQLite metric storage and exit boundaries
 npm run check:metrics-persist                # persisted egg + host series survive a restart
+npm run check:metrics-ranges                 # each range is its own window
 npm run check:incremental                    # incremental folding and sliding-window state
 npx tsx scripts/checks/check-outside-attr.ts # outside-change attribution
 npx tsx scripts/checks/check-agentwatch.ts   # kernel process observer (Windows)
@@ -69,6 +70,12 @@ machine's own counters (the dashed host line) come back from SQLite, a window
 with no samples returns no points, and the two are read through the same call
 the UI makes.
 
+`check-metrics-ranges.ts` imports the dashboard's own `RANGES` / `rangeStart`
+(rather than copying them) and pins that 30m, 1h and `all` are their own
+windows on a *young* session — the case where all three used to collapse onto
+1m's few seconds — while the window stays stable inside a step and moves when
+the step turns over.
+
 `check-metrics-restart.ts` (live, ~90s) boots a real server, runs a workload,
 restarts the server, and reads the same session back — the curve and the host
 line must still be there.
@@ -77,6 +84,14 @@ line must still be there.
 session: after `POST /api/sessions/:id/close` the sample count stops growing
 (an in-flight sample is dropped, not written), the recorded samples survive, and
 reopening the session restores them.
+
+`check-session-dwell.ts` (live, ~25s) pins session duration as *dwell* time:
+open → watch → leave → come back continues the clock, the gap while closed is
+not counted, and the original creation time survives.
+
+`check-observed-lifetime.ts` (live, ~40s) pins "observed for" as the process's
+own lifetime: an egg's clock starts at its `startedAt`, stops at `exitedAt`, and
+the recorded lifetime does not keep growing after the process ends.
 
 `check-incremental.ts` verifies that eggs, History, and Activity remain
 consistent with a full rebuild while the event window slides, and pins

@@ -32,6 +32,7 @@ const OFFLINE = [
   "check-storage.ts",
   "check-metrics.ts",
   "check-metrics-persist.ts",
+  "check-metrics-ranges.ts",
   "check-incremental.ts",
   "check-outside-attr.ts",
   "check-capabilities.ts",
