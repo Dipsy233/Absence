@@ -20,9 +20,19 @@ import { check, finish, section, waitFor } from "./harness";
 
 const PORT = 8899;
 const SERVER_DIR = fileURLToPath(new URL("../../apps/server", import.meta.url));
-// `npx` is not spawnable without a shell on Windows; run tsx's entry through
-// node directly — the same thing `tsx src/index.ts` does.
-const SERVER = [process.execPath, "../../node_modules/tsx/dist/cli.mjs", "src/index.ts", "serve"] as const;
+/**
+ * Run the server as a **direct child** — no `tsx` cli wrapper in between.
+ *
+ * `npx tsx src/index.ts` is not one process: the cli re-spawns `node --import
+ * tsx src/index.ts`, so the process that actually listens is a grandchild of
+ * whoever spawned the cli. That breaks the dead-parent section below, because
+ * killing the placeholder then leaves the server's real parent (the tsx cli)
+ * alive — the watchdog has nothing to notice, and on Linux the tsx cli even
+ * forwards the SIGTERM down, so the server exits for a reason this check is not
+ * testing. Spawning node with the loader directly keeps the chain one level
+ * deep, which is what "the parent died" is supposed to mean.
+ */
+const SERVER = [process.execPath, "--import", "tsx", "src/index.ts", "serve"] as const;
 const SPAWN_OPTS = {
   cwd: SERVER_DIR,
   env: { ...process.env, PORT: String(PORT), ABSENCE_ORPHAN_TICK_MS: "1000" },
@@ -74,17 +84,23 @@ section("dead parent pid is noticed by the watchdog");
   // spawns the server (inheriting the pipe-kept-open) and outlives it — then
   // dies. The server's stdin stays open (held by the placeholder), so only the
   // ppid watchdog can notice the death.
+  //
+  // The command travels in env, not argv: under `node -e` argv holds no
+  // script-name slot, and `--import tsx` in that position is ambiguous — node
+  // re-parses it as its own option instead of passing it to the child.
   const placeholder = [
     "const { spawn } = require('node:child_process');",
     "setInterval(() => {}, 1e9);",
-    // Under `node -e` argv holds no script-name slot: everything after the
-    // placeholder itself is the server command to re-spawn through node.
-    "spawn(process.execPath, process.argv.slice(1), { cwd: process.cwd(), stdio: 'ignore', env: process.env });",
+    "spawn(process.execPath, JSON.parse(process.env.ABSENCE_CHECK_SERVER), { cwd: process.cwd(), stdio: 'ignore', env: process.env });",
   ].join(";");
   const parent = spawn(
     process.execPath,
-    ["-e", placeholder, ...SERVER.slice(1)],
-    { cwd: SERVER_DIR, env: SPAWN_OPTS.env, stdio: ["ignore", "inherit", "inherit"] },
+    ["-e", placeholder],
+    {
+      cwd: SERVER_DIR,
+      env: { ...SPAWN_OPTS.env, ABSENCE_CHECK_SERVER: JSON.stringify(SERVER.slice(1)) },
+      stdio: ["ignore", "inherit", "inherit"],
+    },
   );
   const up = await waitListening(parent);
   check("server came up under a live parent", up);

@@ -284,6 +284,19 @@ function exitWhenOrphaned(): void {
     // fire in seconds instead of half a minute.
     const tick = Number(process.env.ABSENCE_ORPHAN_TICK_MS) || 30_000;
     const timer = setInterval(() => {
+      // Reparenting is the signal that works everywhere. On POSIX a dead parent
+      // makes the kernel re-parent us to init (or to the nearest subreaper), so
+      // `process.ppid` stops being the pid we recorded — that alone is proof,
+      // and it does not depend on what pid 1 is. Asking "does the old pid still
+      // exist" is not enough there: pid 1 always exists, so `kill(1, 0)`
+      // succeeds and a Linux server orphaned by a dead parent would sit on the
+      // port forever — the exact wedge this guard was written for. Windows does
+      // not re-parent, so the recorded pid stays and the liveness probe below
+      // is what fires there; both are checked, whichever notices first.
+      if (process.ppid !== ppid) {
+        process.stderr.write(`ABSENCE server: parent ${ppid} is gone (now ${process.ppid}) — exiting${NL}`);
+        process.exit(0);
+      }
       try {
         // Signal 0 asks "does this process exist"; EPERM would also mean alive.
         process.kill(ppid, 0);
