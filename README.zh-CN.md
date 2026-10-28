@@ -405,6 +405,8 @@ Absence server **没有鉴权**，其 API 可以列出目录并读取配置的�
   打包内部机制。
 - [docs/TESTING.zh-CN.md](docs/TESTING.zh-CN.md) — 验收检查脚本及各自钉住的
   规则。
+- [docs/TESTING-STRATEGY.zh-CN.md](docs/TESTING-STRATEGY.zh-CN.md) — 为什么不用
+  单元测试框架、四层检查结构，以及各道门禁是干什么的。
 - [docs/RELEASING.zh-CN.md](docs/RELEASING.zh-CN.md) — 发布流程：`Release`
   工作流（手动触发或推 `v*` tag）、为 Windows 与 Linux 构建什么、发布说明从
   哪里来。

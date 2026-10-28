@@ -459,6 +459,8 @@ port to the public internet.
   setup.
 - [docs/TESTING.md](docs/TESTING.md) — the acceptance check scripts and what
   each one pins down.
+- [docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) — why there is no unit-test
+  framework, the four check tiers, and what each gate is for.
 - [docs/RELEASING.md](docs/RELEASING.md) — how a release is cut: the
   `Release` workflow (manual dispatch or a `v*` tag), what it builds for
   Windows and Linux, and where the release notes come from.

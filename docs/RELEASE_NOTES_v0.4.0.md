@@ -41,7 +41,7 @@ to v0.4.0.
   production Web build and every offline acceptance check.
 - Offline coverage now includes metrics storage, incremental folding and
   outside-change attribution.
-- The live mock History check covers 80 assertions, including pagination,
+- The live mock History check covers 75 assertions, including pagination,
   replay, the Metrics default page, file gaps and version switching.
 - The desktop server bundle and standalone server lifecycle are also validated
   by dedicated checks.
