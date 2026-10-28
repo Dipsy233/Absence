@@ -18,6 +18,7 @@
  *    in the same ballpark as the number of appended events, not their product
  *    with the window size.
  */
+import { check, finish } from "./harness";
 import { createEvent, MAX_SESSION_EVENTS, type AbsenceEvent, type AbsenceEventType } from "@absence/core";
 import type { ActivityRow } from "../../apps/web/src/types/stage";
 import {
@@ -31,15 +32,6 @@ import {
 import { appendActivityRow, eventToActivityRow } from "../../apps/web/src/lib/events";
 import { applyProcessEvent, sortEggs, type Egg } from "../../apps/web/src/lib/eggs";
 
-let failures = 0;
-function check(name: string, ok: boolean, detail = "") {
-  if (ok) {
-    console.log(`  ok   ${name}`);
-  } else {
-    failures += 1;
-    console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ""}`);
-  }
-}
 
 const sessionId = "check";
 let clock = 1_700_000_000_000;
@@ -531,9 +523,4 @@ console.log("history keeps every run across a sliding window");
   );
 }
 
-console.log("");
-if (failures > 0) {
-  console.log(`${failures} check(s) failed`);
-  process.exit(1);
-}
-console.log("all checks passed");
+finish("incremental checks");

@@ -28,15 +28,14 @@ jobs:
           node-version: 22.23.4
           cache: npm
       - run: npm ci
-      # Structural checks that do not need kernel observers, elevated rights, or
-      # a running server: egg building, process classification (including the
-      # tool prior), the Absence Report engine against recorded fixtures, and the
-      # Codex layer (command parsing, shell-wrapper stripping, env policy, and
-      # the exec-server protocol over a loopback socket).
-      # (check:history and the observer checks need a live server / kernel
-      # access, so they stay manual: `npm run check:process`, `npm run
-      # check:history`.)
-      # check:offline spawns every offline check script in one go; the list of
-      # scripts lives in scripts/checks/run-offline.ts (a new check is
-      # registered in exactly one place).
+      # Structural checks, plus the ones that boot their own server on an
+      # ephemeral port with an isolated state dir: session dwell/close, metrics
+      # restart, observed lifetime, and the History/Replay assertions. Nothing
+      # has to be running beforehand, and with no kernel observer binary the
+      # watcher falls back to `ps` snapshots, so these pass on a runner too.
+      #
+      # What stays manual is the tier that needs kernel privileges or docker:
+      # check-agentwatch, check-ebpf, check-docker, check-docker-eggs, check-e2e.
+      # The full offline list lives in scripts/checks/run-offline.ts (a new
+      # check is registered in exactly one place).
       - run: npm run check:offline

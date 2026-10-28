@@ -14,8 +14,8 @@ harness，钉住那些容易悄悄弄错的规则。架构背景见 [ARCHITECTUR
 第 1 层  纯函数    假进程表、假事件数组，不 spawn 任何东西
 ```
 
-CI 只跑**第 1、2 层**（`npm run check:offline`）。第 3、4 层需要活 server、内核权限、
-提权或 docker，保持手动，下面统一标 *live*。
+CI 跑**第 1–3 层**（`npm run check:offline`）：第 3 层的检查自己起 server，不需要
+任何东西预先在跑。只有第 4 层——需要内核权限、docker 或真实运行时——保持手动。
 
 ## 门禁
 
@@ -48,6 +48,7 @@ npm run check:observer         # 解耦契约（observe 与 drive 的区别）
 npm run check:capabilities     # skills + MCP 发现，以及 Pi 自己的 loader
 npm run check:capability-commands  # /skill 与 /mcp 聊天命令
 npm run check:mcp              # 一次 MCP 调用能到达 Activity 和 Stage 上
+npx tsx scripts/checks/check-outside-attr.ts  # agent 外部改动归因
 ```
 
 ### 第 2 层 —— 隔离 IO（在临时目录里读写 SQLite / 文件系统）
@@ -59,37 +60,52 @@ npm run check:metrics-persist  # 蛋与整机序列能从 SQLite 读回
 npm run check:metrics-ranges   # 看板每个时间范围是它自己的窗口
 npm run check:incremental      # 增量折叠 == 完整重建
 npm run check:execserver       # Codex exec-server，真实 loopback WebSocket
-npx tsx scripts/checks/check-outside-attr.ts  # agent 外部改动归因
 ```
 
-### 第 3 层 —— live（需要活 server、内核权限或 docker）
+### 第 3 层 —— 自起 server（仍然无人值守）
 
 ```bash
-npx tsx scripts/checks/check-history.ts        # Web 客户端对着 live mock 会话
-npx tsx scripts/checks/check-lifecycle.ts      # `absence serve` 的孤儿/端口生命周期
+npm run check:history          # Web 客户端的 History/Replay 对着真会话
+npm run check:lifecycle        # `absence serve` 的孤儿/端口生命周期
+npm run check:session-dwell    # 会话时长是停留时间
+npm run check:session-close    # “切换项目”是离开会话
+npm run check:metrics-restart  # 曲线跨服务器重启存活
+npm run check:observed-lifetime  # “观察时长”是进程自身生命周期
+```
+
+每一个都在临时端口上用隔离的 `ABSENCE_STATE_DIR` 起自己的 server，并在
+`finally` 里杀掉，所以事前不需要任何东西在跑，也绝不碰用户档案。
+`check-history` 另外认 `ABSENCE_PORT`，可以指向你已经开着的 server。
+
+在**没有内核观察器二进制**的机器上，watcher 会退回 `ps` / PowerShell 快照，
+所以这些检查在普通 CI runner 上照样通过——这正是它们的用途：那些会悄悄腐烂的
+会话与指标行为。
+
+### 第 4 层 —— 手动（需要内核、docker 或真实运行时）
+
+```bash
 npx tsx scripts/checks/check-agentwatch.ts     # 内核进程观察器（Windows）
 npx tsx scripts/checks/check-ebpf.ts           # 内核进程观察器（Linux）
 npx tsx scripts/checks/check-docker.ts         # docker 命令的进程边界
 npx tsx scripts/checks/check-docker-eggs.ts    # 容器蛋：归因 + stats + 恢复
-npx tsx scripts/checks/check-metrics-restart.ts    # 曲线跨服务器重启存活
-npx tsx scripts/checks/check-session-close.ts      # “切换项目”是离开会话
-npx tsx scripts/checks/check-session-dwell.ts      # 会话时长是停留时间
-npx tsx scripts/checks/check-observed-lifetime.ts  # “观察时长”是进程自身生命周期
+npx tsx scripts/checks/check-e2e.ts            # 全链路，含容器蛋
 ```
 
-### 第 4 层 —— 全链路
-
-```bash
-npm run check:e2e              # 自起 server + mock 会话，无需模型
-```
+只有这 5 个留在 CI 之外，理由很实在：它们需要带内核权限的 `agentwatch`
+二进制、一个 docker daemon，或两者都要。`check-e2e` 放这里，是因为它的容器
+断言才是重点——没有 docker 时它只能证明纯进程那一半。
 
 其他：
 
 ```bash
 npm run check:process          # 全部进程相关 harness 一起跑（observer 检查在非本平台自跳）
-npm run bench:incremental      # 计时报告（不是断言），打印提速倍数
+npm run bench:incremental      # 计时报告，不是检查：不做任何断言
 node scripts/gen-whalebun-css.mjs            # 重新生成头像样式表
 ```
+
+`bench:incremental` 放在 `scripts/dev/` 而不是 `scripts/checks/`：它打印
+ms/event 和提速倍数，但永远不会失败，而一个**不可能变红**的检查不是检查。
+它的正确性对照是 `check-incremental.ts`，那个才真的断言增量折叠与完整重建一致。
 
 ## 一个检查怎么写
 
@@ -101,6 +117,12 @@ section(title)                     // 分组之间的可读标题
 waitFor(predicate, timeoutMs?)     // 带 deadline 的轮询，给异步检查用
 finish(name?)                      // 打印 "N/M passed"，失败时以非零码退出
 ```
+
+`finish()` **拒绝**让一个什么都没断言的运行通过——import 写错、或者函数体被
+某个 guard 跳过，都会报 `0/0` 并原本绿着通过，这是检查工具唯一不能有的失败模式。
+这也是为什么不用 harness 的那几个（`check-history.ts` 和用
+`node:assert/strict` 的）必须被拉齐：`check-history.ts` 现在自己数断言、
+零断言即失败，而 metrics 系列已改成 `check()`，失败输出与其它检查一致。
 
 三个习惯让失败可读：
 
@@ -121,19 +143,20 @@ process.env.ABSENCE_STATE_DIR = stateDir;      // 必须先于 import
 const { appendMetricsFrame } = await import(".../storage/metrics");
 ```
 
-有两个检查早于 harness、自己打印 `PASS`/`FAIL`（`assert()`）：`check-history.ts`
-和（用 `node:assert/strict` 的）`check-metrics*.ts`、`check-storage.ts`、
-`check-metrics-restart.ts`。它们以同样的方式返回非零退出码。
-
 ### 新增一个检查
 
-写 `scripts/checks/check-<name>.ts` 并用 harness，把它加进
-`scripts/checks/run-offline.ts` 里的 `OFFLINE` 数组，值得手敲的话再加一个
+写 `scripts/checks/check-<name>.ts` 并用 harness，把它连同超时加进
+`scripts/checks/run-offline.ts` 里的 `CHECKS` 数组，值得手敲的话再加一个
 `npm run` 别名。CI 要跑它不需要改 `package.json` 别名、也不需要改 workflow——
-清单只存在于一处。
+清单只存在于一处，而每个条目自带超时，因为自起 server 的检查要真的睡过采样窗口。
 
 CI workflow（`.github/workflows/ci.yml`）在每次 push / PR 上跑 workspace 类型检查
-和 `npm run check:offline`，Node 版本为 22，与 `engines.node` 一致。
+和 `npm run check:offline`，Node 版本为 22，与 `engines.node` 一致。那是 27 个
+脚本、约 3 分钟，其中 5 个会起真 server；四个内核/docker 检查保持手动。
+
+一个检查能不能进这个清单，看它是不是**只依赖 Node**：不需要观察器二进制、不需要
+docker、不需要提权、不需要别人先起好的 server。自己起一个临时端口上的 server
+不算违规——那是这里最常见的形态，会话与指标的价值正在那儿。
 
 ## 每个检查钉住什么
 
@@ -142,16 +165,17 @@ CI workflow（`.github/workflows/ci.yml`）在每次 push / PR 上跑 workspace 
 `notes.txt`。mock 运行时真的跑它的 shell 命令，所以一次 mock 运行也会下一只
 蛋——这就是没有 Pi 凭据也能练 Agent Eggs 面板的方法。
 
-### 管道与会话（live）
+### 管道与会话
 
 `check-e2e.ts` 是“我这次改动有没有搞坏整条管道”的快速答案：一条命令，约 30 秒，
-不需要模型。它在临时端口上用隔离 state 目录起一个真 server，开一个 **mock** 会话，
+不需要模型。它是手动的、不在 CI 里：容器断言需要 docker daemon 和内核观察器，
+没有它们时它只能证明纯进程那一半。它在临时端口上用隔离 state 目录起一个真 server，开一个 **mock** 会话，
 用脚本化 prompt 驱动它（`$ ` 开头的行——`MockAdapter` 把每行都过一遍真 agent
 用的同一个 `AbsenceShell`）。然后断言整条链：command 事件 → 进程蛋（Job Object）
 → 容器蛋（docker events，docker 可达时）→ metrics 帧 → SQLite 持久化。没有
 docker 时它退回一只普通 `node` 进程蛋，并在输出里说明。
 
-`check-history.ts` 对一个 live mock 会话跑 **75 项断言**：分页事件 API 及其游标、
+`check-history.ts` 自己起 server，对一个真 mock 会话跑 **75 项断言**：分页事件 API 及其游标、
 运行索引、运行分组、每运行的 Activity 范围、确定的 stage 项 id（曾经用随机 id
 导致 replay 的 Stage 冻住）、快照 seek、Stage 回到默认页、搜索→终端映射、
 thinking 捕获（一条流式念头保持为一个 Stage 项，所以 replay 不会重新挂载它）、
@@ -178,7 +202,7 @@ thinking 捕获（一条流式念头保持为一个 Stage 项，所以 replay �
 实际调用的同一个接口。它**不启动 server**——在同一个进程里 append、flush、读回，
 所以它是离线检查，而下面那个「重启」的情形不是。
 
-`check-metrics-restart.ts`（live，约 90 秒）起一个真 server、跑一段负载、
+`check-metrics-restart.ts`（约 20 秒）起一个真 server、跑一段负载、
 **重启服务器**、再读同一个 session——曲线与整机虚线必须还在。这是
 `check-metrics-persist.ts` 到不了的那个情形。
 
@@ -186,22 +210,22 @@ thinking 捕获（一条流式念头保持为一个 Stage 项，所以 replay �
 一份），钉住：在**很年轻的会话**上 30m、1h、`all` 各自是自己的窗口——这正是它们
 曾全部塌成 1m 那几秒的场景；窗口在一个 step 内稳定，跨 step 才移动。
 
-`check-session-close.ts`（live，约 45 秒）把“切换项目”钉成**离开**会话：
+`check-session-close.ts`（约 25 秒）把“切换项目”钉成**离开**会话：
 `POST /api/sessions/:id/close` 之后采样点数量不再增长（飞行中的那一次采样直接
 丢弃、不落盘），已记录的采样点保留，重开 session 能恢复它们。
 
-`check-session-dwell.ts`（live，约 25 秒）把会话时长钉成**停留**时间：
+`check-session-dwell.ts`（约 19 秒）把会话时长钉成**停留**时间：
 打开 → 停留 → 离开 → 再回来，计时接着走；关闭期间的空档不计入；原始创建时间不变。
 
-`check-observed-lifetime.ts`（live，约 40 秒）把“当前观察时长”钉成进程自身的
+`check-observed-lifetime.ts`（约 19 秒）把“当前观察时长”钉成进程自身的
 生命周期：蛋的计时从 `startedAt` 开始、到 `exitedAt` 停止，且进程结束后记录的
 时长不再增长。
 
 `check-incremental.ts` 验证事件滑动窗口下 eggs、History 和 Activity 的增量
 折叠与完整重建一致，并钉住每事件成本不会退化成窗口大小的乘积。
-`check-incremental-bench.ts`（`npm run bench:incremental`）是它的计时对照：
-打印新旧 ms/event 与提速倍数，不做任何断言——它的存在是让回归看得见，
-而不是拿来卡提交。
+`scripts/dev/bench-incremental.ts`（`npm run bench:incremental`）是它的计时对照：
+打印新旧 ms/event 与提速倍数，不做任何断言，因此不在 `scripts/checks/` 里
+——一个不可能变红的检查不是检查。
 
 `check-storage.ts` 钉住 server 其余部分依赖的 SQLite 缝隙：旧的 JSONL 档案只导入
 一次且流式前缀被丢掉，`readEvents` 重建完整的 `AbsenceEvent` 信封而不只是 payload，

@@ -11,7 +11,7 @@
  *
  *   npx tsx scripts/checks/check-metrics-persist.ts
  */
-import assert from "node:assert/strict";
+import { check, finish } from "./harness";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -84,32 +84,41 @@ const to = base + COUNT * STEP;
 const read = readMetrics(sessionId, { from, to, step: STEP });
 
 // The eggs survived the round trip.
-assert.ok(read.series.length >= 2, `expected agent + egg series, got ${read.series.length}`);
+check(
+  "the agent and the egg both come back",
+  read.series.length >= 2,
+  `expected agent + egg series, got ${read.series.length}`,
+);
 const egg = read.series.find((entry) => entry.eggPid === 7);
-assert.ok(egg, "the egg's series is missing");
-assert.ok(egg.points.length > 0, "the egg has no persisted points");
-assert.ok(
-  egg.points.length >= COUNT - 2,
-  `expected roughly ${COUNT} points, got ${egg.points.length}`,
+check("the egg's series is persisted", egg !== undefined);
+check("the egg has persisted points", (egg?.points.length ?? 0) > 0, `${egg?.points.length ?? 0}`);
+check(
+  "every written sample survived the round trip",
+  (egg?.points.length ?? 0) >= COUNT - 2,
+  `expected roughly ${COUNT} points, got ${egg?.points.length ?? 0}`,
 );
 
 // The agent summary is what a reopened session's average is based on.
 const agent = read.series.find((entry) => entry.kind === "agent");
-assert.ok(agent, "the agent's series is missing");
-assert.equal(agent.status, "running");
+check("the agent's series is persisted", agent !== undefined);
+check("the agent reads as running", agent?.status === "running");
 
 // The host is persisted, so an expanded dashboard can draw the dashed machine
 // line for a session that is no longer live.
-assert.ok(read.host.length > 0, "the host series is empty — the dashed line would be missing");
-assert.equal(read.host[0]!.cpuCount, 16);
-assert.ok(read.host[0]!.memTotalBytes > 0, "host total memory must be persisted");
-assert.ok(
-  read.host[read.host.length - 1]!.cpuSeconds > read.host[0]!.cpuSeconds,
-  "host CPU is a monotonic counter",
+check(
+  "the host series is persisted",
+  read.host.length > 0,
+  "empty — the dashed line would be missing",
 );
-assert.ok(
-  read.host[read.host.length - 1]!.memUsedBytes > read.host[0]!.memUsedBytes,
+check("the host's cpu count is persisted", read.host[0]?.cpuCount === 16);
+check("host total memory is persisted", (read.host[0]?.memTotalBytes ?? 0) > 0);
+check(
+  "host CPU is a monotonic counter",
+  read.host[read.host.length - 1]!.cpuSeconds > read.host[0]!.cpuSeconds,
+);
+check(
   "host used memory advances with the samples",
+  read.host[read.host.length - 1]!.memUsedBytes > read.host[0]!.memUsedBytes,
 );
 
 // A gap is a gap: querying a window with no samples returns no points, so the
@@ -119,12 +128,14 @@ const quiet = readMetrics(sessionId, {
   to: to + 61 * 60_000,
   step: STEP,
 });
-for (const entry of quiet.series) {
-  assert.equal(entry.points.length, 0, "a window with no samples must not invent points");
-}
-assert.equal(quiet.host.length, 0, "the host must not invent points either");
+check(
+  "a window with no samples invents no points",
+  quiet.series.every((entry) => entry.points.length === 0),
+  quiet.series.map((e) => e.points.length).join(","),
+);
+check("the host invents no points either", quiet.host.length === 0, `${quiet.host.length}`);
 
 deleteSessionMetrics(sessionId);
 closeArchive();
 fs.rmSync(stateDir, { recursive: true, force: true });
-console.log("metrics persistence: ok");
+finish("metrics persistence checks");

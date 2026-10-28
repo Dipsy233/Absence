@@ -1,3 +1,15 @@
+/**
+ * Timing report for the incremental event fold — not a check.
+ *   npm run bench:incremental
+ *
+ * This asserts nothing and can never fail, so it does not belong with the
+ * acceptance checks: a red/green signal is what makes a check worth having.
+ * It measures the old full re-fold against the incremental path over a sliding
+ * window and prints ms/event plus the speedup, so a performance regression in
+ * `memoBuildHistory` / `memoRunRows` is visible when somebody looks. Its
+ * correctness counterpart is `scripts/checks/check-incremental.ts`, which does
+ * assert that the incremental path agrees with a full rebuild.
+ */
 import { createEvent, MAX_SESSION_EVENTS, type AbsenceEvent, type AbsenceEventType } from "@absence/core";
 import { buildHistory, markEventsBase, memoBuildHistory, eventsBase, memoRunRows } from "../../apps/web/src/lib/history";
 import { eventToActivityRow, eventToStageItem } from "../../apps/web/src/lib/events";

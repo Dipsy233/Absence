@@ -31,16 +31,19 @@
 ## 四层结构
 
 ```
-第 4 层  全链路    check-e2e.ts            自起 server + mock 会话
-第 3 层  真实 IO   execserver、history、   真 WebSocket / SQLite / 内核观察器 /
-                  agentwatch、ebpf、       docker / 重启
-                  docker*、metrics-restart、
-                  session-close/dwell、
+第 4 层  手动      agentwatch、ebpf、     需要带内核权限的观察器二进制，
+                  docker、docker-eggs、   或一个 docker daemon
+                  e2e
+第 3 层  自起 server history、lifecycle、  每个都在临时端口 + 隔离 state
+                  session-dwell、         目录上起自己的 server 再杀掉
+                  session-close、
+                  metrics-restart、
                   observed-lifetime
 第 2 层  隔离 IO   storage、metrics、      mkdtemp + ABSENCE_STATE_DIR，
                   metrics-persist、        绝不碰用户档案
                   metrics-ranges、
-                  incremental、outside-attr
+                  incremental、execserver、
+                  outside-attr
 第 1 层  纯函数    eggs、classify、report、 伪造进程表与事件数组，
                   markdown、codex*、       不 spawn 任何东西
                   shellenv、chimes、
@@ -49,8 +52,9 @@
                   mcp-events、fsdiff
 ```
 
-CI 只跑第 1–2 层（`npm run check:offline`）。第 3–4 层需要活 server、内核权限、
-提权或 docker，保持手动，在 [TESTING.zh-CN.md](TESTING.zh-CN.md) 里标 *live*。
+CI 跑第 1–3 层（`npm run check:offline`）：27 个脚本，约 3 分钟。第 3 层的检查
+自己起 server 并不构成排除理由——那是这里最常见的形态，而会话与指标的行为恰恰
+最容易悄悄腐烂。只有第 4 层保持手动，因为它需要内核权限或 docker。
 
 ### 第 1 层才是设计功夫所在
 
@@ -119,8 +123,8 @@ const { appendMetricsFrame } = await import(".../storage/metrics");
 | 检查脚本 | 33 |
 | 断言调用 | ~714 |
 | harness | 44 行，4 个导出 |
-| 进 CI | 21 个脚本（第 1–2 层） |
-| 手动（live） | 12 个脚本（第 3–4 层） |
+| 进 CI | 27 个脚本（第 1–3 层），约 3 分钟 |
+| 手动 | 5 个脚本（第 4 层） |
 | 提交门禁 | `npm run verify` |
 
 ## 延伸阅读

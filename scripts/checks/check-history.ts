@@ -1,6 +1,8 @@
 /**
- * Offline check of the History / Replay logic using real events from a live
- * mock session (needs the ABSENCE server running).
+ * Check of the History / Replay logic using real events from a live mock
+ * session. Boots its own server on an ephemeral port (isolated state dir) and
+ * kills it again, so it runs unattended; set ABSENCE_PORT to point it at an
+ * already-running server instead.
  *
  *   npx tsx scripts/check-history.ts
  *
@@ -9,6 +11,12 @@
  * and that seeking anywhere in a run still shows an action.
  */
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
+import os from "node:os";
+import net from "node:net";
+import path from "node:path";
+import { spawn, type ChildProcess } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import type { AbsenceEvent } from "@absence/core";
 import { buildHistory, pickRun, runEvents } from "../../apps/web/src/lib/history";
 import {
@@ -25,9 +33,11 @@ import { useSessionStore } from "../../apps/web/src/stores/sessionStore";
 import { useFileStore } from "../../apps/web/src/stores/fileStore";
 import { buildSnapshots, seek, timelineEnd, timelineStart } from "../../apps/web/src/lib/replay";
 
-const port = process.env.ABSENCE_PORT ?? process.env.PORT ?? "8848";
-const base = `http://127.0.0.1:${port}`;
+// The check boots its own server on an ephemeral port with an isolated state
+// dir, so it needs nothing running beforehand and never touches the user's
+// archive. ABSENCE_PORT points it at an existing server instead.
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+let base = "";
 
 // The web app's api module uses relative URLs, which only resolve in a browser.
 // Point them at the server so the real code paths can run here.
@@ -55,7 +65,7 @@ async function collect(prompts: string[]): Promise<{ events: AbsenceEvent[]; sna
   ).json();
   const id = snap.session.id;
 
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/sessions/${id}`);
+  const ws = new WebSocket(`${base.replace("http", "ws")}/ws/sessions/${id}`);
   const events: AbsenceEvent[] = [];
   ws.addEventListener("message", (raw: MessageEvent) => {
     const m = JSON.parse(String(raw.data));
@@ -82,10 +92,62 @@ async function collect(prompts: string[]): Promise<{ events: AbsenceEvent[]; sna
   return { events, snapshot: snap };
 }
 
+/**
+ * This check predates the shared harness and keeps its own PASS/FAIL printer,
+ * but it must fail the same way: an assertion that never ran, or a run that
+ * quietly did nothing, is not a pass. `counted` is asserted below.
+ */
+let counted = 0;
+let failedCount = 0;
 const assert = (label: string, ok: boolean, detail = "") => {
+  counted += 1;
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  — ${detail}` : ""}`);
-  if (!ok) process.exitCode = 1;
+  if (!ok) {
+    failedCount += 1;
+    process.exitCode = 1;
+  }
 };
+
+const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
+
+/** A port nobody is on, so two runs never collide. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address() as { port: number };
+      probe.close(() => resolve(port));
+    });
+    probe.on("error", reject);
+  });
+}
+
+/** Boot the server the way `npm start` does, on a private state dir. */
+async function bootServer(): Promise<{ child: ChildProcess; dir: string }> {
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), "absence-history-"));
+  const port = process.env.ABSENCE_PORT ? Number(process.env.ABSENCE_PORT) : await freePort();
+  base = `http://127.0.0.1:${port}`;
+  if (process.env.ABSENCE_PORT) return { child: undefined as never, dir };
+
+  const child = spawn(
+    process.execPath,
+    [path.join(REPO_ROOT, "node_modules", "tsx", "dist", "cli.mjs"), "apps/server/src/index.ts"],
+    {
+      cwd: REPO_ROOT,
+      env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", ABSENCE_STATE_DIR: path.join(dir, "state") },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    },
+  );
+  child.stdout?.resume();
+  child.stderr?.on("data", (chunk: Buffer) => {
+    const text = chunk.toString();
+    if (!text.includes("incoming request") && !text.includes("request completed")) {
+      process.stderr.write(`[server] ${text}`);
+    }
+  });
+  return { child, dir };
+}
 
 const run = async () => {
   const { events, snapshot } = await collect(["first task: tidy up", "second task: look around"]);
@@ -551,10 +613,28 @@ const run = async () => {
   assert("the search threshold is the eggs EPHEMERAL_MS", EPHEMERAL_MS === 300);
 
   console.log(`\nsnapshots for run #1: ${snapshots.length}`);
-  process.exit(process.exitCode ?? 0);
+  // A check that asserts nothing must not pass: a wrong import or a skipped
+  // body would otherwise report success.
+  if (counted === 0) {
+    console.error("0 assertions ran — this check must not pass.");
+    process.exit(1);
+  }
+  console.log(`${counted - failedCount}/${counted} history assertions passed.`);
+  process.exit(failedCount > 0 ? 1 : 0);
 };
 
-run().catch((e) => {
+const main = async () => {
+  const booted = await bootServer();
+  try {
+    await run();
+  } finally {
+    booted.child?.kill();
+    await wait(500);
+    await fs.rm(booted.dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
+main().catch((e) => {
   console.error("FAILED:", e);
   process.exit(1);
 });

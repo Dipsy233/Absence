@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+import { check, finish } from "./harness";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -60,9 +60,13 @@ appendMetricsFrame(sessionId, frame(base + 4_000, "running", 11, 101 * 1024 * 10
 flushMetrics();
 
 const before = readMetricSeries(sessionId, { from: base - 1, to: base + 10_000, step: 1_000 });
-assert.equal(before.length, 1);
-assert.equal(before[0]!.status, "running");
-assert.ok(before[0]!.points.length >= 3, `expected >=3 points, got ${before[0]!.points.length}`);
+check("one series comes back", before.length === 1, `${before.length}`);
+check("the egg is still running", before[0]!.status === "running");
+check(
+  "every live sample became a point",
+  before[0]!.points.length >= 3,
+  `expected >=3 points, got ${before[0]!.points.length}`,
+);
 const avgBefore = before[0]!.avgRssBytesSession;
 
 // The egg exits. The frame's ts is "when we noticed", not the exit time: the
@@ -71,21 +75,25 @@ appendMetricsFrame(sessionId, frame(base + 60_000, "exited", 11, 101 * 1024 * 10
 flushMetrics();
 
 const after = readMetricSeries(sessionId, { from: base - 1, to: base + 120_000, step: 1_000 });
-assert.equal(after.length, 1);
-assert.equal(after[0]!.status, "exited");
-assert.equal(after[0]!.points.length, before[0]!.points.length, "exit must not add a data point");
-assert.equal(
-  Math.round(after[0]!.avgRssBytesSession),
-  Math.round(avgBefore),
-  "exit must not change the session average",
+check("the series survives the exit", after.length === 1, `${after.length}`);
+check("the egg reads as exited", after[0]!.status === "exited");
+check(
+  "an exit does not add a data point",
+  after[0]!.points.length === before[0]!.points.length,
+  `${before[0]!.points.length} -> ${after[0]!.points.length}`,
+);
+check(
+  "an exit does not change the session average",
+  Math.round(after[0]!.avgRssBytesSession) === Math.round(avgBefore),
+  `${avgBefore} -> ${after[0]!.avgRssBytesSession}`,
 );
 
 // The chunk is readable across a step change (the dashboard asks for 5s).
 const resampled = readMetricSeries(sessionId, { from: base - 1, to: base + 10_000, step: 5_000 });
-assert.equal(resampled.length, 1);
-assert.ok(resampled[0]!.points.length >= 1);
+check("a coarser step still returns the series", resampled.length === 1, `${resampled.length}`);
+check("resampling keeps at least one point", resampled[0]!.points.length >= 1);
 
 deleteSessionMetrics(sessionId);
 closeArchive();
 fs.rmSync(stateDir, { recursive: true, force: true });
-console.log("metrics storage: ok");
+finish("metrics storage checks");

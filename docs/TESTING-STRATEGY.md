@@ -43,27 +43,33 @@ The codebase says this out loud. `check-chimes.ts`:
 ## The four tiers / 四层结构
 
 ```
-tier 4  full pipeline   check-e2e.ts            boots its own server + mock session
-tier 3  real I/O        execserver, history,    real WebSocket / SQLite / kernel
-                        agentwatch, ebpf,       observer / docker / restart
-                        docker*, metrics-restart,
-                        session-close/dwell,
-                        observed-lifetime
-tier 2  isolated I/O    storage, metrics,       mkdtemp + ABSENCE_STATE_DIR,
-                        metrics-persist,        never the user's archive
-                        metrics-ranges,
-                        incremental, outside-attr
-tier 1  pure            eggs, classify, report, fabricated process tables and
-                        markdown, codex*,        event arrays, nothing spawned
-                        shellenv, chimes,
-                        settings, observer,
-                        capabilities*,
-                        mcp-events, fsdiff
+tier 4  manual       agentwatch, ebpf,     needs the kernel observer binary
+                     docker, docker-eggs,  (privileges) or a docker daemon
+                     e2e
+tier 3  self-hosting  history, lifecycle,   each spawns the server on an
+                     session-dwell,        ephemeral port with an isolated
+                     session-close,        state dir and kills it again
+                     metrics-restart,
+                     observed-lifetime
+tier 2  isolated I/O  storage, metrics,     mkdtemp + ABSENCE_STATE_DIR,
+                     metrics-persist,     never the user's archive
+                     metrics-ranges,
+                     incremental,
+                     execserver,
+                     outside-attr
+tier 1  pure          eggs, classify,       fabricated process tables and
+                     report, markdown,     event arrays, nothing spawned
+                     codex*, shellenv,
+                     chimes, settings,
+                     observer,
+                     capabilities*,
+                     mcp-events, fsdiff
 ```
 
-Only tiers 1–2 are in CI (`npm run check:offline`). Tiers 3–4 need a live server,
-kernel access, elevated rights or docker, so they are manual and labelled *live*
-in [TESTING.md](TESTING.md).
+Tiers 1–3 are in CI (`npm run check:offline`): 27 scripts, about 3 minutes. A
+tier-3 check spawning its own server is not a reason to exclude it — that is the
+normal shape here, and the session/metrics behaviour is exactly what rots
+silently. Only tier 4 stays manual, because it needs kernel privileges or docker.
 
 CI 只跑第 1–2 层。第 3–4 层需要活 server、内核权限、提权或 docker，保持手动，
 在 [TESTING.md](TESTING.md) 里标 *live*。
@@ -145,6 +151,16 @@ exit):
 > (b) 每个 check 都用大白话描述行为，所以失败时说的是哪条产品规则破了。
 > (c) 跑不了的检查明确登记在 `run-offline.ts` 之外——这套测试从不假装覆盖了它没覆盖的。
 
+**"Why does a check that boots a server belong in CI?" / 自己起 server 的检查为什么能进 CI？**
+> Because it needs nothing pre-existing: ephemeral port, isolated state dir,
+> killed in a `finally`. On a runner with no observer binary the watcher falls
+> back to `ps` snapshots, so it passes there too. Those are the behaviours that
+> rot silently, so they are the ones worth running on every push.
+
+> 因为它不需要任何预先存在的东西：临时端口、隔离 state 目录、`finally` 里杀掉。
+> 在没有观察器二进制的 runner 上 watcher 退回 `ps` 快照，所以照样通过。这些正是
+> 会悄悄腐烂的行为，所以正是值得每次 push 都跑的。
+
 **"You changed one line — which checks do you run?" / 改了一行要跑哪些？**
 > `npm run verify` is the gate: typecheck + production web build + every offline
 > check. Then by blast radius: process/attribution → `check:process`; SQLite or
@@ -174,8 +190,8 @@ exit):
 | check scripts / 检查脚本 | 33 |
 | assertion calls / 断言调用 | ~714 |
 | harness / harness | 44 lines, 4 exports |
-| in CI / 进 CI | 21 scripts (tiers 1–2) |
-| manual (live) / 手动 | 12 scripts (tiers 3–4) |
+| in CI / 进 CI | 27 scripts (tiers 1–3), ~3 min |
+| manual / 手动 | 5 scripts (tier 4) |
 | pre-commit gate / 提交门禁 | `npm run verify` |
 
 ## Pointers / 延伸阅读

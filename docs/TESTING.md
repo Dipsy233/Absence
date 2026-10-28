@@ -55,6 +55,7 @@ npm run check:observer         # the decoupling contract (observe vs drive)
 npm run check:capabilities     # skills + MCP discovery, and Pi's own loader
 npm run check:capability-commands  # the /skill and /mcp chat commands
 npm run check:mcp              # an MCP call reaches Activity and the Stage
+npx tsx scripts/checks/check-outside-attr.ts  # outside-change attribution
 ```
 
 ### Tier 2 — isolated I/O (SQLite / fs in a throwaway directory)
@@ -66,41 +67,59 @@ npm run check:metrics-persist  # eggs + the host series come back from SQLite
 npm run check:metrics-ranges   # each dashboard range is its own window
 npm run check:incremental      # incremental folding == a full rebuild
 npm run check:execserver       # Codex exec-server over a real loopback WebSocket
-npx tsx scripts/checks/check-outside-attr.ts  # outside-change attribution
 ```
 
-### Tier 3 — live (needs a running server, kernel access, or docker)
+### Tier 3 — self-hosting (boots its own server, still unattended)
 
 ```bash
-npx tsx scripts/checks/check-history.ts        # the web client against a live mock session
-npx tsx scripts/checks/check-lifecycle.ts      # `absence serve` orphan/port lifecycle
+npm run check:history          # the web client's History/Replay against a real session
+npm run check:lifecycle        # `absence serve` orphan/port lifecycle
+npm run check:session-dwell    # session duration is dwell time
+npm run check:session-close    # "change project" leaves the session
+npm run check:metrics-restart  # the curve survives a server restart
+npm run check:observed-lifetime  # "observed for" is the process's lifetime
+```
+
+Each of these spawns the server on an ephemeral port with an isolated
+`ABSENCE_STATE_DIR` and kills it in a `finally`, so nothing has to be running
+beforehand and the user's archive is never touched. `check-history` also honours
+`ABSENCE_PORT` if you want to point it at a server you already have open.
+
+On a machine with no kernel observer binary the watcher falls back to `ps` /
+PowerShell snapshots, so these pass on a plain CI runner — which is exactly what
+they are for: the session and metrics behaviour that quietly rots.
+
+### Tier 4 — manual (needs the kernel, docker, or a real runtime)
+
+```bash
 npx tsx scripts/checks/check-agentwatch.ts     # kernel process observer (Windows)
 npx tsx scripts/checks/check-ebpf.ts           # kernel process observer (Linux)
 npx tsx scripts/checks/check-docker.ts         # process boundary of docker commands
 npx tsx scripts/checks/check-docker-eggs.ts    # container eggs: attribution + stats + resume
-npx tsx scripts/checks/check-metrics-restart.ts    # the curve survives a server restart
-npx tsx scripts/checks/check-session-close.ts      # "change project" leaves the session
-npx tsx scripts/checks/check-session-dwell.ts      # duration is dwell time
-npx tsx scripts/checks/check-observed-lifetime.ts  # "observed for" is the process's lifetime
+npx tsx scripts/checks/check-e2e.ts            # full pipeline incl. container eggs
 ```
 
-### Tier 4 — full pipeline
-
-```bash
-npm run check:e2e              # boots its own server + mock session, no model
-```
+These are the only ones left outside CI, and for a real reason: they need the
+`agentwatch` binary with its kernel privileges, a docker daemon, or both.
+`check-e2e` is included here because its container assertions are the point of
+it — without docker it can only prove the plain process half.
 
 Other:
 
 ```bash
 npm run check:process          # every process harness together (observer checks self-skip off-platform)
-npm run bench:incremental      # a timing report (not an assertion), prints the speedup
+npm run bench:incremental      # a timing report, not a check: asserts nothing
 node scripts/gen-whalebun-css.mjs            # regenerate the avatar's stylesheet
 ```
 
+`bench:incremental` lives in `scripts/dev/`, not `scripts/checks/`: it prints
+ms/event and a speedup but can never fail, and a check that cannot go red is not
+a check. Its correctness counterpart is `check-incremental.ts`, which does
+assert that the incremental fold agrees with a full rebuild.
+
 ## How a check is written
 
-All tier-1 and tier-2 checks share `scripts/checks/harness.ts`:
+Every check except `check-history.ts` shares `scripts/checks/harness.ts`:
 
 ```ts
 check(label, condition, detail?)   // prints "ok" or "FAIL <label> — <detail>", counts
@@ -108,6 +127,14 @@ section(title)                     // a readable header between groups
 waitFor(predicate, timeoutMs?)     // poll with a deadline, for async checks
 finish(name?)                      // prints "N/M passed", exits non-zero on failure
 ```
+
+`finish()` refuses to pass a run that asserted nothing — a wrong import or a
+body skipped by a guard reports `0/0` and would otherwise be green with nothing
+checked, which is the one failure mode a check harness must not have. That is
+also why the checks that do not use the harness (`check-history.ts` and the
+`node:assert/strict` ones) had to be brought in line: `check-history.ts` now
+counts its own assertions and fails on zero, and the metrics checks were
+converted to `check()` so their failures read like every other failure.
 
 Three habits make a failure readable:
 
@@ -129,19 +156,24 @@ process.env.ABSENCE_STATE_DIR = stateDir;      // must precede the import
 const { appendMetricsFrame } = await import(".../storage/metrics");
 ```
 
-Two checks predate the harness and print their own `PASS`/`FAIL` (`assert()`):
-`check-history.ts` and (with `node:assert/strict`) `check-metrics*.ts`,
-`check-storage.ts`, `check-metrics-restart.ts`. They exit non-zero the same way.
 ### Adding a check
 
 Write `scripts/checks/check-<name>.ts` using the harness, add it to the
-`OFFLINE` array in `scripts/checks/run-offline.ts`, and add an `npm run` alias
-if it is worth typing. Neither `package.json`'s aliases nor the CI workflow need
-to change for CI to pick it up — the list lives in exactly one place.
+`CHECKS` array in `scripts/checks/run-offline.ts` with a timeout, and add an
+`npm run` alias if it is worth typing. Neither `package.json`'s aliases nor the
+CI workflow need to change for CI to pick it up — the list lives in exactly one
+place, and each entry carries its own timeout because the self-hosting checks
+sleep through real sampling windows.
 
 The CI workflow (`.github/workflows/ci.yml`) runs the workspace typechecks and
 `npm run check:offline` on every push and pull request, on Node 22 to match
-`engines.node`.
+`engines.node`. That is 27 scripts and roughly 3 minutes, five of them booting a
+real server; the four kernel/docker checks stay manual.
+
+A check belongs in the list if it needs nothing but Node: no observer binary, no
+docker, no elevated rights, no server somebody else started. Booting its own
+server on an ephemeral port does not disqualify it — that is the normal shape
+here, and it is where the session and metrics value is.
 
 ## What each check pins down
 
@@ -154,7 +186,9 @@ Eggs panel is exercised without Pi credentials.
 ### Pipeline & session (live)
 
 `check-e2e.ts` is the fast answer to *"did the whole pipeline survive my
-change"*: one command, ~30 s, no model. It boots a real server on an ephemeral
+change"*: one command, ~30 s, no model. It is manual, not CI: its container
+assertions need a docker daemon and the kernel observer, so without them it can
+only prove the plain process half. It boots a real server on an ephemeral
 port with an isolated state dir, opens a **mock** session, and drives it with a
 scripted prompt (`$ `-prefixed lines — `MockAdapter` runs each through the same
 `AbsenceShell` a real agent uses). It then asserts the whole chain: command
@@ -162,7 +196,8 @@ events → process eggs (Job Object) → container eggs (docker events, when doc
 is reachable) → metrics frames → SQLite persistence. Without docker it falls
 back to a plain `node` process egg and says so in its output.
 
-`check-history.ts` runs **75 assertions** against a live mock session: the
+`check-history.ts` boots its own server and runs **75 assertions** against a
+real mock session: the
 paginated events API and its cursor, the run index, run grouping, per-run
 activity scoping, deterministic stage item ids (a random id used to freeze the
 replay Stage), snapshot seek, the Stage returning to its default page,
@@ -193,9 +228,10 @@ extend its lifetime or keep accumulating resources.
 machine's own counters (the dashed host line) come back from SQLite, and a
 window with no samples returns no points, read through the same call the UI
 makes. No server is started — it appends, flushes, and reads back in one
-process, which is why it is an offline check while the restart case below is not.
+process, which is the cheap half; the restart case below is the half it cannot
+reach.
 
-`check-metrics-restart.ts` (live, ~90 s) boots a real server, runs a workload,
+`check-metrics-restart.ts` (~20 s) boots a real server, runs a workload,
 **restarts the server**, and reads the same session back — the curve and the
 host line must still be there. This is the case `check-metrics-persist.ts`
 cannot reach.
@@ -206,24 +242,25 @@ windows on a *young* session — the case where all three used to collapse onto
 1m's few seconds — while the window stays stable inside a step and moves when
 the step turns over.
 
-`check-session-close.ts` (live, ~45 s) pins "change project" as *leaving* the
+`check-session-close.ts` (~25 s) pins "change project" as *leaving* the
 session: after `POST /api/sessions/:id/close` the sample count stops growing
 (an in-flight sample is dropped, not written), the recorded samples survive, and
 reopening the session restores them.
 
-`check-session-dwell.ts` (live, ~25 s) pins session duration as *dwell* time:
+`check-session-dwell.ts` (~19 s) pins session duration as *dwell* time:
 open → watch → leave → come back continues the clock, the gap while closed is
 not counted, and the original creation time survives.
 
-`check-observed-lifetime.ts` (live, ~40 s) pins "observed for" as the process's
+`check-observed-lifetime.ts` (~19 s) pins "observed for" as the process's
 own lifetime: an egg's clock starts at its `startedAt`, stops at `exitedAt`, and
 the recorded lifetime does not keep growing after the process ends.
 
 `check-incremental.ts` verifies that eggs, History, and Activity remain
 consistent with a full rebuild while the event window slides, and pins
-per-event work away from a window-sized product. `check-incremental-bench.ts`
-is its timing counterpart: it prints old vs. new ms/event and the speedup, and
-asserts nothing — it exists to make a regression visible, not to gate a commit.
+per-event work away from a window-sized product. Its timing counterpart is
+`scripts/dev/bench-incremental.ts`: it prints old vs. new ms/event and the
+speedup, and asserts nothing — which is why it is not a check and does not live
+in `scripts/checks/`.
 
 `check-storage.ts` pins the SQLite seam the rest of the server relies on: the
 legacy JSONL archive imports once and streaming prefixes are dropped,

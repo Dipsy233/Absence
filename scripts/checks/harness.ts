@@ -18,6 +18,13 @@ export function check(label: string, condition: boolean, detail = ""): void {
 
 /** Print the final summary and exit with a status CI can use. */
 export function finish(name = "checks"): never {
+  // A script that imports the wrong thing, or whose whole body is skipped by a
+  // guard, reports 0/0 and would otherwise pass: green with nothing checked.
+  // That is the one failure mode a check harness must not have.
+  if (checks === 0) {
+    console.error(`\n0 ${name} ran — a check that asserts nothing must not pass.`);
+    process.exit(1);
+  }
   console.log(`\n${checks - failures}/${checks} ${name} passed.`);
   process.exit(failures === 0 ? 0 : 1);
 }
