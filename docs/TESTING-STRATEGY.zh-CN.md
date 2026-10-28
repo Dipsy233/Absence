@@ -132,4 +132,3 @@ const { appendMetricsFrame } = await import(".../storage/metrics");
 - [TESTING.zh-CN.md](TESTING.zh-CN.md) — 每个检查及它钉住的规则
 - [ARCHITECTURE.zh-CN.md](ARCHITECTURE.zh-CN.md) — 这些检查所练的事件管道
 - [decoupling.md](decoupling.md) — `check-observer.ts` 执行的契约
-- [CHART.md](CHART.md) — `check-report.ts` 用来判定的规则包

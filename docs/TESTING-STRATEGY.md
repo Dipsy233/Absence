@@ -199,4 +199,3 @@ exit):
 - [TESTING.md](TESTING.md) — every check and the rule it pins / 每个检查及它钉住的规则
 - [ARCHITECTURE.md](ARCHITECTURE.md) — the event pipeline these checks exercise
 - [decoupling.md](decoupling.md) — the contract `check-observer.ts` enforces
-- [CHART.md](CHART.md) — the rule pack `check-report.ts` judges with
