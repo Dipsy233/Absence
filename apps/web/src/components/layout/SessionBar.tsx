@@ -3,6 +3,7 @@ import { formatClock, formatContext } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { useState } from "react";
 import { WindowControls } from "../common/WindowControls";
+import { ViewModeSwitch } from "./ViewModeSwitch";
 import { SettingsDialog } from "../common/SettingsDialog";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
@@ -42,6 +43,10 @@ export function SessionBar() {
       <span className="min-w-0 flex-1 truncate font-mono text-xs text-desk-ink/80" title={session.projectPath}>
         {session.projectPath}
       </span>
+
+      {/* Which face is showing. Monitor / Rounds / Chart / Drip are this
+          branch's layouts; a face that is not built yet is disabled. */}
+      <ViewModeSwitch />
 
       {/* Dead centre of the bar: the ABSENCE-mode toggle. Ghosts the desk world over the
           Stage's content page while it is on. */}

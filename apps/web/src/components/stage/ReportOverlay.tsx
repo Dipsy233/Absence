@@ -30,7 +30,15 @@ import type {
  * run is live it reports the current phase; once it settles it summarises what
  * the run changed. Derived entirely from the AbsenceEvent stream.
  */
-export function ReportOverlay() {
+export function ReportOverlay({
+  withTab = true,
+  insetBottom = "bottom-14",
+}: {
+  /** Monitor has its own Report button, so the Stage tab is not drawn there. */
+  withTab?: boolean;
+  /** How much room the overlay leaves under itself for the input row. */
+  insetBottom?: string;
+}) {
   const t = useT();
   const { run, events, loading } = useSelectedRun();
   const status = useSessionStore((s) => s.agent.status);
@@ -93,20 +101,22 @@ export function ReportOverlay() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={toggleReport}
-        title={reportOpen ? t("Collapse the Absence Report") : t("Expand the Absence Report")}
-        className={[
-          "absolute left-1/2 top-0 z-40 -translate-x-1/2 rounded-b-md border border-t-0 px-3 py-0.5",
-          "font-mono text-[10px] uppercase tracking-[0.15em] backdrop-blur-[2px] transition-colors",
-          reportOpen
-            ? "border-desk-amber/60 bg-desk-panel/90 text-desk-amber"
-            : "border-desk-line bg-desk-panel/85 text-desk-dim hover:text-desk-amber",
-        ].join(" ")}
-      >
-        {reportOpen ? "▲" : "▼"} {t("ABSENCE REPORT")}
-      </button>
+      {withTab ? (
+        <button
+          type="button"
+          onClick={toggleReport}
+          title={reportOpen ? t("Collapse the Absence Report") : t("Expand the Absence Report")}
+          className={[
+            "absolute left-1/2 top-0 z-40 -translate-x-1/2 rounded-b-md border border-t-0 px-3 py-0.5",
+            "font-mono text-[10px] uppercase tracking-[0.15em] backdrop-blur-[2px] transition-colors",
+            reportOpen
+              ? "border-desk-amber/60 bg-desk-panel/90 text-desk-amber"
+              : "border-desk-line bg-desk-panel/85 text-desk-dim hover:text-desk-amber",
+          ].join(" ")}
+        >
+          {reportOpen ? "▲" : "▼"} {t("ABSENCE REPORT")}
+        </button>
+      ) : null}
 
       <AnimatePresence>
         {reportOpen ? (
@@ -116,7 +126,7 @@ export function ReportOverlay() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="absence-overlay absolute inset-x-0 top-0 bottom-14 z-30 flex overflow-hidden border border-desk-line/70 bg-desk-panel/85 backdrop-blur-[3px]"
+            className={`absence-overlay absolute inset-x-0 top-0 ${insetBottom} z-30 flex overflow-hidden border border-desk-line/70 bg-desk-panel/85 backdrop-blur-[3px]`}
           >
             <AnimatePresence>
               {preview ? (

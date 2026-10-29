@@ -258,7 +258,7 @@ avatar-skin details.
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `PORT` | `8848` | Server port |
+| `PORT` | `8848` | Server port. `0` lets the OS pick a free one (the desktop shell does this); anything non-numeric or above 65535 falls back to `8848` |
 | `HOST` | `127.0.0.1` | Server host |
 | `ABSENCE_AGENT` | `pi` | Default runtime: `pi`, `codex`, `dsh` or `mock`. The project picker chooses per session; this is the fallback |
 | `ABSENCE_PROJECTS_ROOT` | `~/projects` | Directory listed in the project picker |
@@ -275,11 +275,21 @@ avatar-skin details.
 | `ABSENCE_DSH_PROFILE` | `acp` | The dsh profile the ACP server boots (`dsh --profile acp`) |
 | `ABSENCE_DSH_HOME` | `~/.dsh` | `DSH_HOME` for the spawned dsh process |
 | `ABSENCE_DSH_PROVIDER` / `ABSENCE_DSH_MODEL` | (profile default) | Provider / model the ACP session starts on |
+| `ABSENCE_MAX_EGGS` | `200` | How many finished eggs the watcher keeps; older exits are reported as `retired`. `0` keeps every finished egg |
+| `ABSENCE_METRICS_RETENTION_DAYS` | `30` | How many days of process metrics to keep; older chunks are deleted once a day. `0` keeps everything |
 | `ABSENCE_LOG_LEVEL` | `info` | Fastify log level |
 | `ABSENCE_STATE_DIR` | `~/.absence` | Where Absence archives session history (env-var prefix kept as `ABSENCE_` for compatibility) |
 | `ABSENCE_DOCKER` | on | Watch containers (`docker events` + `docker stats`, see "Notes & limits"). `0` turns it off; a machine with no docker falls back to today's behavior |
 | `ABSENCE_DOCKER_BIN` | (probed) | The docker CLI entry. Unset: a `docker` on PATH first, then — on Windows — `wsl docker` (the daemon-lives-in-a-WSL-distro shape). May be a bare binary or a prefix such as `wsl docker` |
 | `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | repo `native/` | Override the native observer binary path |
+
+**A blank value means "use the default".** `ABSENCE_MAX_EGGS=` (empty, or only
+whitespace) is read as unset, not as `0` — clearing a variable in a shell
+template must not silently switch a cap off. Write `0` explicitly when you
+do mean "keep everything". A value that is not a plain decimal integer
+(`abc`, `1e3`, `0x10`, a negative count) also falls back to the default
+rather than poisoning the setting, so a typo shows up as the documented
+behaviour instead of a surprise.
 
 ### Chat commands
 
@@ -453,6 +463,9 @@ port to the public internet.
 
 ## Documentation
 
+- [docs/UI_FACES.md](docs/UI_FACES.md) — the interface faces (**Rounds /
+  Monitor / Chart / Drip**, plus Classic), why each exists, and what Monitor's
+  three columns are for.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the event pipeline, process
   observation and classification, the repo tree, the `AbsenceEvent` schema, the
   HTTP/WS API, chat commands, desktop packaging internals, and the local-model

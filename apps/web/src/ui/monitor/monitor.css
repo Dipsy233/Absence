@@ -1,0 +1,1006 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   MONITOR (机器监护) — the heavy face.
+
+   Tokens are named --mon-* and every rule is scoped under .mon-root, so this
+   palette cannot leak into Classic's --desk-* desk world; both live in the same
+   bundle and the user can switch at any time.
+
+   Contrast floor: every text token clears 4.5:1 on its own surface (t3 is
+   5.9:1 on --mon-s1, t2 is 8.9:1). The kind colours (think/read/search/edit/
+   run/egg/err) are all ≥5.5:1 on the panel, so a tag is readable at 11px.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.mon-root {
+  --mon-bg: #121212;
+  --mon-s1: #191919;
+  --mon-s2: #202020;
+  --mon-s3: #2c2c2b;
+  --mon-bd: rgba(255, 255, 255, 0.08);
+  --mon-bd2: rgba(255, 255, 255, 0.16);
+  --mon-t: #f2f2f0;
+  --mon-t2: #b9b9b6;
+  --mon-t3: #96968f;
+
+  --mon-think: #bf8eda;
+  --mon-read: #5e9fe8;
+  --mon-search: #4fb9c9;
+  --mon-edit: #72bc8f;
+  --mon-run: #de9255;
+  --mon-egg: #df84a8;
+  --mon-err: #e97366;
+  --mon-acc: #5e9fe8;
+
+  --mon-sans: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Liberation Sans", Arial,
+    sans-serif;
+  --mon-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+
+  background: var(--mon-bg);
+  color: var(--mon-t);
+  font: 13px/1.45 var(--mon-sans);
+  /* The face fills the window: App renders it as #root's only child, which is
+     not a flex container, so the height has to come from here. */
+  display: flex;
+  height: 100vh;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+
+  /* ── The bridge to Classic's components ─────────────────────────────────
+     StageItemView, MetricsDashboard and the Markdown renderer are shared with
+     Classic and are written against --desk-* tokens. Re-pointing those tokens
+     at Monitor's palette here means every reused view lands in this face's
+     colours, with no fork of the views themselves. Channel triples keep the
+     `/40` opacity modifiers working. */
+  --desk-bg: 18 18 18;
+  --desk-panel: 25 25 25;
+  --desk-panel2: 32 32 32;
+  --desk-deep: 14 14 14;
+  --desk-line: 46 46 45;
+  --desk-ink: 242 242 240;
+  --desk-dim: 150 150 143;
+  --desk-accent: 94 159 232;
+  --desk-ember: 233 115 88;
+  --desk-teal: 114 188 143;
+  --desk-wood: 44 44 43;
+  --desk-wood-lit: 59 59 57;
+  --desk-lavender: 191 142 218;
+}
+
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+
+.mon-shell {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mon-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--mon-bd);
+  background: var(--mon-s1);
+}
+
+.mon-drag {
+  -webkit-app-region: drag;
+}
+.mon-drag button,
+.mon-drag input,
+.mon-nodrag {
+  -webkit-app-region: no-drag;
+}
+
+.mon-body {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 344px minmax(0, 1fr) 320px;
+}
+
+.mon-col {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.mon-col--left {
+  border-right: 1px solid var(--mon-bd);
+}
+.mon-col--right {
+  border-left: 1px solid var(--mon-bd);
+  overflow-y: auto;
+}
+
+/* ── Atoms ──────────────────────────────────────────────────────────────── */
+
+.mon-logo {
+  font-family: var(--mon-mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--mon-t);
+}
+
+.mon-mono {
+  font-family: var(--mon-mono);
+}
+
+.mon-cap {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mon-t3);
+}
+
+.mon-chip {
+  display: inline-flex;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: var(--mon-s3);
+  color: var(--mon-t2);
+}
+
+.mon-chip--think {
+  color: var(--mon-think);
+  background: rgb(191 142 218 / 0.14);
+}
+.mon-chip--read {
+  color: var(--mon-read);
+  background: rgb(94 159 232 / 0.14);
+}
+.mon-chip--search {
+  color: var(--mon-search);
+  background: rgb(79 185 201 / 0.14);
+}
+.mon-chip--edit {
+  color: var(--mon-edit);
+  background: rgb(114 188 143 / 0.14);
+}
+.mon-chip--run {
+  color: var(--mon-run);
+  background: rgb(222 146 85 / 0.14);
+}
+.mon-chip--egg {
+  color: var(--mon-egg);
+  background: rgb(223 132 168 / 0.14);
+}
+.mon-chip--err {
+  color: var(--mon-err);
+  background: rgb(233 115 88 / 0.14);
+}
+
+.mon-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.mon-btn {
+  display: inline-flex;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--mon-t);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+.mon-btn:hover:not(:disabled) {
+  border-color: rgb(94 159 232 / 0.55);
+  color: var(--mon-acc);
+}
+.mon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.mon-btn--ghost {
+  border-color: transparent;
+  color: var(--mon-t2);
+}
+.mon-btn--ghost:hover:not(:disabled) {
+  background: var(--mon-s3);
+  border-color: transparent;
+  color: var(--mon-t);
+}
+.mon-btn--pri {
+  border-color: var(--mon-acc);
+  background: var(--mon-acc);
+  color: #0b1626;
+  font-weight: 600;
+}
+.mon-btn--pri:hover:not(:disabled) {
+  border-color: #7fb4ef;
+  background: #7fb4ef;
+  color: #0b1626;
+}
+.mon-btn--danger {
+  border-color: rgb(233 115 88 / 0.5);
+  color: var(--mon-err);
+}
+
+.mon-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 8px;
+  background: var(--mon-s1);
+}
+.mon-seg > button {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mon-t2);
+  font: 12px/1.2 var(--mon-sans);
+  white-space: nowrap;
+}
+.mon-seg > button:hover:not(:disabled) {
+  color: var(--mon-t);
+}
+.mon-seg > button[aria-pressed="true"],
+.mon-seg > button[data-on="true"] {
+  background: var(--mon-s3);
+  color: var(--mon-t);
+  font-weight: 600;
+}
+.mon-seg > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.mon-seg em {
+  margin-left: 5px;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--mon-t3);
+}
+
+/* ── Left: the run + the feed ───────────────────────────────────────────── */
+
+.mon-lefthead {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--mon-bd);
+}
+
+.mon-runsel {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 8px;
+  background: var(--mon-s2);
+  text-align: left;
+}
+.mon-runsel:hover {
+  border-color: var(--mon-bd2);
+}
+.mon-runsel__q {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--mon-t);
+}
+.mon-runsel__c {
+  flex: none;
+  font: 11px var(--mon-mono);
+  color: var(--mon-t3);
+}
+
+.mon-feed {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 16px;
+}
+
+.mon-phase {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 6px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mon-t3);
+}
+.mon-phase::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--mon-bd);
+}
+
+.mon-ev {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.mon-ev:hover {
+  background: var(--mon-s2);
+}
+.mon-ev__tag {
+  grid-row: span 2;
+  width: 62px;
+  justify-content: center;
+}
+.mon-ev__primary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12.5px var(--mon-mono);
+  color: var(--mon-t);
+}
+.mon-ev__primary--text {
+  font-family: var(--mon-sans);
+  color: var(--mon-t2);
+}
+.mon-ev__meta {
+  grid-column: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--mon-t3);
+}
+.mon-ev__time {
+  grid-column: 3;
+  grid-row: 1;
+  font: 11px var(--mon-mono);
+  color: var(--mon-t3);
+}
+.mon-ev[data-selected="true"] {
+  background: rgb(114 188 143 / 0.09);
+  box-shadow: inset 3px 0 0 var(--mon-edit);
+}
+.mon-ev[data-selected="true"] .mon-ev__time {
+  color: var(--mon-edit);
+}
+.mon-ev[data-dim="true"] {
+  opacity: 0.55;
+}
+
+.mon-empty {
+  padding: 18px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--mon-t3);
+}
+
+/* ── Centre: stage ──────────────────────────────────────────────────────── */
+
+.mon-stage {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--mon-bd);
+}
+
+.mon-stagehead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--mon-bd);
+}
+.mon-stagehead__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 14px var(--mon-mono);
+  color: var(--mon-t);
+}
+.mon-stagehead__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--mon-t3);
+}
+
+.mon-pinbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 16px;
+  border-bottom: 1px solid rgb(114 188 143 / 0.22);
+  background: rgb(114 188 143 / 0.08);
+  font-size: 12px;
+  color: var(--mon-t2);
+}
+.mon-pinbar b {
+  color: var(--mon-t);
+  font-weight: 600;
+}
+
+.mon-stagebody {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* The content sheet: terminal / file / diff / thought / process / approval, or
+   the metrics dashboard. `panels` is the unbuilt MCP-aware dashboard, so this
+   is a plain surface that scrolls. */
+.mon-sheet {
+  height: 100%;
+  overflow: auto;
+}
+
+.mon-sheet .mon-scroll {
+  padding: 14px 16px;
+}
+
+/* Reuse Classic's stage views inside the sheet: they already answer "what does
+   this activity look like". Only the chrome is softened so they sit on the
+   Monitor surface instead of the desk. */
+.mon-sheet .bg-desk-deep\/50,
+.mon-sheet .bg-desk-deep\/60,
+.mon-sheet .bg-desk-deep\/40 {
+  background: transparent !important;
+}
+.mon-sheet .border-desk-line {
+  border-color: var(--mon-bd) !important;
+}
+
+/* ── Timeline strip ─────────────────────────────────────────────────────── */
+
+.mon-tl {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--mon-bd);
+  background: var(--mon-s1);
+}
+.mon-tl__lanes {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+.mon-tl__lane {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--mon-s2);
+}
+.mon-tl__blk {
+  position: absolute;
+  top: 0;
+  height: 8px;
+  min-width: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.mon-tl__head {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--mon-t);
+  transition: left 0.08s linear;
+}
+.mon-tl__labels {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: 10px var(--mon-mono);
+  color: var(--mon-t3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mon-tl__labels > span {
+  height: 8px;
+  line-height: 8px;
+}
+
+/* ── Chat dock ──────────────────────────────────────────────────────────── */
+
+.mon-chat {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--mon-bd);
+  background: var(--mon-s1);
+}
+
+.mon-chat__box {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 10px;
+  background: var(--mon-bg);
+}
+.mon-chat__box:focus-within {
+  border-color: rgb(94 159 232 / 0.6);
+}
+.mon-chat__input {
+  min-width: 140px;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--mon-t);
+  font: 13px var(--mon-sans);
+  outline: none;
+}
+.mon-chat__input::placeholder {
+  color: var(--mon-t3);
+}
+.mon-chat__slash {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mon-t3);
+  font: 12px var(--mon-mono);
+  line-height: 1;
+}
+.mon-chat__slash:hover {
+  border-color: rgb(94 159 232 / 0.6);
+  color: var(--mon-acc);
+}
+
+.mon-ctx {
+  display: inline-flex;
+  height: 22px;
+  max-width: 220px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--mon-s3);
+  color: var(--mon-t);
+  font: 11px var(--mon-mono);
+}
+.mon-ctx > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mon-ctx > button {
+  flex: none;
+  color: var(--mon-t3);
+  font-size: 12px;
+  line-height: 1;
+}
+.mon-ctx > button:hover {
+  color: var(--mon-err);
+}
+
+/* The conversation, unfolded upward above the input row. */
+.mon-thread {
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 10px 16px 2px;
+  border-top: 1px solid var(--mon-bd);
+  background: var(--mon-bg);
+}
+
+.mon-msg {
+  margin-bottom: 10px;
+}
+.mon-msg__role {
+  margin-bottom: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mon-t3);
+}
+.mon-msg__body {
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mon-msg--user .mon-msg__body {
+  background: var(--mon-s3);
+  color: var(--mon-t);
+}
+.mon-msg--agent .mon-msg__body {
+  border: 1px solid var(--mon-bd);
+  background: var(--mon-s1);
+  color: var(--mon-t2);
+}
+.mon-msg--system .mon-msg__body {
+  border: 1px solid var(--mon-bd);
+  background: transparent;
+  color: var(--mon-t3);
+  font: 11.5px var(--mon-mono);
+}
+
+/* ── Right rail ─────────────────────────────────────────────────────────── */
+
+.mon-agent {
+  display: grid;
+  flex: none;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid var(--mon-bd);
+}
+.mon-agent__avatar {
+  height: 74px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.03);
+}
+/* The avatar reports its own status row; the Monitor rail states it in words,
+   so the duplicate line under the character is dropped. */
+.mon-agent__avatar .whalebun-root > div:last-child {
+  display: none;
+}
+/* A head-shot, not the whole character.
+   The built-in WhaleBun fits all of itself into whatever box it is given, which
+   at 74px is an unreadable blob: the pose is carried by the face, and the face
+   is a sixth of the canvas. So the tile overrides the fit with its own scale
+   and offset — the head box (651,863 746×623 on a 2048 canvas centred at
+   1024,1024) is scaled to the tile width and slid up so the head sits centred.
+   Hair and ahoge are above it, hence the small upward bias. */
+.mon-agent__avatar .whalebun-root .stage {
+  /* `--s` is written inline by the Avatar component (its own fit), so this has
+     to be a whole transform with !important, not a variable override. The
+     offsets are in unscaled canvas units: s*(p - centre + n) lands the head
+     (651,863 746×623, centred at 1024,1174.5) in the tile. */
+  transform: scale(0.086) translate(0px, -250px) !important;
+}
+.mon-agent__avatar .whalebun-root .shadow {
+  display: none;
+}
+/* The idle bob and the props are authored for a full-body view; at this crop
+   they only add motion at the tile's edges. */
+.mon-agent__avatar .whalebun-root .fx {
+  display: none;
+}
+.mon-agent__state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mon-edit);
+}
+.mon-agent__line {
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--mon-t);
+}
+.mon-agent__sub {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--mon-t3);
+}
+
+.mon-met {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--mon-bd);
+}
+.mon-met > div {
+  min-width: 0;
+  padding: 10px 14px;
+}
+.mon-met > div + div {
+  border-left: 1px solid var(--mon-bd);
+}
+.mon-met b {
+  display: block;
+  margin-top: 2px;
+  font: 600 15px var(--mon-mono);
+  color: var(--mon-t);
+}
+.mon-met small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--mon-t3);
+}
+
+.mon-sec {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px 6px;
+}
+.mon-sec > span:last-child {
+  font-size: 11.5px;
+  color: var(--mon-t3);
+}
+
+.mon-file {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.mon-file:hover {
+  background: var(--mon-s2);
+}
+.mon-file[data-on="true"] {
+  background: rgb(114 188 143 / 0.07);
+  box-shadow: inset 3px 0 0 var(--mon-edit);
+}
+.mon-file__n {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px var(--mon-mono);
+  color: var(--mon-t);
+}
+
+.mon-vers {
+  display: flex;
+  flex: none;
+  gap: 3px;
+}
+.mon-vers > i {
+  min-width: 22px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--mon-s3);
+  color: var(--mon-t2);
+  font: 10px/17px var(--mon-mono);
+  font-style: normal;
+  text-align: center;
+}
+.mon-vers > i[data-cur="true"] {
+  outline: 2px solid var(--mon-edit);
+  outline-offset: 1px;
+}
+
+.mon-egg {
+  margin: 4px 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.mon-egg:hover {
+  border-color: var(--mon-bd2);
+  background: var(--mon-s2);
+}
+.mon-egg[data-running="true"] {
+  border-color: rgb(223 132 168 / 0.4);
+  background: rgb(223 132 168 / 0.06);
+}
+.mon-egg__r1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font: 12px var(--mon-mono);
+  color: var(--mon-t);
+}
+.mon-egg__r2 {
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--mon-t3);
+}
+
+.mon-fold {
+  padding: 6px 14px 10px;
+  font-size: 11.5px;
+  color: var(--mon-t3);
+}
+
+.mon-att {
+  margin: 12px;
+  padding: 11px 13px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 10px;
+  background: var(--mon-s2);
+  font-size: 12px;
+}
+.mon-att[data-level="high"] {
+  border-color: rgb(233 115 88 / 0.35);
+  background: rgb(233 115 88 / 0.1);
+}
+.mon-att[data-level="medium"] {
+  border-color: rgb(222 146 85 / 0.35);
+  background: rgb(222 146 85 / 0.09);
+}
+.mon-att__h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 650;
+  color: var(--mon-t);
+}
+.mon-att__d {
+  margin-top: 4px;
+  line-height: 1.5;
+  color: var(--mon-t2);
+}
+.mon-att__a {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+/* ── Mode switcher ──────────────────────────────────────────────────────── */
+
+.mon-modes {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 8px;
+  background: var(--mon-bg);
+}
+.mon-modes > button {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mon-t3);
+  font: 11.5px/1 var(--mon-sans);
+  white-space: nowrap;
+}
+.mon-modes > button:hover:not(:disabled) {
+  background: var(--mon-s2);
+  color: var(--mon-t);
+}
+.mon-modes > button[aria-pressed="true"] {
+  background: var(--mon-s3);
+  color: var(--mon-t);
+  font-weight: 600;
+}
+.mon-modes > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+.mon-modes > button > em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--mon-t3);
+}
+
+/* ── Health: focus, motion, scrollbars ──────────────────────────────────── */
+
+.mon-root :focus-visible {
+  outline: 2px solid rgb(94 159 232 / 0.85);
+  outline-offset: 2px;
+}
+.mon-root button,
+.mon-root input,
+.mon-root select {
+  font: inherit;
+}
+.mon-root button {
+  cursor: pointer;
+}
+.mon-root button:disabled {
+  cursor: not-allowed;
+}
+.mon-root ::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+.mon-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.mon-root ::-webkit-scrollbar-thumb {
+  border: 2px solid var(--mon-bg);
+  border-radius: 6px;
+  background: #3a3a38;
+}
+.mon-root ::-webkit-scrollbar-thumb:hover {
+  background: #4b4b48;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mon-root *,
+  .mon-root *::before,
+  .mon-root *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .mon-root .whalebun-root .stage * {
+    animation: none !important;
+  }
+}
+
+/* Narrower than the desktop shell's minimum: keep the rails, drop to a
+   two-column read (the right rail becomes a bottom sheet's worth of width). */
+@media (max-width: 1360px) {
+  .mon-body {
+    grid-template-columns: 300px minmax(0, 1fr) 280px;
+  }
+}
