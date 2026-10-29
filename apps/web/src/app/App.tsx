@@ -9,6 +9,7 @@ import { SessionBar } from "../components/layout/SessionBar";
 import { Stage } from "../components/layout/Stage";
 import { ProjectPicker } from "../components/ProjectPicker/ProjectPicker";
 import { MonitorUI } from "../ui/monitor/MonitorUI";
+import { RoundsUI } from "../ui/rounds/RoundsUI";
 
 /**
  * The shell. Three things decide what it renders:
@@ -42,6 +43,15 @@ export default function App() {
     return (
       <>
         <MonitorUI />
+        <ContextMenu />
+      </>
+    );
+  }
+
+  if (mode === "rounds") {
+    return (
+      <>
+        <RoundsUI />
         <ContextMenu />
       </>
     );
