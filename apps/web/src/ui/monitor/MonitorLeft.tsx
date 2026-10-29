@@ -8,8 +8,16 @@ import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useT } from "../../lib/i18n";
 import { FilePanel } from "../../components/files/FilePanel";
 import type { ActivityRow } from "../../types/stage";
-import type { PhaseType } from "../../types/report";
-import { Chip, Dot, TONE_FOR_PHASE, TONE_FOR_ROW, phaseWord, type MonTone } from "./atoms";
+import {
+  Chip,
+  Dot,
+  TONE_FOR_ROW,
+  phaseForRow,
+  phaseIntent,
+  phaseWord,
+  type MonPhase,
+  type MonTone,
+} from "./atoms";
 import type { MonitorData } from "./useMonitorData";
 
 const STATUS_TONE: Record<RunSummary["status"], MonTone> = {
@@ -103,9 +111,12 @@ export function MonitorLeft({
    */
   const groups = useMemo(() => {
     type Feed = { row: ActivityRow; count: number };
-    const out: Array<{ id: string; phase?: PhaseType; rows: Feed[] }> = [];
+    const out: Array<{ id: string; phase?: MonPhase; rows: Feed[] }> = [];
     for (const row of data.rows) {
-      const phase = data.phaseAt.get(row.id);
+      // The kind comes from the row itself (see `phaseForRow`), so a divider
+      // only appears where the kind of work actually changes — and a shell row
+      // can never be filed under "reading files".
+      const phase = phaseForRow(row);
       let group = out[out.length - 1];
       if (phase && group?.phase !== phase) {
         group = { id: `p_${row.id}`, phase, rows: [] };
@@ -114,8 +125,19 @@ export function MonitorLeft({
         group = { id: `h_${row.id}`, rows: [] };
         out.push(group);
       }
+      // Fold only *state re-reports of one thing*: the same action, the same
+      // subject, the same stage card. Required because a `process` event is an
+      // update (the child count moves), not a new act. The Stage item id is part
+      // of the key so two different `npm test` runs are never merged, and
+      // RUN vs EXIT stay separate — they are the same command's two ends, and
+      // collapsing them would lose the fact that it finished.
       const previous = group.rows[group.rows.length - 1];
-      if (previous && previous.row.action === row.action && previous.row.primary === row.primary) {
+      if (
+        previous &&
+        previous.row.action === row.action &&
+        previous.row.primary === row.primary &&
+        previous.row.stageItem?.id === row.stageItem?.id
+      ) {
         previous.row = row;
         previous.count += 1;
         continue;
@@ -123,7 +145,28 @@ export function MonitorLeft({
       group.rows.push({ row, count: 1 });
     }
     return out;
-  }, [data.rows, data.phaseAt]);
+  }, [data.rows]);
+
+  /**
+   * The run's two boundaries, pinned above and below the scrolling feed.
+   *
+   * They are the only rows that answer "where does this start and end", and
+   * scrolling a long run used to lose both — you could not tell whether you
+   * were looking at the first activity or the four-hundredth. They are taken
+   * out of the stream (the fold above skips them) so they cannot appear twice.
+   */
+  const startRow = data.rows.find((row) => row.action === "START");
+  const endRow = [...data.rows].reverse().find((row) => row.action === "END");
+  const bodyRows = useMemo(
+    () =>
+      groups
+        .map((group) => ({
+          ...group,
+          rows: group.rows.filter(({ row }) => row.action !== "START" && row.action !== "END"),
+        }))
+        .filter((group) => group.rows.length > 0),
+    [groups],
+  );
 
   const run = data.run;
   const duration = run ? formatOffset((run.endedAt ?? Date.now()) - run.startedAt) : "—";
@@ -257,6 +300,13 @@ export function MonitorLeft({
           <FilePanel />
         </div>
       ) : (
+      <>
+      {startRow ? (
+        <div className="mon-anchor">
+          <FeedRow row={startRow} runStart={run?.startedAt} anchor focusEventId={focusedEventId} />
+        </div>
+      ) : null}
+
       <div className="mon-feed" ref={feedRef}>
         {data.loading && data.rows.length === 0 ? (
           <p className="mon-empty">{t("loading…")}</p>
@@ -267,11 +317,16 @@ export function MonitorLeft({
               : t("Nothing yet. Send the agent a task.")}
           </p>
         ) : (
-          groups.map((group) => (
+          bodyRows.map((group) => (
             <div key={group.id}>
               {group.phase ? (
-                <div className={`mon-phase mon-chip--${TONE_FOR_PHASE[group.phase]}`}>
-                  {t(phaseWord(group.phase))}
+                // No colour, no accent: a divider separates two kinds of work,
+                // it is not a status. The intent words are what make it useful
+                // ("Investigating · reading files"), so the reader never has to
+                // guess what the phase name means.
+                <div className="mon-phase">
+                  <span className="mon-phase__name">{t(phaseWord(group.phase))}</span>
+                  <span className="mon-phase__intent">{t(phaseIntent(group.phase))}</span>
                 </div>
               ) : null}
               {group.rows.map(({ row, count }) => (
@@ -289,6 +344,13 @@ export function MonitorLeft({
           ))
         )}
       </div>
+
+      {endRow ? (
+        <div className="mon-anchor">
+          <FeedRow row={endRow} runStart={run?.startedAt} anchor focusEventId={focusedEventId} />
+        </div>
+      ) : null}
+      </>
       )}
 
       <div
@@ -314,6 +376,8 @@ function FeedRow({
   count = 1,
   current,
   focused,
+  focusEventId,
+  anchor = false,
   onOpen,
 }: {
   row: ActivityRow;
@@ -322,9 +386,13 @@ function FeedRow({
   runStart?: number;
   /** How many consecutive identical actions this row stands for (≥1). */
   count?: number;
-  current: boolean;
-  focused: boolean;
-  onOpen: (row: ActivityRow) => void;
+  current?: boolean;
+  /** Explicit focus, for the anchored strips (which have no `onOpen`). */
+  focusEventId?: string;
+  /** Pinned to the top/bottom of the feed rather than scrolling with it. */
+  anchor?: boolean;
+  focused?: boolean;
+  onOpen?: (row: ActivityRow) => void;
 }) {
   const t = useT();
   const tone = TONE_FOR_ROW[row.tone];
@@ -332,11 +400,11 @@ function FeedRow({
   return (
     <button
       type="button"
-      className="mon-ev"
+      className={anchor ? "mon-ev mon-ev--anchor" : "mon-ev"}
       data-event={row.id}
-      data-selected={current || focused ? "true" : undefined}
-      data-dim={openable ? undefined : "true"}
-      onClick={() => openable && onOpen(row)}
+      data-selected={current || focused || focusEventId === row.id ? "true" : undefined}
+      data-dim={!anchor && !openable ? "true" : undefined}
+      onClick={() => openable && onOpen?.(row)}
       title={openable ? row.primary : `${row.action} · ${row.primary}`}
       aria-current={current ? "true" : undefined}
     >
@@ -349,8 +417,14 @@ function FeedRow({
       >
         {row.primary}
       </span>
-      <span className="mon-ev__time">
-        {runStart !== undefined ? formatOffset(row.event.timestamp - runStart) : row.time}
+      <span className="mon-ev__times">
+        <span className="mon-ev__rel">
+          {runStart !== undefined ? formatOffset(row.event.timestamp - runStart) : "—"}
+        </span>
+        {/* The wall clock, right under the offset: "00:06 into the run" answers
+         *  "how long did this take", "14:32:07" answers "when was this". Both
+         *  questions get asked of the same row. */}
+        <span className="mon-ev__clock">{formatClock(row.event.timestamp)}</span>
       </span>
       {row.secondary ? <span className="mon-ev__meta">{row.secondary}</span> : null}
     </button>

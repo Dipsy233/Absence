@@ -330,16 +330,35 @@
   padding: 4px 8px 16px;
 }
 
+/* A phase divider separates two kinds of work; it is not a status, so it
+   carries no kind colour — only the muted grey of a separator. The intent
+   ("reading files") sits next to the name so the phase never needs decoding. */
 .mon-phase {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 14px 6px 4px;
+  margin: 14px 6px 5px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--mon-t3);
+}
+.mon-phase__name {
+  flex: none;
+}
+.mon-phase__intent {
+  flex: none;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--mon-t3);
+  opacity: 0.75;
+}
+.mon-phase__intent::before {
+  content: "·";
+  margin-right: 6px;
+  opacity: 0.7;
 }
 .mon-phase::after {
   content: "";
@@ -387,17 +406,33 @@
   font-size: 11.5px;
   color: var(--mon-t3);
 }
-.mon-ev__time {
+.mon-ev__times {
+  display: flex;
   grid-column: 3;
-  grid-row: 1;
-  font: 11px var(--mon-mono);
+  grid-row: 1 / span 2;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  font-family: var(--mon-mono);
+  line-height: 1.25;
+}
+.mon-ev__rel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mon-t2);
+  font-variant-numeric: tabular-nums;
+}
+.mon-ev__clock {
+  font-size: 10px;
   color: var(--mon-t3);
+  font-variant-numeric: tabular-nums;
 }
 .mon-ev[data-selected="true"] {
   background: rgb(114 188 143 / 0.09);
   box-shadow: inset 3px 0 0 var(--mon-edit);
 }
-.mon-ev[data-selected="true"] .mon-ev__time {
+.mon-ev[data-selected="true"] .mon-ev__rel {
   color: var(--mon-edit);
 }
 .mon-ev[data-dim="true"] {
@@ -409,6 +444,34 @@
   font-size: 12px;
   line-height: 1.6;
   color: var(--mon-t3);
+}
+
+
+/* ── Anchored boundaries ────────────────────────────────────────────────────
+   START and END do not scroll with the feed: they are the run's two ends, and
+   losing them is how a long feed stops being readable as "a run". They sit in
+   their own strips outside the scroll container, separated by a hairline so
+   they read as fixed chrome rather than as the feed's first/last row. */
+.mon-anchor {
+  flex: none;
+  padding: 4px 8px;
+  background: var(--mon-s1);
+}
+.mon-anchor:first-of-type {
+  border-bottom: 1px solid var(--mon-bd);
+}
+.mon-anchor:last-of-type {
+  border-top: 1px solid var(--mon-bd);
+}
+.mon-ev--anchor {
+  background: transparent;
+  cursor: default;
+}
+.mon-ev--anchor:hover {
+  background: transparent;
+}
+.mon-ev--anchor .mon-ev__primary--text {
+  color: var(--mon-t2);
 }
 
 /* ── Centre: stage ──────────────────────────────────────────────────────── */

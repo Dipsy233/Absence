@@ -8,7 +8,8 @@ import { memoRunRows } from "../../lib/history";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import type { ActivityRow } from "../../types/stage";
-import type { Attention, PhaseType, RunFacts } from "../../types/report";
+import type { Attention, RunFacts } from "../../types/report";
+import { monPhase, type MonPhase } from "./atoms";
 import type { HistoryRun } from "../../types/history";
 
 /**
@@ -26,11 +27,9 @@ export interface MonitorData {
   loading: boolean;
   /** Feed rows for the selected run, converted incrementally. */
   rows: ActivityRow[];
-  /** Phase headers keyed by the event id that opened each phase. */
-  phaseAt: Map<string, PhaseType>;
   facts?: RunFacts;
   attention: Attention;
-  phase?: PhaseType;
+  phase?: MonPhase;
   /** The live "what is it doing" sentence, only while the run is in flight. */
   liveHeadline?: string;
   busy: boolean;
@@ -69,12 +68,6 @@ export function useMonitorData(): MonitorData {
     }
   }, [run?.id, run?.status, events, tick, attentionOptions]);
 
-  const phaseAt = useMemo(() => {
-    const map = new Map<string, PhaseType>();
-    for (const phase of facts?.phases ?? []) map.set(phase.eventId, phase.type);
-    return map;
-  }, [facts]);
-
   const running = run?.status === "running";
   const busy = isAgentBusy(status);
   const live = useMemo(
@@ -87,10 +80,9 @@ export function useMonitorData(): MonitorData {
     events,
     loading,
     rows,
-    phaseAt,
     facts,
     attention: live?.attention ?? facts?.attention ?? NO_ATTENTION,
-    phase: facts?.currentPhase,
+    phase: facts ? monPhase(facts.currentPhase) : undefined,
     liveHeadline: live?.headline,
     busy,
     observed,

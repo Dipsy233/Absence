@@ -42,13 +42,63 @@ export const TONE_FOR_KIND: Record<string, MonTone> = {
   end: "mute",
 };
 
-export const TONE_FOR_PHASE: Record<PhaseType, MonTone> = {
-  investigating: "read",
-  executing: "run",
-  implementing: "edit",
-  verifying: "search",
-  recovering: "err",
+/**
+ * Monitor's phases: three, not the report's five.
+ *
+ * A phase answers "what is the agent doing to the project", and there are only
+ * three answers worth a divider in a feed:
+ *
+ *   investigating — reading files
+ *   executing     — running commands
+ *   implementing  — changing files
+ *
+ * The report engine also emits `verifying` (a command succeeded after a
+ * failure) and `recovering` (a command failed). Both are *command* activity, so
+ * they read as `executing` here: a feed that relabelled the same act three
+ * times would put three dividers between two shell commands, and a red
+ * RECOVERING band made a normal retry look like an incident. The report keeps
+ * the finer phases; the feed keeps the honest coarse one.
+ */
+export type MonPhase = "investigating" | "executing" | "implementing";
+
+const PHASE_FOLD: Record<PhaseType, MonPhase> = {
+  investigating: "investigating",
+  executing: "executing",
+  implementing: "implementing",
+  verifying: "executing",
+  recovering: "executing",
 };
+
+export function monPhase(phase: PhaseType): MonPhase {
+  return PHASE_FOLD[phase];
+}
+
+/**
+ * The phase a *row* belongs to, read off the row's own kind.
+ *
+ * The report's phase signals are anchored on `command` events, which arrive
+ * when a command finishes — so a RUN row (a `tool_start`) landed under the
+ * phase the *previous* command had opened, and a shell row could appear under
+ * "reading files". A feed knows what each row is, so the divider is derived
+ * from the rows themselves and cannot disagree with them.
+ *
+ * Reasoning, lifecycle, approvals and errors do not change the kind of work, so
+ * they inherit the current phase instead of opening one.
+ */
+export function phaseForRow(row: ActivityRow): MonPhase | undefined {
+  switch (row.tone) {
+    case "read":
+    case "search":
+      return "investigating";
+    case "edit":
+      return "implementing";
+    case "run":
+    case "process":
+      return "executing";
+    default:
+      return undefined;
+  }
+}
 
 /** Status dot colour: what the avatar is doing, in one hue. */
 export function toneForStatus(status: string): MonTone {
@@ -130,16 +180,28 @@ export function Spark({
 
 /* ── Words ──────────────────────────────────────────────────────────────── */
 
-const PHASE_WORD: Record<PhaseType, string> = {
+const PHASE_WORD: Record<MonPhase, string> = {
   investigating: "Investigating",
-  implementing: "Implementing",
   executing: "Executing",
-  verifying: "Verifying",
-  recovering: "Recovering",
+  implementing: "Implementing",
 };
 
-export function phaseWord(phase: PhaseType | undefined): string {
+/**
+ * What the phase means, in the feed's own words: the divider has to say what
+ * kind of work opened it, not leave the reader to infer it from the rows below.
+ */
+const PHASE_INTENT: Record<MonPhase, string> = {
+  investigating: "reading files",
+  executing: "running commands",
+  implementing: "editing files",
+};
+
+export function phaseWord(phase: MonPhase | undefined): string {
   return phase ? PHASE_WORD[phase] : "Idle";
+}
+
+export function phaseIntent(phase: MonPhase): string {
+  return PHASE_INTENT[phase];
 }
 
 const REASON_TEXT: Record<AttentionReason, string> = {

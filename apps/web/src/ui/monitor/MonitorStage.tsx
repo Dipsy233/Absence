@@ -15,7 +15,7 @@ import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { StageItem } from "../../types/stage";
 import type { PhaseType } from "../../types/report";
-import { Chip, TONE_FOR_KIND, TONE_FOR_PHASE, attentionTone, phaseWord, type MonTone } from "./atoms";
+import { Chip, TONE_FOR_KIND, attentionTone, phaseWord, type MonTone } from "./atoms";
 import type { MonitorData } from "./useMonitorData";
 
 type Tab = "file" | "diff" | "terminal" | "metrics";
@@ -181,7 +181,7 @@ function describe(
   if (!item) {
     const phase = data.phase;
     return {
-      chip: <Chip tone={phase ? TONE_FOR_PHASE[phase] : "mute"}>{t(phaseWord(phase)).toUpperCase()}</Chip>,
+      chip: <Chip tone="mute">{t(phaseWord(phase)).toUpperCase()}</Chip>,
       chipText: t(phaseWord(phase)).toUpperCase(),
       title: data.liveHeadline ?? t("Waiting for the first activity…"),
       sub: data.run ? `#${data.run.index} · ${data.run.prompt || t("(observed activity)")}` : t("No run yet"),
@@ -283,7 +283,7 @@ function DefaultPage({
   }
   const changed = (facts?.files.created.length ?? 0) + (facts?.files.modified.length ?? 0);
   const matters: Array<[string, string, string]> = [
-    [t("Phase"), t(phaseWord(data.phase)), TONE_FOR_PHASE[data.phase ?? "investigating"]],
+    [t("Phase"), t(phaseWord(data.phase)), "mute"],
     [t("Files read"), String(facts?.counts.reads ?? 0), "read"],
     [t("Files changed"), String(changed), "edit"],
     [t("Commands"), String(facts?.commands.total ?? 0), "run"],
