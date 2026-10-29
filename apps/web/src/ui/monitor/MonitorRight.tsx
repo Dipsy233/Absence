@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { formatBytes, formatClock, formatDuration } from "../../lib/format";
+import { formatBytes, formatClock, formatDuration, formatOffset } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
@@ -27,7 +27,8 @@ import { Avatar } from "../../components/agent/Avatar";
 import { MediaAvatar } from "../../components/agent/MediaAvatar";
 import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 import { CPU_COLOR, MEM_COLOR } from "../../lib/metricColors";
-import { Dot, Spark, toneForStatus } from "./atoms";
+import { Dot, Spark, attentionTone, toneForStatus, type MonTone } from "./atoms";
+import type { MonitorData } from "./useMonitorData";
 
 /**
  * Right column: who is working, what it is worth in resources, what it knows,
@@ -45,10 +46,10 @@ import { Dot, Spark, toneForStatus } from "./atoms";
  * keeps the running/dead/all filter, the query and the per-egg actions — all
  * re-drawn against `.mon-*` so they read as this face.
  */
-export function MonitorRight() {
+export function MonitorRight({ data }: { data: MonitorData }) {
   return (
     <div className="mon-col mon-col--right">
-      <AgentHead />
+      <AgentHead data={data} />
       <Usage />
       {/*
         No attention block here. The verdict is already stated in two places
@@ -90,7 +91,14 @@ const STATUS_LINE: Record<string, string> = {
   error: "Something went wrong.",
 };
 
-function AgentHead() {
+const RUN_WORD: Record<"running" | "completed" | "interrupted" | "error", string> = {
+  running: "running",
+  completed: "done",
+  interrupted: "stopped",
+  error: "error",
+};
+
+function AgentHead({ data }: { data: MonitorData }) {
   const t = useT();
   const liveStatus = useSessionStore((s) => s.agent.status);
   const coverage = useAvatarSkinCoverage();
@@ -134,6 +142,26 @@ function AgentHead() {
   const shownVisual: AgentVisualState = { status: shownStatus, mood: moodFor(shownStatus) };
   const shownMedia = skinMediaFor(coverage, shownStatus);
 
+  /**
+   * The run facts, moved here from the window's top bar so the whole "who is
+   * working and how bad is it" story sits beside the character in four rows:
+   *
+   *   LISTENING                    mock   ← status | runtime
+   *   Run #1 · stopped   00:19     LIVE   ← run | elapsed | view clock
+   *   Ready — waiting for a task.         ← the plain-words sentence
+   *   ATTENTION · NONE                    ← the verdict, or its absence
+   */
+  const runtime = useSessionStore((s) => s.session?.agentRuntime);
+  const now = useNow(1000);
+  const run = data.run;
+  const runTone: MonTone =
+    run?.status === "running" ? "run" : run?.status === "error" ? "err" : run ? "edit" : "mute";
+  // A finished run gets its final duration; a live one counts up, which is why
+  // this component keeps its own second hand.
+  const runElapsed = run ? formatOffset((run.endedAt ?? now) - run.startedAt) : "—";
+  const attentionLevel = data.attention.level;
+  const attentionToneNow = attentionTone(attentionLevel);
+
   return (
     <div className="mon-agent">
       {/*
@@ -153,21 +181,33 @@ function AgentHead() {
         </div>
       </div>
       <div className="mon-agent__caption">
-        {/*
-          Two facts, one line: the agent's status (the dot's colour), then what
-          the centre column is doing with it — LIVE while the page follows the
-          run, REPLAY while a replay's cursor is on screen, PINNED while a
-          chosen moment is.
-        */}
-        <div className={`mon-agent__state mon-chip--${shownTone}`} style={{ background: "transparent", padding: 0 }}>
-          <Dot tone={shownTone} />
-          {t(statusLabel(shownStatus)).toUpperCase()}
+        <div className="mon-agent__row">
+          <span className={`mon-agent__state mon-chip--${shownTone}`} style={{ background: "transparent", padding: 0 }}>
+            <Dot tone={shownTone} />
+            {t(statusLabel(shownStatus)).toUpperCase()}
+          </span>
+          {runtime ? (
+            <span className="mon-agent__runtime mon-mono" title={t("runtime")}>
+              {runtime}
+            </span>
+          ) : null}
+        </div>
+        <div className="mon-agent__row">
+          {run ? (
+            <>
+              <span className={`mon-agent__run mon-chip--${runTone}`}>
+                <Dot tone={runTone} />
+                {`${t("Run")} #${run.index} · ${t(RUN_WORD[run.status])}`}
+              </span>
+              <span className="mon-agent__elapsed mon-mono">{runElapsed}</span>
+            </>
+          ) : (
+            <span className="mon-agent__norun">{t("no run")}</span>
+          )}
           {/*
-            The phase (Investigating / Executing / Implementing) is deliberately
-            *not* here. Those three words are the activity feed's group dividers
-            and nothing else — they classify rows, and this rail has no rows. The
-            slot belongs to the one fact the rail adds: whether the centre
-            column is LIVE or REPLAY.
+            LIVE / REPLAY / PINNED — what the centre column is doing with the
+            run. It belongs on the run's row: both facts are about the clock
+            the reader is watching, and the pair reads "run … view".
           */}
           <span className={`mon-agent__play mon-chip--${playingTone}`}>
             <Dot tone={playingTone} />
@@ -176,6 +216,11 @@ function AgentHead() {
         </div>
         <div className="mon-agent__line" title={t(STATUS_LINE[shownStatus] ?? STATUS_LINE.listening!)}>
           {t(STATUS_LINE[shownStatus] ?? STATUS_LINE.listening!)}
+        </div>
+        <div className="mon-agent__attention">
+          <span className={`mon-chip--${attentionToneNow}`} title={t("Human attention")}>
+            {t("attention").toUpperCase()} · {t(attentionLevel)}
+          </span>
         </div>
       </div>
     </div>

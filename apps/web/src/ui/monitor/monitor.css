@@ -1095,9 +1095,45 @@
   font-size: 13px;
   color: var(--mon-t);
 }
-/* LIVE / REPLAY: what the centre column is doing with the run. Pushed to the
-   end of the status line, so the pair reads "AGENT state … VIEW state" and the
-   two never merge into one word. */
+/* One fact pair per row, pushed to the two edges: the caption is four rows —
+   status | runtime, run + elapsed | view clock, the plain-words sentence, and
+   the attention verdict. */
+.mon-agent__row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+/* The runtime name (`mock`, `pi`, …), at the row's right edge: it names *who
+   is driving*, which is the counterpart of the status word on the left. */
+.mon-agent__runtime {
+  margin-left: auto;
+  padding-left: 8px;
+  overflow: hidden;
+  font-size: 10.5px;
+  color: var(--mon-t3);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.mon-agent__run {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.mon-agent__elapsed {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--mon-t3);
+}
+.mon-agent__norun {
+  font-size: 11px;
+  color: var(--mon-t3);
+}
+/* LIVE / REPLAY / PINNED: what the centre column is doing with the run, at the
+   run row's right edge, so the pair reads "Run #1 · stopped … LIVE". */
 .mon-agent__play {
   display: inline-flex;
   align-items: center;
@@ -1106,6 +1142,16 @@
   padding-left: 8px;
   font-size: 10.5px;
   letter-spacing: 0.07em;
+}
+/* The attention verdict, last row: how badly this run needs a person. It is
+   always stated — "NONE" is information too, it says the reader can look away. */
+.mon-agent__attention {
+  margin-top: 1px;
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 /* ── The rail's sections ────────────────────────────────────────────────────
@@ -1466,37 +1512,6 @@
   color: var(--mon-t3);
 }
 
-/* ── The run block ──────────────────────────────────────────────────────────
-   Runtime · run · status · elapsed, as one unit. Those four answers are only
-   useful together: "#1 done" without "pi" or "00:01:23" is a fragment, not a
-   status. The separator between the runtime and the chip keeps the runtime
-   reading as a label rather than part of the sentence. */
-.mon-runblock {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 7px;
-  padding: 0 2px 0 6px;
-}
-.mon-runblock__runtime {
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--mon-t2);
-}
-.mon-runblock__sep {
-  width: 1px;
-  height: 14px;
-  background: var(--mon-bd2);
-}
-.mon-runblock__time {
-  min-width: 46px;
-  font-size: 11.5px;
-  color: var(--mon-t3);
-  font-variant-numeric: tabular-nums;
-}
-
 /* ── Mode switcher ──────────────────────────────────────────────────────── */
 
 .mon-modes {
@@ -1605,9 +1620,5 @@
   }
   .mon-modes > button {
     padding: 0 6px;
-  }
-  .mon-runblock {
-    gap: 5px;
-    padding-left: 0;
   }
 }
