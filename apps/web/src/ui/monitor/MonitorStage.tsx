@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { isAgentBusy } from "@absence/core";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
-import { useStageView } from "../../hooks/useStage";
+import { useReplayItem, useStageView } from "../../hooks/useStage";
 import { useUiStore } from "../../stores/uiStore";
 import { useMetricsStore } from "../../stores/metricsStore";
 import { useIsObserved } from "../../stores/sessionStore";
@@ -80,6 +80,7 @@ function useActivityView(
 export function MonitorStage({ data }: { data: MonitorData }) {
   const t = useT();
   const { mode, item } = useStageView();
+  const replayItem = useReplayItem();
   const following = useStageStore((s) => s.following);
   const goLive = useStageStore((s) => s.goLive);
   const goMetrics = useStageStore((s) => s.goMetrics);
@@ -96,7 +97,19 @@ export function MonitorStage({ data }: { data: MonitorData }) {
    * the activity the reader clicked. METRICS and CHAT are pages of their own
    * and never show an activity, so neither is "the moment everything shows".
    */
-  const page = following ? data.liveItem : item;
+  /**
+   * Replay is a third clock, and the page has to follow it.
+   *
+   * `useStageView` answers for live and for a pin; in replay the store's
+   * `currentTime` decides what is on screen (`useReplayItem`, the same hook
+   * Classic's Stage uses), so a playing replay walks the Stage through the run
+   * activity by activity, in the run's own real timing. Without this the Stage
+   * kept showing whatever was pinned when the replay started while the feed's
+   * cursor moved on.
+   */
+  const replaying = mode === "replay";
+  const replayTime = useReplayStore((s) => s.currentTime);
+  const page = replaying ? replayItem : following ? data.liveItem : item;
   const showingMetrics = mode === "metrics";
   const showingChat = mode === "chat";
   // `active` stays the live tail even while a global page is up: the view tabs
@@ -285,7 +298,27 @@ export function MonitorStage({ data }: { data: MonitorData }) {
         their own, not moments: they get no bar, and their tabs are the way back
         (a view tab returns to following).
       */}
-      {!following && !showingMetrics && !showingChat && active ? (
+      {replaying ? (
+        // Replay has its own clock, so the bar reports it instead of a pin: the
+        // moment on screen is wherever the cursor is, and ⏎ leaves the replay.
+        <div className="mon-pinbar">
+          <span className="mon-chip mon-chip--run" style={{ height: 18 }}>
+            {t("REPLAY")}
+          </span>
+          <span>
+            {t("Replaying — the page follows the run's own clock, {time} in", {
+              // An offset into the run, not a wall clock: "00:05 in" is what a
+              // scrubber shows, and the run's own timeline is what this bar is
+              // reporting on.
+              time: data.run ? formatOffset(Math.max(0, replayTime - data.run.startedAt)) : "—",
+            })}
+          </span>
+          <span style={{ flex: 1 }} />
+          <button type="button" className="mon-btn mon-btn--ghost" onClick={goLive}>
+            {t("Back to live ⏎")}
+          </button>
+        </div>
+      ) : !following && !showingMetrics && !showingChat && active ? (
         <div className="mon-pinbar">
           <span className="mon-chip mon-chip--edit" style={{ height: 18 }}>
             {header.chipText}

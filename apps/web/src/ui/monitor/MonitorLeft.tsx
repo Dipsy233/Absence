@@ -3,6 +3,7 @@ import { RunSummary } from "@absence/core";
 import { formatClock, formatOffset } from "../../lib/format";
 import { useRunsStore } from "../../stores/runsStore";
 import { useUiStore } from "../../stores/uiStore";
+import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useT } from "../../lib/i18n";
@@ -67,6 +68,35 @@ export function MonitorLeft({
    * run, and the reader could not tell which row the middle column belongs to.
    */
   const liveEventId = following ? data.liveEventId : undefined;
+
+  /**
+   * In replay the highlighted row is the one the cursor has passed — the
+   * activity the Stage is showing right now — not a pinned item (replay pins
+   * its own view) and not the live tail. This is the same rule Classic's
+   * Activity panel applies (`replayCurrent`), and it is why the feed's highlight
+   * walks down the run while a replay plays.
+   *
+   * Rows are chronological, so the answer is the last row at or before the
+   * cursor; a binary search keeps it cheap on the 80ms replay tick.
+   */
+  const stageMode = useStageStore((s) => s.mode);
+  const replayTime = useReplayStore((s) => s.currentTime);
+  const replayRowId = useMemo(() => {
+    if (stageMode !== "replay" || data.rows.length === 0) return undefined;
+    let low = 0;
+    let high = data.rows.length - 1;
+    let found = -1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (data.rows[mid]!.event.timestamp <= replayTime) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return found >= 0 ? data.rows[found]!.id : undefined;
+  }, [stageMode, data.rows, replayTime]);
   const focusedEventId = useUiStore((s) => s.focusedEventId);
   const observed = useIsObserved();
 
@@ -108,6 +138,23 @@ export function MonitorLeft({
     const element = feedRef.current?.querySelector<HTMLElement>(`[data-event="${CSS.escape(focusedEventId)}"]`);
     element?.scrollIntoView({ block: "nearest" });
   }, [focusedEventId, data.rows]);
+
+  /**
+   * In replay the highlighted row must stay on screen as the cursor walks down
+   * the run — that is the whole point of the highlight. Classic's Activity panel
+   * gets this for free by virtualising to the cursor; the feed is a plain
+   * scroll container, so it scrolls itself. `block: "nearest"` means a row
+   * already in view is not moved, so this does not fight a reader who scrolled
+   * to read around the cursor.
+   *
+   * It also stops the feed's own "stick to the bottom" behaviour from dragging
+   * the reader away from the cursor on the next streamed event.
+   */
+  useEffect(() => {
+    if (!replayRowId) return;
+    const element = feedRef.current?.querySelector<HTMLElement>(`[data-event="${CSS.escape(replayRowId)}"]`);
+    element?.scrollIntoView({ block: "nearest" });
+  }, [replayRowId]);
 
   /**
    * The feed as drawn: rows grouped under the phase that was current when they
@@ -346,9 +393,11 @@ export function MonitorLeft({
                   count={count}
                   runStart={run?.startedAt}
                   current={
-                    following
-                      ? row.stageItem?.source?.eventId !== undefined && row.stageItem.source.eventId === liveEventId
-                      : row.stageItem?.source?.eventId === activeEventId
+                    stageMode === "replay"
+                      ? row.id === replayRowId
+                      : following
+                        ? row.stageItem?.source?.eventId !== undefined && row.stageItem.source.eventId === liveEventId
+                        : row.stageItem?.source?.eventId === activeEventId
                   }
                   focused={row.id === focusedEventId}
                   onOpen={onOpen}
@@ -411,24 +460,42 @@ function FeedRow({
   const t = useT();
   const openMenu = useUiStore((s) => s.openMenu);
   const addContext = useChatStore((s) => s.addContext);
+  const inReplay = useStageStore((s) => s.mode === "replay");
+  const seek = useReplayStore((s) => s.seekTimestamp);
   const tone = TONE_FOR_ROW[row.tone];
   const openable = row.stageItem !== undefined;
+  /**
+   * In replay a click is a scrub, not a pin — Classic's rule (ActivityItem
+   * does the same). Pinning inside a replay would fight the clock: the reader
+   * would open a moment while the cursor kept moving past it.
+   */
+  const activate = () => {
+    if (inReplay) {
+      seek(row.event.timestamp);
+      return;
+    }
+    if (openable) onOpen?.(row);
+  };
   return (
     <button
       type="button"
       className={anchor ? "mon-ev mon-ev--anchor" : "mon-ev"}
       data-event={row.id}
       data-selected={current || focused || focusEventId === row.id ? "true" : undefined}
-      data-dim={!anchor && !openable ? "true" : undefined}
-      onClick={() => openable && onOpen?.(row)}
+      data-dim={!anchor && !openable && !inReplay ? "true" : undefined}
+      onClick={activate}
       onContextMenu={(event) => {
         event.preventDefault();
         openMenu(event.clientX, event.clientY, [
-          { label: t("Open in Stage"), disabled: !openable, onSelect: () => openable && onOpen?.(row) },
+          {
+            label: inReplay ? t("Scrub to this event") : t("Open in Stage"),
+            disabled: !inReplay && !openable,
+            onSelect: activate,
+          },
           { label: t("Add event to Chat"), onSelect: () => addContext(eventContext(row.event)) },
         ]);
       }}
-      title={openable ? row.primary : `${row.action} · ${row.primary}`}
+      title={inReplay ? t("Scrub to this event") : openable ? row.primary : `${row.action} · ${row.primary}`}
       aria-current={current ? "true" : undefined}
     >
       <Chip tone={tone} className="mon-ev__tag" title={count > 1 ? t("{n} updates, shown as one", { n: count }) : undefined}>

@@ -275,6 +275,8 @@ const ZH: Record<string, string> = {
   // ── Monitor's agent block ──────────────────────────────────────────────
   // `live` / `replay` already exist above (the connection chip and the replay
   // bar); they are reused here rather than given a second translation.
+  "Replaying — the page follows the run's own clock, {time} in":
+    "回放中 —— 主面板跟随运行自身的时钟,已到 {time}",
   "Ready — waiting for a task.": "就绪 —— 等待任务。",
   "Working out what to do next.": "正在思考下一步。",
   "Writing the answer.": "正在写回答。",
