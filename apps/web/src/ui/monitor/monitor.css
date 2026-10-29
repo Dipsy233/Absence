@@ -889,20 +889,44 @@
   border-radius: 10px;
   background: rgb(255 255 255 / 0.03);
 }
-/* A head-shot, not the whole character: at 88px the full body is an unreadable
-   blob and the pose is carried by the face. The 184px box is Classic's, so the
-   fit, the pose and the animations are untouched; this only scales *that box*
-   and slides it so the head lands centred. The numbers come from the head's
-   own box on the 2048 canvas (651,863 746x623) measured against Classic's fit:
-   at this scale the head is ~76px of the 88px tile, with the ahoge and hair
-   still inside. */
+/* The character is clipped to the tile's rounded corners; without this the
+   props and the body spill past the crop on the sides where the box is wider
+   than the tile. */
+.mon-agent__tile > * {
+  border-radius: inherit;
+}
+/* A head-shot, not the whole character — and at *authored* size, not a shrunk
+   one.
+ *
+ * The 184px box is Classic's Agent panel, which is the size the WhaleBun's fit,
+ * pose and idle animations were written for: the fit's own scale comes out at
+ * ~0.11 of the 2048 canvas, so the character's `floaty` (24 canvas px) is a
+ * 2.7px bob on screen and its blink is a 14px-wide face swap. Scaling that box
+ * down again to fit 88px (an earlier version used `scale(0.886)`) shrank the
+ * whole character to ~76px wide and the bob to ~2.3px — technically animating,
+ * visibly a static blue-and-white silhouette, which is exactly how it read.
+ *
+ * So the tile keeps the 184px box at 1:1 and only *frames* it: the box is
+ * pushed left and up so the head (whose centre sits above the box's centre)
+ * lands in the tile, and `overflow: hidden` on the tile crops the body and the
+ * props. Nothing is scaled, so the motion keeps the amplitude it was authored
+ * with — 24px of bob on an 88px tile is a visible breath, not a rounding error.
+ */
 .mon-agent__tileinner {
   position: absolute;
   left: 50%;
   top: 50%;
   width: 184px;
   height: 184px;
-  transform: translate(-50%, -50%) scale(0.886) translate(5.2px, -4.2px);
+  /* Measured from the rendered part boxes at 1:1, this is a 1:1 crop, not a
+     fit: the head is 86x71 and the tile is 88x88, so the head fills it and
+     there is no room left for the ahoge above (that is the one part the crop
+     gives up, and it is the part a head-shot can afford to lose).
+     x: the head spans -4..81, so +6px centres it (3..89, one px over — the
+     head's own idle sway covers less than that).
+     y: the head spans 15..85, so -4px lands it at 11..81, which centres the
+     *face* (the thing a head-shot is for) inside the tile. */
+  transform: translate(calc(-50% + 6px), calc(-50% - 4px));
   transform-origin: center;
 }
 /* The avatar reports its own status row; the rail states it in words beside
@@ -936,13 +960,25 @@
   font-size: 13px;
   color: var(--mon-t);
 }
-.mon-agent__sub {
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11.5px;
+/* The phase sits after the status as a quieter aside: it is the same sentence
+   in a coarser unit, so it must not compete with the status word. */
+.mon-agent__phase {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--mon-t3);
+}
+/* LIVE / REPLAY: what the centre column is doing with the run. Pushed to the
+   end of the status line, so the pair reads "AGENT state … VIEW state" and the
+   two never merge into one word. */
+.mon-agent__play {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
 }
 
 /* ── The rail's sections ────────────────────────────────────────────────────

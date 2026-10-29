@@ -272,6 +272,19 @@ const ZH: Record<string, string> = {
   "Older finished processes were retired from this list to keep it bounded. Running ones are always shown. They remain in the session archive and the Report.":
     "更早结束的进程已从列表淘汰以控制长度。运行中的始终显示。它们仍在会话存档和报告里。",
 
+  // ── Monitor's agent block ──────────────────────────────────────────────
+  // `live` / `replay` already exist above (the connection chip and the replay
+  // bar); they are reused here rather than given a second translation.
+  "Ready — waiting for a task.": "就绪 —— 等待任务。",
+  "Working out what to do next.": "正在思考下一步。",
+  "Writing the answer.": "正在写回答。",
+  "Reading files in the project.": "正在读取项目文件。",
+  "Looking for something in the project.": "正在项目里搜索。",
+  "Changing files.": "正在修改文件。",
+  "Running a command.": "正在执行命令。",
+  "Waiting for you.": "正在等你。",
+  "Something went wrong.": "出错了。",
+
   // ── Agent status words ─────────────────────────────────────────────────
   idle: "空闲",
   thinking: "思考中",

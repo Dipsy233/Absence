@@ -5,6 +5,7 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useMetricsStore } from "../../stores/metricsStore";
+import { useReplayStore } from "../../stores/replayStore";
 import { openKnownFile } from "../../lib/openFile";
 import { eventToStageItem } from "../../lib/events";
 import { countEggs, filterEggs, primaryEggs, sortEggs, summarizeTools, type Egg, type EggFilter } from "../../lib/eggs";
@@ -22,6 +23,7 @@ import {
   latestFrame,
 } from "../../lib/metrics";
 import { moodFor, statusLabel, type AgentVisualState } from "../../lib/agent";
+import { statusFromEvent } from "../../lib/events";
 import { useT } from "../../lib/i18n";
 import { Avatar } from "../../components/agent/Avatar";
 import { MediaAvatar } from "../../components/agent/MediaAvatar";
@@ -67,15 +69,72 @@ export function MonitorRight({ data }: { data: MonitorData }) {
 
 /* ── Who ────────────────────────────────────────────────────────────────── */
 
+/**
+ * One sentence for what the agent is doing *now*, from its own status.
+ *
+ * This replaces `liveHeadline` (the report's phase sentence, "Agent is
+ * investigating the project.") — that was a second, longer way of saying what
+ * the status word above it already says, and it went stale the moment the run
+ * ended. The status is the primary fact; the sentence explains it in plain
+ * words for someone who has not learned the nine words yet.
+ */
+const STATUS_LINE: Record<string, string> = {
+  listening: "Ready — waiting for a task.",
+  thinking: "Working out what to do next.",
+  speaking: "Writing the answer.",
+  reading: "Reading files in the project.",
+  searching: "Looking for something in the project.",
+  editing: "Changing files.",
+  running: "Running a command.",
+  waiting: "Waiting for you.",
+  error: "Something went wrong.",
+};
+
 function AgentHead({ data }: { data: MonitorData }) {
   const t = useT();
-  const status = useSessionStore((s) => s.agent.status);
-  const model = useSessionStore((s) => s.agent.model);
+  const liveStatus = useSessionStore((s) => s.agent.status);
   const coverage = useAvatarSkinCoverage();
-  const visual: AgentVisualState = { status, mood: moodFor(status) };
-  const media = skinMediaFor(coverage, status);
-  const tone = toneForStatus(status);
-  const phase = data.phase;
+  const following = useStageStore((s) => s.following);
+
+  /**
+   * What the *centre column* is doing, which is a different fact from the
+   * agent's status: it is either playing the run as it happens, or it is not.
+   *
+   * `following` is exactly that question — the store clears it the moment the
+   * reader pins a row, scrubs a replay, or opens a page of their own (METRICS /
+   * CHAT), and sets it again on ⏎. Classic marks the same distinction with its
+   * LIVE / REPLAY chips; this is the same answer, in the rail.
+   */
+  const stageMode = useStageStore((s) => s.mode);
+  const replaying = stageMode === "replay";
+  const playing: "live" | "replay" = following ? "live" : "replay";
+  const playingTone = following ? "edit" : "run";
+
+  /**
+   * The status the reader is looking at, which is not always the live one.
+   *
+   * Classic does the same thing (see `Stage.tsx`): in replay the avatar re-enacts
+   * the reconstructed run, and on a pinned page it re-enacts the action that
+   * produced that moment — otherwise the rail would say LISTENING next to a
+   * Stage that is clearly showing the agent mid-edit. METRICS and CHAT are
+   * pages about the session, not about one moment, so they keep the live status.
+   */
+  const replayStatus = useReplayStore((s) => s.view?.agentStatus);
+  // The *pinned* item, not the live tail: `data.liveItem` is the newest activity
+  // of the run, which is not what a pinned page is showing.
+  const activeItem = useStageStore((s) => s.activeItem);
+  const pinnedStatus =
+    !replaying && stageMode !== "metrics" && stageMode !== "chat" && activeItem?.event
+      ? statusFromEvent(activeItem.event)
+      : undefined;
+  const shownStatus = (replaying && replayStatus) || (!following && pinnedStatus) || liveStatus;
+  const shownTone = toneForStatus(shownStatus);
+  const shownVisual: AgentVisualState = { status: shownStatus, mood: moodFor(shownStatus) };
+  const shownMedia = skinMediaFor(coverage, shownStatus);
+  // The phase only describes a run in flight; once the run has ended the same
+  // word ("Implementing") sat there as a leftover, so it is shown only while
+  // following a running run.
+  const phase = data.run?.status === "running" && following ? data.phase : undefined;
 
   return (
     <div className="mon-agent">
@@ -88,20 +147,30 @@ function AgentHead({ data }: { data: MonitorData }) {
       */}
       <div className="mon-agent__tile" aria-hidden>
         <div className="mon-agent__tileinner">
-          {media ? <MediaAvatar visual={visual} src={media.src} video={media.video} /> : <Avatar visual={visual} />}
+          {shownMedia ? (
+            <MediaAvatar visual={shownVisual} src={shownMedia.src} video={shownMedia.video} />
+          ) : (
+            <Avatar visual={shownVisual} />
+          )}
         </div>
       </div>
       <div className="mon-agent__caption">
-        <div className={`mon-agent__state mon-chip--${tone}`} style={{ background: "transparent", padding: 0 }}>
-          <Dot tone={tone} />
-          {t(statusLabel(status)).toUpperCase()}
-          {phase ? <span style={{ color: "var(--mon-t3)" }}>· {t(phaseWord(phase))}</span> : null}
+        {/*
+          Two facts, one line: the agent's status (the dot's colour), then what
+          the centre column is doing with it — LIVE while the page follows the
+          run, REPLAY while a pinned moment or a scrub is on screen.
+        */}
+        <div className={`mon-agent__state mon-chip--${shownTone}`} style={{ background: "transparent", padding: 0 }}>
+          <Dot tone={shownTone} />
+          {t(statusLabel(shownStatus)).toUpperCase()}
+          {phase ? <span className="mon-agent__phase">· {t(phaseWord(phase))}</span> : null}
+          <span className={`mon-agent__play mon-chip--${playingTone}`}>
+            <Dot tone={playingTone} />
+            {t(playing).toUpperCase()}
+          </span>
         </div>
-        <div className="mon-agent__line" title={data.liveHeadline}>
-          {data.liveHeadline ?? t("Idle — waiting for a task")}
-        </div>
-        <div className="mon-agent__sub">
-          {model ?? "—"} · {data.run ? `#${data.run.index}` : t("no run")}
+        <div className="mon-agent__line" title={t(STATUS_LINE[shownStatus] ?? STATUS_LINE.listening!)}>
+          {t(STATUS_LINE[shownStatus] ?? STATUS_LINE.listening!)}
         </div>
       </div>
     </div>
