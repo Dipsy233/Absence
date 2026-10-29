@@ -9,13 +9,13 @@ import { useIsObserved } from "../../stores/sessionStore";
 import { useT } from "../../lib/i18n";
 import { formatClock } from "../../lib/format";
 import { runEvents } from "../../lib/history";
-import { ReportOverlay } from "../../components/stage/ReportOverlay";
 import { MonitorChat } from "./MonitorChat";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { StageItem } from "../../types/stage";
 import type { PhaseType } from "../../types/report";
 import { Chip, TONE_FOR_KIND, attentionTone, phaseWord, type MonTone } from "./atoms";
+import { activityViews, type ActivityViews } from "./activityViews";
 import type { MonitorData } from "./useMonitorData";
 
 type Tab = "file" | "diff" | "terminal" | "metrics";
@@ -26,6 +26,32 @@ const TAB_LABEL: Record<Tab, string> = {
   terminal: "Terminal",
   metrics: "Metrics",
 };
+
+/** Tabs in the order they appear. */
+const TAB_ORDER: Tab[] = ["file", "diff", "terminal", "metrics"];
+
+/**
+ * Which view of the pinned activity the reader is looking at.
+ *
+ * Local, not a store field: it is a reading position within one activity, so it
+ * resets whenever the activity changes — carrying "DIFF" over to a command that
+ * has no diff is how a tab ends up lit while showing nothing.
+ */
+function useActivityView(views: ActivityViews, own: Tab | undefined, metrics: boolean): [Tab, (next: Tab) => void] {
+  const [chosen, setChosen] = useState<Tab | undefined>(undefined);
+  const key = own ?? "none";
+  const [forKey, setForKey] = useState(key);
+  if (forKey !== key) {
+    // Deriving state from a prop change during render (React's documented
+    // alternative to an effect): a new activity starts on its own view.
+    setForKey(key);
+    setChosen(undefined);
+  }
+  if (metrics) return ["metrics", setChosen];
+  if (!own) return ["metrics", setChosen];
+  const wanted = chosen && views[chosen as "file" | "diff" | "terminal"] ? chosen : own;
+  return [wanted, setChosen];
+}
 
 /**
  * Centre column: what the selected moment *is*, plus the run's world line and
@@ -40,60 +66,74 @@ export function MonitorStage({ data }: { data: MonitorData }) {
   const t = useT();
   const { mode, item } = useStageView();
   const following = useStageStore((s) => s.following);
-  const lastByType = useStageStore((s) => s.lastByType);
-  const showType = useStageStore((s) => s.showType);
-  const agentFile = useStageStore((s) => s.agentFile);
-  const showAgentFile = useStageStore((s) => s.showAgentFile);
-  const userFile = useStageStore((s) => s.userFile);
-  const showUserFile = useStageStore((s) => s.showUserFile);
   const goLive = useStageStore((s) => s.goLive);
   const goMetrics = useStageStore((s) => s.goMetrics);
-  const toggleReport = useUiStore((s) => s.toggleReport);
-  const reportOpen = useUiStore((s) => s.reportOpen);
   const openMetrics = useUiStore((s) => s.openMetrics);
   const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
 
   const showingMetrics = mode === "metrics";
   const active = showingMetrics ? undefined : item;
 
-  // Which tab is lit: the pinned item's kind, or the metrics page.
-  const tab: Tab = showingMetrics
-    ? "metrics"
-    : active?.type === "diff"
-      ? "diff"
-      : active?.type === "file"
-        ? "file"
-        : active
-          ? "terminal"
-          : "metrics";
+  /**
+   * The three activity views, derived from the pinned activity.
+   *
+   * Not `lastByType` — that answered "the last diff anywhere in the run", so
+   * clicking a `file_read` could leave an unrelated edit on screen. A tab here
+   * is a way of reading *this* row, so a read has FILE, an edit has DIFF and
+   * FILE, a command has TERMINAL, and a tab that this activity cannot be read
+   * as is disabled rather than pointing somewhere else.
+   */
+  const views = useMemo(() => activityViews(active), [active]);
+  const ownKind: Tab | undefined =
+    active?.type === "file" || active?.type === "diff" || active?.type === "terminal"
+      ? active.type
+      : active
+        ? "terminal"
+        : undefined;
+  const [tab, setTab] = useActivityView(views, ownKind, showingMetrics);
 
   const chooseTab = (next: Tab) => {
-    // Clicking the tab that is already up is a no-op: Monitor's page is a pin,
-    // so a tab is a way *to* a page, never a toggle away from it (⏎ / the pin
-    // bar are the way back).
-    if (next === tab) return;
     if (next === "metrics") {
       goMetrics();
       return;
     }
-    if (next === "file") {
-      if (userFile) showUserFile();
-      else if (agentFile) showAgentFile();
-      else if (lastByType.file) showType("file");
-      return;
-    }
-    if (lastByType[next] === undefined) return;
-    showType(next);
+    // Clicking the tab that is already up is a no-op: Monitor's page is a pin,
+    // so a tab is a way *to* a page, never a toggle away from it (⏎ / the pin
+    // bar are the way back).
+    if (next === tab) return;
+    setTab(next);
   };
 
   const available: Record<Tab, boolean> = {
-    file: Boolean(active?.type === "file" || userFile || agentFile || lastByType.file),
-    diff: Boolean(lastByType.diff),
-    terminal: Boolean(lastByType.terminal),
+    file: views.file !== undefined,
+    diff: views.diff !== undefined,
+    terminal: views.terminal !== undefined,
     metrics: true,
   };
 
-  const header = describe(active, data, t);
+  const shownItem =
+    tab === "metrics"
+      ? undefined
+      : (views[tab as "file" | "diff" | "terminal"] ?? views[ownKind as "file" | "diff" | "terminal"] ?? active);
+
+  /**
+   * The header text for the current tab.
+   *
+   * METRICS is not a view of one activity, so it cannot be described by one:
+   * it gets its own title instead of falling through to "waiting for the first
+   * activity", which was a lie while the dashboard was right there showing
+   * numbers. The default page (nothing pinned) still gets the live headline.
+   */
+  const header: StageHeader =
+    tab === "metrics" && (active !== undefined || showingMetrics)
+      ? {
+          chip: <Chip tone="read">{t("METRICS")}</Chip>,
+          chipText: t("METRICS"),
+          title: t("Resource metrics"),
+          sub: t("The whole agent or the selected egg — Classic's dashboard"),
+          time: "—",
+        }
+      : describe(shownItem, data, t);
 
   return (
     <div className="mon-stage">
@@ -109,7 +149,7 @@ export function MonitorStage({ data }: { data: MonitorData }) {
         </div>
 
         <div className="mon-seg" role="tablist" aria-label={t("Stage view")}>
-          {(Object.keys(TAB_LABEL) as Tab[]).map((entry) => (
+          {TAB_ORDER.map((entry) => (
             <button
               key={entry}
               type="button"
@@ -124,24 +164,17 @@ export function MonitorStage({ data }: { data: MonitorData }) {
           ))}
         </div>
 
-        <button
-          type="button"
-          className="mon-btn"
-          onClick={toggleReport}
-          aria-pressed={reportOpen}
-          title={t("Open the Absence Report over the Stage")}
-        >
-          {t("Report")}
-        </button>
       </div>
 
       {!following && (active || showingMetrics) ? (
         <div className="mon-pinbar">
           <span className="mon-chip mon-chip--edit" style={{ height: 18 }}>
-            {showingMetrics ? t("METRICS") : header.chipText}
+            {tab === "metrics" ? t("METRICS") : header.chipText}
           </span>
           <span>
-            {t("Pinned at {time} — every panel shows this moment", { time: header.time })}
+            {tab === "metrics"
+              ? t("Live resource view — the run's numbers, not one moment")
+              : t("Pinned at {time} — every panel shows this moment", { time: header.time })}
           </span>
           <span style={{ flex: 1 }} />
           <button type="button" className="mon-btn mon-btn--ghost" onClick={goLive}>
@@ -152,17 +185,18 @@ export function MonitorStage({ data }: { data: MonitorData }) {
 
       <div className="mon-stagebody">
         <div className="mon-sheet">
-          {showingMetrics ? (
+          {tab === "metrics" ? (
+            // METRICS is the one tab that is not a view of the activity: it is
+            // Classic's dashboard, the Stage's own default page, and it is what
+            // you look at when the question is "what is this costing" rather
+            // than "what did it do".
             <MetricsDashboard embedded />
-          ) : active ? (
-            <StageItemView item={active} />
+          ) : shownItem ? (
+            <StageItemView key={shownItem.id} item={shownItem} />
           ) : (
             <DefaultPage data={data} onOpenEgg={() => openMetrics()} eggSelected={selectedEggPid !== undefined} />
           )}
         </div>
-        {/* The Absence Report is a Monitor surface too: ⌘R or the header button
-            expands it over this column, exactly as it does over Classic's Stage. */}
-        <ReportOverlay withTab={false} insetBottom="bottom-0" />
       </div>
 
       <Timeline data={data} />
@@ -171,12 +205,20 @@ export function MonitorStage({ data }: { data: MonitorData }) {
   );
 }
 
+interface StageHeader {
+  chip: ReactElement;
+  chipText: string;
+  title: string;
+  sub: string;
+  time: string;
+}
+
 /** What to call the page: a verb, a subject, and the line under it. */
 function describe(
   item: StageItem | undefined,
   data: MonitorData,
   t: (key: string, params?: Record<string, string | number>) => string,
-): { chip: ReactElement; chipText: string; title: string; sub: string; time: string } {
+): StageHeader {
   const time = item ? formatClock(item.createdAt) : "—";
   if (!item) {
     const phase = data.phase;

@@ -46,11 +46,10 @@ export function MonitorUI() {
 
   const openStage = useStageStore((s) => s.openStage);
   const goLive = useStageStore((s) => s.goLive);
-  const toggleReport = useUiStore((s) => s.toggleReport);
   const selectRun = useUiStore((s) => s.selectRun);
 
-  // The keyboard contract: ⏎ back to live, ⌘/Ctrl+R the report. Both are
-  // deliberately absent from Classic, which has its own toolbar.
+  // The keyboard contract: ⏎ back to live. Deliberately absent from Classic,
+  // which has its own toolbar.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -60,14 +59,10 @@ export function MonitorUI() {
         goLive();
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
-        event.preventDefault();
-        toggleReport();
-      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goLive, toggleReport]);
+  }, [goLive]);
   const open = (row: ActivityRow) => {
     if (!row.stageItem) return;
     openStage(row.stageItem);
@@ -136,26 +131,16 @@ export function MonitorUI() {
           ))}
         </div>
 
-        {/* The run block: which runtime is driving, which run, how it stands,
-            and how long it has been going. One unit, because those four answers
-            are only useful together — "#1 done" without the runtime or the
-            duration is not a status, it is a fragment. */}
-        <div className="mon-runblock" title={runBlockTitle}>
-          {runtime ? (
-            <span className="mon-runblock__runtime mon-mono">{runtime}</span>
-          ) : null}
-          <span className="mon-runblock__sep" aria-hidden />
-          <Chip tone={runTone}>
-            <Dot tone={runTone} />
-            {data.run ? `${t("Run")} #${data.run.index} · ${t(RUN_WORD[data.run.status])}` : t("no run")}
+        {/* The bar keeps only what is about the *window*: the connection, the
+            attention verdict and the context meter. The run block (runtime,
+            run, status, elapsed) moved into the left column's header, where the
+            run it describes is being read. */}
+        {connected ? null : (
+          <Chip tone="err" title={t("offline")}>
+            <Dot tone="err" />
+            {t("offline")}
           </Chip>
-          <span className="mon-runblock__time mon-mono">{runElapsed}</span>
-          {observed ? <Chip tone="read">{t("OBSERVING")}</Chip> : null}
-          <Chip tone={connected ? "edit" : "err"} title={connected ? t("live") : t("offline")}>
-            <Dot tone={connected ? "edit" : "err"} />
-            {connected ? t("live") : t("offline")}
-          </Chip>
-        </div>
+        )}
 
         {data.attention.level !== "none" ? (
           <Chip tone={attentionToneNow} title={t("Human attention")}>
@@ -189,6 +174,14 @@ export function MonitorUI() {
           onSelectRun={(id) => {
             selectRun(id);
             goLive();
+          }}
+          run={{
+            runtime,
+            elapsed: runElapsed,
+            tone: runTone,
+            title: runBlockTitle,
+            observed,
+            connected,
           }}
         />
         <MonitorStage data={data} />
