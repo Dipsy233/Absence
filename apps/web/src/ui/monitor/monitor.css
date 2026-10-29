@@ -609,13 +609,20 @@
      the lanes down without shifting the labels, and nothing would line up. */
   padding-top: 16px;
 }
-.mon-tl__play {
+/* Two controls stacked: play/pause the replay, and back to live. The column's
+   height is the track's height (set inline), so the pair fills the strip
+   instead of floating beside it. */
+.mon-tl__controls {
   display: flex;
   width: 34px;
-  /* Height is set inline to the track's height, so its centred glyph sits on
-     the middle lane of the strip — the control reads as belonging to the
-     timeline rather than floating beside it. */
   flex: none;
+  flex-direction: column;
+  gap: 3px;
+}
+.mon-tl__ctl {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--mon-bd2);
@@ -625,9 +632,16 @@
   font-size: 11px;
   line-height: 1;
 }
-.mon-tl__play:hover {
+.mon-tl__ctl:hover:not(:disabled) {
   border-color: rgb(94 159 232 / 0.55);
   color: var(--mon-acc);
+}
+/* The live button is lit while the page *is* live, and disabled there: it is a
+   state read-out as much as a control, so it never claims to be somewhere else. */
+.mon-tl__ctl[data-live="true"] {
+  border-color: rgb(114 188 143 / 0.5);
+  color: var(--mon-edit);
+  cursor: default;
 }
 .mon-tl__labels {
   display: flex;
@@ -666,6 +680,28 @@
   border-radius: 2px;
   background: currentColor;
 }
+/* The pointer's position projected onto the run, under the real cursor: a
+   dashed hairline with its own moment, so a reader can see where a click will
+   land before committing. */
+.mon-tl__ghost {
+  position: absolute;
+  top: -4px;
+  bottom: -6px;
+  width: 1px;
+  background: var(--mon-t2);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.mon-tl__ghost-label {
+  position: absolute;
+  bottom: -13px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 10px var(--mon-mono);
+  color: var(--mon-t2);
+  white-space: nowrap;
+}
+
 .mon-tl__head {
   position: absolute;
   top: -4px;

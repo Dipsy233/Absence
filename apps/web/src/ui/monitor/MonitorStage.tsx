@@ -167,9 +167,12 @@ export function MonitorStage({ data }: { data: MonitorData }) {
   // from the store rather than folded into the same derivation — folding them
   // in made a returning tab pick up the mode from the previous render.
   // An activity with no view of its own (a thought, an egg, an approval) has no
-  // lit tab: the card itself is the page, so it falls back to `card` — never to
-  // another tab, which would claim a view this moment does not have.
-  const [viewTab, setViewTab] = useActivityView(views, ownKind, active ? "card" : "metrics");
+  // lit tab: the card itself is the page. With *no* activity at all — an empty
+  // run, or a replay position before the first stage event — the fallback is
+  // still `card`, not METRICS: a replay that opened on the resource dashboard
+  // would look like the replay had failed, and METRICS is a page the reader
+  // chooses, never one that appears on its own.
+  const [viewTab, setViewTab] = useActivityView(views, ownKind, "card");
   const tab: Tab = showingMetrics ? "metrics" : showingChat ? "chat" : viewTab;
   const setTab = setViewTab;
 
@@ -253,7 +256,7 @@ export function MonitorStage({ data }: { data: MonitorData }) {
             time: "—",
           }
         : (() => {
-            const described = describe(shownItem, data, t);
+            const described = describe(shownItem, data, t, replaying);
             if (!borrowed) return described;
             return {
               ...described,
@@ -370,14 +373,22 @@ function describe(
   item: StageItem | undefined,
   data: MonitorData,
   t: (key: string, params?: Record<string, string | number>) => string,
+  /** True while a replay is on screen (see the no-activity branch). */
+  replaying = false,
 ): StageHeader {
   const time = item ? formatClock(item.createdAt) : "—";
   if (!item) {
     const phase = data.phase;
+    // No activity to describe. Three different reasons, said differently, so
+    // "waiting for the first activity" is not printed over a replay that is
+    // simply before the first stage event of a finished run.
+    const title = replaying
+      ? t("Replay — before the first activity of this run")
+      : data.liveHeadline ?? t("Waiting for the first activity…");
     return {
       chip: <Chip tone="mute">{t(phaseWord(phase)).toUpperCase()}</Chip>,
       chipText: t(phaseWord(phase)).toUpperCase(),
-      title: data.liveHeadline ?? t("Waiting for the first activity…"),
+      title,
       sub: data.run ? `#${data.run.index} · ${data.run.prompt || t("(observed activity)")}` : t("No run yet"),
       time,
     };
@@ -566,6 +577,8 @@ function Timeline({ data }: { data: MonitorData }) {
   const play = useReplayStore((s) => s.play);
   const pause = useReplayStore((s) => s.pause);
   const inReplay = useStageStore((s) => s.mode === "replay");
+  const following = useStageStore((s) => s.following);
+  const goLive = useStageStore((s) => s.goLive);
 
   /**
    * Three lanes, one per *kind of activity*: reasoning, files, shell.
@@ -638,7 +651,32 @@ function Timeline({ data }: { data: MonitorData }) {
     setMode("replay");
   };
 
-  const seekRatio = (ratio: number) => seekTo(data.run!.startedAt + Math.min(1, Math.max(0, ratio)) * total);
+  /**
+   * A click on the track seeks — it never returns to live.
+   *
+   * Scrubbing *is* a replay gesture, so the first click has to enter replay
+   * (there is no cursor to move in live mode). Once in replay, every click only
+   * moves the cursor: leaving replay is the ▶/■ pair's job (and ⏎), so a reader
+   * who clicks three times to land on a moment does not get thrown back to the
+   * live tail on the second click.
+   */
+  const seekRatio = (ratio: number) => {
+    if (!data.run) return;
+    const at = data.run.startedAt + Math.min(1, Math.max(0, ratio)) * total;
+    if (inReplay) {
+      useReplayStore.getState().seekTimestamp(at);
+      return;
+    }
+    seekTo(at);
+  };
+
+  /**
+   * The ghost: where the cursor *would* land, drawn under the pointer while it
+   * is over the track. Clicking a thin strip to hit a 40ms moment is guesswork
+   * without it — the reader needs to see the target before committing.
+   */
+  const [hover, setHover] = useState<number | undefined>(undefined);
+  const hoverLabel = hover !== undefined ? formatOffset(hover * total) : "";
 
   if (nodes.length === 0) {
     return (
@@ -660,27 +698,55 @@ function Timeline({ data }: { data: MonitorData }) {
   return (
     <div className="mon-tl">
       <div className="mon-tl__row">
-        <button
-          type="button"
-          className="mon-tl__play"
-          onClick={() => {
-            if (!data.run) return;
-            if (!inReplay) {
-              seekTo(data.run.startedAt);
-              play();
-              return;
+        {/*
+          Two buttons, not one toggle: play/pause the replay, and the way back
+          to live. They are different acts — one moves the clock, the other
+          leaves the mode — and a single button that means "play" here and
+          "live" there is how a reader ends up in the wrong mode.
+        */}
+        <div className="mon-tl__controls" style={{ height: trackHeight }}>
+          <button
+            type="button"
+            className="mon-tl__ctl"
+            onClick={() => {
+              if (!data.run) return;
+              if (!inReplay) {
+                seekTo(data.run.startedAt);
+                play();
+                return;
+              }
+              if (replayStatus === "playing") pause();
+              else play();
+            }}
+            title={
+              !inReplay
+                ? t("Replay from the start")
+                : replayStatus === "playing"
+                  ? t("Pause")
+                  : t("Play")
             }
-            if (replayStatus === "playing") pause();
-            else play();
-          }}
-          title={inReplay && replayStatus === "playing" ? t("Pause") : t("Replay from the start")}
-          aria-label={inReplay && replayStatus === "playing" ? t("Pause") : t("Replay from the start")}
-          // Same height as the track: the glyph then centres on the middle lane
-          // instead of sitting at the top of the strip.
-          style={{ height: trackHeight }}
-        >
-          {inReplay && replayStatus === "playing" ? "⏸" : "▶"}
-        </button>
+            aria-label={
+              !inReplay
+                ? t("Replay from the start")
+                : replayStatus === "playing"
+                  ? t("Pause")
+                  : t("Play")
+            }
+          >
+            {inReplay && replayStatus === "playing" ? "⏸" : "▶"}
+          </button>
+          <button
+            type="button"
+            className="mon-tl__ctl"
+            data-live={following ? "true" : undefined}
+            onClick={goLive}
+            disabled={following}
+            title={t("Back to live")}
+            aria-label={t("Back to live")}
+          >
+            ◉
+          </button>
+        </div>
 
         <div className="mon-tl__labels" style={{ height: trackHeight }}>
           {lanes.map(([id, label]) => (
@@ -699,6 +765,11 @@ function Timeline({ data }: { data: MonitorData }) {
             const rect = event.currentTarget.getBoundingClientRect();
             seekRatio((event.clientX - rect.left) / Math.max(1, rect.width));
           }}
+          onMouseMove={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setHover(Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width))));
+          }}
+          onMouseLeave={() => setHover(undefined)}
         >
           {lanes.map(([id], index) => (
             <span
@@ -716,6 +787,16 @@ function Timeline({ data }: { data: MonitorData }) {
               title={mark.label}
             />
           ))}
+          {/*
+            The ghost sits *under* the real cursor: it is the pointer's position
+            projected onto the run, with its own moment printed, and it never
+            replaces the head (which is where the replay actually is).
+          */}
+          {hover !== undefined ? (
+            <span className="mon-tl__ghost" style={{ left: `${hover * 100}%` }} aria-hidden>
+              <span className="mon-tl__ghost-label">{hoverLabel}</span>
+            </span>
+          ) : null}
           <span className="mon-tl__head" style={{ left: `${cursor * 100}%` }} aria-hidden>
             <span className="mon-tl__head-label">{cursorLabel}</span>
           </span>
