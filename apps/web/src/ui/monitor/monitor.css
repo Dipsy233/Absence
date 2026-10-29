@@ -998,11 +998,13 @@
 .mon-met > div + div {
   border-left: 1px solid var(--mon-bd);
 }
+/* The figure's colour comes from its metric tone (`mon-chip--run` /
+   `mon-chip--read`), which is the same hue as its sparkline and as the
+   dashboard's line — so the rule must not set a colour of its own. */
 .mon-met b {
   display: block;
   margin-top: 2px;
   font: 600 15px var(--mon-mono);
-  color: var(--mon-t);
 }
 .mon-met small {
   display: block;
@@ -1256,45 +1258,6 @@
   font-size: 11.5px;
   color: var(--mon-t3);
 }
-
-/* The attention verdict is the one block that is *not* a plain section: it is a
-   warning, so it carries a tint and an inset rule instead of a full box. It sits
-   flush in the column (no margin), so the rail's left edge stays one line. */
-.mon-att {
-  flex: none;
-  margin: 10px 0 0;
-  padding: 10px 14px;
-  border-top: 1px solid var(--mon-bd);
-  box-shadow: inset 3px 0 0 var(--mon-bd2);
-  font-size: 12px;
-}
-.mon-att[data-level="high"] {
-  box-shadow: inset 3px 0 0 var(--mon-err);
-  background: rgb(233 115 88 / 0.1);
-}
-.mon-att[data-level="medium"] {
-  box-shadow: inset 3px 0 0 var(--mon-run);
-  background: rgb(222 146 85 / 0.09);
-}
-.mon-att__h {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-weight: 650;
-  color: var(--mon-t);
-}
-.mon-att__d {
-  margin-top: 4px;
-  line-height: 1.5;
-  color: var(--mon-t2);
-}
-.mon-att__a {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 9px;
-}
-
 
 /* ── The run block ──────────────────────────────────────────────────────────
    Runtime · run · status · elapsed, as one unit. Those four answers are only

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { ChartSeries } from "../../lib/metrics";
+import { CPU_COLOR, HOST_COLOR, MEM_COLOR } from "../../lib/metricColors";
 
 interface TimeSeriesChartProps {
   data: ChartSeries;
@@ -30,6 +31,8 @@ export function TimeSeriesChart({
     const isCpu = metric === "cpu";
     const values = isCpu ? data.cpuCores : data.rssMiB;
     const hostValues = isCpu ? data.hostCpuPercent : data.hostMemMiB;
+    // One colour per metric, shared with the stat figures beside the chart.
+    const metricColor = isCpu ? CPU_COLOR : MEM_COLOR;
     const tooltip = tooltipRef.current;
     const options: uPlot.Options = {
       width: Math.max(240, host.clientWidth),
@@ -38,7 +41,7 @@ export function TimeSeriesChart({
         {},
         {
           label,
-          stroke: isCpu ? "rgb(224, 163, 92)" : "rgb(79, 179, 165)",
+          stroke: metricColor,
           width: 1.8,
           points: { show: true, size: 5 },
           // A slot with no sample is null, and uPlot leaves a hole instead of
@@ -47,7 +50,7 @@ export function TimeSeriesChart({
         },
         {
           label: hostLabel,
-          stroke: "rgba(190, 190, 190, 0.75)",
+          stroke: HOST_COLOR,
           dash: [5, 4],
           width: 1.2,
           points: { show: false },
@@ -68,7 +71,7 @@ export function TimeSeriesChart({
           },
         },
         {
-          stroke: isCpu ? "rgb(224, 163, 92)" : "rgb(79, 179, 165)",
+          stroke: metricColor,
           grid: { stroke: "rgba(255, 255, 255, 0.06)" },
           ticks: { stroke: "rgba(255, 255, 255, 0.12)" },
           font: "10px ui-monospace, monospace",

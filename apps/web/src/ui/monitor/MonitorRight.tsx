@@ -26,7 +26,7 @@ import { useT } from "../../lib/i18n";
 import { Avatar } from "../../components/agent/Avatar";
 import { MediaAvatar } from "../../components/agent/MediaAvatar";
 import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
-import { attentionTone, Chip, Dot, phaseWord, Spark, toneForStatus, useReasonText } from "./atoms";
+import { Dot, phaseWord, Spark, toneForStatus } from "./atoms";
 import type { MonitorData } from "./useMonitorData";
 
 /**
@@ -50,7 +50,14 @@ export function MonitorRight({ data }: { data: MonitorData }) {
     <div className="mon-col mon-col--right">
       <AgentHead data={data} />
       <Usage />
-      <Attention data={data} />
+      {/*
+        No attention block here. The verdict is already stated in two places
+        that act on it: the header's chip (which is about the whole window) and
+        the agent's own state line ("high · a process is still running"). A
+        third copy in the rail was a red box repeating the header, and it pushed
+        the two sections that matter — what it knows and what it left running —
+        down by 60px for the same sentence.
+      */}
       <KnownFiles />
       <Eggs />
     </div>
@@ -182,36 +189,11 @@ function Usage() {
       </div>
       <div>
         <div className="mon-cap">{t("Memory")}</div>
-        <b className="mon-chip--egg">{formatBytes(memMiB * 1024 * 1024)}</b>
+        <b className="mon-chip--read">{formatBytes(memMiB * 1024 * 1024)}</b>
         <small>
           {t("peak")} {formatBytes(peakMiB * 1024 * 1024)} · {t("host")} {formatPercent(hostPercent)}
         </small>
-        <Spark values={memSpark} tone="egg" />
-      </div>
-    </div>
-  );
-}
-
-/* ── Attention ──────────────────────────────────────────────────────────── */
-
-function Attention({ data }: { data: MonitorData }) {
-  const t = useT();
-  const reasonText = useReasonText();
-  const { attention } = data;
-  if (attention.level === "none" || attention.reasons.length === 0) return null;
-  const tone = attentionTone(attention.level);
-  return (
-    <div className="mon-att" data-level={attention.level}>
-      <div className="mon-att__h">
-        <span className={`mon-chip mon-chip--${tone}`} style={{ height: 18, padding: "0 6px" }}>
-          {t("attention").toUpperCase()}
-        </span>
-        <span>{t(attention.level)}</span>
-      </div>
-      <div className="mon-att__d">
-        {attention.reasons.slice(0, 3).map((reason) => (
-          <div key={reason}>• {reasonText(reason)}</div>
-        ))}
+        <Spark values={memSpark} tone="read" />
       </div>
     </div>
   );

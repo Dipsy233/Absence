@@ -22,6 +22,7 @@ import {
   type SeriesPoint,
 } from "../../lib/metrics";
 import { TimeSeriesChart } from "./TimeSeriesChart";
+import { CPU_COLOR, MEM_COLOR } from "../../lib/metricColors";
 
 type Tab = "graph" | "table";
 
@@ -284,19 +285,19 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
                 label={t("CPU now")}
                 value={formatPercent(percentOfCores(currentCores, cpuCount))}
                 detail={`${formatCores(currentCores)} ${t("cores")}`}
-                accent="amber"
+                accent="cpu"
               />
               <Stat
                 label={t("CPU avg")}
                 value={formatPercent(percentOfCores(avgCores, cpuCount))}
                 detail={`${formatCores(avgCores)} ${t("cores")}`}
-                accent="amber"
+                accent="cpu"
               />
               <Stat
                 label={t("CPU max")}
                 value={formatPercent(percentOfCores(maxCores, cpuCount))}
                 detail={`${formatCores(maxCores)} ${t("cores")}`}
-                accent="amber"
+                accent="cpu"
               />
               <Stat
                 label={t("host CPU now")}
@@ -316,19 +317,19 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
                     ? `${formatPercent(((currentMem * 1024 * 1024) / memTotalBytes) * 100)} ${t("of host")}`
                     : ""
                 }
-                accent="teal"
+                accent="mem"
               />
               <Stat
                 label={t("MEM avg")}
                 value={formatBytes(avgMem * 1024 * 1024)}
                 detail={memTotalBytes > 0 ? `${formatPercent((avgMem * 1024 * 1024 / memTotalBytes) * 100)} ${t("of host")}` : ""}
-                accent="teal"
+                accent="mem"
               />
               <Stat
                 label={t("MEM peak")}
                 value={formatBytes(maxMem * 1024 * 1024)}
                 detail={memTotalBytes > 0 ? `${formatPercent((maxMem * 1024 * 1024 / memTotalBytes) * 100)} ${t("of host")}` : ""}
-                accent="teal"
+                accent="mem"
               />
               <Stat
                 label={t("host MEM now")}
@@ -362,8 +363,14 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
 
             <div className="rounded border border-desk-line bg-desk-panel2/40 p-2">
               <div className="mb-1 flex items-center gap-3 font-mono text-[10px] text-desk-dim">
+                {/* The solid mark is the metric's own hue — the legend sits
+                    above two charts, so a single fixed swatch would mislabel
+                    whichever one it does not match. */}
                 <span className="text-desk-dim/80">
-                  <span className="text-desk-amber">▬</span> {t("this process")}
+                  <span style={{ color: CPU_COLOR }}>▬</span> {t("CPU")}
+                </span>
+                <span className="text-desk-dim/80">
+                  <span style={{ color: MEM_COLOR }}>▬</span> {t("MEM")}
                 </span>
                 <span className="text-desk-dim/80">
                   <span className="text-desk-ink/60">┄</span> {t("whole machine")}
@@ -520,6 +527,15 @@ function aggregateAgentSeries(series: MetricSeries[]): MetricSeries | undefined 
   };
 }
 
+/**
+ * One figure in the dashboard's grid.
+ *
+ * `accent` names a *metric*, not a colour: `cpu` and `mem` take their hue from
+ * `metricColors`, the same constants the chart lines use, so a figure and the
+ * line it summarises are never two different colours. `ink` / `dim` are for the
+ * figures that are not a metric (the observed process, its lifetime, the
+ * session clock) and stay neutral.
+ */
 function Stat({
   label,
   value,
@@ -529,20 +545,25 @@ function Stat({
   label: string;
   value: string;
   detail?: string;
-  accent: "amber" | "teal" | "ink" | "dim";
+  accent: "cpu" | "mem" | "ink" | "dim";
 }) {
-  const tone =
-    accent === "amber"
-      ? "text-desk-amber"
-      : accent === "teal"
-        ? "text-desk-teal"
+  const style =
+    accent === "cpu"
+      ? { color: CPU_COLOR }
+      : accent === "mem"
+        ? { color: MEM_COLOR }
         : accent === "dim"
-          ? "text-desk-dim"
-          : "text-desk-ink/90";
+          ? undefined
+          : undefined;
+  const tone = accent === "dim" ? "text-desk-dim" : "text-desk-ink/90";
   return (
     <div className="min-w-0 rounded border border-desk-line bg-desk-panel2/40 px-2 py-1.5">
       <div className="truncate font-mono text-[9px] uppercase tracking-[0.14em] text-desk-dim/70">{label}</div>
-      <div className={["mt-0.5 truncate font-mono text-lg leading-tight", tone].join(" ")} title={value}>
+      <div
+        className={["mt-0.5 truncate font-mono text-lg leading-tight", style ? "" : tone].join(" ")}
+        style={style}
+        title={value}
+      >
         {value}
       </div>
       <div className="truncate font-mono text-[9px] text-desk-dim/70">{detail ?? ""}</div>
@@ -588,13 +609,13 @@ function MetricTable({
           <tr className="bg-desk-panel2 text-desk-ink">
             <td className="border-b border-desk-line/40 px-1 py-1">{remote.name}</td>
             <td className="border-b border-desk-line/40 px-1 py-1">{remote.eggPid}</td>
-            <td className="border-b border-desk-line/40 px-1 py-1 text-right text-desk-amber">
+            <td className="border-b border-desk-line/40 px-1 py-1 text-right" style={{ color: CPU_COLOR }}>
               {formatPercent(percentOfCores(cores, cpuCount))}
             </td>
             <td className="border-b border-desk-line/40 px-1 py-1 text-right">
               {formatPercent(percentOfCores(remote.avgCpuCoresSession, cpuCount))}
             </td>
-            <td className="border-b border-desk-line/40 px-1 py-1 text-right text-desk-teal">
+            <td className="border-b border-desk-line/40 px-1 py-1 text-right" style={{ color: MEM_COLOR }}>
               {formatBytes(last?.rssBytes ?? 0)}
             </td>
             <td className="border-b border-desk-line/40 px-1 py-1 text-right">
@@ -635,13 +656,13 @@ function MetricTable({
             >
               <td className="border-b border-desk-line/40 px-1 py-1">{egg.name}</td>
               <td className="border-b border-desk-line/40 px-1 py-1">{egg.eggPid}</td>
-              <td className="border-b border-desk-line/40 px-1 py-1 text-right text-desk-amber">
+              <td className="border-b border-desk-line/40 px-1 py-1 text-right" style={{ color: CPU_COLOR }}>
                 {formatPercent(percentOfCores(cores, cpuCount))}
               </td>
               <td className="border-b border-desk-line/40 px-1 py-1 text-right">
                 {formatPercent(percentOfCores(egg.avgCpuCoresSession, cpuCount))}
               </td>
-              <td className="border-b border-desk-line/40 px-1 py-1 text-right text-desk-teal">
+              <td className="border-b border-desk-line/40 px-1 py-1 text-right" style={{ color: MEM_COLOR }}>
                 {formatBytes(egg.rssBytes)}
               </td>
               <td className="border-b border-desk-line/40 px-1 py-1 text-right">
