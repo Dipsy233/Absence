@@ -85,6 +85,15 @@
   padding: 0 16px;
   border-bottom: 1px solid var(--mon-bd);
   background: var(--mon-s1);
+  /* The bar is one row that must never wrap or scroll: the desktop shell's
+     minimum window is 1100px, and at that width the run block, the mode
+     switcher and the context meter together do not fit. Everything in it is
+     `flex: none` except the project path, which shrinks first, so the bar
+     loses a truncated path before it loses a control. */
+  overflow: hidden;
+}
+.mon-bar > * {
+  flex: none;
 }
 
 .mon-drag {
@@ -973,6 +982,38 @@
   margin-top: 9px;
 }
 
+
+/* ── The run block ──────────────────────────────────────────────────────────
+   Runtime · run · status · elapsed, as one unit. Those four answers are only
+   useful together: "#1 done" without "pi" or "00:01:23" is a fragment, not a
+   status. The separator between the runtime and the chip keeps the runtime
+   reading as a label rather than part of the sentence. */
+.mon-runblock {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  padding: 0 2px 0 6px;
+}
+.mon-runblock__runtime {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mon-t2);
+}
+.mon-runblock__sep {
+  width: 1px;
+  height: 14px;
+  background: var(--mon-bd2);
+}
+.mon-runblock__time {
+  min-width: 46px;
+  font-size: 11.5px;
+  color: var(--mon-t3);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Mode switcher ──────────────────────────────────────────────────────── */
 
 .mon-modes {
@@ -1068,5 +1109,31 @@
 @media (max-width: 1360px) {
   .mon-body {
     grid-template-columns: 300px minmax(0, 1fr) 280px;
+  }
+}
+
+/* The desktop shell's minimum width. The mode switcher keeps its names and
+   drops the Chinese gloss (which the tooltip still carries), and the context
+   meter drops its total — the used/total text above it says both. */
+@media (max-width: 1240px) {
+  .mon-modes > button > em {
+    display: none;
+  }
+  .mon-bar .mon-ctx-meter__total {
+    display: none;
+  }
+}
+
+@media (max-width: 1140px) {
+  .mon-bar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+  .mon-modes > button {
+    padding: 0 6px;
+  }
+  .mon-runblock {
+    gap: 5px;
+    padding-left: 0;
   }
 }

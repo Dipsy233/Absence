@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { formatClock, formatContext, formatTokens } from "../../lib/format";
+import { formatClock, formatContext, formatOffset, formatTokens } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useT } from "../../lib/i18n";
 import { useStageStore } from "../../stores/stageStore";
@@ -16,6 +16,13 @@ import { MonitorRight } from "./MonitorRight";
 import { useMonitorData } from "./useMonitorData";
 import type { ActivityRow } from "../../types/stage";
 import "./monitor.css";
+const RUN_WORD: Record<"running" | "completed" | "interrupted" | "error", string> = {
+  running: "running",
+  completed: "done",
+  interrupted: "stopped",
+  error: "error",
+};
+
 /**
  * MONITOR (机器监护) — the heavy face.
  *
@@ -28,7 +35,7 @@ import "./monitor.css";
  */
 export function MonitorUI() {
   const t = useT();
-  useNow(1000);
+  const now = useNow(1000);
   const data = useMonitorData();
   const session = useSessionStore((s) => s.session);
   const connected = useSessionStore((s) => s.connected);
@@ -72,8 +79,30 @@ export function MonitorUI() {
   const attentionToneNow = attentionTone(data.attention.level);
   const runTone: MonTone =
     data.run?.status === "running" ? "run" : data.run?.status === "error" ? "err" : data.run ? "edit" : "mute";
+  // The runtime that is actually driving (or being watched): `pi`, `codex`,
+  // `dsh`, `mock`. It is the session's, not the last event's — a run's events
+  // never name the runtime, so it has to come from the session.
+  const runtime = session?.agentRuntime;
 
   const desktop = Boolean(window.absenceDesktop);
+  /**
+   * How long the run has been going, or how long it took.
+   *
+   * A finished run gets its final duration; a live one counts up. Both go
+   * through `formatOffset`, so a run over an hour reads `1:04:12` rather than
+   * a 64-minute figure that looks like a broken clock.
+   */
+  const runElapsed = data.run
+    ? formatOffset((data.run.endedAt ?? now) - data.run.startedAt)
+    : "—";
+  const runBlockTitle = [
+    runtime ? `${t("runtime")}: ${runtime}` : undefined,
+    data.run ? `${t("Run")} #${data.run.index} — ${t(RUN_WORD[data.run.status])}` : t("no run"),
+    data.run ? `${t("lasted")} ${runElapsed}` : undefined,
+    session?.model ? `${t("model")}: ${session.model}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="mon-root mon-shell">
@@ -107,28 +136,32 @@ export function MonitorUI() {
           ))}
         </div>
 
-        {data.run ? (
+        {/* The run block: which runtime is driving, which run, how it stands,
+            and how long it has been going. One unit, because those four answers
+            are only useful together — "#1 done" without the runtime or the
+            duration is not a status, it is a fragment. */}
+        <div className="mon-runblock" title={runBlockTitle}>
+          {runtime ? (
+            <span className="mon-runblock__runtime mon-mono">{runtime}</span>
+          ) : null}
+          <span className="mon-runblock__sep" aria-hidden />
           <Chip tone={runTone}>
             <Dot tone={runTone} />
-            {`#${data.run.index}`}
-            {data.run.status === "running" ? ` · ${t("live")}` : ""}
+            {data.run ? `${t("Run")} #${data.run.index} · ${t(RUN_WORD[data.run.status])}` : t("no run")}
           </Chip>
-        ) : null}
+          <span className="mon-runblock__time mon-mono">{runElapsed}</span>
+          {observed ? <Chip tone="read">{t("OBSERVING")}</Chip> : null}
+          <Chip tone={connected ? "edit" : "err"} title={connected ? t("live") : t("offline")}>
+            <Dot tone={connected ? "edit" : "err"} />
+            {connected ? t("live") : t("offline")}
+          </Chip>
+        </div>
 
         {data.attention.level !== "none" ? (
           <Chip tone={attentionToneNow} title={t("Human attention")}>
             {t("attention").toUpperCase()} · {t(data.attention.level)}
           </Chip>
         ) : null}
-
-        {observed ? (
-          <Chip tone="read">{t("OBSERVING")}</Chip>
-        ) : (
-          <Chip tone={connected ? "edit" : "err"}>
-            <Dot tone={connected ? "edit" : "err"} />
-            {connected ? t("live") : t("offline")}
-          </Chip>
-        )}
 
         <div className="mon-nodrag" style={{ display: "flex", alignItems: "center", gap: 7 }} title={t("context usage")}>
           <span className="mon-mono" style={{ fontSize: 11, color: "var(--mon-t3)" }}>
@@ -137,7 +170,7 @@ export function MonitorUI() {
           <span style={{ width: 72, height: 5, borderRadius: 3, background: "var(--mon-s3)", overflow: "hidden" }}>
             <span style={{ display: "block", height: "100%", width: `${percent}%`, background: "var(--mon-acc)" }} />
           </span>
-          <span className="mon-mono" style={{ fontSize: 10.5, color: "var(--mon-t3)" }}>
+          <span className="mon-ctx-meter__total mon-mono" style={{ fontSize: 10.5, color: "var(--mon-t3)" }}>
             {formatTokens(total)}
           </span>
         </div>

@@ -147,6 +147,8 @@ const ZH: Record<string, string> = {
   "Ask the agent…": "问智能体…",
   "connecting…": "连接中…",
   Run: "运行",
+  "no run": "无运行",
+  lasted: "耗时",
   Stop: "停止",
   Send: "发送",
   md: "md",
