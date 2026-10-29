@@ -159,6 +159,15 @@ const ZH: Record<string, string> = {
   "Copy this block": "复制这段代码",
   "Open {path} on the Stage": "在 Stage 打开 {path}",
 
+  // ── Monitor (机器监护) ──────────────────────────────────────────────────
+  CHAT: "对话",
+  Conversation: "对话记录",
+  "from {time}": "来自 {time}",
+  "Pinned at {time} — every panel shows this moment": "固定在 {time} —— 所有面板都在看这一刻",
+  "Ask about this moment, or / for commands": "问这一刻，或输入 / 使用命令",
+  "Run timeline": "运行时间轴",
+  "Nothing on the world line yet.": "时间轴上还没有东西。",
+
   // ── Activity ───────────────────────────────────────────────────────────
   Activity: "动态",
   "▶ replay": "▶ 回放",

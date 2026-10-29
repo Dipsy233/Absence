@@ -4,6 +4,8 @@ import type { AbsenceEvent, ApprovalOption, FileTreeNode } from "@absence/core";
 export type StageMode =
   | "live"
   | "metrics"
+  /** The conversation, read as a page of the Stage (Monitor's Chat tab). */
+  | "chat"
   | "file"
   | "diff"
   | "terminal"

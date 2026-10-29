@@ -49,6 +49,8 @@ interface StageStore {
   goLive: () => void;
   /** Back to the default metrics page. */
   goMetrics: () => void;
+  /** Show the conversation as the Stage's page. */
+  goChat: () => void;
   reset: () => void;
 }
 
@@ -156,6 +158,11 @@ export const useStageStore = create<StageStore>((set, get) => ({
   goLive: () => set({ mode: "live", following: true, activeItem: undefined }),
 
   goMetrics: () => set({ mode: "metrics", following: false }),
+
+  // Chat is a page, not a pin: it is not a view of one activity, so it is
+  // entered the same way METRICS is — deliberately without an `activeItem`,
+  // which is what the pin bar reads to describe "the moment everything shows".
+  goChat: () => set({ mode: "chat", following: false, activeItem: undefined }),
 
   reset: () =>
     set({

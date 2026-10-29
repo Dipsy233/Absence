@@ -10,6 +10,7 @@ import { useT } from "../../lib/i18n";
 import { formatClock, formatOffset } from "../../lib/format";
 import { runEvents } from "../../lib/history";
 import { MonitorChat } from "./MonitorChat";
+import { ChatThread } from "../../components/chat/ChatThread";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { StageItem } from "../../types/stage";
@@ -18,17 +19,24 @@ import { Chip, TONE_FOR_KIND, attentionTone, phaseWord, type MonTone } from "./a
 import { activityViews, type ActivityViews } from "./activityViews";
 import type { MonitorData } from "./useMonitorData";
 
-type Tab = "file" | "diff" | "terminal" | "metrics";
+/**
+ * `card` is not a tab you can click: it is "this activity's own card" — a
+ * thought, an egg, an approval. Those are not a file, a diff or a command, so
+ * they light no tab and the sheet shows the card itself.
+ */
+type Tab = "file" | "diff" | "terminal" | "metrics" | "chat" | "card";
 
-const TAB_LABEL: Record<Tab, string> = {
+/** Labels for the tabs that actually appear in the strip (`card` has none). */
+const TAB_LABEL: Record<Exclude<Tab, "card">, string> = {
   file: "File",
   diff: "Diff",
   terminal: "Terminal",
   metrics: "Metrics",
+  chat: "Chat",
 };
 
 /** Tabs in the order they appear. */
-const TAB_ORDER: Tab[] = ["file", "diff", "terminal", "metrics"];
+const TAB_ORDER: Array<Exclude<Tab, "card">> = ["file", "diff", "terminal", "metrics", "chat"];
 
 /**
  * Which view of the pinned activity the reader is looking at.
@@ -37,7 +45,13 @@ const TAB_ORDER: Tab[] = ["file", "diff", "terminal", "metrics"];
  * resets whenever the activity changes — carrying "DIFF" over to a command that
  * has no diff is how a tab ends up lit while showing nothing.
  */
-function useActivityView(views: ActivityViews, own: Tab | undefined, metrics: boolean): [Tab, (next: Tab) => void] {
+function useActivityView(
+  views: ActivityViews,
+  /** The view this activity *is*, or undefined when it is not one of them. */
+  own: Tab | undefined,
+  /** What to fall back to when the activity has no view of its own. */
+  fallback: Tab,
+): [Tab, (next: Tab) => void] {
   const [chosen, setChosen] = useState<Tab | undefined>(undefined);
   const key = own ?? "none";
   const [forKey, setForKey] = useState(key);
@@ -47,8 +61,7 @@ function useActivityView(views: ActivityViews, own: Tab | undefined, metrics: bo
     setForKey(key);
     setChosen(undefined);
   }
-  if (metrics) return ["metrics", setChosen];
-  if (!own) return ["metrics", setChosen];
+  if (!own) return [fallback, setChosen];
   const wanted = chosen && views[chosen as "file" | "diff" | "terminal"] ? chosen : own;
   return [wanted, setChosen];
 }
@@ -57,10 +70,12 @@ function useActivityView(views: ActivityViews, own: Tab | undefined, metrics: bo
  * Centre column: what the selected moment *is*, plus the run's world line and
  * the input row.
  *
- * The page is a pin, not a follower. Live, the Stage shows whatever the agent
- * last touched; the moment a row is clicked, the pin bar states which activity
- * everything is looking at and offers the way back — the "机器监护" rule that a
- * screen must never silently change under the reader.
+ * Live, the page *follows* the agent: it is the newest activity of the run, the
+ * same thing Classic's Stage shows (read02 §14). Clicking a row pins that
+ * moment instead — the pin bar then states which activity everything is looking
+ * at and offers the way back — so the screen never silently changes under a
+ * reader who has chosen to stop and look. ⏎, the pin bar and the LIVE tab all
+ * return to following.
  */
 export function MonitorStage({ data }: { data: MonitorData }) {
   const t = useT();
@@ -68,39 +83,99 @@ export function MonitorStage({ data }: { data: MonitorData }) {
   const following = useStageStore((s) => s.following);
   const goLive = useStageStore((s) => s.goLive);
   const goMetrics = useStageStore((s) => s.goMetrics);
+  const goChat = useStageStore((s) => s.goChat);
   const openMetrics = useUiStore((s) => s.openMetrics);
   const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
 
+  /**
+   * What the Stage is a page *of*.
+   *
+   * Following (live) it is the newest activity in the run - the agent's own
+   * tail - so the middle column moves with the agent instead of sitting on
+   * "waiting for the first activity" while the feed fills up. Pinned, it is
+   * the activity the reader clicked. METRICS and CHAT are pages of their own
+   * and never show an activity, so neither is "the moment everything shows".
+   */
+  const page = following ? data.liveItem : item;
   const showingMetrics = mode === "metrics";
-  const active = showingMetrics ? undefined : item;
+  const showingChat = mode === "chat";
+  // `active` stays the live tail even while a global page is up: the view tabs
+  // are still *about* that activity, so leaving CHAT for TERMINAL has something
+  // to show instead of landing on an empty sheet.
+  const active = page;
 
   /**
-   * The three activity views, derived from the pinned activity.
+   * The three activity views, derived from the activity the Stage is on.
    *
-   * Not `lastByType` — that answered "the last diff anywhere in the run", so
-   * clicking a `file_read` could leave an unrelated edit on screen. A tab here
-   * is a way of reading *this* row, so a read has FILE, an edit has DIFF and
-   * FILE, a command has TERMINAL, and a tab that this activity cannot be read
-   * as is disabled rather than pointing somewhere else.
+   * Not `lastByType` alone — that answered "the last diff anywhere in the run",
+   * so clicking a `file_read` could leave an unrelated edit from ten activities
+   * ago on screen. A tab here first tries to read *this* moment: a read has
+   * FILE, an edit has DIFF and FILE, a command has TERMINAL.
+   *
+   * But a moment is often only one kind of thing (a thought is neither a file
+   * nor a command), and disabling the other tabs made the Stage a page you
+   * cannot navigate while following a live agent — the reader had to wait for
+   * the agent to happen to run a command to look at the last one. So a tab the
+   * moment cannot be read as falls back to the newest item of that kind in the
+   * run (`lastByType`, which `useStageView` keeps fed), and the header says so
+   * ("… · from 00:06") rather than silently showing a different moment.
    */
-  const views = useMemo(() => activityViews(active), [active]);
+  const own = useMemo(() => activityViews(active), [active]);
+  const lastByType = useStageStore((s) => s.lastByType);
+
+  const views = useMemo(() => {
+    // A *pinned* moment is a pin: it shows what that activity was, and the tabs
+    // it cannot be read as stay disabled. Borrowing another moment is only for
+    // following, where the page is a moving target and "the newest command"
+    // still means "the run I am watching".
+    if (!following) return own;
+    const out = { ...own } as ActivityViews;
+    for (const kind of ["file", "diff", "terminal"] as const) {
+      if (out[kind]) continue;
+      const item = lastByType[kind];
+      if (!item) continue;
+      out[kind] = activityViews(item)[kind];
+    }
+    return out;
+  }, [own, lastByType, following]);
+
+  /**
+   * The tab this activity *is*.
+   *
+   * A thought, an egg and an approval are not one of the three views: they get
+   * no lit tab (the sheet shows the card itself), which is why this returns
+   * undefined for them instead of forcing TERMINAL — a pinned reasoning card
+   * used to read "Terminal * (disabled)", which claims a view it does not have.
+   */
   const ownKind: Tab | undefined =
-    active?.type === "file" || active?.type === "diff" || active?.type === "terminal"
-      ? active.type
-      : active
-        ? "terminal"
-        : undefined;
-  const [tab, setTab] = useActivityView(views, ownKind, showingMetrics);
+    active?.type === "file" || active?.type === "diff" || active?.type === "terminal" ? active.type : undefined;
+  // `ownKind` alone decides which view is up while the Stage follows or shows a
+  // pinned moment; METRICS / CHAT are what the *mode* says, so they are read
+  // from the store rather than folded into the same derivation — folding them
+  // in made a returning tab pick up the mode from the previous render.
+  // An activity with no view of its own (a thought, an egg, an approval) has no
+  // lit tab: the card itself is the page, so it falls back to `card` — never to
+  // another tab, which would claim a view this moment does not have.
+  const [viewTab, setViewTab] = useActivityView(views, ownKind, active ? "card" : "metrics");
+  const tab: Tab = showingMetrics ? "metrics" : showingChat ? "chat" : viewTab;
+  const setTab = setViewTab;
 
   const chooseTab = (next: Tab) => {
     if (next === "metrics") {
       goMetrics();
       return;
     }
+    if (next === "chat") {
+      goChat();
+      return;
+    }
     // Clicking the tab that is already up is a no-op: Monitor's page is a pin,
     // so a tab is a way *to* a page, never a toggle away from it (⏎ / the pin
     // bar are the way back).
     if (next === tab) return;
+    // Leaving METRICS or CHAT for a view tab means "show me the work again":
+    // those two pages are not a pin, so there is no moment to fall back to.
+    if (tab === "metrics" || tab === "chat") goLive();
     setTab(next);
   };
 
@@ -109,12 +184,35 @@ export function MonitorStage({ data }: { data: MonitorData }) {
     diff: views.diff !== undefined,
     terminal: views.terminal !== undefined,
     metrics: true,
+    chat: true,
+    // Not a tab in the strip: the card is what the sheet shows when nothing
+    // else applies, so it is "available" exactly when there is a card.
+    card: active !== undefined,
   };
 
   const shownItem =
-    tab === "metrics"
+    tab === "metrics" || tab === "chat"
       ? undefined
-      : (views[tab as "file" | "diff" | "terminal"] ?? views[ownKind as "file" | "diff" | "terminal"] ?? active);
+      : tab === "card"
+        ? active
+        : (views[tab as "file" | "diff" | "terminal"] ?? views[ownKind as "file" | "diff" | "terminal"] ?? active);
+
+  /**
+   * Whether the page is showing a *different* moment than the one selected.
+   *
+   * The fallback above is useful but it must not lie: if the reader is pinned
+   * on a thought and TERMINAL shows the command from four minutes ago, the
+   * header has to say which moment it came from.
+   */
+  const borrowed =
+    tab !== "metrics" &&
+    tab !== "chat" &&
+    tab !== "card" &&
+    active !== undefined &&
+    shownItem !== undefined &&
+    shownItem.id !== active.id
+      ? shownItem
+      : undefined;
 
   /**
    * The header text for the current tab.
@@ -125,7 +223,7 @@ export function MonitorStage({ data }: { data: MonitorData }) {
    * numbers. The default page (nothing pinned) still gets the live headline.
    */
   const header: StageHeader =
-    tab === "metrics" && (active !== undefined || showingMetrics)
+    tab === "metrics"
       ? {
           chip: <Chip tone="read">{t("METRICS")}</Chip>,
           chipText: t("METRICS"),
@@ -133,12 +231,27 @@ export function MonitorStage({ data }: { data: MonitorData }) {
           sub: t("The whole agent or the selected egg — Classic's dashboard"),
           time: "—",
         }
-      : describe(shownItem, data, t);
+      : tab === "chat"
+        ? {
+            chip: <Chip tone="mute">{t("CHAT")}</Chip>,
+            chipText: t("CHAT"),
+            title: t("Conversation"),
+            sub: data.run ? `#${data.run.index} · ${data.run.prompt || t("(observed activity)")}` : t("No run yet"),
+            time: "—",
+          }
+        : (() => {
+            const described = describe(shownItem, data, t);
+            if (!borrowed) return described;
+            return {
+              ...described,
+              sub: `${described.sub} \u00b7 ${t("from {time}", { time: formatClock(borrowed.createdAt) })}`,
+            };
+          })();
 
   return (
     <div className="mon-stage">
       <div className="mon-stagehead">
-        {showingMetrics ? <Chip tone="read">{t("METRICS")}</Chip> : header.chip}
+        {header.chip}
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="mon-stagehead__title" title={header.title}>
             {header.title}
@@ -166,16 +279,18 @@ export function MonitorStage({ data }: { data: MonitorData }) {
 
       </div>
 
-      {!following && (active || showingMetrics) ? (
+      {/*
+        The pin bar states *which moment* everything is looking at, so it only
+        means something when a moment is pinned. METRICS and CHAT are pages of
+        their own, not moments: they get no bar, and their tabs are the way back
+        (a view tab returns to following).
+      */}
+      {!following && !showingMetrics && !showingChat && active ? (
         <div className="mon-pinbar">
           <span className="mon-chip mon-chip--edit" style={{ height: 18 }}>
-            {tab === "metrics" ? t("METRICS") : header.chipText}
+            {header.chipText}
           </span>
-          <span>
-            {tab === "metrics"
-              ? t("Live resource view — the run's numbers, not one moment")
-              : t("Pinned at {time} — every panel shows this moment", { time: header.time })}
-          </span>
+          <span>{t("Pinned at {time} — every panel shows this moment", { time: header.time })}</span>
           <span style={{ flex: 1 }} />
           <button type="button" className="mon-btn mon-btn--ghost" onClick={goLive}>
             {t("Back to live ⏎")}
@@ -191,6 +306,10 @@ export function MonitorStage({ data }: { data: MonitorData }) {
             // you look at when the question is "what is this costing" rather
             // than "what did it do".
             <MetricsDashboard embedded />
+          ) : tab === "chat" ? (
+            // CHAT is Classic's conversation, given the whole sheet: reading
+            // what was said is a page, not a strip over the trace.
+            <ChatThread />
           ) : shownItem ? (
             <StageItemView key={shownItem.id} item={shownItem} />
           ) : (
@@ -523,6 +642,9 @@ function Timeline({ data }: { data: MonitorData }) {
           }}
           title={inReplay && replayStatus === "playing" ? t("Pause") : t("Replay from the start")}
           aria-label={inReplay && replayStatus === "playing" ? t("Pause") : t("Replay from the start")}
+          // Same height as the track: the glyph then centres on the middle lane
+          // instead of sitting at the top of the strip.
+          style={{ height: trackHeight }}
         >
           {inReplay && replayStatus === "playing" ? "⏸" : "▶"}
         </button>

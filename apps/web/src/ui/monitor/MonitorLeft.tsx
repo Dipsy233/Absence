@@ -60,6 +60,13 @@ export function MonitorLeft({
   const sessionId = useSessionStore((s) => s.session?.id);
   const activeEventId = useStageStore((s) => s.activeItem?.source?.eventId);
   const following = useStageStore((s) => s.following);
+  /**
+   * While following, the row the Stage is showing is the *newest* one — the
+   * agent's tail — not the pinned item (which is deliberately absent in live
+   * mode). Without this the feed would show no selection at all during a live
+   * run, and the reader could not tell which row the middle column belongs to.
+   */
+  const liveEventId = following ? data.liveEventId : undefined;
   const focusedEventId = useUiStore((s) => s.focusedEventId);
   const observed = useIsObserved();
 
@@ -338,7 +345,11 @@ export function MonitorLeft({
                   row={row}
                   count={count}
                   runStart={run?.startedAt}
-                  current={!following && row.stageItem?.source?.eventId === activeEventId}
+                  current={
+                    following
+                      ? row.stageItem?.source?.eventId !== undefined && row.stageItem.source.eventId === liveEventId
+                      : row.stageItem?.source?.eventId === activeEventId
+                  }
                   focused={row.id === focusedEventId}
                   onOpen={onOpen}
                 />

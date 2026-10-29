@@ -7,7 +7,7 @@ import { buildRunFacts, renderLive } from "../../lib/report";
 import { memoRunRows } from "../../lib/history";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import type { ActivityRow } from "../../types/stage";
+import type { ActivityRow, StageItem } from "../../types/stage";
 import type { Attention, RunFacts } from "../../types/report";
 import { monPhase, type MonPhase } from "./atoms";
 import type { HistoryRun } from "../../types/history";
@@ -32,6 +32,19 @@ export interface MonitorData {
   phase?: MonPhase;
   /** The live "what is it doing" sentence, only while the run is in flight. */
   liveHeadline?: string;
+  /**
+   * What the Stage shows while it follows the agent.
+   *
+   * The store's `currentAction` is cleared the moment the agent speaks or the
+   * run ends, which left the live Stage on "Waiting for the first activity…"
+   * while the feed beside it listed twenty rows. Following means "the newest
+   * thing in this run", so the tail of the feed is the answer — and after the
+   * run ends that is the last thing the agent actually did, which is what a
+   * reader who was watching wants to keep seeing.
+   */
+  liveItem?: StageItem;
+  /** The event behind `liveItem`, so the feed can mark the row it is showing. */
+  liveEventId?: string;
   busy: boolean;
   observed: boolean;
 }
@@ -68,6 +81,16 @@ export function useMonitorData(): MonitorData {
     }
   }, [run?.id, run?.status, events, tick, attentionOptions]);
 
+  // The tail of the feed: the newest row that can be read as a page. START/END
+  // carry no Stage item, so they are skipped rather than counted as "nothing".
+  const liveItem = useMemo(() => {
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const item = rows[i]!.stageItem;
+      if (item) return item;
+    }
+    return undefined;
+  }, [rows]);
+
   const running = run?.status === "running";
   const busy = isAgentBusy(status);
   const live = useMemo(
@@ -84,6 +107,8 @@ export function useMonitorData(): MonitorData {
     attention: live?.attention ?? facts?.attention ?? NO_ATTENTION,
     phase: facts ? monPhase(facts.currentPhase) : undefined,
     liveHeadline: live?.headline,
+    liveItem,
+    liveEventId: liveItem?.source?.eventId,
     busy,
     observed,
   };

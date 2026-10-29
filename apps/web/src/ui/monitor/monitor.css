@@ -603,11 +603,18 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  /* Room for the cursor's time label, which hangs above the track. It lives on
+     the row rather than on the track so the labels, the track and the play
+     button all start from the same y — a margin on the track alone would shift
+     the lanes down without shifting the labels, and nothing would line up. */
+  padding-top: 16px;
 }
 .mon-tl__play {
   display: flex;
   width: 34px;
-  height: 30px;
+  /* Height is set inline to the track's height, so its centred glyph sits on
+     the middle lane of the strip — the control reads as belonging to the
+     timeline rather than floating beside it. */
   flex: none;
   align-items: center;
   justify-content: center;
@@ -628,7 +635,9 @@
   flex: none;
   flex-direction: column;
   justify-content: flex-start;
-  padding-top: 4px;
+  /* A lane sits at `TRACK_TOP + n*14` (8 + n*14) and a label line is 14px tall
+     with the text centred, so the line's box starts at 8 - 7 = 1px. */
+  padding-top: 1px;
   font: 10px var(--mon-mono);
   color: var(--mon-t3);
   text-transform: uppercase;
@@ -642,9 +651,6 @@
   position: relative;
   min-width: 0;
   flex: 1;
-  /* The cursor's label hangs above the track, so the track reserves that room
-     rather than letting the label clip against the panel edge. */
-  margin-top: 12px;
   cursor: pointer;
 }
 .mon-tl__lane {
@@ -690,7 +696,8 @@
 }
 .mon-tl__speed {
   flex: none;
-  align-self: center;
+  align-self: flex-start;
+  line-height: 44px;
   font-size: 11px;
   color: var(--mon-t3);
 }
@@ -706,12 +713,18 @@
    control used most often and it should look like the biggest target on the
    page. */
 .mon-chat {
+  position: relative;
   display: flex;
   flex: none;
   align-items: center;
   gap: 10px;
   padding: 0 16px 14px;
   background: var(--mon-s1);
+}
+/* The `/` palette opens above the bar, over the sheet, in this face's colours
+   (ChatCommandPalette is written against --desk-*, which .mon-root re-points). */
+.mon-chat .absolute {
+  z-index: 30;
 }
 
 .mon-chat__box {
@@ -848,48 +861,63 @@
 
 /* ── Right rail ─────────────────────────────────────────────────────────── */
 
+/* The agent block: a square tile beside the status, the way the proposal draws
+   it - the character is a status light in the corner, not a banner.
+
+   The tile does NOT rescale the character. Classic's Agent panel renders the
+   WhaleBun into an `h-[184px]` box, and that is the size it was authored for:
+   the fit, the pose, the props and the idle animations all assume it. So the
+   inner box stays exactly 184x184 and the tile scales *that whole box* down to
+   88px with a plain CSS transform. A transform scales the animations with it,
+   which an overridden fit (`transform: scale(...) !important` on `.stage`)
+   cannot: that is what made the character stop moving and lose its props. */
 .mon-agent {
   display: grid;
   flex: none;
-  grid-template-columns: 74px minmax(0, 1fr);
+  grid-template-columns: 88px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  padding: 14px;
+  gap: 14px;
+  padding: 16px;
   border-bottom: 1px solid var(--mon-bd);
 }
-.mon-agent__avatar {
-  height: 74px;
+.mon-agent__tile {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  flex: none;
   overflow: hidden;
   border-radius: 10px;
   background: rgb(255 255 255 / 0.03);
 }
-/* The avatar reports its own status row; the Monitor rail states it in words,
-   so the duplicate line under the character is dropped. */
-.mon-agent__avatar .whalebun-root > div:last-child {
+/* A head-shot, not the whole character: at 88px the full body is an unreadable
+   blob and the pose is carried by the face. The 184px box is Classic's, so the
+   fit, the pose and the animations are untouched; this only scales *that box*
+   and slides it so the head lands centred. The numbers come from the head's
+   own box on the 2048 canvas (651,863 746x623) measured against Classic's fit:
+   at this scale the head is ~76px of the 88px tile, with the ahoge and hair
+   still inside. */
+.mon-agent__tileinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 184px;
+  height: 184px;
+  transform: translate(-50%, -50%) scale(0.886) translate(5.2px, -4.2px);
+  transform-origin: center;
+}
+/* The avatar reports its own status row; the rail states it in words beside
+   the tile, so the duplicate line is dropped (the only override left, and it
+   is `display` on a label, not geometry on the character). */
+.mon-agent__tile .whalebun-root > div:last-child {
   display: none;
 }
-/* A head-shot, not the whole character.
-   The built-in WhaleBun fits all of itself into whatever box it is given, which
-   at 74px is an unreadable blob: the pose is carried by the face, and the face
-   is a sixth of the canvas. So the tile overrides the fit with its own scale
-   and offset — the head box (651,863 746×623 on a 2048 canvas centred at
-   1024,1024) is scaled to the tile width and slid up so the head sits centred.
-   Hair and ahoge are above it, hence the small upward bias. */
-.mon-agent__avatar .whalebun-root .stage {
-  /* `--s` is written inline by the Avatar component (its own fit), so this has
-     to be a whole transform with !important, not a variable override. The
-     offsets are in unscaled canvas units: s*(p - centre + n) lands the head
-     (651,863 746×623, centred at 1024,1174.5) in the tile. */
-  transform: scale(0.086) translate(0px, -250px) !important;
+.mon-agent__caption {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
 }
-.mon-agent__avatar .whalebun-root .shadow {
-  display: none;
-}
-/* The idle bob and the props are authored for a full-body view; at this crop
-   they only add motion at the tile's edges. */
-.mon-agent__avatar .whalebun-root .fx {
-  display: none;
-}
+
 .mon-agent__state {
   display: flex;
   align-items: center;
@@ -915,6 +943,47 @@
   white-space: nowrap;
   font-size: 11.5px;
   color: var(--mon-t3);
+}
+
+/* Classic's panels, stacked in the rail. They are `flex-1` boxes inside their
+   own rails; here they need a floor, or two panels with a `min-h-0 flex-1`
+   body collapse to nothing when the rail is tall. A fixed share of the rail
+   with a minimum height gives each one a real body to scroll. */
+.mon-railpanels {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+.mon-railpanels > .panel {
+  min-height: 190px;
+  flex: 1 1 0;
+}
+/* Their headers are Classic's 11px uppercase labels; inside this rail they read
+   as section headings, so they take the rail's own type scale. */
+.mon-railpanels .panel-header {
+  padding: 9px 10px;
+  border-color: var(--mon-bd);
+  background: transparent;
+  color: var(--mon-t3);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+}
+.mon-railpanels .panel-header > span:last-child {
+  color: var(--mon-t3);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.mon-railpanels .panel {
+  border-color: var(--mon-bd);
+  border-radius: 10px;
+  background: var(--mon-s1);
+}
+.mon-railpanels .panel-body {
+  padding: 8px;
 }
 
 .mon-met {

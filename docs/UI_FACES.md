@@ -26,9 +26,9 @@ apps/web/src/ui/monitor/            the Monitor face
   useMonitorData.ts                 the one derivation everything draws from
   atoms.tsx                         tone vocabulary, chips, sparkline, words
   MonitorLeft.tsx                   run selector + activity feed (or the project tree)
-  MonitorStage.tsx                  the pinned page, world line, input row
+  MonitorStage.tsx                  the followed / pinned page, world line, input row
   MonitorRight.tsx                  agent, cost, attention, known files, eggs
-  MonitorChat.tsx                   the one-line input row
+  MonitorChat.tsx                   the one-line input row (no expand toggle)
   MonitorUI.tsx                     header, columns, keyboard contract
 ```
 
@@ -44,16 +44,38 @@ whole run, so it is clamped to twice a second: a streamed token updates the feed
 immediately (rows are incremental — `memoRunRows`) while the phase verdict lags at
 most 500 ms.
 
-**A page is a pin.** Live, the Stage shows what the agent last touched. Clicking a
-row pins it and the pin bar states which activity everything is looking at, with
-⏎ to go back. A screen never silently changes under the reader. The tabs are ways
-*to* a page, never toggles away from one.
+**Live follows, a pin stays.** While nothing is pinned the Stage *follows the
+agent*: the page is the newest activity of the run (`MonitorData.liveItem`, the
+tail of the feed), exactly what Classic's Stage shows. Clicking a row pins that
+moment — the pin bar names it and ⏎ (or the pin bar, or a view tab) returns to
+following. So the screen moves with the agent until the reader chooses to stop,
+and then never changes under them. `currentAction` in the store is deliberately
+not the source of this: it is cleared the moment the agent speaks or the run
+ends, which used to leave the live Stage on "Waiting for the first activity…"
+next to a feed with twenty rows in it.
 
-**The avatar is a status light.** A 74px head-shot, not the whole character. The
-WhaleBun fits all of itself into whatever box it gets, which at 74px is a blob —
-so the tile overrides the fit with its own transform to frame the head (see the
-note in `monitor.css`). Pose still follows the event stream; it is just no longer
-the subject.
+**The tabs are views of the moment, with an honest fallback.** FILE / DIFF /
+TERMINAL read the activity the Stage is on; a kind the moment cannot be read as
+falls back to the newest item of that kind in the run, and the header says where
+it came from (`· from 00:06`) rather than silently showing another moment. A tab
+that is *disabled* under the moment you are looking at is a tab you cannot reach
+without waiting for the agent to happen to do that kind of thing again.
+METRICS and CHAT are not views of one moment at all: they are pages of their own,
+they never raise a pin bar, and leaving them for a view tab returns to following.
+
+**The avatar is a status light.** An 88px tile beside the status, not a banner —
+and the tile does not rescale the character. Classic renders the WhaleBun into
+an `h-[184px]` box, which is the size the fit, the pose, the props and the idle
+animations were authored for; the tile keeps that box and scales the whole thing
+with a plain CSS transform, so the animation keeps playing. The earlier version
+overrode the fit's own `transform` with `!important` and hid the props and fx,
+which is exactly why the character froze and lost its props.
+
+**Agent Folder and Agent Eggs are Classic's panels.** Not a second reading of
+the same data: `AgentFolder` and `AgentEggsPanel` already answer "which versions
+has it seen", "which process is still running", "show that egg's metrics", and
+the rail is the same rail — so they are mounted as-is, each with a real floor
+(`min-height: 190px`) so neither collapses.
 
 **Repeats fold.** A `process` event is a state update, not an act: one long-lived
 command re-reports every time its child count moves. Fourteen identical RUN rows
@@ -62,9 +84,18 @@ reads as 19 acts). Consecutive identical actions collapse to `RUN ×17`, with th
 count saying so. Activity's own list and the Report keep every event.
 
 **Classic's components are reused, not forked.** `StageItemView`,
-`MetricsDashboard` and the Markdown renderer are written against `--desk-*`
-tokens; `.mon-root` re-points those tokens at Monitor's palette, so every reused
-view lands in this face's colours with no second implementation.
+`MetricsDashboard`, `AgentFolder`, `AgentEggsPanel`, the Markdown renderer and
+the chat pieces are written against `--desk-*` tokens; `.mon-root` re-points
+those tokens at Monitor's palette, so every reused view lands in this face's
+colours with no second implementation.
+
+**One chat input, two faces.** `components/chat/useChatInput.ts` owns the `/`
+command state machine (name phase, argument phase, skills, the server-backed
+choice lists) and `ChatCommandPalette` / `ChatThread` own the markup; Classic's
+dock and Monitor's input row both render those. Monitor's bar has no expand
+toggle — the conversation is the Stage's CHAT tab instead — but typing `/` opens
+the same overlay above the line, because a command must behave the same wherever
+it is typed.
 
 **Two Files views, on purpose.** The right rail is the *agent's* files (only what
 it has read, per version). The left column's Files tab is the whole project, read
@@ -86,7 +117,7 @@ Written into `monitor.css`, not left to each component:
 
 | Key | Action |
 |---|---|
-| `⏎` | back to live (away from a pinned page) |
+| `⏎` | back to following the agent (away from a pinned page) |
 | `⌘R` / `Ctrl+R` | open / close the Absence Report |
 | `Esc` | closes the Report and the context menu |
 

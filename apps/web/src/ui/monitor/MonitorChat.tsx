@@ -1,51 +1,26 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { isAgentBusy } from "@absence/core";
-import { buildPrompt, contextLabel } from "../../lib/context";
-import { useChatStore } from "../../stores/chatStore";
-import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
+import { FormEvent } from "react";
+import { useSessionStore } from "../../stores/sessionStore";
 import { useT } from "../../lib/i18n";
+import { ContextChip } from "../../components/chat/ContextChip";
+import { ChatCommandPalette, SlashButton } from "../../components/chat/ChatCommandPalette";
+import { useChatInput } from "../../components/chat/useChatInput";
 
 /**
- * The input row: one line, always present, with the conversation unfolding
- * upward only when asked for.
+ * The input row: one line, always present.
  *
- * Deliberately not Classic's dock — Monitor's centre column is for reading
- * traces, so chat is a tool you reach for, not a surface you live in. The
- * thread is closed by default and its toggle is a 24px chip, not a header bar.
+ * It is the same input as Classic's dock — the same state machine
+ * (`useChatInput`), the same `/` overlay and the same context chips — because a
+ * command typed here must behave exactly as it does there. What differs is the
+ * chrome: Monitor reads traces in the centre column, so the conversation is a
+ * *tab* of the Stage rather than a layer over it, and this bar therefore has no
+ * expand toggle. Typing `/` still opens the palette above the line.
  */
 export function MonitorChat() {
   const t = useT();
-  const messages = useChatStore((s) => s.messages);
-  const pending = useChatStore((s) => s.pending);
-  const clearContext = useChatStore((s) => s.clearContext);
-  const removeContext = useChatStore((s) => s.removeContext);
-  const status = useSessionStore((s) => s.agent.status);
-  const connected = useSessionStore((s) => s.connected);
-  const sendPrompt = useSessionStore((s) => s.sendPrompt);
+  const input = useChatInput();
+  const { text, handleChange, handleKeyDown, inputRef, showPalette, commandMode, busy, connected, observed, pending, submit } =
+    input;
   const abort = useSessionStore((s) => s.abort);
-  const observed = useIsObserved();
-
-  const [text, setText] = useState("");
-  const [open, setOpen] = useState(false);
-  const threadRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const element = threadRef.current;
-    if (element && open) element.scrollTop = element.scrollHeight;
-  }, [messages, open]);
-
-  const busy = isAgentBusy(status);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const value = text.trim();
-    if (!value && pending.length === 0) return;
-    const prompt = buildPrompt(pending, value || "(content above)");
-    setText("");
-    clearContext();
-    await sendPrompt(prompt);
-  };
 
   if (observed) {
     return (
@@ -61,77 +36,52 @@ export function MonitorChat() {
   }
 
   return (
-    <>
-      {open ? (
-        <div className="mon-thread" ref={threadRef}>
-          {messages.length === 0 ? (
-            <p style={{ fontSize: 12, color: "var(--mon-t3)" }}>
-              {t("No messages yet — send the first prompt below.")}
-            </p>
-          ) : (
-            messages.map((message) => (
-              <div
-                key={message.id}
-                className={`mon-msg mon-msg--${message.role === "user" ? "user" : message.role === "system" ? "system" : "agent"}`}
-              >
-                <div className="mon-msg__role">
-                  {message.role === "user" ? t("You") : message.role === "system" ? "ABSENCE" : t("Agent")}
-                </div>
-                <div className="mon-msg__body">{message.content}</div>
-              </div>
-            ))
-          )}
-        </div>
-      ) : null}
+    <form
+      className="mon-chat"
+      onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      {showPalette ? <ChatCommandPalette input={input} /> : null}
 
-      <form className="mon-chat" onSubmit={submit}>
-        <button
-          type="button"
-          className="mon-chat__slash"
-          title={t("Show the conversation")}
-          aria-pressed={open}
-          aria-label={t("Show the conversation")}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? "▾" : "▴"}
+      <SlashButton input={input} />
+
+      <div className="mon-chat__box">
+        {pending.map((context, index) => (
+          <ContextChip key={`${context.label}-${index}`} context={context} index={index} />
+        ))}
+        <input
+          ref={inputRef}
+          className="mon-chat__input"
+          value={text}
+          onChange={(event) => handleChange(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={
+            connected
+              ? commandMode
+                ? t("type a command…")
+                : t("Ask about this moment, or / for commands")
+              : t("connecting…")
+          }
+          disabled={!connected}
+          aria-label={t("Ask the agent…")}
+        />
+      </div>
+
+      {commandMode ? (
+        <button type="submit" className="mon-btn mon-btn--pri mon-chat__send" disabled={!connected}>
+          {t("Run")}
         </button>
-
-        <div className="mon-chat__box">
-          {pending.map((context, index) => (
-            <span className="mon-ctx" key={`${context.label}-${index}`} title={contextLabel(context)}>
-              <span>{contextLabel(context)}</span>
-              <button type="button" onClick={() => removeContext(index)} title={t("Remove context")}>
-                ×
-              </button>
-            </span>
-          ))}
-          <input
-            ref={inputRef}
-            className="mon-chat__input"
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            placeholder={
-              connected ? t("Ask the agent… — or / for commands") : t("connecting…")
-            }
-            disabled={!connected}
-            aria-label={t("Ask the agent…")}
-          />
-        </div>
-
-        {busy ? (
-          <button type="button" className="mon-btn mon-btn--danger mon-chat__send" onClick={() => void abort()}>
-            {t("Stop")}
-          </button>
-        ) : (
-          <button
-            type="submit"
-            className="mon-btn mon-btn--pri mon-chat__send"
-            disabled={!connected || (!text.trim() && pending.length === 0)}
-          >
-            {t("Send")}
-          </button>
-        )}
-      </form>
-    </>
+      ) : busy ? (
+        <button type="button" className="mon-btn mon-btn--danger mon-chat__send" onClick={() => void abort()}>
+          {t("Stop")}
+        </button>
+      ) : (
+        <button type="submit" className="mon-btn mon-btn--pri mon-chat__send" disabled={!connected || !input.canSend}>
+          {t("Send")}
+        </button>
+      )}
+    </form>
   );
 }
