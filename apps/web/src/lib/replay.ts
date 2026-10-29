@@ -104,18 +104,39 @@ export function timelineEnd(events: AbsenceEvent[]): number {
   return events[events.length - 1]?.timestamp ?? 0;
 }
 
+/**
+ * Whether an event opens a moment the Stage can draw.
+ *
+ * This is the cut `seek` uses for `currentAction` (a stage event, and not an
+ * instant search), minus continuations: a streamed thought re-reports as one
+ * `thinking` event per token batch, and an egg re-reports on every child-count
+ * change. A step means "show me the next thing the agent did", so it lands on
+ * the *first* event of each activity and never on a re-report — one press, one
+ * new moment on the Stage, instead of two or three presses that only move
+ * between the hidden updates in between.
+ */
+function opensMoment(event: AbsenceEvent, previous: AbsenceEvent | undefined): boolean {
+  if (!STAGE_EVENT_TYPES.has(event.type) || isInstantSearch(event)) return false;
+  if (event.type === "thinking" && previous?.type === "thinking") return false;
+  return true;
+}
+
+/** The start of the first activity after `t`, or undefined past the last one. */
 export function nextEventTimestamp(events: AbsenceEvent[], t: number): number | undefined {
-  for (const event of events) {
-    if (event.timestamp > t) return event.timestamp;
+  for (let i = 0; i < events.length; i++) {
+    if (events[i]!.timestamp <= t) continue;
+    if (opensMoment(events[i]!, events[i - 1])) return events[i]!.timestamp;
   }
   return undefined;
 }
 
+/** The start of the last activity before `t`, or undefined before the first. */
 export function prevEventTimestamp(events: AbsenceEvent[], t: number): number | undefined {
   let prev: number | undefined;
-  for (const event of events) {
-    if (event.timestamp < t) prev = event.timestamp;
-    else break;
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i]!;
+    if (event.timestamp >= t) break;
+    if (opensMoment(event, events[i - 1])) prev = event.timestamp;
   }
   return prev;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RunSummary } from "@absence/core";
 import { formatClock, formatOffset } from "../../lib/format";
+import { useNow } from "../../hooks/useNow";
 import { useRunsStore } from "../../stores/runsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useReplayStore } from "../../stores/replayStore";
@@ -15,7 +16,6 @@ import {
   Chip,
   Dot,
   TONE_FOR_ROW,
-  attentionTone,
   phaseForRow,
   phaseIntent,
   phaseWord,
@@ -102,6 +102,27 @@ export function MonitorLeft({
   const observed = useIsObserved();
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  /**
+   * A dropdown that only closes when you pick something is a trap: the usual
+   * ways out — click elsewhere, press Esc — are what ContextMenu already
+   * honours, so this one does too.
+   */
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [menuOpen]);
   /** Activity (what the agent did) or Files (the whole project, your view). */
   const [view, setView] = useState<"activity" | "files">("activity");
   const feedRef = useRef<HTMLDivElement>(null);
@@ -230,13 +251,17 @@ export function MonitorLeft({
   );
 
   const run = data.run;
-  const elapsed = run ? formatOffset((run.endedAt ?? Date.now()) - run.startedAt) : "—";
+  // A live run's duration has to move when nothing else changes, so this
+  // component keeps its own second hand instead of riding on event renders.
+  const now = useNow(1000);
+  const elapsed = run ? formatOffset((run.endedAt ?? now) - run.startedAt) : "—";
   /**
-   * What the feed actually shows: rows plus the repeats they fold. The plain
-   * row count would read as "16 activities" next to a run the server says has
-   * 40 — a fold that hides 24 events has to say so, or the number lies.
+   * What the feed actually shows: rows plus the repeats they fold, without the
+   * two anchors. START and END are pinned above and below the feed, out of the
+   * stream, so counting them here would promise an activity the list does not
+   * have — and disagree with the Activity tab's count of real rows.
    */
-  const shownCount = groups.reduce(
+  const shownCount = bodyRows.reduce(
     (total, group) => total + group.rows.reduce((sum, entry) => sum + entry.count, 0),
     0,
   );
@@ -270,7 +295,7 @@ export function MonitorLeft({
           </button>
         </div>
 
-        <div style={{ position: "relative" }}>
+        <div className="mon-runselwrap" ref={menuRef}>
           <button
             type="button"
             className="mon-runsel"
@@ -291,63 +316,24 @@ export function MonitorLeft({
           </button>
 
           {menuOpen ? (
-            <ul
-              className="mon-nodrag"
-              style={{
-                position: "absolute",
-                zIndex: 20,
-                top: "calc(100% + 4px)",
-                left: 0,
-                right: 0,
-                maxHeight: 260,
-                overflowY: "auto",
-                padding: 4,
-                border: "1px solid var(--mon-bd2)",
-                borderRadius: 8,
-                background: "var(--mon-s2)",
-                boxShadow: "0 12px 30px rgba(0,0,0,.5)",
-              }}
-            >
+            <ul className="mon-runmenu mon-nodrag">
               {[...runs].reverse().map((entry) => (
                 <li key={entry.id}>
                   <button
                     type="button"
+                    className="mon-runmenu__item"
+                    data-current={entry.id === run?.id ? "true" : undefined}
                     onClick={() => {
                       onSelectRun(entry.id);
                       setMenuOpen(false);
                     }}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      padding: "6px 8px",
-                      border: 0,
-                      borderRadius: 6,
-                      background: entry.id === run?.id ? "var(--mon-s3)" : "transparent",
-                      textAlign: "left",
-                    }}
                   >
-                    <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span className="mon-runmenu__row">
                       <Dot tone={STATUS_TONE[entry.status]} />
-                      <span className="mon-mono" style={{ fontSize: 11, color: "var(--mon-t3)" }}>
-                        #{entry.index}
-                      </span>
-                      <span className="mon-mono" style={{ marginLeft: "auto", fontSize: 11, color: "var(--mon-t3)" }}>
-                        {formatClock(entry.startedAt)}
-                      </span>
+                      <span className="mon-runmenu__index mon-mono">#{entry.index}</span>
+                      <span className="mon-runmenu__clock mon-mono">{formatClock(entry.startedAt)}</span>
                     </span>
-                    <span
-                      style={{
-                        display: "block",
-                        marginTop: 2,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        fontSize: 12,
-                        color: "var(--mon-t2)",
-                      }}
-                    >
-                      {entry.prompt || t("(observed activity)")}
-                    </span>
+                    <span className="mon-runmenu__prompt">{entry.prompt || t("(observed activity)")}</span>
                   </button>
                 </li>
               ))}

@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { isAgentBusy } from "@absence/core";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useReplayItem, useStageView } from "../../hooks/useStage";
@@ -12,6 +11,7 @@ import { ChatThread } from "../../components/chat/ChatThread";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { StageItem } from "../../types/stage";
+import { REPLAY_SPEEDS } from "../../types/replay";
 import { Chip, TONE_FOR_KIND, type MonTone } from "./atoms";
 import { activityViews } from "./activityViews";
 import type { MonitorData } from "./useMonitorData";
@@ -99,25 +99,32 @@ export function MonitorStage({ data }: { data: MonitorData }) {
    * above is still Classic's, so a reader who pins a row or opens METRICS gets
    * what they asked for.
    *
-   *   run starts        → follow the work again
-   *   run ends          → rest on the page the reader chose last
+   *   a new run starts  → follow the work again
+   *   the run ends      → rest on the page the reader chose last
    *                       (METRICS / CHAT; CHAT if they never chose)
    *   click a row       → pin that moment, whatever the run is doing
+   *
+   * "A new run starts" is decided by the run's *id*, never by the status flag
+   * alone: `status === "running" && !following` is also true in the frame after
+   * the reader clicks METRICS, and re-arming following there slammed the page
+   * they had just asked for back to live. Re-arming only when the id changes
+   * (or on first mount onto a run already in flight) is the same intent,
+   * stated where it can only mean "this is a different run".
    */
+  const runId = data.run?.id;
   const runStatus = data.run?.status;
   const goResting = useStageStore((s) => s.goResting);
+  const lastRunId = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (replaying) return;
-    if (runStatus !== "running" && following) {
-      goResting();
+    const started = runId !== undefined && runId !== lastRunId.current;
+    lastRunId.current = runId;
+    if (runStatus === "running") {
+      if (started && !following) goLive();
       return;
     }
-    // A new run re-arms following: a reader who rested on CHAT after the last
-    // run still wants to watch the next one happen.
-    if (runStatus === "running" && !following && (mode === "metrics" || mode === "chat")) {
-      goLive();
-    }
-  }, [runStatus, following, mode, replaying, goResting, goLive]);
+    if (following) goResting();
+  }, [runId, runStatus, following, replaying, goResting, goLive]);
 
   const page = replaying ? replayItem : item;
   const showingMetrics = mode === "metrics";
@@ -440,6 +447,12 @@ function Timeline({ data }: { data: MonitorData }) {
   const replayStatus = useReplayStore((s) => s.status);
   const play = useReplayStore((s) => s.play);
   const pause = useReplayStore((s) => s.pause);
+  // Subscribed, not `getState()`: the speed chip is read during render, and a
+  // speed changed elsewhere (or by the chip itself) has to re-render it.
+  const speed = useReplayStore((s) => s.speed);
+  const setSpeed = useReplayStore((s) => s.setSpeed);
+  const stepForward = useReplayStore((s) => s.stepForward);
+  const stepBackward = useReplayStore((s) => s.stepBackward);
   const inReplay = useStageStore((s) => s.mode === "replay");
   const following = useStageStore((s) => s.following);
   const goLive = useStageStore((s) => s.goLive);
@@ -465,37 +478,54 @@ function Timeline({ data }: { data: MonitorData }) {
   const total = Math.max(1, nodes.at(-1)?.offsetMs ?? 0);
 
   /**
+   * For each node, the offset of the next *activity* — precomputed in one
+   * reverse pass.
+   *
+   * A block's width is the gap to the next activity (see `marks`), and
+   * answering that by scanning forward from every node made a 2000-node run
+   * two million iterations, twice a second. One walk from the end, carrying the
+   * last seen activity offset backwards, is the same table for O(n). `NaN`
+   * marks "no activity after this one"; `undefined` would need a sparse array,
+   * and `Number.MAX_SAFE_INTEGER` would poison the span arithmetic.
+   */
+  const nextActivityOffsetMs = useMemo(() => {
+    const next = new Array<number>(nodes.length).fill(Number.NaN);
+    let seen = Number.NaN;
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      next[i] = seen;
+      if (laneFor(nodes[i]!.kind) !== undefined) seen = nodes[i]!.offsetMs;
+    }
+    return next;
+  }, [nodes]);
+
+  /**
    * One block per activity, at its own offset.
    *
    * The timeline nodes carry a start and no end, so a block's width is the gap
    * to the next activity — the time that activity was the thing happening.
    * Capped (a long silence must not become a wall of colour) and floored (a
    * 40ms read must still be a visible mark, not a sub-pixel sliver).
+   *
+   * Blocks carry their lane's *id*, not an index: which lanes exist is decided
+   * below from the marks themselves.
    */
   const marks = useMemo(() => {
-    const out: Array<{ lane: number; left: number; width: number; tone: MonTone; label: string; at: number }> = [];
+    const out: Array<{ laneId: string; left: number; width: number; tone: MonTone; label: string; at: number }> = [];
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i]!;
       // `laneFor` returns undefined for a node that is not one of the three
       // kinds of work (an egg, a lifecycle marker). Those get no block at all —
-      // `findIndex` on undefined would otherwise match nothing and leave
-      // `lane` at -1 only by accident.
+      // an egg re-reports every few seconds and would read as a busy line doing
+      // nothing; its life is the rail's Agent Eggs section, not this strip.
       const laneId = laneFor(node.kind);
       if (laneId === undefined) continue;
-      const lane = lanes.findIndex(([id]) => id === laneId);
-      if (lane < 0) continue;
       // The next *activity*, not the next node: a run of egg updates between two
-      // reads must not make the read look like it lasted a minute.
-      let next: (typeof nodes)[number] | undefined;
-      for (let j = i + 1; j < nodes.length; j++) {
-        if (laneFor(nodes[j]!.kind) !== undefined) {
-          next = nodes[j];
-          break;
-        }
-      }
-      const span = Math.max(0, (next ? next.offsetMs - node.offsetMs : total - node.offsetMs));
+      // reads must not make the read look like it lasted a minute. `NaN` here
+      // means this is the last activity, so its span runs to the line's end.
+      const nextMs = nextActivityOffsetMs[i]!;
+      const span = Number.isNaN(nextMs) ? total - node.offsetMs : nextMs - node.offsetMs;
       out.push({
-        lane,
+        laneId,
         left: (node.offsetMs / total) * 100,
         width: Math.max(0.7, Math.min(28, (span / total) * 100)),
         tone: TONE_FOR_KIND[node.kind] ?? "mute",
@@ -504,7 +534,24 @@ function Timeline({ data }: { data: MonitorData }) {
       });
     }
     return out;
-  }, [nodes, total, lanes]);
+  }, [nodes, total, nextActivityOffsetMs]);
+
+  /**
+   * Only the lanes that have something on them get drawn.
+   *
+   * The three lane rows are fixed in order, but a run that never reasoned has
+   * no Think marks, and an egg-heavy run can be almost pure `process`
+   * re-reports — which draw no block anywhere. Drawing the empty lanes anyway
+   * turned the strip into bare hairlines ("empty rows"), the ghost of the eggs
+   * lane the first version had. So the lane list is derived from the marks:
+   * same order, no empty rows, and the strip is only as tall as the work it
+   * shows.
+   */
+  const shownLanes = useMemo(() => lanes.filter(([id]) => marks.some((mark) => mark.laneId === id)), [lanes, marks]);
+  const laneIndex = useMemo(
+    () => new Map(shownLanes.map(([id], index) => [id, index])),
+    [shownLanes],
+  );
 
   /** Load the run into replay and land on `at`. */
   const seekTo = (at: number) => {
@@ -513,6 +560,31 @@ function Timeline({ data }: { data: MonitorData }) {
     load(runEvents(data.events, data.run), { label: `#${data.run.index} · ${data.run.prompt}` });
     useReplayStore.getState().seekTimestamp(at);
     setMode("replay");
+  };
+
+  /**
+   * Re-load the replay store when the run has grown past what it holds.
+   *
+   * The store's events are a snapshot taken when replay was entered; a live run
+   * keeps appending after that. A replay gesture that aims past the loaded end
+   * — a track click, or a step forward — clamps to that stale end: the cursor
+   * creeps a hair and the page stays on the newest *loaded* event, which reads
+   * as "the click did nothing". Refreshing before the gesture keeps the cursor
+   * where it was and lets it reach the new tail.
+   */
+  const ensureReplayFresh = () => {
+    if (!data.run) return;
+    const replay = useReplayStore.getState();
+    const current = runEvents(data.events, data.run);
+    const stale =
+      replay.events.length !== current.length ||
+      replay.events.at(-1)?.timestamp !== current.at(-1)?.timestamp;
+    if (!stale) return;
+    const wasPlaying = replay.status === "playing";
+    const at = replay.currentTime;
+    load(current, { label: `#${data.run.index} · ${data.run.prompt}` });
+    useReplayStore.getState().seekTimestamp(at);
+    if (wasPlaying) play();
   };
 
   /**
@@ -528,6 +600,7 @@ function Timeline({ data }: { data: MonitorData }) {
     if (!data.run) return;
     const at = data.run.startedAt + Math.min(1, Math.max(0, ratio)) * total;
     if (inReplay) {
+      ensureReplayFresh();
       useReplayStore.getState().seekTimestamp(at);
       return;
     }
@@ -551,27 +624,52 @@ function Timeline({ data }: { data: MonitorData }) {
     );
   }
 
+  if (marks.length === 0) {
+    // The run exists but every node is a re-report (an egg-heavy observed
+    // session): the lanes would all be bare, so say what the strip is waiting
+    // for instead of drawing it empty.
+    return (
+      <div className="mon-tl">
+        <span className="mon-cap">{t("Timeline")}</span>
+        <span className="mon-tl__empty">{t("Only process updates so far — no file, shell or reasoning activity.")}</span>
+      </div>
+    );
+  }
+
   // Live, the cursor is the end of the line; in replay it is where the scrubber
   // is. A pinned page has no clock of its own, so the end is the honest place.
   const cursor = inReplay && data.run
     ? Math.min(1, Math.max(0, (replayTime - data.run.startedAt) / total))
     : 1;
   const cursorLabel = formatOffset(cursor * total);
-  const trackHeight = lanes.length * LANE_H + 2;
+  const trackHeight = shownLanes.length * LANE_H + 2;
 
   return (
     <div className="mon-tl">
       <div className="mon-tl__row">
         {/*
-          Two buttons, not one toggle: play/pause the replay, and the way back
-          to live. They are different acts — one moves the clock, the other
-          leaves the mode — and a single button that means "play" here and
-          "live" there is how a reader ends up in the wrong mode.
+          Replay's controls, all on the left in two rows: step and play on the
+          top row, speed and live on the bottom. Step and speed only answer
+          while a replay is on screen — there is no cursor to move and no clock
+          to run faster otherwise — and live is lit while the page *is* live.
         */}
         <div className="mon-tl__controls" style={{ height: trackHeight }}>
           <button
             type="button"
             className="mon-tl__ctl"
+            disabled={!inReplay}
+            onClick={() => {
+              ensureReplayFresh();
+              stepBackward();
+            }}
+            title={t("One activity back")}
+            aria-label={t("One activity back")}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className="mon-tl__ctl mon-tl__ctl--play"
             onClick={() => {
               if (!data.run) return;
               if (!inReplay) {
@@ -602,6 +700,29 @@ function Timeline({ data }: { data: MonitorData }) {
           <button
             type="button"
             className="mon-tl__ctl"
+            disabled={!inReplay}
+            onClick={() => {
+              ensureReplayFresh();
+              stepForward();
+            }}
+            title={t("One activity forward")}
+            aria-label={t("One activity forward")}
+          >
+            ›
+          </button>
+          <button
+            type="button"
+            className="mon-tl__ctl mon-tl__ctl--speed mon-mono"
+            disabled={!inReplay}
+            onClick={() => setSpeed(REPLAY_SPEEDS[(REPLAY_SPEEDS.indexOf(speed) + 1) % REPLAY_SPEEDS.length]!)}
+            title={inReplay ? t("Replay speed — click to change") : t("Replay speed")}
+            aria-label={t("Replay speed")}
+          >
+            {speed}×
+          </button>
+          <button
+            type="button"
+            className="mon-tl__ctl"
             data-live={following ? "true" : undefined}
             onClick={goLive}
             disabled={following}
@@ -613,7 +734,7 @@ function Timeline({ data }: { data: MonitorData }) {
         </div>
 
         <div className="mon-tl__labels" style={{ height: trackHeight }}>
-          {lanes.map(([id, label]) => (
+          {shownLanes.map(([id, label]) => (
             <span key={id} style={{ height: LANE_H }}>
               {label}
             </span>
@@ -635,7 +756,7 @@ function Timeline({ data }: { data: MonitorData }) {
           }}
           onMouseLeave={() => setHover(undefined)}
         >
-          {lanes.map(([id], index) => (
+          {shownLanes.map(([id], index) => (
             <span
               key={id}
               className="mon-tl__lane"
@@ -647,7 +768,11 @@ function Timeline({ data }: { data: MonitorData }) {
             <span
               key={index}
               className={`mon-tl__blk mon-chip--${mark.tone}`}
-              style={{ top: TRACK_TOP - 4 + mark.lane * LANE_H, left: `${mark.left}%`, width: `${mark.width}%` }}
+              style={{
+                top: TRACK_TOP - 4 + laneIndex.get(mark.laneId)! * LANE_H,
+                left: `${mark.left}%`,
+                width: `${mark.width}%`,
+              }}
               title={mark.label}
             />
           ))}
@@ -668,8 +793,6 @@ function Timeline({ data }: { data: MonitorData }) {
               cursor sits while nothing is pinned. */}
           {cursor >= 0.999 ? <span className="mon-tl__livehead" aria-hidden /> : null}
         </div>
-
-        <span className="mon-tl__speed mon-mono">{inReplay ? `${useReplayStore.getState().speed}×` : "1×"}</span>
       </div>
     </div>
   );
@@ -678,11 +801,11 @@ function Timeline({ data }: { data: MonitorData }) {
 /**
  * Which lane an activity belongs on, or `undefined` when it is not an activity.
  *
- * The three lanes are a reading of the Activity feed, so only activities get a
- * block. `process` (an egg) is deliberately absent: it is a process a command
- * *left behind*, re-reported every time its child count changes — not something
- * the agent did in that instant. Lifecycle and error nodes are excluded for the
- * same reason.
+ * The lanes are a reading of the Activity feed, so only activities get a block.
+ * `process` (an egg) is deliberately absent: it is a process a command *left
+ * behind*, re-reported every time its child count changes — not something the
+ * agent did in that instant. Lifecycle and error nodes are excluded for the
+ * same reason. Lanes with no marks are not drawn at all (see `shownLanes`).
  */
 function laneFor(kind: string): string | undefined {
   switch (kind) {

@@ -13,6 +13,7 @@
  * nudges an otherwise ambiguous case.
  */
 
+import { EPHEMERAL_MS } from "@absence/core";
 import type { CommandIntent } from "./CommandIntent";
 import { hasScriptExtension, TOOL_PRIOR } from "./priors";
 
@@ -88,12 +89,8 @@ const TOOL_LAUNCHERS = new Set([
 /** How long a quiet, childless, side-effect-free process may live and still be a tool. */
 export const TOOL_AGE_MS = 2000;
 
-/**
- * Below this lifetime a process is a helper by *shape* alone: nothing that is a
- * daemon or a build finishes this fast. Measured from the OS start and exit
- * times, so no directory or name list is involved.
- */
-export const EPHEMERAL_MS = 300;
+// `EPHEMERAL_MS` lives in @absence/core: the web client reads the same constant
+// to decide that an instant search is a blink, not an Activity row.
 
 function normalizePath(value: string): string {
   return value.toLowerCase().replace(/\//g, "\\");

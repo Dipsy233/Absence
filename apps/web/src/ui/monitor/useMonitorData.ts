@@ -1,14 +1,14 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { isAgentBusy, type AbsenceEvent } from "@absence/core";
 import { useSelectedRun } from "../../hooks/useSelectedRun";
 import { useLiveItem } from "../../hooks/useStage";
 import { useNow } from "../../hooks/useNow";
 import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { buildRunFacts, renderLive } from "../../lib/report";
-import { memoRunRows } from "../../lib/history";
+import { activityRowsVersion, memoRunRows } from "../../lib/history";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import type { ActivityRow, StageItem } from "../../types/stage";
+import type { ActivityRow } from "../../types/stage";
 import type { Attention, RunFacts } from "../../types/report";
 import type { HistoryRun } from "../../types/history";
 
@@ -31,31 +31,19 @@ export interface MonitorData {
   attention: Attention;
   /** The live "what is it doing" sentence, only while the run is in flight. */
   liveHeadline?: string;
-  /**
-   * What the Stage shows while it follows the agent.
-   *
-   * The store's `currentAction` is cleared the moment the agent speaks or the
-   * run ends, which left the live Stage on "Waiting for the first activity…"
-   * while the feed beside it listed twenty rows. Following means "the newest
-   * thing in this run", so the tail of the feed is the answer — and after the
-   * run ends that is the last thing the agent actually did, which is what a
-   * reader who was watching wants to keep seeing.
-   */
-  liveItem?: StageItem;
-  /** The event behind `liveItem`, so the feed can mark the row it is showing. */
+  /** The event behind the item the Stage is following. */
   liveEventId?: string;
   /**
-   * How many rows there are *now*.
+   * A real version over the rows.
    *
    * `memoRunRows` returns the same array it keeps appending to (that is what
    * makes it incremental), so a consumer that memoises on `rows` sees one
-   * identity forever and never recomputes — which is exactly how the feed
-   * stayed empty until the run ended. Any derivation over the rows must depend
-   * on this counter instead of on the array.
+   * identity forever. Array length is not a version either: a streamed thought
+   * folds into the row it continues, so the length does not move while the
+   * row's text does. This counter is bumped by the row builder on every
+   * in-place mutation, and any derivation over the rows must depend on it.
    */
   rowsVersion: number;
-  busy: boolean;
-  observed: boolean;
 }
 
 const NO_ATTENTION: Attention = { level: "none", reasons: [], evidence: [] };
@@ -67,28 +55,43 @@ export function useMonitorData(): MonitorData {
   const { run, events, loading } = useSelectedRun();
   const attentionOptions = useAttentionOptions();
   const displayInActivity = useSettingsStore((s) => s.displayInActivity);
-  const status = useSessionStore((s) => s.agent.status);
   const observed = useIsObserved();
+  const status = useSessionStore((s) => s.agent.status);
   const tick = useNow(FACTS_INTERVAL_MS);
 
+  // Classic's rule (`settings || observed`): an observed session always shows
+  // its process rows, because for a watched agent they are the whole story.
+  const showProcessRows = displayInActivity || observed;
+
   const rows = useMemo(
-    () => (run ? memoRunRows(events, run, true) : []),
-    [events, run, displayInActivity],
+    () => (run ? memoRunRows(events, run, showProcessRows) : []),
+    [events, run, showProcessRows],
   );
 
-  // `tick` is a dependency on purpose: the facts object is derived from a
-  // mutating event array, so nothing else here would change identity.
+  /**
+   * `tick` really is the throttle — and the latest events reach the engine
+   * through a ref for the same reason.
+   *
+   * The session store hands out a new `events` array with every socket batch
+   * (one per ~50 ms), so keeping `events` in the dependency list recomputed the
+   * whole run twenty times a second — the "clamped to 500 ms" this module
+   * promises was not happening. Depending on `tick` alone recomputes exactly
+   * twice a second (plus when the run or the attention settings change),
+   * reading the freshest events through the ref.
+   */
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
   const facts = useMemo(() => {
     void tick;
     if (!run) return undefined;
     try {
-      return buildRunFacts(events, run, attentionOptions);
+      return buildRunFacts(eventsRef.current, run, attentionOptions);
     } catch {
       // A partially-built run (a snapshot that arrived mid-stream) must not
       // take the whole Monitor down; the feed still works without the facts.
       return undefined;
     }
-  }, [run?.id, run?.status, events, tick, attentionOptions]);
+  }, [run?.id, run?.status, tick, attentionOptions]);
 
   /**
    * What the Stage follows while it is live: the agent's *current action*, not
@@ -122,10 +125,9 @@ export function useMonitorData(): MonitorData {
     facts,
     attention: live?.attention ?? facts?.attention ?? NO_ATTENTION,
     liveHeadline: live?.headline,
-    liveItem,
     liveEventId: liveItem?.source?.eventId,
-    rowsVersion: rows.length,
-    busy,
-    observed,
+    // Read after the rows memo above, so a fold that happened during this
+    // render is counted in the version handed out with it.
+    rowsVersion: activityRowsVersion(),
   };
 }

@@ -438,6 +438,25 @@ interface RowCache {
  */
 let rowCache: RowCache | undefined;
 
+/**
+ * Bumped whenever `memoRunRows` changes the rows — a new row appended, or a
+ * streamed thought folded into the row it continues.
+ *
+ * The rows array keeps one identity for the whole run — that is what makes the
+ * conversion incremental — so a consumer that memoises on the array sees no
+ * change when a token arrives, and its derivation freezes. Array length was the
+ * old version, but it misses the fold: the length does not move while the
+ * row's text does. This counter covers both, and any derivation over the rows
+ * must depend on it. It is deliberately never reset: monotonicity is the only
+ * property a dependency needs.
+ */
+let rowMutations = 0;
+
+/** The current row-mutation version; see `rowMutations`. */
+export function activityRowsVersion(): number {
+  return rowMutations;
+}
+
 /** The rows currently shown for `run`, converting only the events not seen yet. */
 export function memoRunRows(
   events: AbsenceEvent[],
@@ -468,7 +487,10 @@ export function memoRunRows(
     // The Setting can hide the LAID/DIED process rows (Agent Eggs) so the panel
     // reads as actions only; the eggs stay in the Agent Eggs panel. Consecutive
     // THINK rows fold into one (see appendActivityRow).
-    if (row && (displayInActivity || row.tone !== "process")) appendActivityRow(entry.rows, row);
+    if (row && (displayInActivity || row.tone !== "process")) {
+      appendActivityRow(entry.rows, row);
+      rowMutations += 1;
+    }
   }
   entry.scanned = base + to + 1;
   return entry.rows;

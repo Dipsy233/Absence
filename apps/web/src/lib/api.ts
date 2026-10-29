@@ -5,7 +5,6 @@ import type {
   MetricsResponse,
   Project,
   RunSummary,
-  SessionEventPage,
   SessionHistoryEntry,
   SessionSnapshot,
 } from "@absence/core";
@@ -87,10 +86,6 @@ export async function createSession(
   );
 }
 
-export async function getSession(id: string): Promise<SessionSnapshot> {
-  return json<SessionSnapshot>(await fetch(`/api/sessions/${id}`));
-}
-
 /** The persisted history (ABSENCE archives + Pi sessions), newest first. */
 export async function fetchSessionHistory(path?: string): Promise<SessionHistoryEntry[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
@@ -130,23 +125,6 @@ export async function fetchRunEvents(
 ): Promise<{ run: RunSummary; events: AbsenceEvent[] }> {
   return json<{ run: RunSummary; events: AbsenceEvent[] }>(
     await fetch(`/api/sessions/${sessionId}/runs/${index}/events`),
-  );
-}
-
-/**
- * One page of persisted events, oldest → newest. Omit `before` for the newest
- * page; pass the previous page's `nextBefore` to walk backwards.
- */
-export async function fetchSessionEventPage(
-  sessionId: string,
-  options: { before?: number; limit?: number } = {},
-): Promise<SessionEventPage> {
-  const params = new URLSearchParams();
-  if (options.before !== undefined) params.set("before", String(options.before));
-  if (options.limit !== undefined) params.set("limit", String(options.limit));
-  const query = params.toString();
-  return json<SessionEventPage>(
-    await fetch(`/api/sessions/${sessionId}/events${query ? `?${query}` : ""}`),
   );
 }
 

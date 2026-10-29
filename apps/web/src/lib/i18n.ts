@@ -275,6 +275,15 @@ const ZH: Record<string, string> = {
   // ── Monitor's agent block ──────────────────────────────────────────────
   // `live` / `replay` already exist above (the connection chip and the replay
   // bar); they are reused here rather than given a second translation.
+  pinned: "已钉住",
+  "Back to live": "回到实时",
+  "Replay from the start": "从头回放",
+  "One activity back": "后退一个动作",
+  "One activity forward": "前进一个动作",
+  "Replay speed": "回放倍速",
+  "Replay speed — click to change": "回放倍速 —— 点击切换",
+  "Only process updates so far — no file, shell or reasoning activity.":
+    "目前只有进程状态更新 —— 还没有文件、命令或推理动作。",
   "Waiting for the first activity of this run…": "等待本次运行的第一个动作…",
   "Replay — before the first activity of this run": "回放 —— 还没到本次运行的第一个动作",
   "Replaying — the page follows the run's own clock, {time} in":

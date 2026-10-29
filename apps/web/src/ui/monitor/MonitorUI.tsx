@@ -104,7 +104,10 @@ export function MonitorUI() {
       <header className={`mon-bar${desktop ? " mon-drag" : ""}`}>
         <span className="mon-logo">ABSENCE</span>
         <span className="mon-mono" style={{ fontSize: 12, color: "var(--mon-t3)" }}>
-          {formatClock(Date.now())}
+          {/* `now`, not `Date.now()`: the component re-renders once a second
+              through useNow, but a fresh Date.now() in JSX alone still froze the
+              read at whatever the first render saw. */}
+          {formatClock(now)}
         </span>
 
         <span className="mon-mono mon-bar__path" title={session?.projectPath}>

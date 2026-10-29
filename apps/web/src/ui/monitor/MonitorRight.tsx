@@ -17,9 +17,7 @@ import {
   eggCpuCores,
   eggPoints,
   findEgg,
-  formatCores,
   formatPercent,
-  hostCpuPercent,
   latestFrame,
 } from "../../lib/metrics";
 import { moodFor, statusLabel, type AgentVisualState } from "../../lib/agent";
@@ -100,17 +98,22 @@ function AgentHead() {
 
   /**
    * What the *centre column* is doing, which is a different fact from the
-   * agent's status: it is either playing the run as it happens, or it is not.
+   * agent's status: following the run as it happens, walking a replay, or
+   * resting on a pinned moment.
    *
-   * `following` is exactly that question — the store clears it the moment the
-   * reader pins a row, scrubs a replay, or opens a page of their own (METRICS /
-   * CHAT), and sets it again on ⏎. Classic marks the same distinction with its
-   * LIVE / REPLAY chips; this is the same answer, in the rail.
+   * The label follows the Stage's *mode*, not `following` alone: a reader on
+   * METRICS, on CHAT or on a pinned row is not "replaying" anything, and a chip
+   * that said REPLAY there was describing a clock that was not running. Replay
+   * is the one mode with a cursor of its own; a pin is its own third state.
    */
   const stageMode = useStageStore((s) => s.mode);
   const replaying = stageMode === "replay";
-  const playing: "live" | "replay" = following ? "live" : "replay";
-  const playingTone = following ? "edit" : "run";
+  // The *pinned* item, subscribed here because the LIVE/REPLAY/PINNED chip
+  // reads it: a pin made anywhere in the face has to flip the chip at once.
+  const activeItem = useStageStore((s) => s.activeItem);
+  const pinned = !replaying && !following && activeItem !== undefined;
+  const playing: "live" | "replay" | "pinned" = replaying ? "replay" : pinned ? "pinned" : "live";
+  const playingTone = replaying ? "run" : pinned ? "think" : "edit";
 
   /**
    * The status the reader is looking at, which is not always the live one.
@@ -122,9 +125,6 @@ function AgentHead() {
    * pages about the session, not about one moment, so they keep the live status.
    */
   const replayStatus = useReplayStore((s) => s.view?.agentStatus);
-  // The *pinned* item, not the live tail: the feed's newest activity is not
-  // what a pinned page is showing.
-  const activeItem = useStageStore((s) => s.activeItem);
   const pinnedStatus =
     !replaying && stageMode !== "metrics" && stageMode !== "chat" && activeItem?.event
       ? statusFromEvent(activeItem.event)
@@ -156,7 +156,8 @@ function AgentHead() {
         {/*
           Two facts, one line: the agent's status (the dot's colour), then what
           the centre column is doing with it — LIVE while the page follows the
-          run, REPLAY while a pinned moment or a scrub is on screen.
+          run, REPLAY while a replay's cursor is on screen, PINNED while a
+          chosen moment is.
         */}
         <div className={`mon-agent__state mon-chip--${shownTone}`} style={{ background: "transparent", padding: 0 }}>
           <Dot tone={shownTone} />

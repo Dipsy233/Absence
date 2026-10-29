@@ -1,6 +1,6 @@
 import type { AgentStatus, AbsenceEvent } from "@absence/core";
+import { EPHEMERAL_MS } from "@absence/core";
 import type { ActivityRow, StageItem } from "../types/stage";
-import { EPHEMERAL_MS } from "@absence/server/src/process/classify";
 import { formatBytes, formatClock } from "./format";
 import { languageFromPath } from "./language";
 
@@ -392,13 +392,14 @@ export function firstLine(text: string): string {
  * `buildTimeline`), so here the last row is replaced instead of a new one
  * appended. Any other event in between ends the thought and starts a new row.
  */
-export function appendActivityRow(rows: ActivityRow[], row: ActivityRow): void {
+export function appendActivityRow(rows: ActivityRow[], row: ActivityRow): boolean {
   const last = rows[rows.length - 1];
   if (row.tone === "think" && last?.tone === "think") {
     rows[rows.length - 1] = row;
-    return;
+    return true;
   }
   rows.push(row);
+  return false;
 }
 
 /** A compact, clickable row for the Activity panel. */

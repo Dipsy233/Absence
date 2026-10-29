@@ -354,3 +354,15 @@ export function isStreamingEvent(event: AbsenceEvent): boolean {
  * MB of JSON per session in memory, and the archive on disk is unbounded.
  */
 export const MAX_SESSION_EVENTS = 10_000;
+
+/**
+ * Below this lifetime a process is a helper by *shape* alone: nothing that is
+ * a daemon or a build finishes this fast. Measured from the OS start and exit
+ * times, so no directory or name list is involved.
+ *
+ * One standard for "lived only a blink" across Absence — the classifier (an
+ * instant `cat` is a tool, not an act) and the web client (an instant search is
+ * a blink in the Activity feed, not a row) must agree on it, so it lives here
+ * rather than in either app.
+ */
+export const EPHEMERAL_MS = 300;
