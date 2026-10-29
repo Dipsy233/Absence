@@ -973,6 +973,10 @@
 .mon-raillist {
   min-height: 0;
   flex: 1 1 auto;
+  /* Rows truncate their own text, so the only scrolling this list ever needs is
+     vertical. `overflow-x: hidden` is the belt to the rows' braces: a future
+     row that forgets to truncate must not turn the rail into a sideways scroll. */
+  overflow-x: hidden;
   overflow-y: auto;
   padding-bottom: 8px;
 }
@@ -1219,7 +1223,14 @@
   font-size: 10.5px;
   color: var(--mon-t3);
 }
+/* These are `<span>`s inside a `display: block` button, so they are inline by
+   default — and `overflow: hidden` + `text-overflow: ellipsis` do nothing on an
+   inline box. A command line longer than the rail therefore widened the row
+   instead of truncating it (measured: a 100-char command made one egg 413px
+   wide inside a 319px rail, and the list scrolled sideways). `display: block`
+   is what makes the truncation apply. */
 .mon-egg__r2 {
+  display: block;
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1228,7 +1239,11 @@
   color: var(--mon-t2);
 }
 .mon-egg__r3 {
+  display: block;
   margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   color: var(--mon-t3);
 }
