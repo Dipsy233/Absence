@@ -754,6 +754,22 @@ export async function listArchives(cwd?: string): Promise<ArchiveMeta[]> {
   return rows.map(rowToMeta).filter((meta): meta is ArchiveMeta => meta !== undefined);
 }
 
+/**
+ * Close a run the archive still marks open, because the process that owned it
+ * died before `agent_end` could arrive.
+ *
+ * See `RunIndex.closeStaleOpen`: without this a resumed session reports its last
+ * run as still running, and the Stage keeps following work that already stopped.
+ */
+export async function closeStaleOpenRun(id: string, endedAt?: number): Promise<void> {
+  flushPending();
+  try {
+    runIndex?.closeStaleOpen(id, endedAt);
+  } catch (error) {
+    console.error("[absence] sqlite run close failed:", error);
+  }
+}
+
 /** Run summaries for History, oldest first. */
 export async function readRuns(id: string): Promise<RunSummary[]> {
   flushPending();

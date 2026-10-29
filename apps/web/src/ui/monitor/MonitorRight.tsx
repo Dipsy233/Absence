@@ -29,8 +29,7 @@ import { Avatar } from "../../components/agent/Avatar";
 import { MediaAvatar } from "../../components/agent/MediaAvatar";
 import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 import { CPU_COLOR, MEM_COLOR } from "../../lib/metricColors";
-import { Dot, phaseWord, Spark, toneForStatus } from "./atoms";
-import type { MonitorData } from "./useMonitorData";
+import { Dot, Spark, toneForStatus } from "./atoms";
 
 /**
  * Right column: who is working, what it is worth in resources, what it knows,
@@ -48,10 +47,10 @@ import type { MonitorData } from "./useMonitorData";
  * keeps the running/dead/all filter, the query and the per-egg actions — all
  * re-drawn against `.mon-*` so they read as this face.
  */
-export function MonitorRight({ data }: { data: MonitorData }) {
+export function MonitorRight() {
   return (
     <div className="mon-col mon-col--right">
-      <AgentHead data={data} />
+      <AgentHead />
       <Usage />
       {/*
         No attention block here. The verdict is already stated in two places
@@ -93,7 +92,7 @@ const STATUS_LINE: Record<string, string> = {
   error: "Something went wrong.",
 };
 
-function AgentHead({ data }: { data: MonitorData }) {
+function AgentHead() {
   const t = useT();
   const liveStatus = useSessionStore((s) => s.agent.status);
   const coverage = useAvatarSkinCoverage();
@@ -123,8 +122,8 @@ function AgentHead({ data }: { data: MonitorData }) {
    * pages about the session, not about one moment, so they keep the live status.
    */
   const replayStatus = useReplayStore((s) => s.view?.agentStatus);
-  // The *pinned* item, not the live tail: `data.liveItem` is the newest activity
-  // of the run, which is not what a pinned page is showing.
+  // The *pinned* item, not the live tail: the feed's newest activity is not
+  // what a pinned page is showing.
   const activeItem = useStageStore((s) => s.activeItem);
   const pinnedStatus =
     !replaying && stageMode !== "metrics" && stageMode !== "chat" && activeItem?.event
@@ -134,10 +133,6 @@ function AgentHead({ data }: { data: MonitorData }) {
   const shownTone = toneForStatus(shownStatus);
   const shownVisual: AgentVisualState = { status: shownStatus, mood: moodFor(shownStatus) };
   const shownMedia = skinMediaFor(coverage, shownStatus);
-  // The phase only describes a run in flight; once the run has ended the same
-  // word ("Implementing") sat there as a leftover, so it is shown only while
-  // following a running run.
-  const phase = data.run?.status === "running" && following ? data.phase : undefined;
 
   return (
     <div className="mon-agent">
@@ -166,7 +161,13 @@ function AgentHead({ data }: { data: MonitorData }) {
         <div className={`mon-agent__state mon-chip--${shownTone}`} style={{ background: "transparent", padding: 0 }}>
           <Dot tone={shownTone} />
           {t(statusLabel(shownStatus)).toUpperCase()}
-          {phase ? <span className="mon-agent__phase">· {t(phaseWord(phase))}</span> : null}
+          {/*
+            The phase (Investigating / Executing / Implementing) is deliberately
+            *not* here. Those three words are the activity feed's group dividers
+            and nothing else — they classify rows, and this rail has no rows. The
+            slot belongs to the one fact the rail adds: whether the centre
+            column is LIVE or REPLAY.
+          */}
           <span className={`mon-agent__play mon-chip--${playingTone}`}>
             <Dot tone={playingTone} />
             {t(playing).toUpperCase()}

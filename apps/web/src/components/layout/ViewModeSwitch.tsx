@@ -27,7 +27,7 @@ export function ViewModeSwitch({ compact = false }: { compact?: boolean }) {
           aria-pressed={mode === entry.id}
           disabled={!entry.ready}
           onClick={() => setMode(entry.id)}
-          title={`${entry.name} · ${entry.zh} — ${entry.intent}`}
+          title={`${entry.name} — ${entry.intent}`}
           className={[
             "flex items-center gap-1 rounded px-1.5 font-mono text-[10px] leading-5 transition-colors",
             mode === entry.id
@@ -37,7 +37,6 @@ export function ViewModeSwitch({ compact = false }: { compact?: boolean }) {
           ].join(" ")}
         >
           {compact ? entry.name.slice(0, 3) : entry.name}
-          {compact ? null : <span className="text-[9px] text-desk-dim/70">{entry.zh}</span>}
         </button>
       ))}
     </div>

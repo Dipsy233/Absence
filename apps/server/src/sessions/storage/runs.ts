@@ -134,6 +134,37 @@ export class RunIndex {
     this.states.clear();
   }
 
+  /**
+   * Close a run the table still marks open, because nothing is going to close
+   * it now.
+   *
+   * A run is opened at a user message and closed at `agent_end`. When the
+   * server dies mid-run (or the agent process is killed) the `agent_end` never
+   * arrives, so the row stays `running` forever — and every reader of the run
+   * list believes the run is still in flight. The UI is the visible symptom:
+   * `MonitorStage` sees `status === "running"`, keeps following, and the centre
+   * panel sits on the last activity of a run that ended long ago.
+   *
+   * Called when a session is resumed (`SessionStore.start`): a reopened session
+   * is by definition not mid-run, so a row still marked running was
+   * interrupted. `endedAt` is unknown for those — there was no event to take it
+   * from — so the run reports no end time, which is the honest answer.
+   *
+   * Reads the table rather than the cached writer state: on a fresh process
+   * (the resume case that matters) that cache has not been loaded yet, and
+   * loading it here would freeze an `observed` flag this call cannot know.
+   */
+  closeStaleOpen(sessionId: string, endedAt?: number): void {
+    const rows = this.selectRuns.all(sessionId) as SqlRow[];
+    const all = rows.map(rowToSummary).filter((run): run is RunSummary => run !== undefined);
+    const last = all[all.length - 1];
+    if (last?.status !== "running") return;
+    this.write(sessionId, { ...last, endedAt, status: "interrupted" });
+    // The writer's cached view still holds this run as open; drop it so the
+    // next ingest starts from the corrected table.
+    this.states.delete(sessionId);
+  }
+
   private state(sessionId: string, observed: boolean): SessionRuns {
     const cached = this.states.get(sessionId);
     if (cached) return cached;

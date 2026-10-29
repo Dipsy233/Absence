@@ -1028,14 +1028,6 @@
   font-size: 13px;
   color: var(--mon-t);
 }
-/* The phase sits after the status as a quieter aside: it is the same sentence
-   in a coarser unit, so it must not compete with the status word. */
-.mon-agent__phase {
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--mon-t3);
-}
 /* LIVE / REPLAY: what the centre column is doing with the run. Pushed to the
    end of the status line, so the pair reads "AGENT state … VIEW state" and the
    two never merge into one word. */
@@ -1490,11 +1482,6 @@
   cursor: not-allowed;
   opacity: 0.35;
 }
-.mon-modes > button > em {
-  font-style: normal;
-  font-size: 10px;
-  color: var(--mon-t3);
-}
 
 /* ── Health: focus, motion, scrollbars ──────────────────────────────────── */
 
@@ -1550,13 +1537,9 @@
   }
 }
 
-/* The desktop shell's minimum width. The mode switcher keeps its names and
-   drops the Chinese gloss (which the tooltip still carries), and the context
-   meter drops its total — the used/total text above it says both. */
+/* The desktop shell's minimum width. The mode switcher keeps its names, and
+   the context meter drops its total — the used/total text above it says both. */
 @media (max-width: 1240px) {
-  .mon-modes > button > em {
-    display: none;
-  }
   .mon-bar .mon-ctx-meter__total {
     display: none;
   }

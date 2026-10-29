@@ -62,10 +62,11 @@ export function MonitorLeft({
   const activeEventId = useStageStore((s) => s.activeItem?.source?.eventId);
   const following = useStageStore((s) => s.following);
   /**
-   * While following, the row the Stage is showing is the *newest* one — the
-   * agent's tail — not the pinned item (which is deliberately absent in live
-   * mode). Without this the feed would show no selection at all during a live
-   * run, and the reader could not tell which row the middle column belongs to.
+   * While following, the row the Stage is showing is the one behind
+   * `currentAction` — the agent's *current* action, not the newest row of the
+   * feed. Once the agent speaks or the run ends, `clearsStage` empties it and
+   * the Stage rests on a page, so this highlight disappears with it. A feed
+   * tail could never do that: the last row of a finished run is still a row.
    */
   const liveEventId = following ? data.liveEventId : undefined;
 

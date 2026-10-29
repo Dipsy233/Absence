@@ -136,10 +136,9 @@ export function MonitorUI() {
               aria-pressed={mode === entry.id}
               disabled={!entry.ready}
               onClick={() => setMode(entry.id)}
-              title={`${entry.name} · ${entry.zh} — ${entry.intent}`}
+              title={`${entry.name} — ${entry.intent}`}
             >
               {entry.name}
-              <em>{entry.zh}</em>
             </button>
           ))}
         </div>
@@ -188,7 +187,7 @@ export function MonitorUI() {
           }}
         />
         <MonitorStage data={data} />
-        <MonitorRight data={data} />
+        <MonitorRight />
       </div>
 
       <p className="sr-only">{viewModeSpec(mode).intent}</p>

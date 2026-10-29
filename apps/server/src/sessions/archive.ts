@@ -18,6 +18,7 @@ export type { ArchiveMeta } from "./storage/db";
 export {
   appendEvents,
   closeArchive,
+  closeStaleOpenRun,
   drainArchive,
   listArchives,
   readFileVersions,

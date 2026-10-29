@@ -22,6 +22,7 @@ import {
 import { config, type AgentKind } from "../config";
 import {
   appendEvents,
+  closeStaleOpenRun,
   drainArchive,
   readEvents,
   readMeta,
@@ -407,6 +408,12 @@ export class AbsenceSession {
       this.events = events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events;
       // A resumed session is not mid-run: the agent is idle again.
       this.setStatus("listening");
+      // …so a run the archive still marks `running` is one whose `agent_end`
+      // never arrived (the server died, or the agent was killed). Left alone it
+      // stays `running` forever, and `MonitorStage` keeps following work that
+      // already stopped — the centre panel sits on the last activity of that run
+      // instead of resting on the default page. Close it as interrupted.
+      await closeStaleOpenRun(archiveId);
       // Containers this session laid may still be running. The archive already
       // holds their eggs, but the live observer that sampled them died with the
       // old session (or the server); re-attach before the snapshot is served.

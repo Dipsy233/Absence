@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { isAgentBusy, type AbsenceEvent } from "@absence/core";
 import { useSelectedRun } from "../../hooks/useSelectedRun";
+import { useLiveItem } from "../../hooks/useStage";
 import { useNow } from "../../hooks/useNow";
 import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { buildRunFacts, renderLive } from "../../lib/report";
@@ -9,7 +10,6 @@ import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import type { ActivityRow, StageItem } from "../../types/stage";
 import type { Attention, RunFacts } from "../../types/report";
-import { monPhase, type MonPhase } from "./atoms";
 import type { HistoryRun } from "../../types/history";
 
 /**
@@ -29,7 +29,6 @@ export interface MonitorData {
   rows: ActivityRow[];
   facts?: RunFacts;
   attention: Attention;
-  phase?: MonPhase;
   /** The live "what is it doing" sentence, only while the run is in flight. */
   liveHeadline?: string;
   /**
@@ -92,21 +91,21 @@ export function useMonitorData(): MonitorData {
   }, [run?.id, run?.status, events, tick, attentionOptions]);
 
   /**
-   * The tail of the feed: the newest row that can be read as a page.
+   * What the Stage follows while it is live: the agent's *current action*, not
+   * the tail of the feed.
    *
-   * `rowsVersion` is a dependency because `memoRunRows` hands back the *same*
-   * array it keeps appending to — memoising on `rows` alone would answer once
-   * and then never again, which is how the Stage stayed on "waiting for the
-   * first activity" while the feed filled up beside it. START/END carry no
-   * Stage item, so they are skipped rather than counted as "nothing".
+   * This is Classic's rule, and it is the one that makes a finished run rest on
+   * a page instead of the last thing it happened to do. `currentAction` is
+   * cleared the moment the agent speaks or the run ends (`clearsStage`), so
+   * "there is nothing to follow right now" is a state this hook can report — a
+   * feed tail can never say that, because the tail of a finished run is still a
+   * row. Deriving from the tail is what pinned the centre column to the last
+   * activity of every run that had ended.
+   *
+   * `useLiveItem` is the same derivation Classic's Stage uses, so the two faces
+   * cannot disagree about what "the agent is doing now" means.
    */
-  const liveItem = useMemo(() => {
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const item = rows[i]!.stageItem;
-      if (item) return item;
-    }
-    return undefined;
-  }, [rows, rows.length]);
+  const liveItem = useLiveItem();
 
   const running = run?.status === "running";
   const busy = isAgentBusy(status);
@@ -122,7 +121,6 @@ export function useMonitorData(): MonitorData {
     rows,
     facts,
     attention: live?.attention ?? facts?.attention ?? NO_ATTENTION,
-    phase: facts ? monPhase(facts.currentPhase) : undefined,
     liveHeadline: live?.headline,
     liveItem,
     liveEventId: liveItem?.source?.eventId,

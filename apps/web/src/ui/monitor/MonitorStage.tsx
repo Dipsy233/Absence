@@ -12,8 +12,7 @@ import { ChatThread } from "../../components/chat/ChatThread";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { StageItem } from "../../types/stage";
-import type { PhaseType } from "../../types/report";
-import { Chip, TONE_FOR_KIND, phaseWord, type MonTone } from "./atoms";
+import { Chip, TONE_FOR_KIND, type MonTone } from "./atoms";
 import { activityViews } from "./activityViews";
 import type { MonitorData } from "./useMonitorData";
 
@@ -60,14 +59,22 @@ export function MonitorStage({ data }: { data: MonitorData }) {
   const goChat = useStageStore((s) => s.goChat);
 
   /**
-   * What the Stage is a page *of*.
+   * What the Stage is a page *of* — Classic's rule, verbatim.
    *
-   * Following (live) it is the newest activity in the run - the agent's own
-   * tail - so the middle column moves with the agent instead of sitting on
-   * "waiting for the first activity" while the feed fills up. Pinned, it is
-   * the activity the reader clicked. METRICS and CHAT are pages of their own
-   * and never show an activity, so neither is "the moment everything shows".
+   * `useStageView` returns `following ? liveItem : activeItem`, and `liveItem`
+   * is `sessionStore.currentAction`, which `clearsStage` empties on `agent_end`
+   * and on the agent's own message. So "the agent is not doing anything right
+   * now" arrives as `item === undefined`, and the column falls through to its
+   * default page (METRICS / CHAT). That is exactly how Classic's Stage decides
+   * between a sheet and the desk, and it is why a finished run rests on a page
+   * there instead of showing its last activity.
+   *
+   * Monitor previously took the *tail of the feed* as what to follow. A tail
+   * never disappears — the last row of a finished run is still a row — so the
+   * centre column stayed on the final activity of every run that had ended, and
+   * no rule about run status could paper over that.
    */
+
   /**
    * Replay is a third clock, and the page has to follow it.
    *
@@ -82,13 +89,15 @@ export function MonitorStage({ data }: { data: MonitorData }) {
   const replayTime = useReplayStore((s) => s.currentTime);
 
   /**
-   * A finished run has no "now", so the Stage rests on a page instead of
-   * following — Classic's rule, kept.
+   * Resting, the way Classic rests.
    *
-   * The *transition* is done in the store by the effect below, not faked here:
-   * a render-time override would leave `mode` and `following` disagreeing with
-   * what is on screen, and every consumer that reads them (the tab strip, the
-   * pin bar, the rail's LIVE/REPLAY chip) would then be wrong.
+   * The store's `mode` has to agree with what is on screen, because the tab
+   * strip, the pin bar and the rail's LIVE/REPLAY chip all read it. So when
+   * following has nothing to follow — the run ended, or there is no run yet —
+   * the store is moved to the resting page rather than the render quietly
+   * substituting one. The effect keeps the two in step; the *rendering* rule
+   * above is still Classic's, so a reader who pins a row or opens METRICS gets
+   * what they asked for.
    *
    *   run starts        → follow the work again
    *   run ends          → rest on the page the reader chose last
@@ -99,7 +108,7 @@ export function MonitorStage({ data }: { data: MonitorData }) {
   const goResting = useStageStore((s) => s.goResting);
   useEffect(() => {
     if (replaying) return;
-    if (runStatus !== undefined && runStatus !== "running" && following) {
+    if (runStatus !== "running" && following) {
       goResting();
       return;
     }
@@ -110,7 +119,7 @@ export function MonitorStage({ data }: { data: MonitorData }) {
     }
   }, [runStatus, following, mode, replaying, goResting, goLive]);
 
-  const page = replaying ? replayItem : following ? data.liveItem : item;
+  const page = replaying ? replayItem : item;
   const showingMetrics = mode === "metrics";
   const showingChat = mode === "chat";
   // `active` stays the moment even while METRICS or CHAT is up: those two are
@@ -141,13 +150,38 @@ export function MonitorStage({ data }: { data: MonitorData }) {
         ? active
         : (views[active.type] ?? active);
 
-  /** Which page the sheet is showing: what the mode says. */
-  const tab: Page = showingMetrics ? "metrics" : showingChat ? "chat" : "activity";
+  /**
+   * Which page the sheet is showing.
+   *
+   * METRICS and CHAT are pages the reader picked. `activity` is the moment the
+   * feed is on — and when there is no moment, `activity` has nothing to draw.
+   * Classic answers that with its default page (the metrics desk, or the agent
+   * itself) instead of an empty sheet, and this face has to answer it the same
+   * way: an "activity" page with no activity is not a page, it is a blank
+   * column with a caption explaining that it is blank.
+   *
+   * So a live/pinned mode that has no item falls through to the resting page.
+   * The store still says `mode: "live"` until the effect below moves it, which
+   * is why this reads `restingPage` rather than trusting `mode` alone: during
+   * the frame between "the run ended" and "the store settled", the column must
+   * already show the page the reader is about to be left on.
+   */
+  const resting: Exclude<Page, "activity"> = useStageStore((s) => s.restingPage) ?? "chat";
+  const tab: Page = showingMetrics
+    ? "metrics"
+    : showingChat
+      ? "chat"
+      : active === undefined && !replaying
+        ? resting
+        : "activity";
 
   const chooseTab = (next: Exclude<Page, "activity">) => {
     if (next === tab) {
       // Clicking the tab that is already up returns to the work: a tab is a way
-      // *to* a page, and its own page is also the way back from it.
+      // *to* a page, and its own page is also the way back from it. When there
+      // is no work to return to, `goLive` would land on the same page again —
+      // the resting fallback — so it is a no-op either way, and the click still
+      // means "show me the work" for the next run.
       goLive();
       return;
     }
@@ -266,16 +300,13 @@ export function MonitorStage({ data }: { data: MonitorData }) {
           ) : shownItem ? (
             <StageItemView key={shownItem.id} item={shownItem} />
           ) : (
-            // No activity to draw yet (a run that has not produced its first
-            // stage event, or an empty session). One line, not a dashboard: the
-            // resource page lives on the METRICS tab, and a summary card here
-            // covered the column it was standing in for.
+            // Only replay can reach this: a live or pinned mode with no item
+            // falls through to the resting page above (Classic's rule), so the
+            // column is never an empty sheet with a caption explaining itself.
+            // A replay before the run's first stage event genuinely has nothing
+            // to show, and saying so is the honest page.
             <div className="mon-sheet-empty">
-              {replaying
-                ? t("Replay — before the first activity of this run")
-                : data.run
-                  ? t("Waiting for the first activity of this run…")
-                  : t("Send the agent a task with the input row below.")}
+              {t("Replay — before the first activity of this run")}
             </div>
           )}
         </div>
@@ -305,17 +336,17 @@ function describe(
 ): StageHeader {
   const time = item ? formatClock(item.createdAt) : "—";
   if (!item) {
-    const phase = data.phase;
-    // No activity to describe. Three different reasons, said differently, so
-    // "waiting for the first activity" is not printed over a replay that is
-    // simply before the first stage event of a finished run.
-    const title = replaying
-      ? t("Replay — before the first activity of this run")
-      : data.liveHeadline ?? t("Waiting for the first activity…");
+    // No activity to describe. This is a *page*, not a moment, so the chip says
+    // which page — never the phase. `Investigating` / `Executing` /
+    // `Implementing` belong to the activity feed's group dividers, where they
+    // classify rows; a header chip that borrowed one of them announced a
+    // classification for a screen that has no rows on it.
     return {
-      chip: <Chip tone="mute">{t(phaseWord(phase)).toUpperCase()}</Chip>,
-      chipText: t(phaseWord(phase)).toUpperCase(),
-      title,
+      chip: <Chip tone="mute">{t("IDLE")}</Chip>,
+      chipText: t("IDLE"),
+      title: replaying
+        ? t("Replay — before the first activity of this run")
+        : data.liveHeadline ?? t("Waiting for the first activity…"),
       sub: data.run ? `#${data.run.index} · ${data.run.prompt || t("(observed activity)")}` : t("No run yet"),
       time,
     };
