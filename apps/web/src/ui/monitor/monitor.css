@@ -96,15 +96,22 @@
   flex: none;
 }
 .mon-bar > .mon-bar__path {
-  /* The only thing in the bar that may give way: the project path truncates
-     before any control does. */
-  flex: 1 1 auto;
+  /* Sits immediately left of the run block, and is the only thing in the bar
+     that may give way: the path truncates before any control does. `flex: 0 1
+     auto` (not `1`) is the point — a growing path would push the run block into
+     the middle of the bar instead of leaving it flush against the path. */
+  flex: 0 1 auto; /* shrink only */
   min-width: 60px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
   color: var(--mon-t2);
+}
+/* Everything after the run block is pushed to the right edge. */
+.mon-bar > .mon-bar__spacer {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .mon-drag {

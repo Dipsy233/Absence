@@ -107,16 +107,13 @@ export function MonitorUI() {
           {formatClock(Date.now())}
         </span>
 
-        <span
-          className="mon-mono mon-bar__path"
-          title={session?.projectPath}
-        >
+        <span className="mon-mono mon-bar__path" title={session?.projectPath}>
           {session?.projectPath ?? t("no session")}
         </span>
 
-        {/* Runtime · run · status · elapsed, immediately right of the project it
-            is happening in. One unit: "#1 done" without "pi" or "00:19" is a
-            fragment, not a status. */}
+        {/* Runtime · run · status · elapsed, flush left against the project it
+            is happening in — the path says where, this says what is going on
+            there, so they read as one line. */}
         <div className="mon-runblock" title={runBlockTitle}>
           {runtime ? <span className="mon-runblock__runtime mon-mono">{runtime}</span> : null}
           <span className="mon-runblock__sep" aria-hidden />
@@ -127,6 +124,9 @@ export function MonitorUI() {
           <span className="mon-runblock__time mon-mono">{runElapsed}</span>
           {observed ? <Chip tone="read">{t("OBSERVING")}</Chip> : null}
         </div>
+
+        {/* Everything from here on is pushed to the right edge. */}
+        <span className="mon-bar__spacer" aria-hidden />
 
         <div className="mon-modes" role="group" aria-label={t("Interface mode")}>
           {VIEW_MODES.map((entry) => (
@@ -144,15 +144,8 @@ export function MonitorUI() {
           ))}
         </div>
 
-        {/* What is about the window rather than the run: the connection, the
-            attention verdict, the context meter. */}
-        {connected ? null : (
-          <Chip tone="err" title={t("offline")}>
-            <Dot tone="err" />
-            {t("offline")}
-          </Chip>
-        )}
-
+        {/* What is about the window rather than the run: the attention
+            verdict and the context meter. */}
         {data.attention.level !== "none" ? (
           <Chip tone={attentionToneNow} title={t("Human attention")}>
             {t("attention").toUpperCase()} · {t(data.attention.level)}
@@ -170,6 +163,13 @@ export function MonitorUI() {
             {formatTokens(total)}
           </span>
         </div>
+
+        {/* The connection, then the way out of the session: live/offline is
+            read right before you act on it. */}
+        <Chip tone={connected ? "edit" : "err"} title={connected ? t("live") : t("offline")}>
+          <Dot tone={connected ? "edit" : "err"} />
+          {connected ? t("live") : t("offline")}
+        </Chip>
 
         <button type="button" className="mon-btn mon-btn--ghost mon-nodrag" onClick={() => void leaveSession()}>
           {t("change")}
