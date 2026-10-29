@@ -61,8 +61,11 @@ export function MonitorRight({ data }: { data: MonitorData }) {
         the two sections that matter — what it knows and what it left running —
         down by 60px for the same sentence.
       */}
-      <KnownFiles />
+      {/* Eggs first: what the agent *left running* is the urgent question when
+          supervising a machine (a dev server, a watcher), while its file versions
+          are reference material you go back to. */}
       <Eggs />
+      <KnownFiles />
     </div>
   );
 }
