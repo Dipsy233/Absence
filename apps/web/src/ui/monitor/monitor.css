@@ -917,64 +917,85 @@
    88px with a plain CSS transform. A transform scales the animations with it,
    which an overridden fit (`transform: scale(...) !important` on `.stage`)
    cannot: that is what made the character stop moving and lose its props. */
+/* The agent block: a square tile flush against the left edge and the block's
+   own top/bottom, the status beside it.
+ *
+ * No padding on the tile's side: the character is the block's visual anchor, so
+ * it sits against the rail's edge instead of floating in a padded box. The
+ * status text keeps its own inset on the right. */
 .mon-agent {
   display: grid;
   flex: none;
-  grid-template-columns: 88px minmax(0, 1fr);
-  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
   gap: 14px;
-  padding: 16px;
+  padding: 0 16px 0 0;
   border-bottom: 1px solid var(--mon-bd);
 }
+/* Square, and as tall as the block itself: `aspect-ratio: 1` on a stretched
+   grid item gives the widest square the row's height allows. */
 .mon-agent__tile {
   position: relative;
-  width: 88px;
-  height: 88px;
+  aspect-ratio: 1;
+  height: 100%;
+  /* Tall enough that the face inside is readable: the tile is the block's
+     height, and the block is sized for a portrait, not a stripe. */
+  min-height: 112px;
   flex: none;
   overflow: hidden;
-  border-radius: 10px;
   background: rgb(255 255 255 / 0.03);
 }
-/* The character is clipped to the tile's rounded corners; without this the
-   props and the body spill past the crop on the sides where the box is wider
-   than the tile. */
+/* The character is clipped to the tile; without this the props and the body
+   spill past the crop where the box is wider than the tile. */
 .mon-agent__tile > * {
   border-radius: inherit;
 }
-/* A head-shot, not the whole character — and at *authored* size, not a shrunk
-   one.
+/* The agent's head, at authored size, cropped by the tile.
  *
- * The 184px box is Classic's Agent panel, which is the size the WhaleBun's fit,
- * pose and idle animations were written for: the fit's own scale comes out at
- * ~0.11 of the 2048 canvas, so the character's `floaty` (24 canvas px) is a
- * 2.7px bob on screen and its blink is a 14px-wide face swap. Scaling that box
- * down again to fit 88px (an earlier version used `scale(0.886)`) shrank the
- * whole character to ~76px wide and the bob to ~2.3px — technically animating,
- * visibly a static blue-and-white silhouette, which is exactly how it read.
+ * The WhaleBun is drawn on a 2048 canvas and `Avatar`'s fit scales it into
+ * whatever box it is given: `min((w-24)/1420, (h-24)/1330)`. Every animation
+ * amplitude is in canvas units — `floaty` 24px, `speakHop` 34px, `idleHand`
+ * 10px — so **the box size is the visible motion**:
  *
- * So the tile keeps the 184px box at 1:1 and only *frames* it: the box is
- * pushed left and up so the head (whose centre sits above the box's centre)
- * lands in the tile, and `overflow: hidden` on the tile crops the body and the
- * props. Nothing is scaled, so the motion keeps the amplitude it was authored
- * with — 24px of bob on an 88px tile is a visible breath, not a rounding error.
+ *     box   fit    floaty on screen   head on screen
+ *     184   0.113  2.7px              86px   ← reads as a still image
+ *     300   0.194  4.7px             150px
+ *     420   0.279  6.7px             211px   ← this one
+ *
+ * 184px was the old tile box and the reason the character looked frozen: 2.7px
+ * of bob, damped further by the sway/squash layers, measured 1.65px on screen.
+ * The tile therefore holds a **420px** box — the size the character needs in
+ * order to move — and crops it to the head.
+ *
+ * The tile scales nothing itself: the box is only *translated*, so the amplitude
+ * the fit computed survives. An earlier version put `scale(0.886)` on this box,
+ * which shrank that bob again and turned the character into a blue-and-white
+ * blob.
+ *
+ * Framing, measured from the rendered part boxes at a 420px box: the head spans
+ * x -87..124 and y -15..114 relative to the box's top-left, so the box is
+ * offset so that the head's left edge sits on the tile's left edge and its
+ * top edge on the tile's top edge — the crop then bleeds the head off the
+ * right and bottom, which is what "fill the frame" means for a head-shot.
+ *
+ * `left`/`top` carry the offset and `translate(-50%,-50%)` centres the box on
+ * that point. Folding the offset into the same transform
+ * (`translate(calc(-50% + Npx), …)`) mixes a percentage of the *box* with px of
+ * the *offset*, and the numbers stop meaning anything.
  */
 .mon-agent__tileinner {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 184px;
-  height: 184px;
-  /* Measured from the rendered part boxes at 1:1, this is a 1:1 crop, not a
-     fit: the head is 86x71 and the tile is 88x88, so the head fills it and
-     there is no room left for the ahoge above (that is the one part the crop
-     gives up, and it is the part a head-shot can afford to lose).
-     x: the head spans -4..81, so +6px centres it (3..89, one px over — the
-     head's own idle sway covers less than that).
-     y: the head spans 15..85, so -4px lands it at 11..81, which centres the
-     *face* (the thing a head-shot is for) inside the tile. */
-  transform: translate(calc(-50% + 6px), calc(-50% - 4px));
-  transform-origin: center;
+  width: 420px;
+  height: 420px;
+  /* The *face* is what gets centred, not the head's box: a head-shot is read at
+     the eyes, and centring the head instead pushes the face off the bottom of
+     the crop (measured: head l=3 t=4, face t=68 in a 96px tile). */
+  left: calc(50% - 210px + 87px - 14px - 62px);
+  top: calc(50% - 210px + 15px + 13px + 33px - 102px);
+  transform: none;
+  transform-origin: 0 0;
 }
+
 /* The avatar reports its own status row; the rail states it in words beside
    the tile, so the duplicate line is dropped (the only override left, and it
    is `display` on a label, not geometry on the character). */
@@ -983,6 +1004,7 @@
 }
 .mon-agent__caption {
   display: grid;
+  align-self: center;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
   gap: 2px;
