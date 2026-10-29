@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { formatBytes, formatClock, formatDuration, formatOffset } from "../../lib/format";
+import { formatBytes, formatClock, formatDuration } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
@@ -27,7 +27,7 @@ import { Avatar } from "../../components/agent/Avatar";
 import { MediaAvatar } from "../../components/agent/MediaAvatar";
 import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 import { CPU_COLOR, MEM_COLOR } from "../../lib/metricColors";
-import { Dot, Spark, attentionTone, toneForStatus, type MonTone } from "./atoms";
+import { Dot, Spark, attentionTone, toneForStatus } from "./atoms";
 import type { MonitorData } from "./useMonitorData";
 
 /**
@@ -91,13 +91,6 @@ const STATUS_LINE: Record<string, string> = {
   error: "Something went wrong.",
 };
 
-const RUN_WORD: Record<"running" | "completed" | "interrupted" | "error", string> = {
-  running: "running",
-  completed: "done",
-  interrupted: "stopped",
-  error: "error",
-};
-
 function AgentHead({ data }: { data: MonitorData }) {
   const t = useT();
   const liveStatus = useSessionStore((s) => s.agent.status);
@@ -139,22 +132,12 @@ function AgentHead({ data }: { data: MonitorData }) {
   const shownMedia = skinMediaFor(coverage, shownStatus);
 
   /**
-   * The run facts, moved here from the window's top bar so the whole "who is
-   * working and how bad is it" story sits beside the character in four rows:
-   *
-   *   LISTENING                    mock   ← status | runtime
-   *   Run #1 · stopped   00:19     LIVE   ← run | elapsed | view clock
-   *   Ready — waiting for a task.         ← the plain-words sentence
-   *   ATTENTION · NONE                    ← the verdict, or its absence
+   * The rail's three rows: what the agent is (status word) beside what the
+   * centre column is doing with the run (LIVE / REPLAY), the plain-words
+   * sentence, and the attention verdict. The run itself — which run, its
+   * state, how long — lives in the run selector, top-left, where the reader
+   * picks between rounds; repeating it here said the same thing twice.
    */
-  const runtime = useSessionStore((s) => s.session?.agentRuntime);
-  const now = useNow(1000);
-  const run = data.run;
-  const runTone: MonTone =
-    run?.status === "running" ? "run" : run?.status === "error" ? "err" : run ? "edit" : "mute";
-  // A finished run gets its final duration; a live one counts up, which is why
-  // this component keeps its own second hand.
-  const runElapsed = run ? formatOffset((run.endedAt ?? now) - run.startedAt) : "—";
   const attentionLevel = data.attention.level;
   const attentionToneNow = attentionTone(attentionLevel);
 
@@ -177,34 +160,16 @@ function AgentHead({ data }: { data: MonitorData }) {
         </div>
       </div>
       <div className="mon-agent__caption">
+        {/*
+          One row, two clocks that must never merge: the agent's own state on
+          the left, the centre column's clock (LIVE / REPLAY) on the right.
+          No chip chrome — the colour is the whole message.
+        */}
         <div className="mon-agent__row">
           <span className={`mon-agent__state mon-chip--${shownTone}`} style={{ background: "transparent", padding: 0 }}>
             <Dot tone={shownTone} />
             {t(statusLabel(shownStatus)).toUpperCase()}
           </span>
-          {runtime ? (
-            <span className="mon-agent__runtime mon-mono" title={t("runtime")}>
-              {runtime}
-            </span>
-          ) : null}
-        </div>
-        <div className="mon-agent__row">
-          {run ? (
-            <>
-              <span className={`mon-agent__run mon-chip--${runTone}`}>
-                <Dot tone={runTone} />
-                {`${t("Run")} #${run.index} · ${t(RUN_WORD[run.status])}`}
-              </span>
-              <span className="mon-agent__elapsed mon-mono">{runElapsed}</span>
-            </>
-          ) : (
-            <span className="mon-agent__norun">{t("no run")}</span>
-          )}
-          {/*
-            LIVE / REPLAY — what the centre column is doing with the run, at
-            the run row's right edge, so the pair reads "Run #1 … LIVE". A pin
-            and a replay both read REPLAY: in both the clock has stopped.
-          */}
           <span className={`mon-agent__play mon-chip--${playingTone}`}>
             <Dot tone={playingTone} />
             {t(playing).toUpperCase()}

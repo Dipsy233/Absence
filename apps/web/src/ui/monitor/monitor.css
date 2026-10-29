@@ -391,17 +391,37 @@
 }
 .mon-runmenu__row {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 7px;
 }
 .mon-runmenu__index {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
-  color: var(--mon-t3);
+  color: var(--mon-t2);
+}
+/* Two lines at the card's right edge: the duration above, the wall-clock start
+   below — "how much" over "when", both in the tabular figures a clock needs. */
+.mon-runmenu__times {
+  display: flex;
+  margin-left: auto;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.35;
+}
+.mon-runmenu__duration {
+  font-size: 11px;
+  color: var(--mon-t2);
+  font-variant-numeric: tabular-nums;
 }
 .mon-runmenu__clock {
-  margin-left: auto;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--mon-t3);
+  font-variant-numeric: tabular-nums;
 }
 .mon-runmenu__prompt {
   display: block;
@@ -1095,51 +1115,24 @@
   font-size: 13px;
   color: var(--mon-t);
 }
-/* One fact pair per row, pushed to the two edges: the caption is four rows —
-   status | runtime, run + elapsed | view clock, the plain-words sentence, and
-   the attention verdict. */
+/* One fact pair per row: the agent's state on the left, the centre column's
+   clock on the right. */
 .mon-agent__row {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 8px;
 }
-/* The runtime name (`mock`, `pi`, …), at the row's right edge: it names *who
-   is driving*, which is the counterpart of the status word on the left. */
-.mon-agent__runtime {
-  margin-left: auto;
-  padding-left: 8px;
-  overflow: hidden;
-  font-size: 10.5px;
-  color: var(--mon-t3);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-}
-.mon-agent__run {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-}
-.mon-agent__elapsed {
-  flex: none;
-  font-size: 10.5px;
-  color: var(--mon-t3);
-}
-.mon-agent__norun {
-  font-size: 11px;
-  color: var(--mon-t3);
-}
-/* LIVE / REPLAY / PINNED: what the centre column is doing with the run, at the
-   run row's right edge, so the pair reads "Run #1 · stopped … LIVE". */
+/* LIVE / REPLAY: what the centre column is doing with the run, at the row's
+   right edge. No chip chrome — the dot and the colour are the whole message,
+   and a filled box on a four-word line read as a button that wasn't. */
 .mon-agent__play {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   margin-left: auto;
   padding-left: 8px;
+  background: transparent;
   font-size: 10.5px;
   letter-spacing: 0.07em;
 }

@@ -305,7 +305,10 @@ export function MonitorLeft({
           >
             <Dot tone={run ? STATUS_TONE[run.status] : "mute"} />
             <span className="mon-runsel__q">
-              {run ? `#${run.index} ${run.prompt || t("(observed activity)")}` : t("No run yet")}
+              {/* The run's state lives here, not in the rail's agent head: this
+                  is where the reader picks between rounds, so this is where
+                  "which round, how did it end" is answered. */}
+              {run ? `#${run.index} · ${t(STATUS_WORD[run.status])} — ${run.prompt || t("(observed activity)")}` : t("No run yet")}
             </span>
             <span className="mon-runsel__c">
               {run ? `R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}` : "—"}
@@ -330,8 +333,18 @@ export function MonitorLeft({
                   >
                     <span className="mon-runmenu__row">
                       <Dot tone={STATUS_TONE[entry.status]} />
-                      <span className="mon-runmenu__index mon-mono">#{entry.index}</span>
-                      <span className="mon-runmenu__clock mon-mono">{formatClock(entry.startedAt)}</span>
+                      <span className="mon-runmenu__index">
+                        #{entry.index} · {t(STATUS_WORD[entry.status])}
+                      </span>
+                      <span className="mon-runmenu__times">
+                        {/* Right side, two lines: how long the round ran (or is
+                            running), then when it started — the two questions
+                            "how much" and "when" in the order they're asked. */}
+                        <span className="mon-runmenu__duration mon-mono">
+                          {formatOffset((entry.endedAt ?? now) - entry.startedAt)}
+                        </span>
+                        <span className="mon-runmenu__clock mon-mono">{formatClock(entry.startedAt)}</span>
+                      </span>
                     </span>
                     <span className="mon-runmenu__prompt">{entry.prompt || t("(observed activity)")}</span>
                   </button>
