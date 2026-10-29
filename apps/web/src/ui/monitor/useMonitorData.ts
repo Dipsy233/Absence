@@ -45,6 +45,16 @@ export interface MonitorData {
   liveItem?: StageItem;
   /** The event behind `liveItem`, so the feed can mark the row it is showing. */
   liveEventId?: string;
+  /**
+   * How many rows there are *now*.
+   *
+   * `memoRunRows` returns the same array it keeps appending to (that is what
+   * makes it incremental), so a consumer that memoises on `rows` sees one
+   * identity forever and never recomputes — which is exactly how the feed
+   * stayed empty until the run ended. Any derivation over the rows must depend
+   * on this counter instead of on the array.
+   */
+  rowsVersion: number;
   busy: boolean;
   observed: boolean;
 }
@@ -81,15 +91,22 @@ export function useMonitorData(): MonitorData {
     }
   }, [run?.id, run?.status, events, tick, attentionOptions]);
 
-  // The tail of the feed: the newest row that can be read as a page. START/END
-  // carry no Stage item, so they are skipped rather than counted as "nothing".
+  /**
+   * The tail of the feed: the newest row that can be read as a page.
+   *
+   * `rowsVersion` is a dependency because `memoRunRows` hands back the *same*
+   * array it keeps appending to — memoising on `rows` alone would answer once
+   * and then never again, which is how the Stage stayed on "waiting for the
+   * first activity" while the feed filled up beside it. START/END carry no
+   * Stage item, so they are skipped rather than counted as "nothing".
+   */
   const liveItem = useMemo(() => {
     for (let i = rows.length - 1; i >= 0; i--) {
       const item = rows[i]!.stageItem;
       if (item) return item;
     }
     return undefined;
-  }, [rows]);
+  }, [rows, rows.length]);
 
   const running = run?.status === "running";
   const busy = isAgentBusy(status);
@@ -109,6 +126,7 @@ export function useMonitorData(): MonitorData {
     liveHeadline: live?.headline,
     liveItem,
     liveEventId: liveItem?.source?.eventId,
+    rowsVersion: rows.length,
     busy,
     observed,
   };

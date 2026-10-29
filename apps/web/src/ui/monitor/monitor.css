@@ -570,8 +570,18 @@
   overflow: auto;
 }
 
-.mon-sheet .mon-scroll {
-  padding: 14px 16px;
+/* An empty sheet says one line and stops. The resource page lives on the
+   METRICS tab; a summary card here covered the column it stood in for. */
+.mon-sheet-empty {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--mon-t3);
+  text-align: center;
 }
 
 /* Reuse Classic's stage views inside the sheet: they already answer "what does

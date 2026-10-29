@@ -96,7 +96,7 @@ export function MonitorLeft({
       }
     }
     return found >= 0 ? data.rows[found]!.id : undefined;
-  }, [stageMode, data.rows, replayTime]);
+  }, [stageMode, data.rows, data.rowsVersion, replayTime]);
   const focusedEventId = useUiStore((s) => s.focusedEventId);
   const observed = useIsObserved();
 
@@ -201,8 +201,11 @@ export function MonitorLeft({
       }
       group.rows.push({ row, count: 1 });
     }
+    // `rowsVersion`, not `data.rows`: the array is the same object across
+    // updates (see `memoRunRows`), so depending on it froze the feed at its
+    // first render and every activity appeared only when the run ended.
     return out;
-  }, [data.rows]);
+  }, [data.rows, data.rowsVersion]);
 
   /**
    * The run's two boundaries, pinned above and below the scrolling feed.

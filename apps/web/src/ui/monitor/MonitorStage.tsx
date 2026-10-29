@@ -4,8 +4,6 @@ import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useReplayItem, useStageView } from "../../hooks/useStage";
 import { useUiStore } from "../../stores/uiStore";
-import { useMetricsStore } from "../../stores/metricsStore";
-import { useIsObserved } from "../../stores/sessionStore";
 import { useT } from "../../lib/i18n";
 import { formatClock, formatOffset } from "../../lib/format";
 import { runEvents } from "../../lib/history";
@@ -15,7 +13,7 @@ import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { StageItem } from "../../types/stage";
 import type { PhaseType } from "../../types/report";
-import { Chip, TONE_FOR_KIND, attentionTone, phaseWord, type MonTone } from "./atoms";
+import { Chip, TONE_FOR_KIND, phaseWord, type MonTone } from "./atoms";
 import { activityViews } from "./activityViews";
 import type { MonitorData } from "./useMonitorData";
 
@@ -60,8 +58,6 @@ export function MonitorStage({ data }: { data: MonitorData }) {
   const goLive = useStageStore((s) => s.goLive);
   const goMetrics = useStageStore((s) => s.goMetrics);
   const goChat = useStageStore((s) => s.goChat);
-  const openMetrics = useUiStore((s) => s.openMetrics);
-  const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
 
   /**
    * What the Stage is a page *of*.
@@ -240,7 +236,17 @@ export function MonitorStage({ data }: { data: MonitorData }) {
           ) : shownItem ? (
             <StageItemView key={shownItem.id} item={shownItem} />
           ) : (
-            <DefaultPage data={data} onOpenEgg={() => openMetrics()} eggSelected={selectedEggPid !== undefined} />
+            // No activity to draw yet (a run that has not produced its first
+            // stage event, or an empty session). One line, not a dashboard: the
+            // resource page lives on the METRICS tab, and a summary card here
+            // covered the column it was standing in for.
+            <div className="mon-sheet-empty">
+              {replaying
+                ? t("Replay — before the first activity of this run")
+                : data.run
+                  ? t("Waiting for the first activity of this run…")
+                  : t("Send the agent a task with the input row below.")}
+            </div>
           )}
         </div>
       </div>
@@ -350,100 +356,6 @@ function describe(
   }
 }
 
-/**
- * The default page. Live, this says in one line what the agent is doing right
- * now and what it has produced so far — no avatar, no desk: the "监护" reading
- * of the same facts the right rail summarises.
- */
-function DefaultPage({
-  data,
-  onOpenEgg,
-  eggSelected,
-}: {
-  data: MonitorData;
-  onOpenEgg: () => void;
-  eggSelected: boolean;
-}) {
-  const t = useT();
-  const observed = useIsObserved();
-  const busy = data.busy;
-  const facts = data.facts;
-  if (!data.run) {
-    return (
-      <div className="mon-scroll mon-empty" style={{ padding: 24 }}>
-        {observed
-          ? t("Absence is watching this process; it never drives or stops it.")
-          : t("Send the agent a task with the input row below.")}
-      </div>
-    );
-  }
-  const changed = (facts?.files.created.length ?? 0) + (facts?.files.modified.length ?? 0);
-  const matters: Array<[string, string, string]> = [
-    [t("Phase"), t(phaseWord(data.phase)), "mute"],
-    [t("Files read"), String(facts?.counts.reads ?? 0), "read"],
-    [t("Files changed"), String(changed), "edit"],
-    [t("Commands"), String(facts?.commands.total ?? 0), "run"],
-    [t("Errors"), String(facts?.errors.unresolved ?? 0), "err"],
-    [t("Eggs left"), String(facts?.processes.runningAtEnd ?? 0), "egg"],
-  ];
-  return (
-    <div className="mon-scroll">
-      <div style={{ marginBottom: 14 }}>
-        <div className="mon-cap">{busy ? t("Doing now") : t("Last activity")}</div>
-        <div style={{ marginTop: 4, fontSize: 17, lineHeight: 1.35, color: "var(--mon-t)" }}>
-          {data.liveHeadline ?? t("The run finished — open the Report for what it amounted to.")}
-        </div>
-        <div style={{ marginTop: 6, fontSize: 12.5, color: "var(--mon-t2)" }}>
-          {`#${data.run.index} · ${data.run.prompt || t("(observed activity)")}`}
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gap: 8,
-          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-          marginBottom: 16,
-        }}
-      >
-        {matters.map(([label, value, tone]) => (
-          <div
-            key={label}
-            style={{ padding: "9px 11px", border: "1px solid var(--mon-bd)", borderRadius: 8, background: "var(--mon-s1)" }}
-          >
-            <div className="mon-cap">{label}</div>
-            <div className={`mon-mono mon-chip--${tone as MonTone}`} style={{ marginTop: 2, fontSize: 19, fontWeight: 600 }}>
-              {value}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {data.attention.level !== "none" && data.attention.reasons.length > 0 ? (
-        <div style={{ marginBottom: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {data.attention.reasons.slice(0, 4).map((reason) => (
-            <Chip key={reason} tone={attentionTone(data.attention.level)}>
-              {t(reason.replace(/_/g, " "))}
-            </Chip>
-          ))}
-        </div>
-      ) : null}
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" className="mon-btn" onClick={onOpenEgg} disabled={eggSelected}>
-          {t("Open metrics")}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The world line: one lane per kind, a block per activity, a cursor at the
- * pinned moment (or at the end, live). Clicking a block seeks the replay — the
- * same gesture as Classic's timeline, kept because it is the fastest way to
- * answer "when did that happen".
- */
 /**
  * The run's world line, drawn the way the proposal draws it: one hairline track
  * per lane, an 8px block per activity at its own offset, and a cursor line with
