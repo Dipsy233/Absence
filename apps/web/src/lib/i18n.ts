@@ -277,6 +277,7 @@ const ZH: Record<string, string> = {
   // `live` / `replay` already exist above (the replay bar and the Stage); the
   // connection chip reads `online` so the two "live" meanings never collide.
   "Back to live": "回到实时",
+  "Connected terminal and session id": "接入的终端与会话 ID",
   "Replay from the start": "从头回放",
   "One activity back": "后退一个动作",
   "One activity forward": "前进一个动作",

@@ -78,6 +78,17 @@ export function MonitorUI() {
           {formatClock(now)}
         </span>
 
+        {/* The attached terminal and the session id — the handle you quote when
+            pointing someone (or a report) at what you are watching. It sits
+            before the project path: which session, then where it works. */}
+        {session ? (
+          <div className="mon-termcard mon-nodrag" title={t("Connected terminal and session id")}>
+            <span className="mon-termcard__term">{session.agentRuntime}</span>
+            <span className="mon-termcard__sep" aria-hidden />
+            <span className="mon-termcard__sid mon-mono">{session.id}</span>
+          </div>
+        ) : null}
+
         <span className="mon-mono mon-bar__path" title={session?.projectPath}>
           {session?.projectPath ?? t("no session")}
         </span>

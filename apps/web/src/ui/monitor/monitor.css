@@ -350,6 +350,35 @@
   font: 11px var(--mon-mono);
   color: var(--mon-t3);
 }
+/* The attached terminal + session id, in a small card before the project path:
+   which session, then where it works. Click-through is not a goal — this is a
+   read-out you quote, so it is one line, dimmed, always visible. */
+.mon-termcard {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 7px;
+  background: var(--mon-s2);
+}
+.mon-termcard__term {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mon-t2);
+}
+.mon-termcard__sep {
+  width: 1px;
+  height: 12px;
+  background: var(--mon-bd2);
+}
+.mon-termcard__sid {
+  font-size: 10.5px;
+  color: var(--mon-t3);
+}
 /* The anchor for the run menu's absolute positioning — and the bounds the
    outside-click dismiss measures against. */
 .mon-runselwrap {
