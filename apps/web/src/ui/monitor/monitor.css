@@ -586,91 +586,154 @@
   border-color: var(--mon-bd) !important;
 }
 
-/* ── Timeline strip ─────────────────────────────────────────────────────── */
-
+/* ── Timeline strip ───────────────────────────────────────────────────────
+   Geometry follows the proposal: a hairline track per lane, an 8px block sitting
+   on it, and a 2px cursor that runs past the track with the moment printed
+   above it. Absolute positioning is the point — a lane is a line and a block is
+   a mark *on* that line, which a stack of flex rows cannot draw. */
 .mon-tl {
   display: flex;
   flex: none;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
+  flex-direction: column;
+  padding: 10px 16px 8px;
   border-top: 1px solid var(--mon-bd);
   background: var(--mon-s1);
 }
-.mon-tl__lanes {
-  position: relative;
+.mon-tl__row {
   display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 12px;
 }
-.mon-tl__lane {
-  position: relative;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--mon-s2);
+.mon-tl__play {
+  display: flex;
+  width: 34px;
+  height: 30px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--mon-t);
+  font-size: 11px;
+  line-height: 1;
 }
-.mon-tl__blk {
-  position: absolute;
-  top: 0;
-  height: 8px;
-  min-width: 2px;
-  border-radius: 2px;
-  background: currentColor;
-}
-.mon-tl__head {
-  position: absolute;
-  top: -3px;
-  bottom: -3px;
-  width: 2px;
-  background: var(--mon-t);
-  transition: left 0.08s linear;
+.mon-tl__play:hover {
+  border-color: rgb(94 159 232 / 0.55);
+  color: var(--mon-acc);
 }
 .mon-tl__labels {
   display: flex;
+  width: 40px;
+  flex: none;
   flex-direction: column;
-  gap: 6px;
+  justify-content: flex-start;
+  padding-top: 4px;
   font: 10px var(--mon-mono);
   color: var(--mon-t3);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 .mon-tl__labels > span {
+  display: block;
+  line-height: 14px;
+}
+.mon-tl__track {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  /* The cursor's label hangs above the track, so the track reserves that room
+     rather than letting the label clip against the panel edge. */
+  margin-top: 12px;
+  cursor: pointer;
+}
+.mon-tl__lane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--mon-bd);
+}
+.mon-tl__blk {
+  position: absolute;
   height: 8px;
-  line-height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.mon-tl__head {
+  position: absolute;
+  top: -4px;
+  bottom: -6px;
+  width: 2px;
+  background: var(--mon-t);
+  transition: left 0.08s linear;
+  pointer-events: none;
+}
+.mon-tl__head-label {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 10px var(--mon-mono);
+  color: var(--mon-t);
+  white-space: nowrap;
+}
+.mon-tl__livehead {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  bottom: -6px;
+  width: 2px;
+  background: var(--mon-edit);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.mon-tl__speed {
+  flex: none;
+  align-self: center;
+  font-size: 11px;
+  color: var(--mon-t3);
+}
+.mon-tl__empty {
+  font-size: 11.5px;
+  color: var(--mon-t3);
 }
 
-/* ── Chat dock ──────────────────────────────────────────────────────────── */
-
+/* ── Chat dock ────────────────────────────────────────────────────────────
+   One bar, 44px tall, flush with the bottom of the column: a rounded input that
+   holds the context chips inline with the placeholder, and the send button as
+   the one filled element on the screen. The proposal's shape, because it is the
+   control used most often and it should look like the biggest target on the
+   page. */
 .mon-chat {
   display: flex;
   flex: none;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 10px 16px 12px;
-  border-top: 1px solid var(--mon-bd);
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px 14px;
   background: var(--mon-s1);
 }
 
 .mon-chat__box {
   display: flex;
+  height: 44px;
   min-width: 0;
   flex: 1;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 0 10px;
   border: 1px solid var(--mon-bd2);
   border-radius: 10px;
   background: var(--mon-bg);
+  overflow: hidden;
 }
 .mon-chat__box:focus-within {
   border-color: rgb(94 159 232 / 0.6);
 }
 .mon-chat__input {
-  min-width: 140px;
+  min-width: 80px;
   flex: 1;
+  height: 100%;
   border: 0;
   background: transparent;
   color: var(--mon-t);
@@ -680,10 +743,23 @@
 .mon-chat__input::placeholder {
   color: var(--mon-t3);
 }
-.mon-chat__slash {
+/* The send/stop button matches the input's 44px so the pair reads as one bar,
+   and it is the only filled control on the page. */
+.mon-chat__send {
+  height: 44px;
   flex: none;
-  width: 24px;
-  height: 24px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.mon-chat__slash {
+  display: flex;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--mon-bd);
   border-radius: 6px;
   background: transparent;
@@ -698,15 +774,16 @@
 
 .mon-ctx {
   display: inline-flex;
-  height: 22px;
+  height: 26px;
   max-width: 220px;
+  flex: none;
   align-items: center;
-  gap: 5px;
-  padding: 0 6px;
-  border-radius: 5px;
+  gap: 6px;
+  padding: 0 8px;
+  border-radius: 6px;
   background: var(--mon-s3);
   color: var(--mon-t);
-  font: 11px var(--mon-mono);
+  font: 12px var(--mon-mono);
 }
 .mon-ctx > span {
   overflow: hidden;
@@ -723,9 +800,11 @@
   color: var(--mon-err);
 }
 
-/* The conversation, unfolded upward above the input row. */
+/* The conversation, unfolded upward above the input row. Closed by default:
+   the centre column is for reading traces, so chat is a tool you reach for. */
 .mon-thread {
   max-height: 40vh;
+  flex: none;
   overflow-y: auto;
   padding: 10px 16px 2px;
   border-top: 1px solid var(--mon-bd);

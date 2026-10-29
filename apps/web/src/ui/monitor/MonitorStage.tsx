@@ -7,7 +7,7 @@ import { useUiStore } from "../../stores/uiStore";
 import { useMetricsStore } from "../../stores/metricsStore";
 import { useIsObserved } from "../../stores/sessionStore";
 import { useT } from "../../lib/i18n";
-import { formatClock } from "../../lib/format";
+import { formatClock, formatOffset } from "../../lib/format";
 import { runEvents } from "../../lib/history";
 import { MonitorChat } from "./MonitorChat";
 import { StageItemView } from "../../components/stage/StageItemView";
@@ -390,109 +390,201 @@ function DefaultPage({
  * same gesture as Classic's timeline, kept because it is the fastest way to
  * answer "when did that happen".
  */
+/**
+ * The run's world line, drawn the way the proposal draws it: one hairline track
+ * per lane, an 8px block per activity at its own offset, and a cursor line with
+ * the moment printed above it.
+ *
+ * Geometry is absolute on purpose (a lane is a 1px line at `top: 8 + n*14`, a
+ * block sits at `top: 4 + n*14`), because a flex column of rows cannot put a
+ * block *on* the line — the whole point of the strip is that activities read as
+ * marks on a single timeline, not as rows in a list.
+ */
+const LANE_H = 14;
+const TRACK_TOP = 8;
+
 function Timeline({ data }: { data: MonitorData }) {
   const t = useT();
   const nodes = data.facts?.timeline ?? [];
   const selectRun = useUiStore((s) => s.selectRun);
   const load = useReplayStore((s) => s.load);
   const setMode = useStageStore((s) => s.setMode);
+  const replayTime = useReplayStore((s) => s.currentTime);
+  const replayStatus = useReplayStore((s) => s.status);
+  const play = useReplayStore((s) => s.play);
+  const pause = useReplayStore((s) => s.pause);
+  const inReplay = useStageStore((s) => s.mode === "replay");
 
-  /** Pin the run, load its events, and open replay at the clicked moment. */
-  const seek = (offsetMs: number) => {
-    if (!data.run) return;
-    const node = [...nodes].reverse().find((entry) => entry.offsetMs <= offsetMs);
-    if (!node) return;
-    selectRun(data.run.id);
-    load(runEvents(data.events, data.run), { label: `#${data.run.index} · ${data.run.prompt}` });
-    useReplayStore.getState().seekTimestamp(node.at);
-    setMode("replay");
-  };
-
-  const laneOrder: Array<[string, string]> = useMemo(
+  /**
+   * Three lanes, one per *kind of activity*: reasoning, files, shell.
+   *
+   * The lanes are a reading of the Activity feed, so only activities belong on
+   * them. An egg is not an activity — it is a process a command left behind,
+   * reported again every time it changes. It has its own panel on the right;
+   * putting it here would draw the same moment twice and make one daemon look
+   * like a busy shell.
+   */
+  const lanes: Array<[string, string]> = useMemo(
     () => [
       ["think", t("Think")],
       ["files", t("Files")],
       ["shell", t("Shell")],
-      ["eggs", t("Eggs")],
     ],
     [t],
   );
 
-  const lanes = useMemo(() => {
-    const byLane = new Map<string, Array<{ left: number; width: number; tone: MonTone; label: string }>>();
-    const total = Math.max(1, (nodes.at(-1)?.offsetMs ?? 0) + 1);
-    for (const node of nodes) {
-      const lane = laneFor(node.kind);
-      const left = (node.offsetMs / total) * 100;
-      const end = node.offsetMs + 400;
-      const widthPct = Math.max(0.8, Math.min(6, ((end - node.offsetMs) / total) * 100));
-      const list = byLane.get(lane) ?? [];
-      list.push({ left, width: widthPct, tone: TONE_FOR_KIND[node.kind] ?? "mute", label: `${node.action} · ${node.subject}` });
-      byLane.set(lane, list);
-    }
-    return byLane;
-  }, [nodes]);
-
   const total = Math.max(1, nodes.at(-1)?.offsetMs ?? 0);
-  // Live: the cursor sits at the end of the line. Replay: wherever the scrubber
-  // is. Anything else (a pinned page) has no clock of its own, so the end is
-  // the honest position.
-  const replayTime = useReplayStore((s) => s.currentTime);
-  const inReplay = useStageStore((s) => s.mode === "replay");
-  const cursor =
-    inReplay && data.run ? Math.min(1, Math.max(0, (replayTime - data.run.startedAt) / total)) : 1;
+
+  /**
+   * One block per activity, at its own offset.
+   *
+   * The timeline nodes carry a start and no end, so a block's width is the gap
+   * to the next activity — the time that activity was the thing happening.
+   * Capped (a long silence must not become a wall of colour) and floored (a
+   * 40ms read must still be a visible mark, not a sub-pixel sliver).
+   */
+  const marks = useMemo(() => {
+    const out: Array<{ lane: number; left: number; width: number; tone: MonTone; label: string; at: number }> = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i]!;
+      // `laneFor` returns undefined for a node that is not one of the three
+      // kinds of work (an egg, a lifecycle marker). Those get no block at all —
+      // `findIndex` on undefined would otherwise match nothing and leave
+      // `lane` at -1 only by accident.
+      const laneId = laneFor(node.kind);
+      if (laneId === undefined) continue;
+      const lane = lanes.findIndex(([id]) => id === laneId);
+      if (lane < 0) continue;
+      // The next *activity*, not the next node: a run of egg updates between two
+      // reads must not make the read look like it lasted a minute.
+      let next: (typeof nodes)[number] | undefined;
+      for (let j = i + 1; j < nodes.length; j++) {
+        if (laneFor(nodes[j]!.kind) !== undefined) {
+          next = nodes[j];
+          break;
+        }
+      }
+      const span = Math.max(0, (next ? next.offsetMs - node.offsetMs : total - node.offsetMs));
+      out.push({
+        lane,
+        left: (node.offsetMs / total) * 100,
+        width: Math.max(0.7, Math.min(28, (span / total) * 100)),
+        tone: TONE_FOR_KIND[node.kind] ?? "mute",
+        label: `${node.action} · ${node.subject} · ${formatOffset(node.offsetMs)}`,
+        at: node.at,
+      });
+    }
+    return out;
+  }, [nodes, total, lanes]);
+
+  /** Load the run into replay and land on `at`. */
+  const seekTo = (at: number) => {
+    if (!data.run) return;
+    selectRun(data.run.id);
+    load(runEvents(data.events, data.run), { label: `#${data.run.index} · ${data.run.prompt}` });
+    useReplayStore.getState().seekTimestamp(at);
+    setMode("replay");
+  };
+
+  const seekRatio = (ratio: number) => seekTo(data.run!.startedAt + Math.min(1, Math.max(0, ratio)) * total);
 
   if (nodes.length === 0) {
     return (
       <div className="mon-tl">
         <span className="mon-cap">{t("Timeline")}</span>
-        <span style={{ fontSize: 11.5, color: "var(--mon-t3)" }}>{t("Nothing on the world line yet.")}</span>
+        <span className="mon-tl__empty">{t("Nothing on the world line yet.")}</span>
       </div>
     );
   }
 
+  // Live, the cursor is the end of the line; in replay it is where the scrubber
+  // is. A pinned page has no clock of its own, so the end is the honest place.
+  const cursor = inReplay && data.run
+    ? Math.min(1, Math.max(0, (replayTime - data.run.startedAt) / total))
+    : 1;
+  const cursorLabel = formatOffset(cursor * total);
+  const trackHeight = lanes.length * LANE_H + 2;
+
   return (
     <div className="mon-tl">
-      <button type="button" className="mon-btn mon-btn--ghost" style={{ height: 30, padding: "0 8px" }} disabled>
-        ▶
-      </button>
-      <div className="mon-tl__labels">
-        {laneOrder.map(([id, label]) => (
-          <span key={id}>{label}</span>
-        ))}
+      <div className="mon-tl__row">
+        <button
+          type="button"
+          className="mon-tl__play"
+          onClick={() => {
+            if (!data.run) return;
+            if (!inReplay) {
+              seekTo(data.run.startedAt);
+              play();
+              return;
+            }
+            if (replayStatus === "playing") pause();
+            else play();
+          }}
+          title={inReplay && replayStatus === "playing" ? t("Pause") : t("Replay from the start")}
+          aria-label={inReplay && replayStatus === "playing" ? t("Pause") : t("Replay from the start")}
+        >
+          {inReplay && replayStatus === "playing" ? "⏸" : "▶"}
+        </button>
+
+        <div className="mon-tl__labels" style={{ height: trackHeight }}>
+          {lanes.map(([id, label]) => (
+            <span key={id} style={{ height: LANE_H }}>
+              {label}
+            </span>
+          ))}
+        </div>
+
+        <div
+          className="mon-tl__track"
+          style={{ height: trackHeight }}
+          role="group"
+          aria-label={t("Run timeline")}
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            seekRatio((event.clientX - rect.left) / Math.max(1, rect.width));
+          }}
+        >
+          {lanes.map(([id], index) => (
+            <span
+              key={id}
+              className="mon-tl__lane"
+              style={{ top: TRACK_TOP + index * LANE_H }}
+              aria-hidden
+            />
+          ))}
+          {marks.map((mark, index) => (
+            <span
+              key={index}
+              className={`mon-tl__blk mon-chip--${mark.tone}`}
+              style={{ top: TRACK_TOP - 4 + mark.lane * LANE_H, left: `${mark.left}%`, width: `${mark.width}%` }}
+              title={mark.label}
+            />
+          ))}
+          <span className="mon-tl__head" style={{ left: `${cursor * 100}%` }} aria-hidden>
+            <span className="mon-tl__head-label">{cursorLabel}</span>
+          </span>
+          {/* The live edge: where the run actually ended, which is where the
+              cursor sits while nothing is pinned. */}
+          {cursor >= 0.999 ? <span className="mon-tl__livehead" aria-hidden /> : null}
+        </div>
+
+        <span className="mon-tl__speed mon-mono">{inReplay ? `${useReplayStore.getState().speed}×` : "1×"}</span>
       </div>
-      <div
-        className="mon-tl__lanes"
-        role="group"
-        aria-label={t("Run timeline")}
-        onClick={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect();
-          const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)));
-          seek(ratio * total);
-        }}
-      >
-        {laneOrder.map(([id]) => (
-          <div key={id} className="mon-tl__lane">
-            {(lanes.get(id) ?? []).map((block, index) => (
-              <span
-                key={index}
-                className={`mon-tl__blk mon-chip--${block.tone}`}
-                style={{ left: `${block.left}%`, width: `${block.width}%` }}
-                title={block.label}
-              />
-            ))}
-          </div>
-        ))}
-        <span className="mon-tl__head" style={{ left: `${cursor * 100}%` }} aria-hidden />
-      </div>
-      <span className="mon-mono" style={{ fontSize: 11, color: "var(--mon-t3)", width: 44, textAlign: "right" }}>
-        {formatClock(data.run?.startedAt ?? Date.now()).slice(0, 5)}
-      </span>
     </div>
   );
 }
 
-function laneFor(kind: string): string {
+/**
+ * Which lane an activity belongs on, or `undefined` when it is not an activity.
+ *
+ * The three lanes are a reading of the Activity feed, so only activities get a
+ * block. `process` (an egg) is deliberately absent: it is a process a command
+ * *left behind*, re-reported every time its child count changes — not something
+ * the agent did in that instant. Lifecycle and error nodes are excluded for the
+ * same reason.
+ */
+function laneFor(kind: string): string | undefined {
   switch (kind) {
     case "think":
       return "think";
@@ -504,9 +596,7 @@ function laneFor(kind: string): string {
       return "files";
     case "run":
       return "shell";
-    case "process":
-      return "eggs";
     default:
-      return "shell";
+      return undefined;
   }
 }

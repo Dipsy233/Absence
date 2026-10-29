@@ -7,6 +7,8 @@ import { useStageStore } from "../../stores/stageStore";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useT } from "../../lib/i18n";
 import { FilePanel } from "../../components/files/FilePanel";
+import { useChatStore } from "../../stores/chatStore";
+import { eventContext } from "../../lib/context";
 import type { ActivityRow } from "../../types/stage";
 import {
   Chip,
@@ -396,6 +398,8 @@ function FeedRow({
   onOpen?: (row: ActivityRow) => void;
 }) {
   const t = useT();
+  const openMenu = useUiStore((s) => s.openMenu);
+  const addContext = useChatStore((s) => s.addContext);
   const tone = TONE_FOR_ROW[row.tone];
   const openable = row.stageItem !== undefined;
   return (
@@ -406,6 +410,13 @@ function FeedRow({
       data-selected={current || focused || focusEventId === row.id ? "true" : undefined}
       data-dim={!anchor && !openable ? "true" : undefined}
       onClick={() => openable && onOpen?.(row)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        openMenu(event.clientX, event.clientY, [
+          { label: t("Open in Stage"), disabled: !openable, onSelect: () => openable && onOpen?.(row) },
+          { label: t("Add event to Chat"), onSelect: () => addContext(eventContext(row.event)) },
+        ]);
+      }}
       title={openable ? row.primary : `${row.action} · ${row.primary}`}
       aria-current={current ? "true" : undefined}
     >

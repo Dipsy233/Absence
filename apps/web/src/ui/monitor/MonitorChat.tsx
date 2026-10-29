@@ -119,14 +119,13 @@ export function MonitorChat() {
         </div>
 
         {busy ? (
-          <button type="button" className="mon-btn mon-btn--danger" style={{ height: 36 }} onClick={() => void abort()}>
+          <button type="button" className="mon-btn mon-btn--danger mon-chat__send" onClick={() => void abort()}>
             {t("Stop")}
           </button>
         ) : (
           <button
             type="submit"
-            className="mon-btn mon-btn--pri"
-            style={{ height: 36 }}
+            className="mon-btn mon-btn--pri mon-chat__send"
             disabled={!connected || (!text.trim() && pending.length === 0)}
           >
             {t("Send")}
