@@ -51,6 +51,17 @@ interface StageStore {
   goMetrics: () => void;
   /** Show the conversation as the Stage's page. */
   goChat: () => void;
+  /**
+   * The page the reader last chose for the Stage when nothing is pinned
+   * (METRICS or CHAT), or undefined for "just follow the work".
+   *
+   * Classic's Stage has the same idea: when a run ends, the Stage goes back to
+   * whatever default page the reader had picked — the metrics desk, or the
+   * agent — instead of dumping them on the last activity of a finished run.
+   */
+  restingPage?: "metrics" | "chat";
+  /** Go back to the resting page, or to following if the reader never chose one. */
+  goResting: () => void;
   reset: () => void;
 }
 
@@ -157,12 +168,25 @@ export const useStageStore = create<StageStore>((set, get) => ({
 
   goLive: () => set({ mode: "live", following: true, activeItem: undefined }),
 
-  goMetrics: () => set({ mode: "metrics", following: false }),
+  goMetrics: () => set({ mode: "metrics", following: false, activeItem: undefined, restingPage: "metrics" }),
 
   // Chat is a page, not a pin: it is not a view of one activity, so it is
   // entered the same way METRICS is — deliberately without an `activeItem`,
   // which is what the pin bar reads to describe "the moment everything shows".
-  goChat: () => set({ mode: "chat", following: false, activeItem: undefined }),
+  goChat: () => set({ mode: "chat", following: false, activeItem: undefined, restingPage: "chat" }),
+
+  /**
+   * Where the Stage goes when a run ends.
+   *
+   * A finished run has no "now" to follow, so following is not an option: the
+   * Stage rests on the page the reader chose last (METRICS or CHAT), and a
+   * reader who never chose one gets CHAT — the conversation is what a finished
+   * run leaves behind, and it is the page that answers "what did it say".
+   */
+  goResting: () => {
+    const page = get().restingPage ?? "chat";
+    set({ mode: page, following: false, activeItem: undefined });
+  },
 
   reset: () =>
     set({
@@ -172,5 +196,6 @@ export const useStageStore = create<StageStore>((set, get) => ({
       lastByType: {},
       userFile: undefined,
       agentFile: undefined,
+      restingPage: undefined,
     }),
 }));

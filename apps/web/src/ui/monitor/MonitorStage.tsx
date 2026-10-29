@@ -80,6 +80,36 @@ export function MonitorStage({ data }: { data: MonitorData }) {
    */
   const replaying = mode === "replay";
   const replayTime = useReplayStore((s) => s.currentTime);
+
+  /**
+   * A finished run has no "now", so the Stage rests on a page instead of
+   * following — Classic's rule, kept.
+   *
+   * The *transition* is done in the store by the effect below, not faked here:
+   * a render-time override would leave `mode` and `following` disagreeing with
+   * what is on screen, and every consumer that reads them (the tab strip, the
+   * pin bar, the rail's LIVE/REPLAY chip) would then be wrong.
+   *
+   *   run starts        → follow the work again
+   *   run ends          → rest on the page the reader chose last
+   *                       (METRICS / CHAT; CHAT if they never chose)
+   *   click a row       → pin that moment, whatever the run is doing
+   */
+  const runStatus = data.run?.status;
+  const goResting = useStageStore((s) => s.goResting);
+  useEffect(() => {
+    if (replaying) return;
+    if (runStatus !== undefined && runStatus !== "running" && following) {
+      goResting();
+      return;
+    }
+    // A new run re-arms following: a reader who rested on CHAT after the last
+    // run still wants to watch the next one happen.
+    if (runStatus === "running" && !following && (mode === "metrics" || mode === "chat")) {
+      goLive();
+    }
+  }, [runStatus, following, mode, replaying, goResting, goLive]);
+
   const page = replaying ? replayItem : following ? data.liveItem : item;
   const showingMetrics = mode === "metrics";
   const showingChat = mode === "chat";
@@ -111,7 +141,7 @@ export function MonitorStage({ data }: { data: MonitorData }) {
         ? active
         : (views[active.type] ?? active);
 
-  /** Which page the sheet is showing. */
+  /** Which page the sheet is showing: what the mode says. */
   const tab: Page = showingMetrics ? "metrics" : showingChat ? "chat" : "activity";
 
   const chooseTab = (next: Exclude<Page, "activity">) => {
