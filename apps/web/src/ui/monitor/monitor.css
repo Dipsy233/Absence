@@ -1037,50 +1037,19 @@
 .mon-agent__tile > * {
   border-radius: inherit;
 }
-/* The agent's head, at authored size, cropped by the tile.
+/* The whole character, not a crop: the WhaleBun fits its 2048px canvas to
+   whatever box it is given (Avatar's useFit, watched by a ResizeObserver), so
+   a box that fills the tile draws the full animation page, scaled — the
+   earlier 420px head-shot cropped the body away, which read as "a picture of
+   a head" rather than the agent.
  *
- * The WhaleBun is drawn on a 2048 canvas and `Avatar`'s fit scales it into
- * whatever box it is given: `min((w-24)/1420, (h-24)/1330)`. Every animation
- * amplitude is in canvas units — `floaty` 24px, `speakHop` 34px, `idleHand`
- * 10px — so **the box size is the visible motion**:
- *
- *     box   fit    floaty on screen   head on screen
- *     184   0.113  2.7px              86px   ← reads as a still image
- *     300   0.194  4.7px             150px
- *     420   0.279  6.7px             211px   ← this one
- *
- * 184px was the old tile box and the reason the character looked frozen: 2.7px
- * of bob, damped further by the sway/squash layers, measured 1.65px on screen.
- * The tile therefore holds a **420px** box — the size the character needs in
- * order to move — and crops it to the head.
- *
- * The tile scales nothing itself: the box is only *translated*, so the amplitude
- * the fit computed survives. An earlier version put `scale(0.886)` on this box,
- * which shrank that bob again and turned the character into a blue-and-white
- * blob.
- *
- * Framing, measured from the rendered part boxes at a 420px box: the head spans
- * x -87..124 and y -15..114 relative to the box's top-left, so the box is
- * offset so that the head's left edge sits on the tile's left edge and its
- * top edge on the tile's top edge — the crop then bleeds the head off the
- * right and bottom, which is what "fill the frame" means for a head-shot.
- *
- * `left`/`top` carry the offset and `translate(-50%,-50%)` centres the box on
- * that point. Folding the offset into the same transform
- * (`translate(calc(-50% + Npx), …)`) mixes a percentage of the *box* with px of
- * the *offset*, and the numbers stop meaning anything.
- */
+ * The box size is still the animation's amplitude: the whole-page fit makes
+ * the bob and sway read smaller than the head-shot did. That is the price of
+ * showing the character, and the idle animations stay visible because the
+ * scale is real (the canvas is genuinely 2048 → tile), not a re-render. */
 .mon-agent__tileinner {
   position: absolute;
-  width: 420px;
-  height: 420px;
-  /* The *face* is what gets centred, not the head's box: a head-shot is read at
-     the eyes, and centring the head instead pushes the face off the bottom of
-     the crop (measured: head l=3 t=4, face t=68 in a 96px tile). */
-  left: calc(50% - 210px + 87px - 14px - 62px);
-  top: calc(50% - 210px + 15px + 13px + 33px - 102px);
-  transform: none;
-  transform-origin: 0 0;
+  inset: 0;
 }
 
 /* The avatar reports its own status row; the rail states it in words beside
