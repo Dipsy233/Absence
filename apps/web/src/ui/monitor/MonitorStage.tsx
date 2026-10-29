@@ -456,6 +456,10 @@ function Timeline({ data }: { data: MonitorData }) {
   const inReplay = useStageStore((s) => s.mode === "replay");
   const following = useStageStore((s) => s.following);
   const goLive = useStageStore((s) => s.goLive);
+  // The pinned item — subscribed before the early returns below: a hook's
+  // place in the order is fixed on the first render, and the empty-run exits
+  // would otherwise skip it and crash the moment nodes appeared.
+  const activeItem = useStageStore((s) => s.activeItem);
 
   /**
    * Three lanes, one per *kind of activity*: reasoning, files, shell.
@@ -636,10 +640,18 @@ function Timeline({ data }: { data: MonitorData }) {
     );
   }
 
-  // Live, the cursor is the end of the line; in replay it is where the scrubber
-  // is. A pinned page has no clock of its own, so the end is the honest place.
-  const cursor = inReplay && data.run
-    ? Math.min(1, Math.max(0, (replayTime - data.run.startedAt) / total))
+  // The cursor's position: in replay it is where the scrubber is; on a pinned
+  // page it is the pinned moment — the page shows that instant, so the line
+  // must point at it, not silently rest at the end; only a page with no clock
+  // of its own (METRICS, CHAT) leaves the cursor at the live edge.
+  const pinnedAt =
+    !following && !inReplay && activeItem?.event ? activeItem.event.timestamp : undefined;
+  const cursor = data.run
+    ? inReplay
+      ? Math.min(1, Math.max(0, (replayTime - data.run.startedAt) / total))
+      : pinnedAt !== undefined
+        ? Math.min(1, Math.max(0, (pinnedAt - data.run.startedAt) / total))
+        : 1
     : 1;
   const cursorLabel = formatOffset(cursor * total);
   const trackHeight = shownLanes.length * LANE_H + 2;
@@ -649,16 +661,29 @@ function Timeline({ data }: { data: MonitorData }) {
       <div className="mon-tl__row">
         {/*
           Replay's controls, all on the left in two rows: step and play on the
-          top row, speed and live on the bottom. Step and speed only answer
-          while a replay is on screen — there is no cursor to move and no clock
-          to run faster otherwise — and live is lit while the page *is* live.
+          top row, speed and live on the bottom. The strip is a player — live
+          is its playing state, and both a step and a pause leave it holding a
+          moment (a paused replay), which the ▶ then continues.
         */}
         <div className="mon-tl__controls" style={{ height: trackHeight }}>
           <button
             type="button"
             className="mon-tl__ctl"
-            disabled={!inReplay}
+            disabled={!data.run}
             onClick={() => {
+              if (!data.run) return;
+              if (!inReplay) {
+                // Stepping back from live holds the previous activity: load
+                // the replay paused at the live edge, then one step back.
+                selectRun(data.run.id);
+                load(runEvents(data.events, data.run), {
+                  startAtEnd: true,
+                  label: `#${data.run.index} · ${data.run.prompt}`,
+                });
+                useReplayStore.getState().stepBackward();
+                setMode("replay");
+                return;
+              }
               ensureReplayFresh();
               stepBackward();
             }}
@@ -670,11 +695,19 @@ function Timeline({ data }: { data: MonitorData }) {
           <button
             type="button"
             className="mon-tl__ctl mon-tl__ctl--play"
+            disabled={!data.run}
             onClick={() => {
               if (!data.run) return;
               if (!inReplay) {
-                seekTo(data.run.startedAt);
-                play();
+                // Live is the player's playing state, so its button pauses:
+                // hold the view at the live edge as a paused replay, which the
+                // clock can then be walked or played from.
+                selectRun(data.run.id);
+                load(runEvents(data.events, data.run), {
+                  startAtEnd: true,
+                  label: `#${data.run.index} · ${data.run.prompt}`,
+                });
+                setMode("replay");
                 return;
               }
               if (replayStatus === "playing") pause();
@@ -682,20 +715,20 @@ function Timeline({ data }: { data: MonitorData }) {
             }}
             title={
               !inReplay
-                ? t("Replay from the start")
+                ? t("Pause")
                 : replayStatus === "playing"
                   ? t("Pause")
                   : t("Play")
             }
             aria-label={
               !inReplay
-                ? t("Replay from the start")
+                ? t("Pause")
                 : replayStatus === "playing"
                   ? t("Pause")
                   : t("Play")
             }
           >
-            {inReplay && replayStatus === "playing" ? "⏸" : "▶"}
+            {!inReplay || replayStatus === "playing" ? "⏸" : "▶"}
           </button>
           <button
             type="button"

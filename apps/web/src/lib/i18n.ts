@@ -25,6 +25,7 @@ const ZH: Record<string, string> = {
     "把桌面世界以半透明幽灵浮在 Stage 内容页上",
   "degraded · mock": "降级 · 模拟",
   live: "在线",
+  online: "在线",
   offline: "离线",
   model: "模型",
   "context usage": "上下文用量",
@@ -273,9 +274,8 @@ const ZH: Record<string, string> = {
     "更早结束的进程已从列表淘汰以控制长度。运行中的始终显示。它们仍在会话存档和报告里。",
 
   // ── Monitor's agent block ──────────────────────────────────────────────
-  // `live` / `replay` already exist above (the connection chip and the replay
-  // bar); they are reused here rather than given a second translation.
-  pinned: "已钉住",
+  // `live` / `replay` already exist above (the replay bar and the Stage); the
+  // connection chip reads `online` so the two "live" meanings never collide.
   "Back to live": "回到实时",
   "Replay from the start": "从头回放",
   "One activity back": "后退一个动作",

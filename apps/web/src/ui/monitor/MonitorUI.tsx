@@ -120,11 +120,11 @@ export function MonitorUI() {
           </span>
         </div>
 
-        {/* The connection, then the way out of the session: live/offline is
-            read right before you act on it. */}
-        <Chip tone={connected ? "edit" : "err"} title={connected ? t("live") : t("offline")}>
+        {/* The connection — "online", deliberately not "live": LIVE is the
+            centre column's clock word, and the two must not collide. */}
+        <Chip tone={connected ? "edit" : "err"} title={connected ? t("online") : t("offline")}>
           <Dot tone={connected ? "edit" : "err"} />
-          {connected ? t("live") : t("offline")}
+          {connected ? t("online") : t("offline")}
         </Chip>
 
         <button type="button" className="mon-btn mon-btn--ghost mon-nodrag" onClick={() => void leaveSession()}>

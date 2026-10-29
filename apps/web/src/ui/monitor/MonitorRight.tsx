@@ -106,22 +106,18 @@ function AgentHead({ data }: { data: MonitorData }) {
 
   /**
    * What the *centre column* is doing, which is a different fact from the
-   * agent's status: following the run as it happens, walking a replay, or
-   * resting on a pinned moment.
-   *
-   * The label follows the Stage's *mode*, not `following` alone: a reader on
-   * METRICS, on CHAT or on a pinned row is not "replaying" anything, and a chip
-   * that said REPLAY there was describing a clock that was not running. Replay
-   * is the one mode with a cursor of its own; a pin is its own third state.
+   * agent's status: following the run as it happens, or holding a moment —
+   * a walking replay and a pinned page are the same answer to the reader,
+   * "the clock has stopped here", so both read REPLAY.
    */
   const stageMode = useStageStore((s) => s.mode);
   const replaying = stageMode === "replay";
-  // The *pinned* item, subscribed here because the LIVE/REPLAY/PINNED chip
-  // reads it: a pin made anywhere in the face has to flip the chip at once.
+  // The *pinned* item, subscribed here because the LIVE/REPLAY chip reads it:
+  // a pin made anywhere in the face has to flip the chip at once.
   const activeItem = useStageStore((s) => s.activeItem);
-  const pinned = !replaying && !following && activeItem !== undefined;
-  const playing: "live" | "replay" | "pinned" = replaying ? "replay" : pinned ? "pinned" : "live";
-  const playingTone = replaying ? "run" : pinned ? "think" : "edit";
+  const holding = !following && activeItem !== undefined;
+  const playing: "live" | "replay" = replaying || holding ? "replay" : "live";
+  const playingTone = playing === "replay" ? "run" : "edit";
 
   /**
    * The status the reader is looking at, which is not always the live one.
@@ -205,9 +201,9 @@ function AgentHead({ data }: { data: MonitorData }) {
             <span className="mon-agent__norun">{t("no run")}</span>
           )}
           {/*
-            LIVE / REPLAY / PINNED — what the centre column is doing with the
-            run. It belongs on the run's row: both facts are about the clock
-            the reader is watching, and the pair reads "run … view".
+            LIVE / REPLAY — what the centre column is doing with the run, at
+            the run row's right edge, so the pair reads "Run #1 … LIVE". A pin
+            and a replay both read REPLAY: in both the clock has stopped.
           */}
           <span className={`mon-agent__play mon-chip--${playingTone}`}>
             <Dot tone={playingTone} />
