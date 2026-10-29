@@ -24,23 +24,35 @@ export function formatBytes(count: number): string {
   return `${(count / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** mm:ss for replay offsets (read02 §21). */
+/**
+ * A duration as a clock: `MM:SS`, or `H:MM:SS` once it passes an hour.
+ *
+ * The hours matter: `minutes` used to be unbounded, so a run that lasted two
+ * hours printed `120:33` — which reads as a broken clock, not as a long run.
+ * Every caller (replay offsets, the report's timeline, a process's lifetime, a
+ * run's duration) is a *span*, so rolling into hours is right for all of them.
+ * Zero-padded under an hour, because these are compared down a column.
+ */
 export function formatOffset(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-/** A span of time as h:mm:ss (or m:ss under an hour), for how long a process ran. */
-export function formatDuration(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
+  // `Math.max(0, NaN)` is NaN, so an unmeasurable span (a run with no end yet,
+  // a clock that was never set) would print `NaN:NaN`. Clamp it to zero here
+  // once, for every caller.
+  const total = Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 1000)) : 0;
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
   const seconds = total % 60;
   const pad = (n: number) => String(n).padStart(2, "0");
-  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }
+
+/**
+ * A span of time, for how long a process ran.
+ *
+ * The same clock as `formatOffset` — one formatter, so "how long was this
+ * process alive" and "how far into the run was this" can never disagree about
+ * what `1:02:03` means.
+ */
+export const formatDuration = formatOffset;
 
 /** "12s ago" style relative time. */
 export function formatAgo(timestamp: number | undefined, now = Date.now()): string {

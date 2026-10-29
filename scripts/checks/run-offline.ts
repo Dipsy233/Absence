@@ -33,6 +33,7 @@ const CHECKS: Array<[string, number]> = [
   ["check-classify.ts", 60_000],
   ["check-report.ts", 60_000],
   ["check-markdown.ts", 60_000],
+  ["check-format.ts", 60_000],
   ["check-chimes.ts", 60_000],
   ["check-settings.ts", 60_000],
   ["check-codex.ts", 60_000],

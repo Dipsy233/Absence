@@ -408,6 +408,9 @@
 }
 .mon-ev__times {
   display: flex;
+  /* A fixed width, so the two clocks line up down the column and a row that
+     crosses an hour (`1:00:05`) does not shift every other row sideways. */
+  min-width: 54px;
   grid-column: 3;
   grid-row: 1 / span 2;
   flex-direction: column;
