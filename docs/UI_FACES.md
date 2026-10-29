@@ -71,11 +71,20 @@ with a plain CSS transform, so the animation keeps playing. The earlier version
 overrode the fit's own `transform` with `!important` and hid the props and fx,
 which is exactly why the character froze and lost its props.
 
-**Agent Folder and Agent Eggs are Classic's panels.** Not a second reading of
-the same data: `AgentFolder` and `AgentEggsPanel` already answer "which versions
-has it seen", "which process is still running", "show that egg's metrics", and
-the rail is the same rail — so they are mounted as-is, each with a real floor
-(`min-height: 190px`) so neither collapses.
+**The rail is sections, not cards.** Agent Folder and Agent Eggs borrow Classic's
+*logic* — the version expansion with the v0/v1/v2 chips, the running/dead/all
+filter, the query, "open that version on the Stage", "show that egg's metrics" —
+but not its markup: each is a section of this column separated by a hairline
+(`.mon-railsec`), with a heading, a scrolling body and no box, header bar or
+inner padding. Classic's rails are stacks of cards because they sit in a
+dashboard of cards; here the chrome's space belongs to the content.
+
+Two behaviour fixes came out of doing it: the egg filter opens on `running`
+*only when something is running* (a session whose only egg exited used to open
+on an empty list under a "0/1 running" heading), and the CPU/MEM pair is
+actually scoped to the selected egg — it used to read `selectedEggPid` and
+report the whole agent anyway, so the scope is now applied and named above the
+pair.
 
 **Repeats fold.** A `process` event is a state update, not an act: one long-lived
 command re-reports every time its child count moves. Fourteen identical RUN rows

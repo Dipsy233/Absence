@@ -189,12 +189,20 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
    * which is the only definition that answers "how long did that process run?".
    * The whole agent's tree has no single lifetime, so it falls back to the visit.
    */
-  const observedLifetime = useSessionStore((s) => {
-    if (!selected) return undefined;
-    const entry = s.eggState.eggs.get(selected.eggPid);
-    if (!entry) return undefined;
-    return { startedAt: entry.startedAt, exitedAt: entry.exitedAt, status: entry.status };
-  });
+  /**
+   * The selected egg's record, read straight from the store.
+   *
+   * The selector must return a *stable* value: zustand v5 compares snapshots by
+   * identity, and this used to build a fresh `{startedAt, exitedAt, status}`
+   * object on every call — which React saw as "the store changed on every
+   * render", so selecting an egg and opening METRICS put the dashboard into an
+   * infinite re-render loop ("Maximum update depth exceeded"). Returning the
+   * egg itself is stable; the derived numbers are computed below.
+   */
+  const observedEgg = useSessionStore((s) => (selected ? s.eggState.eggs.get(selected.eggPid) : undefined));
+  const observedLifetime = observedEgg
+    ? { startedAt: observedEgg.startedAt, exitedAt: observedEgg.exitedAt, status: observedEgg.status }
+    : undefined;
   void eggVersion;
   const observationDuration = observedLifetime
     ? Math.max(0, (observedLifetime.exitedAt ?? now) - observedLifetime.startedAt)

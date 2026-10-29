@@ -945,52 +945,51 @@
   color: var(--mon-t3);
 }
 
-/* Classic's panels, stacked in the rail. They are `flex-1` boxes inside their
-   own rails; here they need a floor, or two panels with a `min-h-0 flex-1`
-   body collapse to nothing when the rail is tall. A fixed share of the rail
-   with a minimum height gives each one a real body to scroll. */
-.mon-railpanels {
+/* ── The rail's sections ────────────────────────────────────────────────────
+   Every block in this column is a section of one column, separated by a
+   hairline — not a boxed card with its own border, header bar and inner
+   padding. Classic's rails are stacks of cards because they sit in a dashboard
+   of cards; here a rule is enough, and the space the boxes' chrome was eating
+   goes back to the content.
+
+   `.mon-railsec` is the section: a heading, then a body that scrolls. The two
+   long ones (files, eggs) share the leftover height equally and never collapse,
+   because a section with a heading and no body reads as a broken panel. */
+.mon-railsec {
   display: flex;
   min-height: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-}
-.mon-railpanels > .panel {
-  min-height: 190px;
   flex: 1 1 0;
+  flex-direction: column;
+  border-top: 1px solid var(--mon-bd);
 }
-/* Their headers are Classic's 11px uppercase labels; inside this rail they read
-   as section headings, so they take the rail's own type scale. */
-.mon-railpanels .panel-header {
-  padding: 9px 10px;
-  border-color: var(--mon-bd);
-  background: transparent;
-  color: var(--mon-t3);
-  font-size: 10.5px;
-  letter-spacing: 0.07em;
+/* The block above (the agent, or the attention tint) already ends with a rule,
+   so the first section does not draw a second one on top of it. */
+.mon-col--right > .mon-railsec:first-of-type {
+  border-top: 0;
 }
-.mon-railpanels .panel-header > span:last-child {
-  color: var(--mon-t3);
-  font-size: 11px;
-  letter-spacing: 0;
-  text-transform: none;
+.mon-railsec > .mon-sec {
+  flex: none;
 }
-.mon-railpanels .panel {
-  border-color: var(--mon-bd);
-  border-radius: 10px;
-  background: var(--mon-s1);
-}
-.mon-railpanels .panel-body {
-  padding: 8px;
+.mon-raillist {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-bottom: 8px;
 }
 
 .mon-met {
   display: grid;
   flex: none;
   grid-template-columns: 1fr 1fr;
-  border-bottom: 1px solid var(--mon-bd);
+  border-top: 1px solid var(--mon-bd);
+}
+/* When an egg is selected the numbers are that process's, not the agent's —
+   said once, above the pair, so the two figures cannot be read as the whole. */
+.mon-met__scope {
+  grid-column: 1 / -1;
+  padding: 7px 14px 0;
+  font: 10.5px var(--mon-mono);
+  color: var(--mon-egg);
 }
 .mon-met > div {
   min-width: 0;
@@ -1020,19 +1019,21 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 14px 6px;
+  padding: 11px 14px 6px;
 }
 .mon-sec > span:last-child {
   font-size: 11.5px;
   color: var(--mon-t3);
 }
 
+/* ── Files ──────────────────────────────────────────────────────────────── */
+
 .mon-file {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
+  gap: 7px;
+  padding: 5px 14px;
   border: 0;
   background: transparent;
   text-align: left;
@@ -1042,7 +1043,13 @@
 }
 .mon-file[data-on="true"] {
   background: rgb(114 188 143 / 0.07);
-  box-shadow: inset 3px 0 0 var(--mon-edit);
+  box-shadow: inset 2px 0 0 var(--mon-edit);
+}
+.mon-file__caret {
+  width: 9px;
+  flex: none;
+  font: 9px var(--mon-mono);
+  color: var(--mon-t3);
 }
 .mon-file__n {
   min-width: 0;
@@ -1052,6 +1059,11 @@
   white-space: nowrap;
   font: 12px var(--mon-mono);
   color: var(--mon-t);
+}
+.mon-file__size {
+  flex: none;
+  font: 10.5px var(--mon-mono);
+  color: var(--mon-t3);
 }
 
 .mon-vers {
@@ -1075,21 +1087,111 @@
   outline-offset: 1px;
 }
 
-.mon-egg {
-  margin: 4px 12px;
-  padding: 9px 11px;
-  border: 1px solid var(--mon-bd);
-  border-radius: 8px;
+/* The versions of one file, indented under it: a list, not cards. */
+.mon-verlist {
+  padding: 1px 14px 6px 30px;
+}
+.mon-verlist > button {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  border: 0;
   background: transparent;
   text-align: left;
+  font: 11px var(--mon-mono);
+  color: var(--mon-t3);
+}
+.mon-verlist > button:hover {
+  color: var(--mon-t);
+}
+.mon-verlist__v {
+  width: 22px;
+  flex: none;
+  color: var(--mon-t2);
+}
+.mon-verlist > button > span:nth-child(2) {
+  width: 34px;
+  flex: none;
+}
+.mon-verlist__what {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mon-verlist__at {
+  flex: none;
+  opacity: 0.6;
+}
+
+/* ── Eggs ───────────────────────────────────────────────────────────────── */
+
+/* The filter and the query, in this face's controls: a small segmented row and
+   a search line, both flush with the section's own gutter. */
+.mon-eggbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px 8px;
+}
+.mon-seg--tiny {
+  padding: 2px;
+  border-radius: 7px;
+}
+.mon-seg--tiny > button {
+  padding: 3px 7px;
+  font-size: 11px;
+}
+.mon-seg--tiny > button > em {
+  margin-left: 4px;
+  font-size: 10px;
+}
+.mon-eggbar__q {
+  min-width: 0;
+  flex: 1;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 6px;
+  background: var(--mon-s2);
+  color: var(--mon-t);
+  font: 11px var(--mon-mono);
+  outline: none;
+}
+.mon-eggbar__q::placeholder {
+  color: var(--mon-t3);
+}
+.mon-eggbar__q:focus {
+  border-color: rgb(94 159 232 / 0.6);
+}
+
+/* One egg: a row with a hairline, not a card. The selected/running state is the
+   left bar and a tint — the same vocabulary the feed's rows use. */
+.mon-egg {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 8px 0 14px;
+  border-left: 2px solid transparent;
 }
 .mon-egg:hover {
-  border-color: var(--mon-bd2);
   background: var(--mon-s2);
 }
 .mon-egg[data-running="true"] {
-  border-color: rgb(223 132 168 / 0.4);
-  background: rgb(223 132 168 / 0.06);
+  border-left-color: rgb(223 132 168 / 0.5);
+}
+.mon-egg__body {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  padding: 6px 0 7px;
+  border: 0;
+  background: transparent;
+  text-align: left;
 }
 .mon-egg__r1 {
   display: flex;
@@ -1099,13 +1201,54 @@
   font: 12px var(--mon-mono);
   color: var(--mon-t);
 }
-.mon-egg__r2 {
-  margin-top: 3px;
+.mon-egg__name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+.mon-egg__name > span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
+}
+.mon-egg__pid {
+  flex: none;
+  font-size: 10.5px;
   color: var(--mon-t3);
+}
+.mon-egg__r2 {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 11px var(--mon-mono);
+  color: var(--mon-t2);
+}
+.mon-egg__r3 {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--mon-t3);
+}
+.mon-egg__metric {
+  display: flex;
+  width: 26px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mon-t3);
+  font-size: 12px;
+}
+.mon-egg__metric:hover {
+  background: var(--mon-s3);
+  color: var(--mon-t);
+}
+.mon-egg__metric[aria-pressed="true"] {
+  background: rgb(222 146 85 / 0.14);
+  color: var(--mon-run);
 }
 
 .mon-fold {
@@ -1114,20 +1257,23 @@
   color: var(--mon-t3);
 }
 
+/* The attention verdict is the one block that is *not* a plain section: it is a
+   warning, so it carries a tint and an inset rule instead of a full box. It sits
+   flush in the column (no margin), so the rail's left edge stays one line. */
 .mon-att {
-  margin: 12px;
-  padding: 11px 13px;
-  border: 1px solid var(--mon-bd);
-  border-radius: 10px;
-  background: var(--mon-s2);
+  flex: none;
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--mon-bd);
+  box-shadow: inset 3px 0 0 var(--mon-bd2);
   font-size: 12px;
 }
 .mon-att[data-level="high"] {
-  border-color: rgb(233 115 88 / 0.35);
+  box-shadow: inset 3px 0 0 var(--mon-err);
   background: rgb(233 115 88 / 0.1);
 }
 .mon-att[data-level="medium"] {
-  border-color: rgb(222 146 85 / 0.35);
+  box-shadow: inset 3px 0 0 var(--mon-run);
   background: rgb(222 146 85 / 0.09);
 }
 .mon-att__h {
