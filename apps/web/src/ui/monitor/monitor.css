@@ -981,42 +981,85 @@
   padding-bottom: 8px;
 }
 
+/* CPU · <scope> · MEM, then the two figures under them.
+   A label row and a figure row, no card, no background: the numbers are the
+   content and the section rule above them is the only chrome. */
 .mon-met {
-  display: grid;
+  display: flex;
   flex: none;
-  grid-template-columns: 1fr 1fr;
+  flex-direction: column;
   border-top: 1px solid var(--mon-bd);
 }
-/* When an egg is selected the numbers are that process's, not the agent's —
-   said once, above the pair, so the two figures cannot be read as the whole. */
-.mon-met__scope {
-  grid-column: 1 / -1;
-  padding: 7px 14px 0;
-  font: 10.5px var(--mon-mono);
-  color: var(--mon-egg);
+.mon-met__head {
+  display: grid;
+  align-items: baseline;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px 14px 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mon-t3);
 }
-.mon-met > div {
+/* The middle slot names what the figures are *of*. It is the only thing in this
+   block that can be long, so it truncates and the two labels never move. */
+.mon-met__name {
   min-width: 0;
-  padding: 10px 14px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0;
+  text-transform: none;
+  font: 11px var(--mon-mono);
+  color: var(--mon-t2);
 }
-.mon-met > div + div {
-  border-left: 1px solid var(--mon-bd);
+.mon-met__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 2px 14px 8px;
 }
-/* The figure's colour comes from its metric tone (`mon-chip--run` /
-   `mon-chip--read`), which is the same hue as its sparkline and as the
-   dashboard's line — so the rule must not set a colour of its own. */
+.mon-met__cell {
+  min-width: 0;
+}
+.mon-met__cell--end {
+  text-align: right;
+}
+/* One line: the current value in its metric's colour (set from metricColors by
+   the component, so it cannot drift from the chart), the secondary value beside
+   it small and grey. */
+.mon-met b,
+.mon-met small {
+  display: inline;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
 .mon-met b {
-  display: block;
-  margin-top: 2px;
   font: 600 15px var(--mon-mono);
 }
 .mon-met small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
+  margin-left: 5px;
+  font: 11px var(--mon-sans);
   color: var(--mon-t3);
+}
+.mon-met svg {
+  margin-top: 3px;
+}
+
+.mon-sec {
+  flex: none;
+}
+.mon-raillist {
+  min-height: 0;
+  flex: 1 1 auto;
+  /* Rows truncate their own text, so the only scrolling this list ever needs is
+     vertical. `overflow-x: hidden` is the belt to the rows' braces: a future
+     row that forgets to truncate must not turn the rail into a sideways scroll. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-bottom: 8px;
 }
 
 .mon-sec {

@@ -26,6 +26,7 @@ import { useT } from "../../lib/i18n";
 import { Avatar } from "../../components/agent/Avatar";
 import { MediaAvatar } from "../../components/agent/MediaAvatar";
 import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
+import { CPU_COLOR, MEM_COLOR } from "../../lib/metricColors";
 import { Dot, phaseWord, Spark, toneForStatus } from "./atoms";
 import type { MonitorData } from "./useMonitorData";
 
@@ -118,11 +119,9 @@ function Usage() {
 
   /**
    * The numbers for the asked-for scope: one egg when one is selected (the same
-   * selection Agent Eggs sets), otherwise the whole agent. Reading `selectedEggPid`
-   * and then always reporting the agent was a lie in the first version of this
-   * block — the scope is now actually applied, and the caption says which it is.
+   * selection Agent Eggs sets), otherwise the whole agent.
    */
-  const { cores, avgCores, memMiB, peakMiB, cpuSpark, memSpark, cpuCount, hostPercent, scope } = useMemo(() => {
+  const { cores, avgCores, memMiB, peakMiB, cpuSpark, memSpark, cpuCount, scope } = useMemo(() => {
     const latest = latestFrame(frames);
     const cpuCountNow = latest?.host.cpuCount ?? 1;
     const scoped = selectedEggPid !== undefined;
@@ -148,52 +147,60 @@ function Usage() {
       cpuSpark: spark,
       memSpark: mem,
       cpuCount: cpuCountNow,
-      hostPercent: hostCpuPercent(frames),
       scope: scoped ? (egg?.name ?? `pid ${selectedEggPid}`) : undefined,
     };
   }, [frames, version, now, selectedEggPid]);
 
-  const scopeLine = scope ? (
-    <span className="mon-met__scope" title={t("An egg is selected — the numbers are that process, not the whole agent")}>
-      {scope}
-    </span>
-  ) : null;
-
-  if (frames.length === 0) {
-    return (
-      <div className="mon-met">
-        <div>
-          <div className="mon-cap">{t("CPU")}</div>
-          <b>—</b>
-          <small>{t("Waiting for the first sample…")}</small>
-        </div>
-        <div>
-          <div className="mon-cap">{t("Memory")}</div>
-          <b>—</b>
-          <small>&nbsp;</small>
-        </div>
-      </div>
-    );
-  }
+  /**
+   * One row of labels, one row of figures.
+   *
+   *   CPU        <the process being watched>        MEM
+   *   0.30% avg 0.37%                          252 MB peak 292
+   *
+   * The label row names the *scope* in the middle, because the two figures are
+   * whatever that scope is: the whole agent by default, one egg when one is
+   * selected. Putting the name between them is what makes "CPU" and "MEM" mean
+   * something without a second caption line.
+   *
+   * The figure is one line, not three: the current value in its metric's colour,
+   * the secondary value beside it in small grey. `cores` and `host` were dropped
+   * — a rail this narrow is read at a glance, and "0.00 cores" beside "0.30%"
+   * says the same thing twice in different units.
+   */
+  const name = scope ?? t("Agent");
 
   return (
     <div className="mon-met">
-      {scopeLine}
-      <div>
-        <div className="mon-cap">{t("CPU")}</div>
-        <b className="mon-chip--run">{formatPercent((cores / Math.max(1, cpuCount)) * 100)}</b>
-        <small>
-          {formatCores(cores)} {t("cores")} · {t("avg 5m")} {formatPercent((avgCores / Math.max(1, cpuCount)) * 100)}
-        </small>
-        <Spark values={cpuSpark} tone="run" />
+      <div className="mon-met__head">
+        <span>{t("CPU")}</span>
+        <span className="mon-met__name" title={name}>
+          {name}
+        </span>
+        <span>{t("MEM")}</span>
       </div>
-      <div>
-        <div className="mon-cap">{t("Memory")}</div>
-        <b className="mon-chip--read">{formatBytes(memMiB * 1024 * 1024)}</b>
-        <small>
-          {t("peak")} {formatBytes(peakMiB * 1024 * 1024)} · {t("host")} {formatPercent(hostPercent)}
-        </small>
-        <Spark values={memSpark} tone="read" />
+
+      <div className="mon-met__row">
+        <div className="mon-met__cell">
+          <b style={{ color: CPU_COLOR }}>
+            {frames.length === 0 ? "—" : formatPercent((cores / Math.max(1, cpuCount)) * 100)}
+          </b>
+          {frames.length === 0 ? (
+            <small>{t("Waiting for the first sample…")}</small>
+          ) : (
+            <small>
+              {t("avg")} {formatPercent((avgCores / Math.max(1, cpuCount)) * 100)}
+            </small>
+          )}
+          {frames.length > 0 ? <Spark values={cpuSpark} tone="run" /> : null}
+        </div>
+
+        <div className="mon-met__cell mon-met__cell--end">
+          <b style={{ color: MEM_COLOR }}>
+            {frames.length === 0 ? "—" : formatBytes(memMiB * 1024 * 1024)}
+          </b>
+          {frames.length === 0 ? <small>&nbsp;</small> : <small>{`${t("peak")} ${Math.round(peakMiB)}`}</small>}
+          {frames.length > 0 ? <Spark values={memSpark} tone="read" /> : null}
+        </div>
       </div>
     </div>
   );

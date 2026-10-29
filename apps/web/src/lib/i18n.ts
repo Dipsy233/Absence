@@ -50,6 +50,7 @@ const ZH: Record<string, string> = {
   "Waiting for the first sample…": "等待第一个采样…",
   CPU: "CPU",
   MEM: "内存",
+  "Memory": "内存",
   cores: "核",
   "avg 5m": "5 分钟均值",
   session: "会话",
