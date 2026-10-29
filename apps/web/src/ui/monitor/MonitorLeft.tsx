@@ -43,26 +43,14 @@ const STATUS_WORD: Record<RunSummary["status"], string> = {
  * machine sees, no avatar, no prose. Clicking a row puts that moment on the
  * Stage; clicking the one already on the Stage returns to the default page.
  */
-/** The run block the header states: who is driving, which run, how it stands. */
-export interface RunHead {
-  runtime?: string;
-  elapsed: string;
-  tone: MonTone;
-  title: string;
-  observed: boolean;
-  connected: boolean;
-}
-
 export function MonitorLeft({
   data,
   onOpen,
   onSelectRun,
-  run: head,
 }: {
   data: MonitorData;
   onOpen: (row: ActivityRow) => void;
   onSelectRun: (id?: string) => void;
-  run: RunHead;
 }) {
   const t = useT();
   const runs = useRunsStore((s) => s.runs);
@@ -182,6 +170,7 @@ export function MonitorLeft({
   );
 
   const run = data.run;
+  const elapsed = run ? formatOffset((run.endedAt ?? Date.now()) - run.startedAt) : "—";
   /**
    * What the feed actually shows: rows plus the repeats they fold. The plain
    * row count would read as "16 activities" next to a run the server says has
@@ -195,26 +184,6 @@ export function MonitorLeft({
   return (
     <div className="mon-col mon-col--left">
       <div className="mon-lefthead">
-        {/* Which runtime is driving, which run, how it stands, how long it has
-            been going — stated here because this is the column the run is read
-            in. One unit: "#1 done" without "pi" or "00:01:23" is a fragment. */}
-        <div className="mon-runblock" title={head.title}>
-          {head.runtime ? <span className="mon-runblock__runtime mon-mono">{head.runtime}</span> : null}
-          <span className="mon-runblock__sep" aria-hidden />
-          <Chip tone={head.tone}>
-            <Dot tone={head.tone} />
-            {run ? `${t("Run")} #${run.index} · ${t(STATUS_WORD[run.status])}` : t("no run")}
-          </Chip>
-          <span className="mon-runblock__time mon-mono">{head.elapsed}</span>
-          {head.observed ? <Chip tone="read">{t("OBSERVING")}</Chip> : null}
-          {head.connected ? null : (
-            <Chip tone="err">
-              <Dot tone="err" />
-              {t("offline")}
-            </Chip>
-          )}
-        </div>
-
         {/* Two views of one column: what the agent did, and the project it did
             it to. The right rail is the *agent's* files, so the project tree
             has to live here or the user cannot reach it at all. */}
@@ -391,7 +360,7 @@ export function MonitorLeft({
       >
         <Chip tone={run ? STATUS_TONE[run.status] : "mute"}>{run ? t(STATUS_WORD[run.status]) : t("idle")}</Chip>
         <span className="mon-mono" style={{ fontSize: 11 }}>
-          {head.elapsed}
+          {elapsed}
         </span>
         {run?.partial ? <span style={{ fontSize: 11 }}>{t("partial")}</span> : null}
         <span style={{ marginLeft: "auto", fontSize: 11 }}>

@@ -108,12 +108,25 @@ export function MonitorUI() {
         </span>
 
         <span
-          className="mon-mono"
-          style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, color: "var(--mon-t2)" }}
+          className="mon-mono mon-bar__path"
           title={session?.projectPath}
         >
           {session?.projectPath ?? t("no session")}
         </span>
+
+        {/* Runtime · run · status · elapsed, immediately right of the project it
+            is happening in. One unit: "#1 done" without "pi" or "00:19" is a
+            fragment, not a status. */}
+        <div className="mon-runblock" title={runBlockTitle}>
+          {runtime ? <span className="mon-runblock__runtime mon-mono">{runtime}</span> : null}
+          <span className="mon-runblock__sep" aria-hidden />
+          <Chip tone={runTone}>
+            <Dot tone={runTone} />
+            {data.run ? `${t("Run")} #${data.run.index} · ${t(RUN_WORD[data.run.status])}` : t("no run")}
+          </Chip>
+          <span className="mon-runblock__time mon-mono">{runElapsed}</span>
+          {observed ? <Chip tone="read">{t("OBSERVING")}</Chip> : null}
+        </div>
 
         <div className="mon-modes" role="group" aria-label={t("Interface mode")}>
           {VIEW_MODES.map((entry) => (
@@ -131,10 +144,8 @@ export function MonitorUI() {
           ))}
         </div>
 
-        {/* The bar keeps only what is about the *window*: the connection, the
-            attention verdict and the context meter. The run block (runtime,
-            run, status, elapsed) moved into the left column's header, where the
-            run it describes is being read. */}
+        {/* What is about the window rather than the run: the connection, the
+            attention verdict, the context meter. */}
         {connected ? null : (
           <Chip tone="err" title={t("offline")}>
             <Dot tone="err" />
@@ -174,14 +185,6 @@ export function MonitorUI() {
           onSelectRun={(id) => {
             selectRun(id);
             goLive();
-          }}
-          run={{
-            runtime,
-            elapsed: runElapsed,
-            tone: runTone,
-            title: runBlockTitle,
-            observed,
-            connected,
           }}
         />
         <MonitorStage data={data} />

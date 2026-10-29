@@ -95,6 +95,17 @@
 .mon-bar > * {
   flex: none;
 }
+.mon-bar > .mon-bar__path {
+  /* The only thing in the bar that may give way: the project path truncates
+     before any control does. */
+  flex: 1 1 auto;
+  min-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--mon-t2);
+}
 
 .mon-drag {
   -webkit-app-region: drag;
@@ -302,12 +313,7 @@
   padding: 10px 12px 12px;
   border-bottom: 1px solid var(--mon-bd);
 }
-.mon-lefthead .mon-runblock {
-  padding: 0 0 2px;
-}
-.mon-lefthead .mon-runblock__time {
-  margin-left: auto;
-}
+
 
 .mon-runsel {
   display: flex;
