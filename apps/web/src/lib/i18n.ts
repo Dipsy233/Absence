@@ -464,6 +464,15 @@ const ZH: Record<string, string> = {
   "Switch run": "切换轮次",
   "The run this report is of": "本报告对应的轮次",
   Runs: "轮次",
+
+  // ── Drip (输液) ────────────────────────────────────────────────────────
+  Drip: "输液",
+  Listening: "监听中",
+  Running: "运行中",
+  "Open Absence": "打开 Absence",
+  "Waiting for the first event.": "等待第一条事件。",
+  "No reply yet.": "暂无回复。",
+  "Send a task…": "给 agent 一个任务…",
   "{n} lines in context · {s} searches": "{n} 行在上下文中 · {s} 次搜索",
   "{m} modified · {c} created": "{m} 处修改 · {c} 处创建",
   "{s} succeeded · {f} failed · {u} unknown": "{s} 成功 · {f} 失败 · {u} 未知",

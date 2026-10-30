@@ -11,6 +11,7 @@ import { ProjectPicker } from "../components/ProjectPicker/ProjectPicker";
 import { MonitorUI } from "../ui/monitor/MonitorUI";
 import { RoundsUI } from "../ui/rounds/RoundsUI";
 import { ChartUI } from "../ui/chart/ChartUI";
+import { DripUI } from "../ui/drip/DripUI";
 
 /**
  * The shell. Three things decide what it renders:
@@ -62,6 +63,15 @@ export default function App() {
     return (
       <>
         <ChartUI />
+        <ContextMenu />
+      </>
+    );
+  }
+
+  if (mode === "drip") {
+    return (
+      <>
+        <DripUI />
         <ContextMenu />
       </>
     );

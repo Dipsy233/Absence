@@ -1,0 +1,412 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   DRIP (输液) — almost nothing: a floating pill over an empty room.
+
+   In the packaged app this face is its own always-on-top window. The browser
+   build cannot resize the window, so the face keeps the viewport and paints the
+   room behind the widget; only the pill is interactive. Everything is scoped to
+   .drip-root so the palette cannot leak into the other faces.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.drip-root {
+  --drip-s1: #191919;
+  --drip-s2: #202020;
+  --drip-s3: #2c2c2b;
+  --drip-bd: rgba(255, 255, 255, 0.08);
+  --drip-bd2: rgba(255, 255, 255, 0.16);
+  --drip-t: #f2f2f0;
+  --drip-t2: #b9b9b6;
+  --drip-t3: #96968f;
+
+  --drip-think: #bf8eda;
+  --drip-read: #5e9fe8;
+  --drip-search: #4fb9c9;
+  --drip-edit: #72bc8f;
+  --drip-run: #de9255;
+  --drip-err: #e97366;
+  --drip-warn: #d9b45f;
+  --drip-say: #8fa4c4;
+
+  --drip-ok: #72bc8f;
+  --drip-listen: #5e9fe8;
+
+  --drip-sans: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Liberation Sans", Arial,
+    sans-serif;
+  --drip-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1b2a3a, #2a1f33 60%, #1a1a1a);
+  color: var(--drip-t);
+  font: 13px/1.45 var(--drip-sans);
+}
+
+/* The pill floats at the right, vertically centred. The card hangs under it as
+   an absolute layer, so opening it never moves the pill. Anchoring right means
+   hover expansion grows leftwards, away from the screen edge. */
+.drip-widget {
+  position: absolute;
+  top: 50%;
+  right: 32px;
+  max-width: calc(100vw - 64px);
+  transform: translateY(-50%);
+}
+
+/* ── the pill ───────────────────────────────────────────────────────────── */
+
+.drip-pill {
+  display: flex;
+  max-width: 100%;
+  height: 56px;
+  align-items: center;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--drip-bd2);
+  border-radius: 28px;
+  background: rgba(32, 32, 32, 0.96);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.42);
+  color: var(--drip-t);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.18s ease;
+}
+
+.drip-pill:hover {
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.drip-cap {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.drip-cap--left {
+  width: 56px;
+  height: 56px;
+}
+
+.drip-cap--right {
+  width: 56px;
+  height: 56px;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.drip-orb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+/* The left circle is the app, ringed in the run's colour: green working, blue
+   listening, red error. */
+.drip-orb--state {
+  width: 40px;
+  height: 40px;
+  padding: 3px;
+  border: 2px solid var(--drip-listen);
+  background: rgba(0, 0, 0, 0.28);
+  transition: border-color 0.18s ease;
+}
+
+.drip-orb--state img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.drip-pill--running .drip-orb--state {
+  border-color: var(--drip-ok);
+  box-shadow: 0 0 0 3px rgba(114, 188, 143, 0.12);
+}
+
+.drip-pill--idle .drip-orb--state {
+  box-shadow: 0 0 0 3px rgba(94, 159, 232, 0.12);
+}
+
+.drip-pill--error .drip-orb--state {
+  border-color: var(--drip-err);
+  box-shadow: 0 0 0 3px rgba(233, 115, 102, 0.14);
+}
+
+/* The middle is a sliver at rest and stretches on hover to say what is
+   happening now. It never wraps: one line, ellipsised. */
+.drip-mid {
+  display: flex;
+  width: 32px;
+  min-width: 32px;
+  align-items: center;
+  overflow: hidden;
+  transition: width 0.24s ease;
+}
+
+.drip-pill:hover .drip-mid,
+.drip-pill.is-open .drip-mid {
+  width: min(320px, calc(100vw - 180px));
+}
+
+.drip-mid__now {
+  overflow: hidden;
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--drip-t2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.18s ease 0.06s;
+}
+
+.drip-pill:hover .drip-mid__now,
+.drip-pill.is-open .drip-mid__now {
+  opacity: 1;
+}
+
+.drip-orb--status,
+.drip-orb--level {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--drip-bd2);
+  font-family: var(--drip-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ── tones: one palette for the letter orb and the event tags ───────────── */
+
+.drip-tone--think {
+  color: var(--drip-think);
+  background: rgba(191, 142, 218, 0.14);
+}
+.drip-tone--read {
+  color: var(--drip-read);
+  background: rgba(94, 159, 232, 0.14);
+}
+.drip-tone--search {
+  color: var(--drip-search);
+  background: rgba(79, 185, 201, 0.14);
+}
+.drip-tone--edit {
+  color: var(--drip-edit);
+  background: rgba(114, 188, 143, 0.14);
+}
+.drip-tone--run {
+  color: var(--drip-run);
+  background: rgba(222, 146, 85, 0.14);
+}
+.drip-tone--process {
+  color: var(--drip-say);
+  background: rgba(143, 164, 196, 0.14);
+}
+.drip-tone--approval {
+  color: var(--drip-warn);
+  background: rgba(217, 180, 95, 0.14);
+}
+.drip-tone--lifecycle {
+  color: var(--drip-t3);
+  background: rgba(255, 255, 255, 0.07);
+}
+.drip-tone--say {
+  color: var(--drip-say);
+  background: rgba(143, 164, 196, 0.14);
+}
+.drip-tone--error {
+  color: var(--drip-err);
+  background: rgba(233, 115, 102, 0.14);
+}
+.drip-tone--warn {
+  color: var(--drip-warn);
+  background: rgba(217, 180, 95, 0.14);
+}
+
+/* ── attention levels: grey / blue / orange / red, count inside ─────────── */
+
+.drip-level--none {
+  color: var(--drip-t3);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.drip-level--low {
+  border-color: rgba(94, 159, 232, 0.4);
+  color: var(--drip-listen);
+  background: rgba(94, 159, 232, 0.14);
+}
+
+.drip-level--medium {
+  border-color: rgba(222, 146, 85, 0.45);
+  color: var(--drip-run);
+  background: rgba(222, 146, 85, 0.16);
+}
+
+.drip-level--high {
+  border-color: rgba(233, 115, 102, 0.5);
+  color: var(--drip-err);
+  background: rgba(233, 115, 102, 0.18);
+}
+
+/* ── the card under the pill ────────────────────────────────────────────── */
+
+.drip-card {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  display: flex;
+  width: 380px;
+  max-width: calc(100vw - 64px);
+  max-height: min(440px, calc(50vh - 70px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--drip-bd2);
+  border-radius: 14px;
+  background: rgba(32, 32, 32, 0.97);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+.drip-card__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--drip-bd);
+}
+
+.drip-open {
+  height: 22px;
+  margin-left: auto;
+  padding: 0 8px;
+  border: 1px solid var(--drip-bd2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--drip-t3);
+  font: 10.5px var(--drip-sans);
+  cursor: pointer;
+}
+
+.drip-open:hover {
+  border-color: rgba(94, 159, 232, 0.55);
+  color: var(--drip-t);
+}
+
+.drip-card__body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.drip-evs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.drip-e {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.drip-e:hover {
+  background: var(--drip-s2);
+}
+
+.drip-e__tag {
+  width: 54px;
+  flex: none;
+  padding: 2px 0;
+  border-radius: 4px;
+  font-family: var(--drip-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.drip-e__text {
+  flex: 1;
+  overflow: hidden;
+  color: var(--drip-t);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drip-e__time {
+  flex: none;
+  font-family: var(--drip-mono);
+  font-size: 10.5px;
+  color: var(--drip-t3);
+}
+
+.drip-reply {
+  padding: 8px 10px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--drip-t2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.drip-empty {
+  margin: 0;
+  padding: 18px 12px;
+  font-size: 12px;
+  color: var(--drip-t3);
+  text-align: center;
+}
+
+/* ── composer ───────────────────────────────────────────────────────────── */
+
+.drip-form {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--drip-bd);
+}
+
+.drip-form__input {
+  height: 30px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--drip-bd);
+  border-radius: 7px;
+  outline: none;
+  background: var(--drip-s2);
+  color: var(--drip-t);
+  font: 12px var(--drip-sans);
+}
+
+.drip-form__input:focus {
+  border-color: rgba(94, 159, 232, 0.55);
+}
+
+.drip-form__input::placeholder {
+  color: var(--drip-t3);
+}
+
+.drip-form__send {
+  height: 30px;
+  flex: none;
+  padding: 0 14px;
+  border: 1px solid var(--drip-listen);
+  border-radius: 7px;
+  background: var(--drip-listen);
+  color: #0b1626;
+  font: 600 12px var(--drip-sans);
+  cursor: pointer;
+}
+
+.drip-form__send:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
