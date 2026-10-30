@@ -51,7 +51,33 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
     if (row.stageItem) openStage(row.stageItem);
   };
 
-  const shown = data.rows.filter((row) => row.action !== "END");
+  /**
+   * The stream, with the opening folded into one card.
+   *
+   * A run announces itself twice: the user's message opens it, then
+   * `agent_start` names the model. Two START cards for one beginning read as
+   * two runs, so the model becomes the meta line of the prompt's card. END
+   * stays out — the clock at the bottom already says when it stopped.
+   */
+  const shown = useMemo(() => {
+    void data.rowsVersion;
+    const out: ActivityRow[] = [];
+    let open: number | undefined;
+    for (const row of data.rows) {
+      if (row.action === "END") continue;
+      if (row.action === "START") {
+        if (open !== undefined) {
+          out[open] = { ...out[open]!, secondary: row.primary };
+          continue;
+        }
+        open = out.length;
+      } else {
+        open = undefined;
+      }
+      out.push(row);
+    }
+    return out;
+  }, [data.rows, data.rowsVersion]);
 
   /**
    * What the story is doing with the run — Monitor's rule, same words: a
