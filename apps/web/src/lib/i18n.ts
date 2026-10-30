@@ -470,6 +470,8 @@ const ZH: Record<string, string> = {
   Listening: "监听中",
   Running: "运行中",
   "Open Absence": "打开 Absence",
+  "Drip is floating outside this tab.": "输液球已悬浮在浏览器窗口之外。",
+  "Bring it back": "收回悬浮球",
   "Waiting for the first event.": "等待第一条事件。",
   "No reply yet.": "暂无回复。",
   "Send a task…": "给 agent 一个任务…",

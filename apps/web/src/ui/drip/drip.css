@@ -2,9 +2,9 @@
    DRIP (输液) — almost nothing: a floating pill over an empty room.
 
    In the packaged app this face is its own always-on-top window. The browser
-   build cannot resize the window, so the face keeps the viewport and paints the
-   room behind the widget; only the pill is interactive. Everything is scoped to
-   .drip-root so the palette cannot leak into the other faces.
+   build moves it into a Document Picture-in-Picture window so the ball can
+   float over other tabs; the tab it came from is emptied out. Everything is
+   scoped to .drip-root so the palette cannot leak into the other faces.
    ══════════════════════════════════════════════════════════════════════════ */
 
 .drip-root {
@@ -394,4 +394,74 @@
 .drip-form__send:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+}
+
+/* ── Document Picture-in-Picture ────────────────────────────────────────── */
+
+/* The PiP window is sized to the pill and grows as it expands, so the widget
+   pins to the window's top-left and grows rightwards. A right-anchored ball
+   would jump sideways every time the window resized. The gradient room belongs
+   to a full-page tab, not to a window that *is* the widget, so it is dropped. */
+.drip-root--pip {
+  background: transparent;
+}
+
+.drip-root--pip .drip-widget {
+  top: 8px;
+  left: 8px;
+  right: auto;
+  transform: none;
+  max-width: none;
+}
+
+/* `100vw` inside a 352px PiP window would leave a sliver of text; the window
+   is already sized for this sentence, so the width is stated outright. */
+.drip-root--pip .drip-pill:hover .drip-mid,
+.drip-root--pip .drip-pill.is-open .drip-mid {
+  width: 248px;
+}
+
+.drip-root--pip .drip-card {
+  right: auto;
+  left: 0;
+  width: 380px;
+  max-width: calc(100vw - 16px);
+  max-height: 430px;
+}
+
+/* ── The tab while the ball floats ──────────────────────────────────────── */
+
+.drip-away {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #121212;
+  color: #b9b9b6;
+  font: 13px/1.5 "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Liberation Sans", Arial,
+    sans-serif;
+}
+
+.drip-away p {
+  margin: 0;
+}
+
+.drip-away button {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: transparent;
+  color: #f2f2f0;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.drip-away button:hover {
+  border-color: rgba(94, 159, 232, 0.55);
+  color: #5e9fe8;
 }

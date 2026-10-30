@@ -46,7 +46,10 @@ export function isViewMode(value: unknown): value is ViewMode {
 export function readStoredViewMode(): ViewMode {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return isViewMode(raw) ? raw : "monitor";
+    // Drip is never stored (see viewModeStore): it is a floating window opened
+    // over the last face, not a page to land on. A `drip` written by an older
+    // build therefore resolves to Monitor, the face it was opened from.
+    return isViewMode(raw) && raw !== "drip" ? raw : "monitor";
   } catch {
     return "monitor";
   }

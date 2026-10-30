@@ -12,6 +12,7 @@ import { MonitorUI } from "../ui/monitor/MonitorUI";
 import { RoundsUI } from "../ui/rounds/RoundsUI";
 import { ChartUI } from "../ui/chart/ChartUI";
 import { DripUI } from "../ui/drip/DripUI";
+import { DripPipHost } from "../ui/drip/DripPip";
 
 /**
  * The shell. Three things decide what it renders:
@@ -69,9 +70,13 @@ export default function App() {
   }
 
   if (mode === "drip") {
+    // The packaged app can resize its own always-on-top window, so Drip lives
+    // there directly. A browser tab cannot stay on top of other tabs; the
+    // browser build moves the face into a Document Picture-in-Picture window
+    // and empties the tab.
     return (
       <>
-        <DripUI />
+        {desktop ? <DripUI /> : <DripPipHost />}
         <ContextMenu />
       </>
     );

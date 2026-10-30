@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useMonitorData } from "../monitor/useMonitorData";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useViewModeStore } from "../../stores/viewModeStore";
@@ -22,15 +22,36 @@ import "./drip.css";
  * agent works, the final reply when it rests, and the composer in either case.
  */
 
-export function DripUI() {
+export interface DripProps {
+  /**
+   * Rendered inside a Document Picture-in-Picture window instead of the page.
+   * The widget then anchors at the window's top-left, because the host resizes
+   * the window as the pill expands — a right-anchored ball would jump sideways
+   * every time the window grew.
+   */
+  pip?: boolean;
+  /** Leave Drip and bring the last face back. Defaults to the mode store. */
+  onOpenAbsence?: () => void;
+  /** Tells the PiP host how big the window has to be (hover expands, click opens). */
+  onExpand?: (expanded: boolean, open: boolean) => void;
+}
+
+export function DripUI({ pip = false, onOpenAbsence, onExpand }: DripProps = {}) {
   const t = useT();
   const data = useMonitorData();
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
-  const setMode = useViewModeStore((s) => s.setMode);
+  const exitDrip = useViewModeStore((s) => s.exitDrip);
 
   const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    onExpand?.(hover || open, open);
+  }, [hover, open, onExpand]);
+
+  const leave = onOpenAbsence ?? exitDrip;
 
   const run = data.run;
   const running = run?.status === "running";
@@ -69,8 +90,8 @@ export function DripUI() {
   };
 
   return (
-    <div className="drip-root">
-      <div className="drip-widget">
+    <div className={`drip-root${pip ? " drip-root--pip" : ""}`}>
+      <div className="drip-widget" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
         <button
           type="button"
           className={`drip-pill drip-pill--${state}${open ? " is-open" : ""}`}
@@ -98,7 +119,7 @@ export function DripUI() {
         {open ? (
           <div className="drip-card" role="dialog" aria-label={t("Drip")}>
             <div className="drip-card__head">
-              <button type="button" className="drip-open" onClick={() => setMode("monitor")}>
+              <button type="button" className="drip-open" onClick={leave}>
                 {t("Open Absence")}
               </button>
             </div>
