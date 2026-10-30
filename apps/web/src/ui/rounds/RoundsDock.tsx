@@ -166,7 +166,10 @@ const SOURCE_TONE = { read: "read", write: "edit", edit: "edit" } as const;
 function FolderPanel({ onOpenVersion }: { onOpenVersion: (path: string, version?: number) => void }) {
   const t = useT();
   const files = useFileStore((s) => s.files);
-  const [expanded, setExpanded] = useState<string | undefined>(undefined);
+  const [expanded, setExpanded] = useState<string[]>([]);
+
+  const toggleVersions = (path: string) =>
+    setExpanded((cur) => (cur.includes(path) ? cur.filter((p) => p !== path) : [...cur, path]));
 
   const rows = useMemo(
     () =>
@@ -183,7 +186,7 @@ function FolderPanel({ onOpenVersion }: { onOpenVersion: (path: string, version?
   return (
     <div className="rounds-folder">
       {rows.map((file) => {
-        const open = expanded === file.path;
+        const open = expanded.includes(file.path);
         const latest = file.history.at(-1);
         return (
           <div key={file.path} className="rounds-fgroup">
@@ -191,7 +194,7 @@ function FolderPanel({ onOpenVersion }: { onOpenVersion: (path: string, version?
               <button
                 type="button"
                 className="rounds-fcaret"
-                onClick={() => setExpanded(open ? undefined : file.path)}
+                onClick={() => toggleVersions(file.path)}
                 title={open ? t("Hide versions") : t("Show versions")}
                 aria-label={open ? t("Hide versions") : t("Show versions")}
                 aria-expanded={open}

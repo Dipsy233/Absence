@@ -18,6 +18,8 @@ interface FileStageProps {
   caption?: string;
   badge?: string;
   badgeTone?: "normal" | "warn";
+  /** False when the host's own title bar already names the file (Rounds' windows). */
+  showPath?: boolean;
 }
 
 export function FileStage({
@@ -30,6 +32,7 @@ export function FileStage({
   caption,
   badge,
   badgeTone = "normal",
+  showPath = true,
 }: FileStageProps) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const collectionRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
@@ -74,11 +77,13 @@ export function FileStage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-desk-line px-3 py-2 font-mono text-xs">
-        <span className="truncate text-desk-ink" title={path}>
-          {path}
-        </span>
-        <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-desk-line px-3 py-2 font-mono text-xs">
+        {showPath ? (
+          <span className="truncate text-desk-ink" title={path}>
+            {path}
+          </span>
+        ) : null}
+        <div className="ml-auto flex items-center gap-2">
           {badge ? (
             <span className={["chip", badgeTone === "warn" ? "text-desk-ember" : "text-desk-teal"].join(" ")}>
               {badge}

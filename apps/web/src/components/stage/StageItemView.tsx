@@ -7,7 +7,7 @@ import { ProcessStage } from "./ProcessStage";
 import { ApprovalStage } from "./ApprovalStage";
 
 /** Renders whichever Stage item is active (read02 §11–17). */
-export function StageItemView({ item }: { item: StageItem }) {
+export function StageItemView({ item, showPath = true }: { item: StageItem; showPath?: boolean }) {
   const payload = item.payload;
   switch (payload.kind) {
     case "file":
@@ -22,6 +22,7 @@ export function StageItemView({ item }: { item: StageItem }) {
           caption={payload.caption}
           badge={payload.badge}
           badgeTone={payload.badgeTone}
+          showPath={showPath}
         />
       );
     case "diff":

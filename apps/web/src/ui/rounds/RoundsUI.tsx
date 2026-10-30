@@ -97,32 +97,27 @@ export function RoundsUI() {
   };
 
   /**
-   * The reader's files, opened from the dock's windows: one window per path,
-   * showing whichever content was clicked last (the whole file from disk, or
-   * one recorded version). These windows are built here and never written to
-   * the stage store — opening a file is reading, not pinning.
+   * The reader's files, opened from the dock's windows. Identity is the content
+   * itself — `disk:path` for the whole file, `v3:path` for one recorded version
+   * — so v0 and v3 sit side by side instead of replacing each other, and the
+   * whole file never replaces a version. Nothing here is written to the stage
+   * store: opening a file is reading, not pinning.
    */
-  const [fileWins, setFileWins] = useState<StageItem[]>([]);
+  const [fileWins, setFileWins] = useState<Array<{ id: string; item: StageItem }>>([]);
 
-  const showFile = (item: StageItem) => {
-    const path = item.source?.path;
-    setFileWins((wins) => {
-      const at = wins.findIndex((w) => w.source?.path === path);
-      if (at === -1) return [...wins, item];
-      const next = wins.slice();
-      next[at] = item;
-      return next;
-    });
-    focus(`file-${path}`);
+  const showFileWindow = (id: string, item: StageItem) => {
+    setFileWins((wins) => (wins.some((w) => w.id === id) ? wins : [...wins, { id, item }]));
+    focus(id);
   };
 
   const openFileWindow = (path: string) => {
-    void userFileItem(path).then(showFile);
+    void userFileItem(path).then((item) => showFileWindow(`disk:${path}`, item));
   };
 
   const openVersionWindow = (path: string, version?: number) => {
     const item = knownFileItem(path, version);
-    if (item) showFile(item);
+    if (!item || item.payload.kind !== "file") return;
+    showFileWindow(`v${item.payload.version}:${path}`, item);
   };
 
   /**
@@ -255,18 +250,18 @@ export function RoundsUI() {
           </RoundsWindow>
         ))}
 
-        {fileWins.map((item, index) => (
+        {fileWins.map(({ id, item }, index) => (
           <RoundsWindow
-            key={`file-${item.source?.path}`}
+            key={id}
             title={fileWindowTitle(item)}
             initial={{ x: 170 + index * 34, y: 100 + index * 28 }}
             size={CHILD_SIZE}
-            z={zmap[`file-${item.source?.path}`] ?? 1}
-            onFocus={() => focus(`file-${item.source?.path}`)}
-            onClose={() => setFileWins((wins) => wins.filter((w) => w.source?.path !== item.source?.path))}
+            z={zmap[id] ?? 1}
+            onFocus={() => focus(id)}
+            onClose={() => setFileWins((wins) => wins.filter((w) => w.id !== id))}
           >
             <div className="rounds-win__stage">
-              <StageItemView item={item} />
+              <StageItemView item={item} showPath={false} />
             </div>
           </RoundsWindow>
         ))}
