@@ -210,12 +210,12 @@
 
 .rounds-scene {
   position: absolute;
-  left: 3%;
-  top: 47%;
+  left: 2%;
+  top: 43%;
   transform: translateY(-50%);
   display: flex;
   min-width: 0;
-  max-width: 46%;
+  max-width: 50%;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -311,10 +311,10 @@
 /* The stage: the character's own square, alone in the middle of the scene. */
 .rounds-stage {
   position: relative;
-  /* The character is the scene's subject: it takes the left half of the
-     desktop, stopping short on short screens (58vh) so the bubble still has
-     room above it. */
-  width: min(560px, 58vh);
+  /* The character is the scene's subject: it fills the left half, top included,
+     stopping short on short screens (64vh) so the bubble and the story still
+     have room around it. */
+  width: min(640px, 64vh);
   aspect-ratio: 1;
   margin-top: 18px;
   padding: 0;
