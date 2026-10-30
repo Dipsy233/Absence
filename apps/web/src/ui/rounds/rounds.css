@@ -156,20 +156,18 @@
   box-shadow: none;
 }
 .rounds-bubble__msg {
-  position: relative;
-  padding: 7px 11px 7px;
-  /* The corner stamp owns the right end of the last line. */
-  padding-right: 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 11px;
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--mon-t);
 }
-/* The wall clock at this part's foot: when this message was said. Joined parts
-   keep one stamp each, so a merged bubble still dates every segment. */
+/* The wall clock sits under the text, on its own line: joined parts keep one
+   stamp each, and the text never yields width to make room for it. */
 .rounds-bubble__at {
-  position: absolute;
-  right: 9px;
-  bottom: 4px;
+  align-self: flex-end;
   font-size: 9px;
   font-weight: 500;
   color: var(--mon-t3);
