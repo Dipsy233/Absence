@@ -210,12 +210,14 @@
 
 .rounds-scene {
   position: absolute;
-  left: 2%;
+  /* The scene owns the left half of the desktop, and the character is centred
+     in it: the column is the half, not a max-width. */
+  left: 0;
+  width: 50%;
   top: 43%;
   transform: translateY(-50%);
   display: flex;
   min-width: 0;
-  max-width: 50%;
   flex-direction: column;
   align-items: center;
   justify-content: center;
