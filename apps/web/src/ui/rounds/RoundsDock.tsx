@@ -41,11 +41,16 @@ export const WINDOW_TITLE: Record<DockPanel, string> = {
 export function RoundsDock({
   data,
   open,
+  live,
   setPanel,
+  onToggleLive,
 }: {
   data: RoundsData;
   open: DockPanel[];
+  /** Whether the live activity window is showing (the Activity shortcut). */
+  live: boolean;
   setPanel: (panel: DockPanel) => void;
+  onToggleLive: () => void;
 }) {
   const t = useT();
   return (
@@ -84,6 +89,18 @@ export function RoundsDock({
         on={open.includes("run")}
         onClick={() => setPanel("run")}
       />
+      {/*
+        The live page is not a window the reader opens: it pops by itself while
+        the agent runs. This shortcut is its switch — off collapses it, and the
+        window's own ✕ does the same thing.
+      */}
+      <DockButton
+        id="activity"
+        label={t("Activity")}
+        icon={<path d="M3 12h4l2-5 4 10 2-5h6" />}
+        on={live}
+        onClick={onToggleLive}
+      />
     </nav>
   );
 }
@@ -97,7 +114,7 @@ function DockButton({
   on,
   onClick,
 }: {
-  id: DockPanel;
+  id: DockPanel | "activity";
   label: string;
   icon: React.ReactNode;
   badge?: number;

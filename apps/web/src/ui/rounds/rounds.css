@@ -753,6 +753,15 @@
   background: rgb(94 159 232 / 0.12);
   color: var(--mon-acc);
 }
+/* The Activity switch sits at the foot of the dock and, on, wears the live
+   window's amber — it is the agent's page, not one of the reader's panels. */
+.rounds-dock > .rounds-di[data-panel="activity"] {
+  margin-top: auto;
+}
+.rounds-di[data-panel="activity"][data-on="true"] {
+  background: rgb(222 146 85 / 0.12);
+  color: var(--mon-run);
+}
 .rounds-di svg {
   width: 21px;
   height: 21px;

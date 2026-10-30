@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { RunSummary } from "@absence/core";
+import { useRef, useState } from "react";
+import { isAgentBusy, type RunSummary } from "@absence/core";
 import { formatBytes, formatClock } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useT } from "../../lib/i18n";
@@ -167,23 +167,23 @@ export function RoundsUI() {
   };
 
   /**
-   * The live activity window: while following a run, the agent's newest event
-   * gets its own page, the same way Classic's Stage and Monitor's centre pop
+   * The live activity window: while the agent is actually working, its newest
+   * event gets its own page, the way Classic's Stage and Monitor's centre pop
    * the current event. One window is kept and its content replaced — never one
    * per event — and only events that have something to show move it: a tool
    * row or a run boundary leaves the last page standing.
    *
-   * It stays away while pinned or replaying, where the reader chose the view
-   * and a live pop would fight it. What it draws is the newest row's own item,
-   * not the Stage's pin, so nothing here touches the stage store.
+   * It does not live on screen: the dock's Activity shortcut is its switch and
+   * its ✕ is the same switch off. Nor does it appear while pinned or replaying
+   * (the reader chose that view) or once the agent settles — the page belongs
+   * to the run, not to the desktop.
+   *
+   * What it draws is the newest row's own item, not the Stage's pin, so nothing
+   * here touches the stage store.
    */
-  const live = data.mode === "live" && data.following;
+  const [liveOn, setLiveOn] = useState(true);
+  const live = liveOn && data.mode === "live" && data.following && isAgentBusy(data.status);
   const liveItem = live ? newestItem(data.rows) : undefined;
-  const liveId = liveItem?.id;
-  const [dismissed, setDismissed] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    if (liveId) setDismissed((d) => (d === liveId ? d : undefined));
-  }, [liveId]);
 
   return (
     <div className="mon-root rounds-root mon-shell">
@@ -250,7 +250,7 @@ export function RoundsUI() {
 
         <RoundsChat />
 
-        {liveItem && dismissed !== liveId ? (
+        {liveItem ? (
           <RoundsWindow
             key="activity"
             accent="live"
@@ -259,7 +259,7 @@ export function RoundsUI() {
             size={CHILD_SIZE}
             z={zmap.activity ?? 2}
             onFocus={() => focus("activity")}
-            onClose={() => setDismissed(liveId)}
+            onClose={() => setLiveOn(false)}
           >
             {liveItem.payload.kind === "file" ? (
               <RoundsPeek item={liveItem} />
@@ -338,7 +338,13 @@ export function RoundsUI() {
           </RoundsWindow>
         ))}
 
-        <RoundsDock data={data} open={dockWins} setPanel={toggleDock} />
+        <RoundsDock
+          data={data}
+          open={dockWins}
+          live={liveOn}
+          setPanel={toggleDock}
+          onToggleLive={() => setLiveOn((on) => !on)}
+        />
       </div>
 
       <p className="sr-only">{viewModeSpec(mode).intent}</p>
