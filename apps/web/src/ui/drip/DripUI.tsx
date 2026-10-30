@@ -57,11 +57,12 @@ export function DripUI() {
   const attention = data.attention;
 
   /**
-   * The one thing the left orb's colour says: red when the run ended badly or
-   * the verdict is high, green while work is in flight, blue otherwise —
-   * listening, the state a dipped agent spends most of its life in.
+   * The one thing the left orb's colour says: red only when the run itself
+   * ended in error, green while work is in flight, blue otherwise — listening,
+   * the state a dipped agent spends most of its life in. Attention is read in
+   * the small orb on the right, not here.
    */
-  const state = attention.level === "high" || run?.status === "error" ? "error" : running ? "running" : "idle";
+  const state = run?.status === "error" ? "error" : running ? "running" : "idle";
 
   const nowText = running
     ? (data.liveHeadline ?? (last ? `${last.action} ${last.primary}` : t("Waiting for the first event.")))
