@@ -80,7 +80,7 @@ export function DripUI() {
         >
           <span className="drip-cap drip-cap--left">
             <span className="drip-orb drip-orb--state">
-              <img src="/app-icon-round.png" alt="" />
+              <img src="/app-icon.png" alt="" />
             </span>
             {attention.level !== "none" ? (
               <span
