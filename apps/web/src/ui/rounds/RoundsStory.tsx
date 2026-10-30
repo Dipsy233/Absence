@@ -6,6 +6,7 @@ import { useStageStore } from "../../stores/stageStore";
 import type { ActivityRow } from "../../types/stage";
 import { Dot, TONE_FOR_ROW } from "../monitor/atoms";
 import type { RoundsData } from "./useRoundsData";
+import { RUN_TONE, RUN_WORD } from "./RoundsDock";
 
 /**
  * The story: the run's steps as a chain of cards, oldest first.
@@ -108,15 +109,25 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
   return (
     <div className="rounds-story">
       <div className="rounds-story__h">
-        <span className="rounds-cap">{t("The story so far")}</span>
-        <span className="rounds-story__hint">
-          {t("{n} steps · click a card to rewind", { n: shown.length })}
-        </span>
-        <span style={{ flex: 1 }} />
         <span className={`rounds-story__play mon-chip--${playingTone}`} title={t("What the story is showing")}>
           <Dot tone={playingTone} />
           {t(playing).toUpperCase()}
         </span>
+        {data.run ? (
+          <span className="rounds-story__run">
+            <i className="rounds-dot" data-tone={RUN_TONE[data.run.status]} aria-hidden />
+            <span className="mon-mono">
+              #{data.run.index} · {t(RUN_WORD[data.run.status])}
+            </span>
+          </span>
+        ) : null}
+        <span className="rounds-story__hint">{t("{n} steps", { n: shown.length })}</span>
+        {data.run ? (
+          <span className="rounds-story__counts mon-mono">
+            R{data.run.counts.read} S{data.run.counts.search} E{data.run.counts.edit} ${data.run.counts.run}
+          </span>
+        ) : null}
+        <span style={{ flex: 1 }} />
         {!data.following ? (
           <button type="button" className="rounds-ghostbtn" onClick={onLive}>
             {t("Back to live")}

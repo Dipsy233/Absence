@@ -344,7 +344,7 @@ function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: 
 /* ── Run ─────────────────────────────────────────────────────────────────── */
 
 /** A run's dot, in this face's tones. */
-const RUN_TONE: Record<RunSummary["status"], string> = {
+export const RUN_TONE: Record<RunSummary["status"], string> = {
   running: "run",
   completed: "edit",
   interrupted: "mute",
@@ -352,7 +352,7 @@ const RUN_TONE: Record<RunSummary["status"], string> = {
 };
 
 /** A run's status, in the words Monitor's switcher uses. */
-const RUN_WORD: Record<RunSummary["status"], string> = {
+export const RUN_WORD: Record<RunSummary["status"], string> = {
   running: "running",
   completed: "done",
   interrupted: "stopped",

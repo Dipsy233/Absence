@@ -282,9 +282,8 @@ const ZH: Record<string, string> = {
   // connection chip reads `online` so the two "live" meanings never collide.
   "Back to live": "回到实时",
   "Connected terminal and session id": "接入的终端与会话 ID",
-  "The story so far": "故事线",
   "What the story is showing": "故事线当前显示的是实时还是回放",
-  "{n} steps · click a card to rewind": "{n} 步 · 点卡片回看",
+  "{n} steps": "{n} 步",
   "NOW": "当前",
   "Agent's view": "Agent 的视角",
   "in context": "在上下文中",

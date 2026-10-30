@@ -391,6 +391,20 @@
   font-size: 11.5px;
   color: var(--mon-t3);
 }
+/* The run this story belongs to: `#6 · done`, then how many steps it has and
+   the R/S/E/$ counts — one line, read left to right. */
+.rounds-story__run {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--mon-t2);
+}
+.rounds-story__counts {
+  font-size: 11px;
+  color: var(--mon-t3);
+}
 /* LIVE / REPLAY: what the story is doing with the run, at the header's right
    edge. No chip chrome — the dot and the colour are the whole message. */
 .rounds-story__play {
