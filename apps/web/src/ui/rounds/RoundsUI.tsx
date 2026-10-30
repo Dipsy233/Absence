@@ -55,13 +55,14 @@ const CHILD_SIZE = { w: 580, h: 470 };
 
 /**
  * Level one opens on the left, near the shortcuts that spawn it; a child —
- * a file's content, an egg's metrics, the live page — opens on the right, so
- * it never covers the window it came from. Siblings step left a little so two
- * children do not sit exactly on top of each other.
+ * a file's content, an egg's metrics, the live page — opens to the left of the
+ * screen's vertical midline, at the top, so it sits beside the panel rather
+ * than over the dock or the conversation. It stacks above the panels. Siblings
+ * step left a little so two children do not sit exactly on top of each other.
  */
 function childSpot(index: number): { x: number; y: number } {
   return {
-    x: Math.max(60, window.innerWidth - CHILD_SIZE.w - 44 - index * 24),
+    x: Math.max(60, Math.round(window.innerWidth / 2) - CHILD_SIZE.w - 16 - index * 24),
     y: 56 + index * 26,
   };
 }
