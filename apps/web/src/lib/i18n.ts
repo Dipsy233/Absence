@@ -179,6 +179,7 @@ const ZH: Record<string, string> = {
   "Nothing yet. An observed agent's processes and file changes appear here as they happen.":
     "暂无内容。被观察智能体的进程和文件变更会在这里实时出现。",
   "Nothing yet. Send the agent a task.": "暂无内容。给智能体安排个任务。",
+  "No steps in this run.": "这一轮还没有步骤。",
   "Scrub to this event": "拖动到此事件",
   "Open in Stage": "在 Stage 打开",
   "Add event to Chat": "把事件加入对话",

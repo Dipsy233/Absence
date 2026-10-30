@@ -794,6 +794,74 @@
   padding: 0;
   list-style: none;
 }
+
+/* Runs: this session's rounds as cards, newest first. A card opens into its
+   steps, which keep the .rounds-act row look — indented under the card. */
+.rounds-runs {
+  margin: 0;
+  padding: 0 8px 8px;
+  list-style: none;
+}
+.rounds-run {
+  border-bottom: 1px solid var(--mon-bd);
+}
+.rounds-run:last-child {
+  border-bottom: 0;
+}
+.rounds-run__card {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--mon-t2);
+  text-align: left;
+}
+.rounds-run__card:hover {
+  background: var(--mon-s3);
+}
+.rounds-run[data-on="true"] .rounds-run__card {
+  background: var(--mon-s2);
+}
+.rounds-run__r1 {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+.rounds-run__idx {
+  color: var(--mon-t);
+  font-size: 11px;
+}
+.rounds-run__times {
+  margin-left: auto;
+  color: var(--mon-t3);
+  font-size: 10px;
+}
+.rounds-run__prompt {
+  overflow: hidden;
+  color: var(--mon-t2);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rounds-run__counts {
+  color: var(--mon-t3);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+.rounds-run .rounds-act {
+  padding: 0 8px 4px 20px;
+}
+.rounds-run__empty {
+  margin: 0;
+  padding: 2px 8px 8px;
+  color: var(--mon-t3);
+  font-size: 10px;
+}
 .rounds-drawer__empty {
   padding: 10px 12px;
   font-size: 11.5px;

@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { RunSummary } from "@absence/core";
 import { formatBytes, formatClock, formatDuration } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { eventToStageItem } from "../../lib/events";
@@ -7,6 +8,9 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
+import { useRunsStore } from "../../stores/runsStore";
+import { useUiStore } from "../../stores/uiStore";
+import { useNow } from "../../hooks/useNow";
 import { FilePanel } from "../../components/files/FilePanel";
 import { Usage } from "../monitor/MonitorRight";
 import { TONE_FOR_ROW } from "../monitor/atoms";
@@ -318,32 +322,128 @@ function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: 
 
 /* ── Run ─────────────────────────────────────────────────────────────────── */
 
+/** A run's dot, in this face's tones. */
+const RUN_TONE: Record<RunSummary["status"], string> = {
+  running: "run",
+  completed: "edit",
+  interrupted: "mute",
+  error: "err",
+};
+
+/** A run's status, in the words Monitor's switcher uses. */
+const RUN_WORD: Record<RunSummary["status"], string> = {
+  running: "running",
+  completed: "done",
+  interrupted: "stopped",
+  error: "error",
+};
+
+/**
+ * The session's runs, newest first — Classic's History and Monitor's run
+ * switcher, in a window of their own.
+ *
+ * The first level is the run list: `#N`, status, how long it took, when it
+ * started and the prompt. Clicking a run card switches the face to that run
+ * (the story, the scene and the badges follow it) and opens it underneath into
+ * its steps. The steps are the second level — the same event rows the story
+ * draws — and clicking one is what opens an event window.
+ *
+ * Runs come from `runsStore`, not from `data`: the list must include the rounds
+ * that are no longer the selected one, and only their summaries are loaded —
+ * a run's events are fetched when its card is opened, one run at a time.
+ */
 function RunPanel({ data }: { data: RoundsData }) {
   const t = useT();
+  const sessionId = useSessionStore((s) => s.session?.id);
+  const runs = useRunsStore((s) => s.runs);
+  const runsLoading = useRunsStore((s) => s.loading);
+  const loadRuns = useRunsStore((s) => s.loadRuns);
+  const selectRun = useUiStore((s) => s.selectRun);
+  const selectedRunId = useUiStore((s) => s.selectedRunId);
+  const [expanded, setExpanded] = useState<string | undefined>(undefined);
+  const now = useNow(1000);
+
   const openStage = useStageStore((s) => s.openStage);
   const seek = useReplayStore((s) => s.seekTimestamp);
   const inReplay = useStageStore((s) => s.mode === "replay");
-  if (data.rows.length === 0) {
-    return <p className="rounds-drawer__empty">{t("Nothing yet. Send the agent a task.")}</p>;
+
+  useEffect(() => {
+    if (sessionId && runs.length === 0) void loadRuns(sessionId);
+  }, [sessionId, runs.length, loadRuns]);
+
+  if (runs.length === 0) {
+    return (
+      <p className="rounds-drawer__empty">
+        {runsLoading ? t("loading…") : t("Nothing yet. Send the agent a task.")}
+      </p>
+    );
   }
+
+  const currentId = data.run?.id ?? selectedRunId;
+
   return (
-    <ul className="rounds-act">
-      {data.rows.map((row) => (
-        <li key={row.id}>
-          <button
-            type="button"
-            onClick={() => {
-              if (inReplay) seek(row.event.timestamp);
-              else if (row.stageItem) openStage(row.stageItem);
-            }}
-            title={row.stageItem ? row.primary : `${row.action} · ${row.primary}`}
-          >
-            <span className={`rounds-chip rounds-chip--${TONE_FOR_ROW[row.tone] ?? "mute"}`}>{row.action}</span>
-            <span className="rounds-act__p">{row.primary}</span>
-            <span className="rounds-act__t mon-mono">{formatClock(row.event.timestamp)}</span>
-          </button>
-        </li>
-      ))}
+    <ul className="rounds-runs">
+      {[...runs].reverse().map((run) => {
+        const open = expanded === run.id;
+        const shown = open && data.run?.id === run.id;
+        return (
+          <li key={run.id} className="rounds-run" data-on={run.id === currentId ? "true" : undefined}>
+            <button
+              type="button"
+              className="rounds-run__card"
+              aria-expanded={open}
+              onClick={() => {
+                selectRun(run.id);
+                setExpanded(open ? undefined : run.id);
+              }}
+              title={run.prompt || t("(observed activity)")}
+            >
+              <span className="rounds-run__r1">
+                <i className="rounds-dot" data-tone={RUN_TONE[run.status]} aria-hidden />
+                <span className="rounds-run__idx">
+                  #{run.index} · {t(RUN_WORD[run.status])}
+                </span>
+                <span className="rounds-run__times mon-mono">
+                  {formatDuration((run.endedAt ?? now) - run.startedAt)} · {formatClock(run.startedAt)}
+                </span>
+              </span>
+              <span className="rounds-run__prompt">{run.prompt || t("(observed activity)")}</span>
+              <span className="rounds-run__counts mon-mono">
+                R{run.counts.read} S{run.counts.search} E{run.counts.edit} ${run.counts.run}
+              </span>
+            </button>
+
+            {open ? (
+              shown && data.rows.length > 0 ? (
+                <ul className="rounds-act">
+                  {data.rows.map((row) => (
+                    <li key={row.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (inReplay) seek(row.event.timestamp);
+                          else if (row.stageItem) openStage(row.stageItem);
+                        }}
+                        title={row.stageItem ? row.primary : `${row.action} · ${row.primary}`}
+                      >
+                        <span className={`rounds-chip rounds-chip--${TONE_FOR_ROW[row.tone] ?? "mute"}`}>
+                          {row.action}
+                        </span>
+                        <span className="rounds-act__p">{row.primary}</span>
+                        <span className="rounds-act__t mon-mono">{formatClock(row.event.timestamp)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounds-run__empty">
+                  {data.loading ? t("loading…") : t("No steps in this run.")}
+                </p>
+              )
+            ) : null}
+          </li>
+        );
+      })}
     </ul>
   );
 }
