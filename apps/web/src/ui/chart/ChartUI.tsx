@@ -506,13 +506,6 @@ export function ChartUI() {
                 )
               ) : null}
             </div>
-
-            {report.response ? (
-              <div className="chart-reply">
-                <div className="chart-reply__cap">{t("Response")}</div>
-                {report.response}
-              </div>
-            ) : null}
           </div>
 
           <div className="chart-panel chart-panel--preview" id="chart-att-panel">
@@ -579,6 +572,29 @@ export function ChartUI() {
             ) : (
               <div className="chart-preview__empty">{t("Pick a block or a row to see the evidence.")}</div>
             )}
+          </div>
+
+          {/* ── what went in, what came out ────────────────────────────────── */}
+          <div className="chart-panel chart-panel--io">
+            <div className="chart-pt">
+              <span className="chart-chip chart-chip--read">{t("Request")}</span>
+              <span className="chart-pt__name">{t("Input and output")}</span>
+              <span className="chart-pt__meta">{formatClock(run.startedAt)}</span>
+            </div>
+            <div className="chart-body chart-io">
+              <section className="chart-io__sec">
+                <div className="chart-io__cap">{t("Request")}</div>
+                <p className="chart-io__text">{run.prompt || t("(observed activity)")}</p>
+              </section>
+              <section className="chart-io__sec">
+                <div className="chart-io__cap">{t("Response")}</div>
+                {report.response ? (
+                  <p className="chart-io__text">{report.response}</p>
+                ) : (
+                  <p className="chart-empty">{t("No response yet.")}</p>
+                )}
+              </section>
+            </div>
           </div>
         </section>
       </div>

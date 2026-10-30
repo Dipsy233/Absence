@@ -455,6 +455,8 @@ const ZH: Record<string, string> = {
   Attention: "关注度",
   "{n} triggers": "{n} 次触发",
   "{h} high · {m} medium · {l} low": "{h} 高 · {m} 中 · {l} 低",
+  "Input and output": "输入与输出",
+  "No response yet.": "暂无输出。",
   "{n} lines in context · {s} searches": "{n} 行在上下文中 · {s} 次搜索",
   "{m} modified · {c} created": "{m} 处修改 · {c} 处创建",
   "{s} succeeded · {f} failed · {u} unknown": "{s} 成功 · {f} 失败 · {u} 未知",

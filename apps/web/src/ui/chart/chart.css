@@ -592,12 +592,12 @@
   color: var(--ch-t3);
 }
 
-/* ── split: lists | evidence ─────────────────────────────────────────────── */
+/* ── split: lists | evidence | input-output ─────────────────────────────── */
 
 .chart-split {
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 420px) minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
   min-height: 280px;
 }
@@ -883,13 +883,41 @@
   white-space: pre-wrap;
 }
 
-.chart-reply__cap {
-  margin-bottom: 3px;
+/* Input | output: the run as a conversation — what was asked on top, what the
+   agent answered below, each in its own scrollable half. */
+.chart-io {
+  display: grid;
+  grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  overflow: hidden;
+}
+
+.chart-io__sec {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  border-bottom: 1px solid var(--ch-bd);
+}
+
+.chart-io__sec:last-child {
+  border-bottom: 0;
+}
+
+.chart-io__cap {
+  margin-bottom: 6px;
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ch-t3);
+}
+
+.chart-io__text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ch-t);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .chart-preview {
@@ -938,6 +966,10 @@
   }
 
   .chart-panel--preview {
+    height: 320px;
+  }
+
+  .chart-panel--io {
     height: 320px;
   }
 }
