@@ -38,10 +38,13 @@ export function ChatThread({
   scrollRef,
   className,
   layout = "plain",
+  stamp = false,
 }: {
   scrollRef?: React.RefObject<HTMLDivElement | null>;
   className?: string;
   layout?: "plain" | "bubbles";
+  /** Date each message beside its voice's name (Monitor's reading). */
+  stamp?: boolean;
 }) {
   const t = useT();
   const messages = useChatStore((s) => s.messages);
@@ -116,7 +119,10 @@ export function ChatThread({
       ) : (
         messages.map((message: ChatMessage) => (
           <div key={message.id}>
-            <div className="label mb-0.5">{who(message.role)}</div>
+            <div className="label mb-0.5">
+              {who(message.role)}
+              {stamp ? <span className="chat-at mon-mono">{formatClock(message.timestamp)}</span> : null}
+            </div>
             <div
               className={[
                 "rounded px-2 py-1.5 text-xs leading-relaxed",

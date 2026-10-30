@@ -303,7 +303,7 @@ export function MonitorStage({ data }: { data: MonitorData }) {
           ) : tab === "chat" ? (
             // CHAT is Classic's conversation, given the whole sheet: reading
             // what was said is a page, not a strip over the trace.
-            <ChatThread />
+            <ChatThread stamp />
           ) : shownItem ? (
             <StageItemView key={shownItem.id} item={shownItem} />
           ) : (

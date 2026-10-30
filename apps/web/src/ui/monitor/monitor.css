@@ -918,6 +918,12 @@
 .mon-chat__input::placeholder {
   color: var(--mon-t3);
 }
+/* The message's wall clock, beside its voice's name. */
+.chat-at {
+  margin-left: 6px;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
 /* The send/stop button matches the input's 44px so the pair reads as one bar,
    and it is the only filled control on the page. */
 .mon-chat__send {
@@ -1547,6 +1553,11 @@
 .mon-root :focus-visible {
   outline: 2px solid rgb(94 159 232 / 0.85);
   outline-offset: 2px;
+}
+/* A text field is not a button: the caret is its focus cue, not a ring. */
+.mon-root .mon-chat__input:focus-visible,
+.mon-root .rounds-inp__input:focus-visible {
+  outline: none;
 }
 .mon-root button,
 .mon-root input,
