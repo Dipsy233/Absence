@@ -82,12 +82,10 @@ export function DripUI() {
             <span className="drip-orb drip-orb--state">
               <img src="/app-icon.png" alt="" />
             </span>
-            {attention.level !== "none" ? (
-              <span
-                className={`drip-dot drip-dot--${attention.level}`}
-                title={`${t(attention.level)} · ${attention.reasons.length}`}
-              />
-            ) : null}
+            <span
+              className={`drip-dot drip-dot--${attention.level}`}
+              title={`${t(attention.level)} · ${attention.reasons.length}`}
+            />
           </span>
 
           <span className="drip-mid">
