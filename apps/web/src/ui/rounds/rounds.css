@@ -137,14 +137,7 @@
   text-transform: uppercase;
   color: var(--mon-t3);
 }
-/* The wall clock beside the voice's name: when this message was said. */
-.rounds-bubblewrap__at {
-  margin-left: 6px;
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  opacity: 0.8;
-}
+/* One voice's block: joined messages share this rounded frame. */
 .rounds-bubble {
   overflow: hidden;
   border: 1px solid var(--mon-bd);
@@ -163,10 +156,25 @@
   box-shadow: none;
 }
 .rounds-bubble__msg {
-  padding: 7px 11px;
+  position: relative;
+  padding: 7px 11px 7px;
+  /* The corner stamp owns the right end of the last line. */
+  padding-right: 48px;
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--mon-t);
+}
+/* The wall clock at this part's foot: when this message was said. Joined parts
+   keep one stamp each, so a merged bubble still dates every segment. */
+.rounds-bubble__at {
+  position: absolute;
+  right: 9px;
+  bottom: 4px;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--mon-t3);
+  opacity: 0.8;
+  pointer-events: none;
 }
 /* The seam: joined messages share the block but stay countable. */
 .rounds-bubble__msg[data-seam="true"] {

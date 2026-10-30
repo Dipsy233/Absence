@@ -284,7 +284,6 @@ const ZH: Record<string, string> = {
   "Connected terminal and session id": "接入的终端与会话 ID",
   "What the story is showing": "故事线当前显示的是实时还是回放",
   "{n} steps": "{n} 步",
-  "NOW": "当前",
   "Agent's view": "Agent 的视角",
   "in context": "在上下文中",
   "{a}–{b} / {n} lines": "{a}–{b} / {n} 行",

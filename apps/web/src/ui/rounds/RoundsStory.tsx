@@ -158,7 +158,7 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
                   <span
                     className={`rounds-chip rounds-chip--${TONE_FOR_ROW[row.tone] ?? "mute"} rounds-card__k`}
                   >
-                    {now ? t("NOW") : row.action}
+                    {row.action}
                   </span>
                   <span className="rounds-card__t">{row.primary}</span>
                   <span className="rounds-card__m">{row.secondary ?? ""}</span>

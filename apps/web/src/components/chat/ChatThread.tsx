@@ -102,14 +102,12 @@ export function ChatThread({
       ) : layout === "bubbles" ? (
         groups.map((group) => (
           <div key={group.messages[0]!.id} className={`rounds-bubblewrap rounds-bubblewrap--${group.role}`}>
-            <span className="rounds-bubblewrap__who">
-              {who(group.role)}
-              <span className="rounds-bubblewrap__at mon-mono">{formatClock(group.messages[0]!.timestamp)}</span>
-            </span>
+            <span className="rounds-bubblewrap__who">{who(group.role)}</span>
             <div className="rounds-bubble">
               {group.messages.map((message, i) => (
                 <div key={message.id} className="rounds-bubble__msg" data-seam={i > 0 ? "true" : undefined}>
                   <MessageBody message={message} markdown={chatMarkdown} />
+                  <span className="rounds-bubble__at mon-mono">{formatClock(message.timestamp)}</span>
                 </div>
               ))}
             </div>
