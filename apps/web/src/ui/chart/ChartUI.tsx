@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { AbsenceEvent } from "@absence/core";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { AbsenceEvent, RunSummary } from "@absence/core";
 import { formatClock, formatOffset } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useAttentionOptions } from "../../hooks/useAttentionOptions";
@@ -15,7 +15,9 @@ import {
 } from "../../lib/report";
 import { eventToStageItem } from "../../lib/events";
 import { leaveSession } from "../../stores/reset";
+import { useRunsStore } from "../../stores/runsStore";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useUiStore } from "../../stores/uiStore";
 import { ViewModeSwitch } from "../../components/layout/ViewModeSwitch";
 import { WindowControls } from "../../components/common/WindowControls";
 import { StageItemView } from "../../components/stage/StageItemView";
@@ -29,6 +31,7 @@ import type {
   ReportAttentionOptions,
   TimelineKind,
 } from "../../types/report";
+import type { HistoryRun } from "../../types/history";
 
 import { ChartTimeline, type TimelinePick } from "./ChartTimeline";
 import "./chart.css";
@@ -59,6 +62,14 @@ const KIND_CHIP: Record<TimelineKind, string> = {
   observe: "mute",
   error: "err",
   end: "mute",
+};
+
+/** How a run's status is spoken, matching Monitor's run list. */
+const RUN_WORD: Record<RunSummary["status"], string> = {
+  running: "running",
+  completed: "done",
+  interrupted: "stopped",
+  error: "error",
 };
 
 /** The chip a level wears: green / orange / red, grey when nothing fired. */
@@ -94,10 +105,30 @@ export function ChartUI() {
   const [tab, setTab] = useState<Tab>("changes");
   const [pick, setPick] = useState<TimelinePick | undefined>(undefined);
   const [attOpen, setAttOpen] = useState(false);
+  const [runMenu, setRunMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setPick(undefined);
     setAttOpen(false);
+    setRunMenu(false);
   }, [run?.id]);
+
+  const runs = useRunsStore((s) => s.runs);
+  const loadRuns = useRunsStore((s) => s.loadRuns);
+  const selectRun = useUiStore((s) => s.selectRun);
+  useEffect(() => {
+    if (session?.id && runs.length === 0) void loadRuns(session.id);
+  }, [session?.id, runs.length, loadRuns]);
+
+  /** A click anywhere but the menu closes it. */
+  useEffect(() => {
+    if (!runMenu) return;
+    const onDown = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setRunMenu(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [runMenu]);
 
   /** Prefer the newest event behind a set of evidence ids that has something to render. */
   const reveal = (ids: string[], node?: TimelinePick["node"]) => {
@@ -243,11 +274,66 @@ export function ChartUI() {
               {headline}
             </div>
             <div className="chart-req">
-              <span>{t("Request")}:</span>
-              <span className="chart-req__text" title={run.prompt}>
-                {run.prompt || t("(observed activity)")}
+              <span className="chart-req__cap">{t("Started")}</span>
+              <span className="chart-req__text chart-mono">{formatClock(run.startedAt)}</span>
+              <span aria-hidden>→</span>
+              <span className="chart-req__cap">{t("Ended")}</span>
+              <span className="chart-req__text chart-mono">
+                {run.endedAt ? formatClock(run.endedAt) : t("running")}
               </span>
             </div>
+          </div>
+
+          {/* Round switching: the report is per run, so the run is the first
+              choice a reader makes. A pill at the hero's top-right, its list
+              opening downward over the numbers. */}
+          <div className="chart-runselwrap" ref={menuRef}>
+            <button
+              type="button"
+              className="chart-runsel"
+              onClick={() => setRunMenu((open) => !open)}
+              aria-expanded={runMenu}
+              aria-haspopup="listbox"
+              title={runs.length > 1 ? t("Switch run") : t("The run this report is of")}
+            >
+              <span className={`chart-runsel__dot chart-runsel__dot--${run.status}`} aria-hidden />
+              <span className="chart-runsel__label">
+                #{run.index} · {t(RUN_WORD[run.status])}
+              </span>
+              <span aria-hidden>{runMenu ? "▴" : "▾"}</span>
+            </button>
+
+            {runMenu ? (
+              <ul className="chart-runmenu" role="listbox" aria-label={t("Runs")}>
+                {[...runs].reverse().map((entry) => (
+                  <li key={entry.id}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={entry.id === run.id}
+                      data-current={entry.id === run.id ? "true" : undefined}
+                      className="chart-runmenu__item"
+                      onClick={() => {
+                        selectRun(entry.id);
+                        setRunMenu(false);
+                      }}
+                    >
+                      <span className="chart-runmenu__head">
+                        <span
+                          className={`chart-runsel__dot chart-runsel__dot--${entry.status}`}
+                          aria-hidden
+                        />
+                        <span className="chart-runmenu__title">
+                          #{entry.index} · {t(RUN_WORD[entry.status])}
+                        </span>
+                        <span className="chart-runmenu__time chart-mono">{formatClock(entry.startedAt)}</span>
+                      </span>
+                      <span className="chart-runmenu__prompt">{entry.prompt || t("(observed activity)")}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         </section>
 

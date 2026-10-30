@@ -260,7 +260,7 @@
 .chart-hero {
   display: grid;
   flex: none;
-  grid-template-columns: 60px minmax(0, 1fr);
+  grid-template-columns: 60px minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
 }
@@ -308,6 +308,132 @@
 .chart-req__text {
   overflow: hidden;
   color: var(--ch-t);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chart-req__cap {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ch-t3);
+}
+
+/* ── round switcher: the report is of one run, so the run is a choice ────── */
+
+.chart-runselwrap {
+  position: relative;
+  align-self: start;
+}
+
+.chart-runsel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--ch-bd);
+  border-radius: 999px;
+  background: var(--ch-s1);
+  font-family: var(--ch-mono);
+  font-size: 11px;
+  color: var(--ch-t2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chart-runsel:hover {
+  border-color: var(--ch-bd2);
+  color: var(--ch-t);
+}
+
+.chart-runsel__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ch-t3);
+}
+
+.chart-runsel__dot--running {
+  background: var(--ch-run);
+}
+
+.chart-runsel__dot--completed {
+  background: var(--ch-edit);
+}
+
+.chart-runsel__dot--interrupted {
+  background: var(--ch-t3);
+}
+
+.chart-runsel__dot--error {
+  background: var(--ch-err);
+}
+
+.chart-runmenu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  width: 300px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--ch-bd2);
+  border-radius: 8px;
+  background: var(--ch-s2);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+.chart-runmenu__item {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chart-runmenu__item:hover {
+  background: var(--ch-s3);
+}
+
+.chart-runmenu__item[data-current="true"] {
+  background: rgba(94, 159, 232, 0.14);
+}
+
+.chart-runmenu__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.chart-runmenu__title {
+  flex: 1;
+  font-family: var(--ch-mono);
+  font-size: 11px;
+  color: var(--ch-t);
+}
+
+.chart-runmenu__time {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--ch-t3);
+}
+
+.chart-runmenu__prompt {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--ch-t2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -981,7 +1107,7 @@
   }
 
   .chart-hero {
-    grid-template-columns: 48px minmax(0, 1fr);
+    grid-template-columns: 48px minmax(0, 1fr) auto;
   }
 
   .chart-hero__icon {
