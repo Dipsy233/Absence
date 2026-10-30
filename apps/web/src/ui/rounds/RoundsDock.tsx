@@ -27,15 +27,15 @@ export type DockPanel = "files" | "folder" | "eggs" | "metrics" | "activity";
 
 export function RoundsDock({
   data,
-  panel,
+  open,
   setPanel,
 }: {
   data: RoundsData;
-  panel: DockPanel | undefined;
-  setPanel: (panel: DockPanel | undefined) => void;
+  open: DockPanel[];
+  setPanel: (panel: DockPanel) => void;
 }) {
   const t = useT();
-  const toggle = (id: DockPanel) => setPanel(panel === id ? undefined : id);
+  const toggle = (id: DockPanel) => setPanel(id);
 
   return (
     <nav className="rounds-dock" aria-label={t("Panels")}>
@@ -43,7 +43,7 @@ export function RoundsDock({
         id="files"
         label={t("Files")}
         icon={<path d="M3 7h6l2 2h10v10H3z" />}
-        on={panel === "files"}
+        on={open.includes("files")}
         onClick={() => toggle("files")}
       />
       <DockButton
@@ -52,7 +52,7 @@ export function RoundsDock({
         icon={<path d="M6 3h9l4 4v14H6z M9 12h7M9 16h5" />}
         badge={data.badges.folder > 0 ? data.badges.folder : undefined}
         badgeTone="read"
-        on={panel === "folder"}
+        on={open.includes("folder")}
         onClick={() => toggle("folder")}
       />
       <DockButton
@@ -65,14 +65,14 @@ export function RoundsDock({
         }
         badge={data.badges.eggs > 0 ? data.badges.eggs : undefined}
         badgeTone="egg"
-        on={panel === "eggs"}
+        on={open.includes("eggs")}
         onClick={() => toggle("eggs")}
       />
       <DockButton
         id="metrics"
         label={t("Metrics")}
         icon={<path d="M3 17l5-6 4 3 6-8 3 4" />}
-        on={panel === "metrics"}
+        on={open.includes("metrics")}
         onClick={() => toggle("metrics")}
       />
       <DockButton
@@ -81,7 +81,7 @@ export function RoundsDock({
         icon={<path d="M4 6h16M4 12h16M4 18h10" />}
         badge={data.badges.activity > 0 ? data.badges.activity : undefined}
         badgeTone="read"
-        on={panel === "activity"}
+        on={open.includes("activity")}
         onClick={() => toggle("activity")}
       />
     </nav>
@@ -129,38 +129,26 @@ function DockButton({
   );
 }
 
-/** The drawer's content: one panel per dock icon, each a reuse, not a fork. */
-export function RoundsDrawer({ data, panel, onClose }: { data: RoundsData; panel: DockPanel; onClose: () => void }) {
-  const t = useT();
-  return (
-    <section className="rounds-drawer" aria-label={t("Panels")}>
-      <div className="rounds-drawer__h">
-        <span className="rounds-cap">{DRAWER_TITLE[panel] ? t(DRAWER_TITLE[panel]!) : ""}</span>
-        <span style={{ flex: 1 }} />
-        <button type="button" className="rounds-ghostbtn" onClick={onClose} title={t("Close")} aria-label={t("Close")}>
-          ✕
-        </button>
+/**
+ * The window bodies: one panel per dock icon, each a reuse, not a fork —
+ * the same metrics dashboard, project tree and stores the other faces read.
+ */
+export function DockBody({ data, panel }: { data: RoundsData; panel: DockPanel }) {
+  if (panel === "files") {
+    return (
+      <div className="rounds-drawer__tree">
+        <FilePanel />
       </div>
-      <div className="rounds-drawer__body">
-        {panel === "files" ? (
-          <div className="rounds-drawer__tree">
-            <FilePanel />
-          </div>
-        ) : panel === "folder" ? (
-          <FolderPanel />
-        ) : panel === "eggs" ? (
-          <EggsPanel />
-        ) : panel === "metrics" ? (
-          <MetricsDashboard embedded />
-        ) : (
-          <ActivityPanel data={data} />
-        )}
-      </div>
-    </section>
-  );
+    );
+  }
+  if (panel === "folder") return <FolderPanel />;
+  if (panel === "eggs") return <EggsPanel />;
+  if (panel === "metrics") return <MetricsDashboard embedded />;
+  return <ActivityPanel data={data} />;
 }
 
-const DRAWER_TITLE: Record<DockPanel, string> = {
+/** The floating window's title per dock panel. */
+export const WINDOW_TITLE: Record<DockPanel, string> = {
   files: "Files",
   folder: "Agent Folder",
   eggs: "Agent Eggs",

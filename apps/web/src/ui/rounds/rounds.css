@@ -92,16 +92,97 @@
      the thought line is one long nowrap sentence — without the cap it widened
      the whole column and pushed the stage into the peek. */
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 168px auto;
+  grid-template-rows: minmax(0, 1fr) 168px;
   border-right: 1px solid var(--mon-bd);
 }
 .rounds-right {
   position: relative;
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  background: var(--mon-s1);
+  overflow: hidden;
+}
+/* The wallpaper: the conversation itself, transparent, so the moving ambience
+   behind it shows through. When no window is up, this is the whole right side. */
+.rounds-wallpaper {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+.rounds-wallpaper__thread {
+  background: transparent;
+}
+.rounds-wallpaper > form {
+  margin-top: auto;
+}
+
+/* ── Floating windows ─────────────────────────────────────────────────────
+   Desktop windows: glass sheets with a drag handle, floating above the chat
+   wallpaper and the moving ambience. */
+.rounds-win {
+  position: absolute;
+  display: flex;
+  min-height: 0;
+  max-height: calc(100% - 24px);
+  flex-direction: column;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 12px;
+  background: rgb(18 22 29 / 0.9);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
+}
+.rounds-win__h {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--mon-bd);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.rounds-win__h:active {
+  cursor: grabbing;
+}
+.rounds-win__t {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font: 12px var(--mon-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--mon-t2);
+}
+.rounds-win__x {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mon-t3);
+  font-size: 12px;
+  line-height: 1;
+}
+.rounds-win__x:hover {
+  background: var(--mon-s3);
+  color: var(--mon-t);
+}
+.rounds-win__b {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+.rounds-win__b > * {
+  min-height: 0;
+}
+.rounds-win__stage {
+  overflow: auto;
 }
 
 /* ── The scene ──────────────────────────────────────────────────────────── */
@@ -489,11 +570,7 @@
   min-height: 0;
   min-width: 0;
   flex-direction: column;
-  /* A sheet pasted over the moving light: translucent, blurred behind, with a
-     soft edge shadow lifting it off the ambience. */
-  background: rgb(16 20 26 / 0.72);
-  backdrop-filter: blur(10px);
-  box-shadow: -18px 0 44px rgb(0 0 0 / 0.32);
+  min-height: 0;
 }
 .rounds-peek__head {
   display: flex;
@@ -681,43 +758,6 @@
 }
 
 /* ── The drawer ─────────────────────────────────────────────────────────── */
-
-.rounds-drawer {
-  position: absolute;
-  inset: 0 0 0 auto;
-  z-index: 5;
-  display: flex;
-  min-width: 0;
-  width: 100%;
-  flex-direction: column;
-  border-left: 1px solid var(--mon-bd);
-  background: rgb(20 24 31 / 0.88);
-  backdrop-filter: blur(12px);
-  box-shadow: -18px 0 40px rgb(0 0 0 / 0.35);
-}
-.rounds-drawer__h {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--mon-bd);
-}
-.rounds-drawer__body {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  padding: 8px 0 12px;
-}
-.rounds-drawer__tree {
-  height: 100%;
-  padding: 0 6px;
-}
-.rounds-drawer__empty {
-  padding: 16px;
-  font-size: 12.5px;
-  color: var(--mon-t3);
-}
 
 .rounds-folder,
 .rounds-eggs,

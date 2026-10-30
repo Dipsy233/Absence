@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatClock } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useT } from "../../lib/i18n";
@@ -8,25 +8,28 @@ import { leaveSession } from "../../stores/reset";
 import { VIEW_MODES, viewModeSpec } from "../../lib/viewMode";
 import { useViewModeStore } from "../../stores/viewModeStore";
 import { WindowControls } from "../../components/common/WindowControls";
+import { ChatThread } from "../../components/chat/ChatThread";
+import { StageItemView } from "../../components/stage/StageItemView";
 import { Chip, Dot } from "../monitor/atoms";
 import { useRoundsData } from "./useRoundsData";
 import { RoundsScene } from "./RoundsScene";
 import { RoundsPeek } from "./RoundsPeek";
 import { RoundsStory } from "./RoundsStory";
 import { RoundsChat } from "./RoundsChat";
-import { RoundsDock, RoundsDrawer, type DockPanel } from "./RoundsDock";
+import { RoundsDock, DockBody, WINDOW_TITLE, type DockPanel } from "./RoundsDock";
+import { RoundsWindow } from "./RoundsWindow";
 import "./rounds.css";
 import "../monitor/monitor.css";
 
 /**
- * ROUNDS (查房陪诊) — the light face: the agent leads, you follow.
+ * ROUNDS (查房陪诊) — the light face, as a desktop.
  *
- * The proposal's shape (b.html): the character on its own stage — never under
- * text — with a bubble saying what it is doing and a quiet line quoting its
- * thought; the code it is looking at on the right with a progress bar for how
- * far the read reached; the run's steps as a story of cards underneath, each
- * clickable to rewind; and everything else folded into an icon dock on the
- * right edge that expands a stage over the peek.
+ * The proposal's spirit (b.html): the character on its own stage, the story
+ * underneath, and everything else as *windows on a desktop*. The right side's
+ * wallpaper is the conversation itself — a transparent chat; whenever the
+ * agent does something, a window pops up showing it (the file in view, with
+ * its progress bar); the dock's icons are shortcuts that open draggable
+ * floating windows. Egg toasts are deliberately absent for now.
  *
  * Everything it draws comes from `useRoundsData`, one derivation over the
  * same stores and pure libraries the other faces read — no second server
@@ -42,8 +45,48 @@ export function RoundsUI() {
   const mode = useViewModeStore((s) => s.mode);
   const setMode = useViewModeStore((s) => s.setMode);
   const goLive = useStageStore((s) => s.goLive);
-  const [dock, setDock] = useState<DockPanel | undefined>(undefined);
   const desktop = Boolean(window.absenceDesktop);
+
+  /** Open dock windows, in open order (later windows stack on top). */
+  const [dockWins, setDockWins] = useState<DockPanel[]>([]);
+  /** Window stacking: each focus bumps the window above the others. */
+  const [zmap, setZmap] = useState<Record<string, number>>({});
+  const ztop = useRef(1);
+  const focus = (id: string) => setZmap((m) => ({ ...m, [id]: ++ztop.current }));
+
+  const toggleDock = (panel: DockPanel) => {
+    setDockWins((wins) => {
+      if (wins.includes(panel)) return wins.filter((w) => w !== panel);
+      focus(panel);
+      return [...wins, panel];
+    });
+  };
+
+  /**
+   * The agent's own window: whenever the current action is something worth
+   * showing (a file, a diff, a terminal), a window pops up with it. A new
+   * action pops it again; ✕ dismisses this action's window only. Thinking
+   * stays on the scene's thought line, and egg updates live in the dock —
+   * neither is an "operation" the reader needs a window for.
+   */
+  const [dismissed, setDismissed] = useState<string | undefined>(undefined);
+  const itemId = data.item?.id;
+  useEffect(() => {
+    if (itemId) setDismissed((d) => (d === itemId ? d : undefined));
+  }, [itemId]);
+  const actionKind = data.item?.payload.kind;
+  const actionWorthy =
+    actionKind === "file" || actionKind === "diff" || actionKind === "terminal" || actionKind === "approval";
+  const showAction = actionWorthy && dismissed !== itemId;
+  const dismissAction = () => setDismissed(itemId);
+
+  /** The action window's title: the subject of the action, in one line. */
+  const actionTitle =
+    data.item?.payload.kind === "file"
+      ? data.item.payload.path
+      : data.item?.payload.kind === "diff"
+        ? data.item.payload.path
+        : (data.item?.title ?? "");
 
   return (
     <div className="mon-root rounds-root mon-shell">
@@ -60,9 +103,7 @@ export function RoundsUI() {
         ) : null}
 
         <span className="rounds-top__run" title={data.run?.prompt}>
-          {data.run
-            ? `#${data.run.index} — ${data.run.prompt || t("(observed activity)")}`
-            : t("No run yet")}
+          {data.run ? `#${data.run.index} — ${data.run.prompt || t("(observed activity)")}` : t("No run yet")}
         </span>
 
         <span className="mon-bar__spacer" aria-hidden />
@@ -100,15 +141,55 @@ export function RoundsUI() {
         <div className="rounds-left">
           <RoundsScene data={data} onLive={goLive} />
           <RoundsStory data={data} onLive={goLive} />
-          <RoundsChat />
         </div>
 
+        {/*
+          The desktop: the conversation is the wallpaper (transparent, so the
+          moving ambience shows through), and the windows — the agent's own
+          action window and the dock's shortcuts — float above it.
+        */}
         <div className="rounds-right">
-          {dock ? <RoundsDrawer data={data} panel={dock} onClose={() => setDock(undefined)} /> : null}
-          <RoundsPeek data={data} />
+          <div className="rounds-wallpaper">
+            <ChatThread className="rounds-wallpaper__thread" />
+            <RoundsChat />
+          </div>
+
+          {showAction && data.item ? (
+            <RoundsWindow
+              key={`action-${itemId}`}
+              title={actionTitle}
+              initial={{ x: 60, y: 48 }}
+              width={500}
+              z={zmap["action"] ?? 2}
+              onFocus={() => focus("action")}
+              onClose={dismissAction}
+            >
+              {data.item.payload.kind === "file" ? (
+                <RoundsPeek item={data.item} />
+              ) : (
+                <div className="rounds-win__stage">
+                  <StageItemView item={data.item} />
+                </div>
+              )}
+            </RoundsWindow>
+          ) : null}
+
+          {dockWins.map((panel, index) => (
+            <RoundsWindow
+              key={panel}
+              title={t(WINDOW_TITLE[panel])}
+              initial={{ x: 40 + index * 34, y: 36 + index * 30 }}
+              width={420}
+              z={zmap[panel] ?? 1}
+              onFocus={() => focus(panel)}
+              onClose={() => toggleDock(panel)}
+            >
+              <DockBody data={data} panel={panel} />
+            </RoundsWindow>
+          ))}
         </div>
 
-        <RoundsDock data={data} panel={dock} setPanel={setDock} />
+        <RoundsDock data={data} open={dockWins} setPanel={toggleDock} />
       </div>
 
       <p className="sr-only">{viewModeSpec(mode).intent}</p>
