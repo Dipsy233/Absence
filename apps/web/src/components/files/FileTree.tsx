@@ -13,8 +13,14 @@ import { languageFromPath } from "../../lib/language";
 import { openUserFile } from "../../lib/openFile";
 import { useT } from "../../lib/i18n";
 
-/** Level 1: the project tree (read02 §7). */
-export function FileTree() {
+/**
+ * Level 1: the project tree (read02 §7).
+ *
+ * `onOpen` is how a host decides what a click *means*. Classic opens the file
+ * on the Stage (the default); Rounds opens it in a floating window of its own,
+ * so the Stage is never pinned from here.
+ */
+export function FileTree({ onOpen = (rel) => void openUserFile(rel) }: { onOpen?: (rel: string) => void }) {
   const t = useT();
   const tree = useFileStore((s) => s.tree);
   const files = useFileStore((s) => s.files);
@@ -122,7 +128,7 @@ export function FileTree() {
           files={files}
           activePath={activePath}
           onToggle={toggle}
-          onOpenStage={openUserFile}
+          onOpen={onOpen}
           onContextMenu={handleFileMenu}
         />
       ))}
@@ -138,13 +144,13 @@ interface TreeRowProps {
   files: Record<string, { status: string; lastModifiedAt?: number }>;
   activePath?: string;
   onToggle: (path: string) => void;
-  onOpenStage: (rel: string) => void;
+  onOpen: (rel: string) => void;
   onContextMenu: (event: MouseEvent, rel: string) => void;
 }
 
 function TreeRow(props: TreeRowProps) {
   const t = useT();
-  const { node, depth, expanded, projectPath, files, activePath, onToggle, onOpenStage, onContextMenu } = props;
+  const { node, depth, expanded, projectPath, files, activePath, onToggle, onOpen, onContextMenu } = props;
   const pad = { paddingLeft: `${depth * 12 + 4}px` };
 
   if (node.type === "directory") {
@@ -180,7 +186,7 @@ function TreeRow(props: TreeRowProps) {
       <button
         type="button"
         style={pad}
-        onClick={() => onOpenStage(rel)}
+        onClick={() => onOpen(rel)}
         onContextMenu={(event) => onContextMenu(event, rel)}
         title={view ? `${rel} · ${formatAgo(view.lastModifiedAt)}` : t("{rel} · open in Stage", { rel })}
         className={[

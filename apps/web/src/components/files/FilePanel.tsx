@@ -12,16 +12,17 @@ import { FileHistory } from "./FileHistory";
  * `chrome={false}` is for a host that already titles the surface — Rounds'
  * floating Files window carries "Files" in its own title bar, so the panel must
  * not print a second header under it. The body keeps the same padding and
- * scrolling either way; only the frame and the header go.
+ * scrolling either way; only the frame and the header go. `onOpen` is the same
+ * hand-off the tree takes: who handles a click (the Stage, or a window).
  */
-export function FilePanel({ chrome = true }: { chrome?: boolean }) {
+export function FilePanel({ chrome = true, onOpen }: { chrome?: boolean; onOpen?: (rel: string) => void }) {
   const t = useT();
   const view = useUiStore((s) => s.filesView);
   const trackedCount = useFileStore((s) => Object.keys(s.files).length);
 
   const content = (
     <>
-      {view.kind === "tree" ? <FileTree /> : null}
+      {view.kind === "tree" ? <FileTree onOpen={onOpen} /> : null}
       {view.kind === "detail" ? <FileDetail path={view.path} /> : null}
       {view.kind === "history" ? <FileHistory path={view.path} /> : null}
     </>

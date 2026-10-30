@@ -1,6 +1,6 @@
-import { formatClock, formatDuration } from "../../lib/format";
+import { useMemo, useState } from "react";
+import { formatBytes, formatClock, formatDuration } from "../../lib/format";
 import { useT } from "../../lib/i18n";
-import { openKnownFile } from "../../lib/openFile";
 import { eventToStageItem } from "../../lib/events";
 import { primaryEggs, sortEggs, summarizeTools } from "../../lib/eggs";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -130,45 +130,118 @@ export function DockBody({
   data,
   panel,
   onOpenEggMetrics,
+  onOpenFile,
+  onOpenVersion,
 }: {
   data: RoundsData;
   panel: DockPanel;
   onOpenEggMetrics: (pid: number, name: string) => void;
+  /** Open a whole project file in a Rounds window (never the Stage). */
+  onOpenFile: (path: string) => void;
+  /** Open one recorded version of an agent-known file, in a Rounds window. */
+  onOpenVersion: (path: string, version?: number) => void;
 }) {
   // The window's title bar already says "Files"; the panel must not print a
   // second header under it.
-  if (panel === "files") return <FilePanel chrome={false} />;
-  if (panel === "folder") return <FolderPanel />;
+  if (panel === "files") return <FilePanel chrome={false} onOpen={onOpenFile} />;
+  if (panel === "folder") return <FolderPanel onOpenVersion={onOpenVersion} />;
   if (panel === "eggs") return <EggsBody onOpenEggMetrics={onOpenEggMetrics} />;
   return <RunPanel data={data} />;
 }
 
 /* ── Agent Folder ────────────────────────────────────────────────────────── */
 
-function FolderPanel() {
+/** A version's source, in this face's chip vocabulary. */
+const SOURCE_TONE = { read: "read", write: "edit", edit: "edit" } as const;
+
+/**
+ * The agent's own files, as a folder that opens to its versions.
+ *
+ * Every version is a *recorded* state — the text the agent held at that
+ * moment, never the file on disk — so a click opens that content in a Rounds
+ * window and nothing else: no pin, no replay, no Stage. The shape is Monitor's
+ * rail and Classic's AgentFolder: the caret folds the versions out, the name
+ * opens the newest one, a row opens that one version.
+ */
+function FolderPanel({ onOpenVersion }: { onOpenVersion: (path: string, version?: number) => void }) {
   const t = useT();
   const files = useFileStore((s) => s.files);
-  const rows = Object.values(files).sort((a, b) => a.path.localeCompare(b.path));
+  const [expanded, setExpanded] = useState<string | undefined>(undefined);
+
+  const rows = useMemo(
+    () =>
+      Object.values(files).sort(
+        (a, b) => (b.lastModifiedAt ?? 0) - (a.lastModifiedAt ?? 0) || a.path.localeCompare(b.path),
+      ),
+    [files],
+  );
+
   if (rows.length === 0) {
     return <p className="rounds-drawer__empty">{t("The agent has not touched anything yet.")}</p>;
   }
+
   return (
-    <ul className="rounds-folder">
-      {rows.map((file) => (
-        <li key={file.path}>
-          <button
-            type="button"
-            onClick={() => openKnownFile(file.path, file.version)}
-            title={t("Show v{v} on the Stage", { v: file.version })}
-          >
-            <span className="rounds-folder__p" title={file.path}>
-              {file.path}
-            </span>
-            <span className="rounds-folder__v mon-mono">v{file.version}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="rounds-folder">
+      {rows.map((file) => {
+        const open = expanded === file.path;
+        const latest = file.history.at(-1);
+        return (
+          <div key={file.path} className="rounds-fgroup">
+            <div className="rounds-frow">
+              <button
+                type="button"
+                className="rounds-fcaret"
+                onClick={() => setExpanded(open ? undefined : file.path)}
+                title={open ? t("Hide versions") : t("Show versions")}
+                aria-label={open ? t("Hide versions") : t("Show versions")}
+                aria-expanded={open}
+              >
+                {open ? "▾" : "▸"}
+              </button>
+              <button
+                type="button"
+                className="rounds-fname"
+                onClick={() => onOpenVersion(file.path, latest?.version)}
+                title={t("Show the newest agent-known content")}
+              >
+                <span className="rounds-fname__p" title={file.path}>
+                  {file.path}
+                </span>
+                <span className="rounds-fname__v mon-mono">
+                  {t("{n} versions", { n: file.history.length })} · {formatBytes(file.content.length)}
+                </span>
+              </button>
+            </div>
+
+            {open ? (
+              <ul className="rounds-flist">
+                {[...file.history].reverse().map((entry) => (
+                  <li key={entry.version}>
+                    <button
+                      type="button"
+                      className="rounds-fver"
+                      onClick={() => onOpenVersion(file.path, entry.version)}
+                      title={t("Show v{v}", { v: entry.version })}
+                    >
+                      <span className="rounds-fver__v">v{entry.version}</span>
+                      <span className={`rounds-chip rounds-chip--${SOURCE_TONE[entry.source]}`}>{entry.source}</span>
+                      <span className="rounds-fver__what">
+                        {entry.complete
+                          ? t("whole file")
+                          : entry.startLine !== undefined && entry.endLine !== undefined
+                            ? t("lines {a}–{b}", { a: entry.startLine, b: entry.endLine })
+                            : t("partial")}
+                      </span>
+                      <span className="rounds-fver__at mon-mono">{formatClock(entry.timestamp)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

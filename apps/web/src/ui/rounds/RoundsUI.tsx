@@ -12,6 +12,8 @@ import { WindowControls } from "../../components/common/WindowControls";
 import { ChatThread } from "../../components/chat/ChatThread";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
+import { knownFileItem, userFileItem } from "../../lib/openFile";
+import type { StageItem } from "../../types/stage";
 import { Chip, Dot } from "../monitor/atoms";
 import { useRoundsData } from "./useRoundsData";
 import { RoundsScene } from "./RoundsScene";
@@ -36,6 +38,11 @@ import "../monitor/monitor.css";
  * their corner handle. The agent's own actions pop their window too. Egg
  * toasts are deliberately absent for now.
  *
+ * Files and Agent Folder are the reader's own browsers: what they click opens
+ * a file window and nothing else — the Stage keeps following (or keeps its
+ * pin), because reading a file must not move the run out from under the
+ * reader.
+ *
  * Everything it draws comes from `useRoundsData`, one derivation over the
  * same stores and pure libraries the other faces read — no second server
  * contract, no forked engine.
@@ -44,6 +51,14 @@ import "../monitor/monitor.css";
 /** One size for every top-level window; another for every child window. */
 const TOP_SIZE = { w: 440, h: 430 };
 const CHILD_SIZE = { w: 580, h: 470 };
+
+/** "path · v3" for one recorded version; the path alone for a whole file. */
+function fileWindowTitle(item: StageItem): string {
+  const payload = item.payload;
+  return payload.kind === "file" && payload.version !== undefined
+    ? `${payload.path} · v${payload.version}`
+    : item.title;
+}
 
 export function RoundsUI() {
   const t = useT();
@@ -79,6 +94,35 @@ export function RoundsUI() {
     selectEgg(pid);
     setMetricsWins((wins) => (wins.some((w) => w.pid === pid) ? wins : [...wins, { pid, name }]));
     focus(`metrics-${pid}`);
+  };
+
+  /**
+   * The reader's files, opened from the dock's windows: one window per path,
+   * showing whichever content was clicked last (the whole file from disk, or
+   * one recorded version). These windows are built here and never written to
+   * the stage store — opening a file is reading, not pinning.
+   */
+  const [fileWins, setFileWins] = useState<StageItem[]>([]);
+
+  const showFile = (item: StageItem) => {
+    const path = item.source?.path;
+    setFileWins((wins) => {
+      const at = wins.findIndex((w) => w.source?.path === path);
+      if (at === -1) return [...wins, item];
+      const next = wins.slice();
+      next[at] = item;
+      return next;
+    });
+    focus(`file-${path}`);
+  };
+
+  const openFileWindow = (path: string) => {
+    void userFileItem(path).then(showFile);
+  };
+
+  const openVersionWindow = (path: string, version?: number) => {
+    const item = knownFileItem(path, version);
+    if (item) showFile(item);
   };
 
   /**
@@ -201,7 +245,29 @@ export function RoundsUI() {
             onFocus={() => focus(panel)}
             onClose={() => toggleDock(panel)}
           >
-            <DockBody data={data} panel={panel} onOpenEggMetrics={openEggMetrics} />
+            <DockBody
+              data={data}
+              panel={panel}
+              onOpenEggMetrics={openEggMetrics}
+              onOpenFile={openFileWindow}
+              onOpenVersion={openVersionWindow}
+            />
+          </RoundsWindow>
+        ))}
+
+        {fileWins.map((item, index) => (
+          <RoundsWindow
+            key={`file-${item.source?.path}`}
+            title={fileWindowTitle(item)}
+            initial={{ x: 170 + index * 34, y: 100 + index * 28 }}
+            size={CHILD_SIZE}
+            z={zmap[`file-${item.source?.path}`] ?? 1}
+            onFocus={() => focus(`file-${item.source?.path}`)}
+            onClose={() => setFileWins((wins) => wins.filter((w) => w.source?.path !== item.source?.path))}
+          >
+            <div className="rounds-win__stage">
+              <StageItemView item={item} />
+            </div>
           </RoundsWindow>
         ))}
 

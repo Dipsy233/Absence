@@ -768,14 +768,12 @@
 
 /* ── The drawer ─────────────────────────────────────────────────────────── */
 
-.rounds-folder,
 .rounds-eggs,
 .rounds-act {
   margin: 0;
   padding: 0 8px;
   list-style: none;
 }
-.rounds-folder button,
 .rounds-eggs button,
 .rounds-act button {
   display: flex;
@@ -789,24 +787,109 @@
   color: var(--mon-t2);
   text-align: left;
 }
-.rounds-folder button:hover,
 .rounds-eggs button:hover,
 .rounds-act button:hover {
   background: var(--mon-s3);
   color: var(--mon-t);
 }
-.rounds-folder__p {
+.rounds-drawer__empty {
+  padding: 10px 12px;
+  font-size: 11.5px;
+  color: var(--mon-t3);
+}
+
+/* Agent Folder: one row per file, its versions folding out underneath as a
+   nested list — a folder, not a second panel. */
+.rounds-folder {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 8px;
+}
+.rounds-frow {
+  display: flex;
+  align-items: center;
+  border-radius: 7px;
+}
+.rounds-frow:hover {
+  background: var(--mon-s2);
+}
+.rounds-fcaret {
+  flex: none;
+  width: 20px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--mon-t3);
+  font: 10px var(--mon-mono);
+}
+.rounds-fcaret:hover {
+  color: var(--mon-t);
+}
+.rounds-fname {
+  display: flex;
   min-width: 0;
   flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px 6px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.rounds-fname__p {
+  min-width: 0;
   overflow: hidden;
   font: 12px var(--mon-mono);
   white-space: nowrap;
   text-overflow: ellipsis;
+  color: var(--mon-t);
 }
-.rounds-folder__v {
-  flex: none;
+.rounds-fname__v {
   font-size: 10.5px;
   color: var(--mon-t3);
+}
+.rounds-fname:hover .rounds-fname__p {
+  color: var(--mon-acc);
+}
+.rounds-flist {
+  margin: 0 0 4px 20px;
+  padding: 0 0 0 6px;
+  border-left: 1px solid var(--mon-bd);
+  list-style: none;
+}
+.rounds-fver {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  font: 11px var(--mon-mono);
+  color: var(--mon-t3);
+}
+.rounds-fver:hover {
+  background: var(--mon-s3);
+  color: var(--mon-t);
+}
+.rounds-fver__v {
+  width: 22px;
+  flex: none;
+  color: var(--mon-t2);
+}
+.rounds-fver__what {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rounds-fver__at {
+  flex: none;
+  opacity: 0.65;
 }
 .rounds-eggsbody {
   display: flex;

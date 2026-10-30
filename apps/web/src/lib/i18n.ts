@@ -250,6 +250,8 @@ const ZH: Record<string, string> = {
   "Show versions": "展开版本",
   "{path} · show the newest agent-known content": "{path} · 显示智能体所知的最新内容",
   "Show v{v} on the Stage": "在 Stage 显示 v{v}",
+  "Show v{v}": "显示 v{v}",
+  "Show the newest agent-known content": "显示智能体所知的最新内容",
   "whole file": "完整文件",
   "lines {a}–{b}": "第 {a}–{b} 行",
   "{r}/{a} running": "{r}/{a} 运行中",
