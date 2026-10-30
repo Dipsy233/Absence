@@ -4,7 +4,7 @@ import { useT } from "../../lib/i18n";
 import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
 import type { ActivityRow } from "../../types/stage";
-import { TONE_FOR_ROW } from "../monitor/atoms";
+import { Dot, TONE_FOR_ROW } from "../monitor/atoms";
 import type { RoundsData } from "./useRoundsData";
 
 /**
@@ -54,6 +54,15 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
   const shown = data.rows.filter((row) => row.action !== "END");
 
   /**
+   * What the story is doing with the run — Monitor's rule, same words: a
+   * walking replay and a pinned moment are the same answer to the reader
+   * ("the clock has stopped here"), so both read REPLAY.
+   */
+  const holding = !data.following && data.item !== undefined;
+  const playing: "live" | "replay" = inReplay || holding ? "replay" : "live";
+  const playingTone = playing === "replay" ? "run" : "edit";
+
+  /**
    * A story reads sideways, so the wheel reads sideways too: the wheel's
    * vertical delta scrolls the chain horizontally, the way every filmstrip
    * widget does.
@@ -79,6 +88,10 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
           {t("{n} steps · click a card to rewind", { n: shown.length })}
         </span>
         <span style={{ flex: 1 }} />
+        <span className={`rounds-story__play mon-chip--${playingTone}`} title={t("What the story is showing")}>
+          <Dot tone={playingTone} />
+          {t(playing).toUpperCase()}
+        </span>
         {!data.following ? (
           <button type="button" className="rounds-ghostbtn" onClick={onLive}>
             {t("Back to live")}

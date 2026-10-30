@@ -386,6 +386,17 @@
   font-size: 11.5px;
   color: var(--mon-t3);
 }
+/* LIVE / REPLAY: what the story is doing with the run, at the header's right
+   edge. No chip chrome — the dot and the colour are the whole message. */
+.rounds-story__play {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
 .rounds-story__empty {
   align-self: center;
   font-size: 12px;

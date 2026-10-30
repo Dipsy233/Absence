@@ -1,9 +1,12 @@
+import { statusFromEvent } from "../../lib/events";
 import { statusLabel } from "../../lib/agent";
 import { useT } from "../../lib/i18n";
 import { Avatar } from "../../components/agent/Avatar";
 import { MediaAvatar } from "../../components/agent/MediaAvatar";
 import { moodFor } from "../../lib/agent";
 import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
+import { useReplayStore } from "../../stores/replayStore";
+import { useStageStore } from "../../stores/stageStore";
 import type { RoundsData } from "./useRoundsData";
 
 /**
@@ -15,13 +18,24 @@ import type { RoundsData } from "./useRoundsData";
  * character. The bubble says what it is doing *now* (the status word, then the
  * one thing in its hands); the thought line quotes the latest reasoning.
  *
+ * The pose follows *what is on screen*, not the socket — Classic's `Stage` and
+ * Monitor's `AgentHead` rule, reused rather than re-derived: in replay it
+ * re-enacts the reconstructed run's status, on a pinned moment it re-enacts
+ * the action that produced that moment, and only while following does it read
+ * the live status. Otherwise the figure would be listening while the stage
+ * clearly shows it mid-edit.
+ *
  * Clicking the stage is "back to live" when a pin or a replay holds the view —
  * the same gesture as ⏎ everywhere else.
  */
 export function RoundsScene({ data, onLive }: { data: RoundsData; onLive: () => void }) {
   const t = useT();
   const coverage = useAvatarSkinCoverage();
-  const status = data.status;
+  const replayStatus = useReplayStore((s) => s.view?.agentStatus);
+  const replaying = useStageStore((s) => s.mode === "replay");
+  const pinnedStatus =
+    !data.following && data.item?.event ? statusFromEvent(data.item.event) : undefined;
+  const status = (replaying && replayStatus) || pinnedStatus || data.status;
   const visual = { status, mood: moodFor(status) };
   const media = skinMediaFor(coverage, status);
   const holding = !data.following;
