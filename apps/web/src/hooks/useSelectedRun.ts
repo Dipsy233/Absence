@@ -16,23 +16,22 @@ export interface SelectedRun {
  * The run the Stage/Activity is showing, and the events it can be built from.
  *
  * A running run uses the live event window (so streamed rows keep appearing).
- * A historical run is fetched by index from the run API, one query per run;
+ * A historical run is fetched by index from the run API, one run at a time;
  * History never has to load the whole session to be browsable.
  */
 export function useSelectedRun(): SelectedRun {
   const liveEvents = useEvents();
   const runs = useRunsStore((s) => s.runs);
   const selectedRunId = useUiStore((s) => s.selectedRunId);
+  const loaded = useRunsStore((s) => s.selectedEvents);
+  const eventsLoading = useRunsStore((s) => s.eventsLoading);
+  const loadRunEvents = useRunsStore((s) => s.loadRunEvents);
   const sessionId = useSessionStore((s) => s.session?.id);
 
   const selected = useMemo<RunSummary | undefined>(
     () => runs.find((run) => run.id === selectedRunId) ?? runs[runs.length - 1],
     [runs, selectedRunId],
   );
-
-  const loadedEvents = useRunsStore((s) => (selected ? s.eventsByRun[selected.id] : undefined));
-  const eventsLoading = useRunsStore((s) => (selected ? s.pending[selected.id] === true : false));
-  const loadRunEvents = useRunsStore((s) => s.loadRunEvents);
 
   // The live window's last run is the one still being written. Its server
   // summary is authoritative for id/index/counts; the derived run supplies the
@@ -44,11 +43,12 @@ export function useSelectedRun(): SelectedRun {
     selected.id === runs[runs.length - 1]?.id &&
     selected.status === "running";
 
-  const historicalEvents = loadedEvents ?? [];
+  const historicalEvents =
+    selected && loaded?.runId === selected.id ? loaded.events : [];
 
   useEffect(() => {
     if (!sessionId || !selected || isLive) return;
-    if (loadedEvents) return;
+    if (loaded?.runId === selected.id) return;
     void loadRunEvents(sessionId, selected);
   }, [
     sessionId,
@@ -56,7 +56,7 @@ export function useSelectedRun(): SelectedRun {
     selected?.fromSeq,
     selected?.toSeq,
     isLive,
-    loadedEvents,
+    loaded?.runId,
     loadRunEvents,
   ]);
 

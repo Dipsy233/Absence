@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { isAgentBusy, type RunSummary } from "@absence/core";
+import { isAgentBusy } from "@absence/core";
 import { formatBytes, formatClock } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useT } from "../../lib/i18n";
@@ -21,7 +21,7 @@ import { RoundsScene } from "./RoundsScene";
 import { RoundsPeek } from "./RoundsPeek";
 import { RoundsStory } from "./RoundsStory";
 import { RoundsChat } from "./RoundsChat";
-import { RoundsDock, DockBody, RunSteps, WINDOW_TITLE, type DockPanel } from "./RoundsDock";
+import { RoundsDock, DockBody, WINDOW_TITLE, type DockPanel } from "./RoundsDock";
 import { RoundsWindow } from "./RoundsWindow";
 import "./rounds.css";
 import "../monitor/monitor.css";
@@ -35,9 +35,9 @@ import "../monitor/monitor.css";
  * the left, and windows open on top of it all. The dock's icons are
  * shortcuts — Files, Folder, Eggs, Run — each opening a floating window of
  * the one uniform sibling size; windows opened *from inside* a window (a
- * file's content, one egg's metrics, one run's steps) share the child size; both
- * resize by their corner handle. The agent's own actions pop their window too.
- * Egg toasts are deliberately absent for now.
+ * file's content, one egg's metrics) share the child size; both resize by
+ * their corner handle. The agent's own actions pop their window too. Egg
+ * toasts are deliberately absent for now.
  *
  * Files and Agent Folder are the reader's own browsers: what they click opens
  * a file window and nothing else — the Stage keeps following (or keeps its
@@ -126,20 +126,6 @@ export function RoundsUI() {
     selectEgg(pid);
     setMetricsWins((wins) => (wins.some((w) => w.pid === pid) ? wins : [...wins, { pid, name }]));
     focus(`metrics-${pid}`);
-  };
-
-  /**
-   * Runs whose steps are open, as children of the Run window. One window per
-   * run: clicking a run card again only brings that window forward, and two
-   * runs can be open at once to compare them (the events store caches each).
-   */
-  const [runWins, setRunWins] = useState<Array<{ id: string; index: number }>>([]);
-
-  const openRunWindow = (run: RunSummary) => {
-    setRunWins((wins) =>
-      wins.some((w) => w.id === run.id) ? wins : [...wins, { id: run.id, index: run.index }],
-    );
-    focus(`run-${run.id}`);
   };
 
   /**
@@ -287,7 +273,6 @@ export function RoundsUI() {
               onOpenEggMetrics={openEggMetrics}
               onOpenFile={openFileWindow}
               onOpenVersion={openVersionWindow}
-              onOpenRun={openRunWindow}
             />
           </RoundsWindow>
         ))}
@@ -321,20 +306,6 @@ export function RoundsUI() {
             <div className="rounds-win__stage">
               <MetricsDashboard embedded eggPid={pid} />
             </div>
-          </RoundsWindow>
-        ))}
-
-        {runWins.map(({ id, index }, i) => (
-          <RoundsWindow
-            key={`run-${id}`}
-            title={`${t("Run")} #${index}`}
-            initial={{ x: 160 + i * 34, y: 90 + i * 28 }}
-            size={CHILD_SIZE}
-            z={zmap[`run-${id}`] ?? 1}
-            onFocus={() => focus(`run-${id}`)}
-            onClose={() => setRunWins((wins) => wins.filter((w) => w.id !== id))}
-          >
-            <RunSteps runId={id} />
           </RoundsWindow>
         ))}
 

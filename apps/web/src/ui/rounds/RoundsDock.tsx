@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AbsenceEvent, RunSummary } from "@absence/core";
+import type { RunSummary } from "@absence/core";
 import { formatBytes, formatClock, formatDuration } from "../../lib/format";
-import { memoBuildHistory, memoRunRows } from "../../lib/history";
 import { useT } from "../../lib/i18n";
 import { eventToStageItem } from "../../lib/events";
 import { primaryEggs, sortEggs } from "../../lib/eggs";
-import { useEvents, useIsObserved, useSessionStore } from "../../stores/sessionStore";
+import { useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
-import { useSettingsStore } from "../../stores/settingsStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useRunsStore } from "../../stores/runsStore";
@@ -16,7 +14,6 @@ import { useNow } from "../../hooks/useNow";
 import { FilePanel } from "../../components/files/FilePanel";
 import { Usage } from "../monitor/MonitorRight";
 import { TONE_FOR_ROW } from "../monitor/atoms";
-import type { HistoryRun } from "../../types/history";
 import type { RoundsData } from "./useRoundsData";
 
 /**
@@ -156,7 +153,6 @@ export function DockBody({
   onOpenEggMetrics,
   onOpenFile,
   onOpenVersion,
-  onOpenRun,
 }: {
   data: RoundsData;
   panel: DockPanel;
@@ -165,15 +161,13 @@ export function DockBody({
   onOpenFile: (path: string) => void;
   /** Open one recorded version of an agent-known file, in a Rounds window. */
   onOpenVersion: (path: string, version?: number) => void;
-  /** Open one run's steps in a child window (never the Stage). */
-  onOpenRun: (run: RunSummary) => void;
 }) {
   // The window's title bar already says "Files"; the panel must not print a
   // second header under it.
   if (panel === "files") return <FilePanel chrome={false} onOpen={onOpenFile} />;
   if (panel === "folder") return <FolderPanel onOpenVersion={onOpenVersion} />;
   if (panel === "eggs") return <EggsBody onOpenEggMetrics={onOpenEggMetrics} />;
-  return <RunPanel data={data} onOpenRun={onOpenRun} />;
+  return <RunPanel data={data} />;
 }
 
 /* ── Agent Folder ────────────────────────────────────────────────────────── */
@@ -366,16 +360,16 @@ const RUN_WORD: Record<RunSummary["status"], string> = {
  * switcher, in a window of their own.
  *
  * The first level is the run list: `#N`, status, how long it took, when it
- * started and the prompt. Each card does two things: it makes that run the
- * selected one (the story, the scene and the badges follow it) and it opens
- * that run's steps in their own window — `RunSteps` below. The steps are the
- * second level; clicking one of them is what opens an event window.
+ * started and the prompt. Clicking a run card switches the face to that run
+ * (the story, the scene and the badges follow it) and opens it underneath into
+ * its steps. The steps are the second level — the same event rows the story
+ * draws — and clicking one is what opens an event window.
  *
- * Runs come from `runsStore`, not from `data`: the list has to include rounds
- * that are no longer selected, and only summaries are loaded up front. A run's
- * events are fetched when its card is opened, and cached per run.
+ * Runs come from `runsStore`, not from `data`: the list must include the rounds
+ * that are no longer the selected one, and only their summaries are loaded —
+ * a run's events are fetched when its card is opened, one run at a time.
  */
-function RunPanel({ data, onOpenRun }: { data: RoundsData; onOpenRun: (run: RunSummary) => void }) {
+function RunPanel({ data }: { data: RoundsData }) {
   const t = useT();
   const sessionId = useSessionStore((s) => s.session?.id);
   const runs = useRunsStore((s) => s.runs);
@@ -383,7 +377,12 @@ function RunPanel({ data, onOpenRun }: { data: RoundsData; onOpenRun: (run: RunS
   const loadRuns = useRunsStore((s) => s.loadRuns);
   const selectRun = useUiStore((s) => s.selectRun);
   const selectedRunId = useUiStore((s) => s.selectedRunId);
+  const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const now = useNow(1000);
+
+  const openStage = useStageStore((s) => s.openStage);
+  const seek = useReplayStore((s) => s.seekTimestamp);
+  const inReplay = useStageStore((s) => s.mode === "replay");
 
   useEffect(() => {
     if (sessionId && runs.length === 0) void loadRuns(sessionId);
@@ -402,14 +401,17 @@ function RunPanel({ data, onOpenRun }: { data: RoundsData; onOpenRun: (run: RunS
   return (
     <ul className="rounds-runs">
       {[...runs].reverse().map((run) => {
+        const open = expanded === run.id;
+        const shown = open && data.run?.id === run.id;
         return (
           <li key={run.id} className="rounds-run" data-on={run.id === currentId ? "true" : undefined}>
             <button
               type="button"
               className="rounds-run__card"
+              aria-expanded={open}
               onClick={() => {
                 selectRun(run.id);
-                onOpenRun(run);
+                setExpanded(open ? undefined : run.id);
               }}
               title={run.prompt || t("(observed activity)")}
             >
@@ -427,111 +429,38 @@ function RunPanel({ data, onOpenRun }: { data: RoundsData; onOpenRun: (run: RunS
                 R{run.counts.read} S{run.counts.search} E{run.counts.edit} ${run.counts.run}
               </span>
             </button>
+
+            {open ? (
+              shown && data.rows.length > 0 ? (
+                <ul className="rounds-act">
+                  {data.rows.map((row) => (
+                    <li key={row.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (inReplay) seek(row.event.timestamp);
+                          else if (row.stageItem) openStage(row.stageItem);
+                        }}
+                        title={row.stageItem ? row.primary : `${row.action} · ${row.primary}`}
+                      >
+                        <span className={`rounds-chip rounds-chip--${TONE_FOR_ROW[row.tone] ?? "mute"}`}>
+                          {row.action}
+                        </span>
+                        <span className="rounds-act__p">{row.primary}</span>
+                        <span className="rounds-act__t mon-mono">{formatClock(row.event.timestamp)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounds-run__empty">
+                  {data.loading ? t("loading…") : t("No steps in this run.")}
+                </p>
+              )
+            ) : null}
           </li>
         );
       })}
-    </ul>
-  );
-}
-
-/** The steps of a run whose events have not arrived yet. */
-const NO_EVENTS: AbsenceEvent[] = [];
-
-/**
- * One run's steps, in the window its card opened.
- *
- * A live run reads the live event window so rows keep landing; every other run
- * reads its cached range — fetched once from the run API and kept by run id in
- * `runsStore`. The rows are the ones `memoRunRows` builds for the story, and a
- * click opens its event: seek in replay, otherwise stage.
- */
-export function RunSteps({ runId }: { runId: string }) {
-  const t = useT();
-  const runs = useRunsStore((s) => s.runs);
-  const run = runs.find((entry) => entry.id === runId);
-  const sessionId = useSessionStore((s) => s.session?.id);
-  const liveEvents = useEvents();
-  const liveRuns = useMemo(() => memoBuildHistory(liveEvents), [liveEvents]);
-  const liveDerived = liveRuns[liveRuns.length - 1];
-  const isLive = run !== undefined && run.status === "running" && run.id === runs[runs.length - 1]?.id;
-  const loaded = useRunsStore((s) => s.eventsByRun[runId]);
-  const pending = useRunsStore((s) => s.pending[runId] === true);
-  const loadRunEvents = useRunsStore((s) => s.loadRunEvents);
-  const inActivity = useSettingsStore((s) => s.displayInActivity);
-  const observed = useIsObserved();
-  const showProcessRows = inActivity || observed;
-  const openStage = useStageStore((s) => s.openStage);
-  const seek = useReplayStore((s) => s.seekTimestamp);
-  const inReplay = useStageStore((s) => s.mode === "replay");
-
-  useEffect(() => {
-    if (!sessionId || !run || isLive || loaded) return;
-    void loadRunEvents(sessionId, run);
-  }, [sessionId, run, isLive, loaded, loadRunEvents]);
-
-  const events = isLive ? liveEvents : (loaded ?? NO_EVENTS);
-
-  const history = useMemo<HistoryRun | undefined>(() => {
-    if (!run) return undefined;
-    if (isLive && liveDerived) {
-      return {
-        id: run.id,
-        index: run.index,
-        prompt: run.prompt,
-        startedAt: run.startedAt,
-        endedAt: run.endedAt,
-        status: run.status,
-        fromIndex: liveDerived.fromIndex,
-        toIndex: liveDerived.toIndex,
-        counts: run.counts,
-      };
-    }
-    return {
-      id: run.id,
-      index: run.index,
-      prompt: run.prompt,
-      startedAt: run.startedAt,
-      endedAt: run.endedAt,
-      status: run.status,
-      fromIndex: 0,
-      toIndex: events.length - 1,
-      counts: run.counts,
-      partial: run.partial,
-    };
-  }, [run, isLive, liveDerived, events]);
-
-  if (!run) return <p className="rounds-drawer__empty">{t("loading…")}</p>;
-
-  const rows = history ? memoRunRows(events, history, showProcessRows) : [];
-
-  if (rows.length === 0) {
-    return (
-      <p className="rounds-drawer__empty">
-        {pending || (loaded === undefined && !isLive) ? t("loading…") : t("No steps in this run.")}
-      </p>
-    );
-  }
-
-  return (
-    <ul className="rounds-act rounds-steps">
-      {rows.map((row) => (
-        <li key={row.id}>
-          <button
-            type="button"
-            onClick={() => {
-              if (inReplay) seek(row.event.timestamp);
-              else if (row.stageItem) openStage(row.stageItem);
-            }}
-            title={row.stageItem ? row.primary : `${row.action} · ${row.primary}`}
-          >
-            <span className={`rounds-chip rounds-chip--${TONE_FOR_ROW[row.tone] ?? "mute"}`}>
-              {row.action}
-            </span>
-            <span className="rounds-act__p">{row.primary}</span>
-            <span className="rounds-act__t mon-mono">{formatClock(row.event.timestamp)}</span>
-          </button>
-        </li>
-      ))}
     </ul>
   );
 }

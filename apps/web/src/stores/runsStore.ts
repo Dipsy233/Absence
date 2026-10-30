@@ -3,25 +3,22 @@ import type { AbsenceEvent, RunSummary } from "@absence/core";
 import * as api from "../lib/api";
 
 /**
- * History is a list of run summaries; Activity is the events of the runs the
- * user opened. Keeping them apart means the History panel never has to load an
- * event to draw a row, and selecting a run costs one range query instead of
- * growing the live window.
+ * History is a list of run summaries; Activity is the events of the one run the
+ * user selected. Keeping them in separate stores means the History panel never
+ * has to load an event to draw a row, and selecting a historical run costs one
+ * range query instead of growing the live window.
  *
- * Opened runs are cached by id, capped: opening two runs side by side is a
- * normal thing to do, holding every run of a session is not.
+ * Only one run's events are held at a time. That is deliberate: the whole point
+ * of the split is bounded memory.
  */
-const CACHED_RUNS = 4;
-
 interface RunsStore {
   runs: RunSummary[];
   loading: boolean;
-  /** Events of the runs that have been opened, by run id. */
-  eventsByRun: Record<string, AbsenceEvent[]>;
-  /** Run ids in the order they were opened — the cap drops the oldest. */
-  eventsOrder: string[];
-  /** The runs whose events are being fetched right now. */
-  pending: Record<string, true>;
+  /** Events of the selected historical run, keyed by run id. */
+  selectedEvents?: { runId: string; events: AbsenceEvent[] };
+  /** The run whose events are currently being fetched, if any. */
+  pendingRunId?: string;
+  eventsLoading: boolean;
   error?: string;
 
   hydrate: (runs: RunSummary[]) => void;
@@ -31,14 +28,14 @@ interface RunsStore {
 }
 
 let runsRequest = 0;
-let generation = 0;
+let eventsRequest = 0;
 
 export const useRunsStore = create<RunsStore>((set, get) => ({
   runs: [],
   loading: false,
-  eventsByRun: {},
-  eventsOrder: [],
-  pending: {},
+  selectedEvents: undefined,
+  pendingRunId: undefined,
+  eventsLoading: false,
   error: undefined,
 
   hydrate: (runs) => {
@@ -64,43 +61,40 @@ export const useRunsStore = create<RunsStore>((set, get) => ({
   },
 
   loadRunEvents: async (sessionId, run) => {
-    if (get().eventsByRun[run.id] || get().pending[run.id]) return;
-    const at = generation;
-    set({ pending: { ...get().pending, [run.id]: true }, error: undefined });
+    if (get().selectedEvents?.runId === run.id) return;
+    // Activity and Report both ask for the selected run; only one fetch.
+    if (get().pendingRunId === run.id) return;
+    // A newer selection supersedes an in-flight one; the request token below
+    // makes the older response a no-op.
+    const request = ++eventsRequest;
+    set({ pendingRunId: run.id, eventsLoading: true, error: undefined });
     try {
       const data = await api.fetchRunEvents(sessionId, run.index);
-      if (at !== generation) return;
-      const { eventsByRun, eventsOrder, pending } = get();
-      const order = eventsOrder.filter((id) => id !== run.id);
-      order.push(run.id);
-      const next: Record<string, AbsenceEvent[]> = { ...eventsByRun, [run.id]: data.events };
-      while (order.length > CACHED_RUNS) {
-        const drop = order.shift();
-        if (drop) delete next[drop];
-      }
-      const rest = { ...pending };
-      delete rest[run.id];
-      set({ eventsByRun: next, eventsOrder: order, pending: rest });
-    } catch (error) {
-      if (at !== generation) return;
-      const rest = { ...get().pending };
-      delete rest[run.id];
+      if (request !== eventsRequest) return;
       set({
-        pending: rest,
+        selectedEvents: { runId: run.id, events: data.events },
+        pendingRunId: undefined,
+        eventsLoading: false,
+      });
+    } catch (error) {
+      if (request !== eventsRequest) return;
+      set({
+        pendingRunId: undefined,
+        eventsLoading: false,
         error: error instanceof Error ? error.message : String(error),
       });
     }
   },
 
   clear: () => {
-    generation += 1;
     runsRequest += 1;
+    eventsRequest += 1;
     set({
       runs: [],
       loading: false,
-      eventsByRun: {},
-      eventsOrder: [],
-      pending: {},
+      selectedEvents: undefined,
+      pendingRunId: undefined,
+      eventsLoading: false,
       error: undefined,
     });
   },

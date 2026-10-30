@@ -815,11 +815,9 @@
   list-style: none;
 }
 
-/* Runs: this session's rounds as cards, newest first. Each card opens the
-   run's steps in a window of their own (RunSteps). */
+/* Runs: this session's rounds as cards, newest first. A card opens into its
+   steps, which keep the .rounds-act row look — indented under the card. */
 .rounds-runs {
-  flex: 1;
-  overflow-y: auto;
   margin: 0;
   padding: 0 8px 8px;
   list-style: none;
@@ -875,11 +873,14 @@
   font-size: 9px;
   letter-spacing: 0.04em;
 }
-/* The steps window: the same rows as the story, in a child window of their own. */
-.rounds-steps {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
+.rounds-run .rounds-act {
+  padding: 0 8px 4px 20px;
+}
+.rounds-run__empty {
+  margin: 0;
+  padding: 2px 8px 8px;
+  color: var(--mon-t3);
+  font-size: 10px;
 }
 .rounds-drawer__empty {
   padding: 10px 12px;
