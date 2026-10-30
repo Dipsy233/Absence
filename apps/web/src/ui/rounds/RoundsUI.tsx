@@ -14,7 +14,7 @@ import { ChatThread } from "../../components/chat/ChatThread";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { knownFileItem, userFileItem } from "../../lib/openFile";
-import type { StageItem } from "../../types/stage";
+import type { ActivityRow, StageItem } from "../../types/stage";
 import { Chip, Dot } from "../monitor/atoms";
 import { useRoundsData } from "./useRoundsData";
 import { RoundsScene } from "./RoundsScene";
@@ -72,6 +72,24 @@ function fileWindowTitle(item: StageItem): string {
   );
   if (payload.badge) parts.push(payload.badge);
   return parts.join(" · ");
+}
+
+/** The live window's title: the subject of the event, in one line. */
+function liveTitle(item: StageItem): string {
+  const payload = item.payload;
+  if (payload.kind === "file" || payload.kind === "diff") return payload.path;
+  if (payload.kind === "thought") return "Thinking";
+  if (payload.kind === "speech") return "Reply";
+  return item.title;
+}
+
+/** The newest event in the stream that has something to put on a page. */
+function newestItem(rows: ActivityRow[]): StageItem | undefined {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const item = rows[i]!.stageItem;
+    if (item) return item;
+  }
+  return undefined;
 }
 
 export function RoundsUI() {
@@ -149,29 +167,23 @@ export function RoundsUI() {
   };
 
   /**
-   * The agent's own window: whenever the current action is something worth
-   * showing (a file, a diff, a terminal), a window pops up with it. A new
-   * action pops it again; ✕ dismisses this action's window only. Thinking
-   * stays on the scene's thought line — it is not an "operation".
+   * The live activity window: while following a run, the agent's newest event
+   * gets its own page, the same way Classic's Stage and Monitor's centre pop
+   * the current event. One window is kept and its content replaced — never one
+   * per event — and only events that have something to show move it: a tool
+   * row or a run boundary leaves the last page standing.
+   *
+   * It stays away while pinned or replaying, where the reader chose the view
+   * and a live pop would fight it. What it draws is the newest row's own item,
+   * not the Stage's pin, so nothing here touches the stage store.
    */
+  const live = data.mode === "live" && data.following;
+  const liveItem = live ? newestItem(data.rows) : undefined;
+  const liveId = liveItem?.id;
   const [dismissed, setDismissed] = useState<string | undefined>(undefined);
-  const itemId = data.item?.id;
   useEffect(() => {
-    if (itemId) setDismissed((d) => (d === itemId ? d : undefined));
-  }, [itemId]);
-  const actionKind = data.item?.payload.kind;
-  const actionWorthy =
-    actionKind === "file" || actionKind === "diff" || actionKind === "terminal" || actionKind === "approval";
-  const showAction = actionWorthy && dismissed !== itemId;
-  const dismissAction = () => setDismissed(itemId);
-
-  /** The action window's title: the subject of the action, in one line. */
-  const actionTitle =
-    data.item?.payload.kind === "file"
-      ? data.item.payload.path
-      : data.item?.payload.kind === "diff"
-        ? data.item.payload.path
-        : (data.item?.title ?? "");
+    if (liveId) setDismissed((d) => (d === liveId ? d : undefined));
+  }, [liveId]);
 
   return (
     <div className="mon-root rounds-root mon-shell">
@@ -238,21 +250,22 @@ export function RoundsUI() {
 
         <RoundsChat />
 
-        {showAction && data.item ? (
+        {liveItem && dismissed !== liveId ? (
           <RoundsWindow
-            key={`action-${itemId}`}
-            title={actionTitle}
+            key="activity"
+            accent="live"
+            title={liveTitle(liveItem)}
             initial={{ x: 470, y: 60 }}
             size={CHILD_SIZE}
-            z={zmap["action"] ?? 2}
-            onFocus={() => focus("action")}
-            onClose={dismissAction}
+            z={zmap.activity ?? 2}
+            onFocus={() => focus("activity")}
+            onClose={() => setDismissed(liveId)}
           >
-            {data.item.payload.kind === "file" ? (
-              <RoundsPeek item={data.item} />
+            {liveItem.payload.kind === "file" ? (
+              <RoundsPeek item={liveItem} />
             ) : (
               <div className="rounds-win__stage">
-                <StageItemView item={data.item} />
+                <StageItemView item={liveItem} />
               </div>
             )}
           </RoundsWindow>

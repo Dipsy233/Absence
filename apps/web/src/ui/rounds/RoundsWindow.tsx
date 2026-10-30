@@ -14,6 +14,7 @@ export function RoundsWindow({
   initial,
   size,
   z = 1,
+  accent,
   onFocus,
   onClose,
   children,
@@ -24,6 +25,9 @@ export function RoundsWindow({
       face's two default sizes), and the corner handle adjusts either. */
   size: { w: number; h: number };
   z?: number;
+  /** The agent's own window wears the run's accent, so it never reads as one
+      of the reader's own windows. */
+  accent?: "live";
   onFocus?: () => void;
   onClose?: () => void;
   children: ReactNode;
@@ -66,7 +70,7 @@ export function RoundsWindow({
 
   return (
     <section
-      className="rounds-win"
+      className={`rounds-win${accent === "live" ? " rounds-win--live" : ""}`}
       style={{ left: pos.x, top: pos.y, width: dim.w, height: dim.h, zIndex: 5 + z }}
       onPointerDown={onFocus}
       role="dialog"
@@ -79,6 +83,7 @@ export function RoundsWindow({
         onPointerUp={up}
         onPointerCancel={up}
       >
+        {accent === "live" ? <i className="rounds-win__live" aria-hidden /> : null}
         <span className="rounds-win__t" title={title}>
           {title}
         </span>

@@ -115,6 +115,31 @@
   backdrop-filter: blur(14px);
   box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
 }
+/* The agent's live window: not one of the reader's windows, so it wears the
+   run's accent — amber ring, amber glow, an amber seam under the title — and
+   a dot that says the page is being written right now. */
+.rounds-win--live {
+  border-color: rgb(222 146 85 / 0.85);
+  box-shadow:
+    0 0 0 1px rgb(222 146 85 / 0.35),
+    0 24px 60px rgb(0 0 0 / 0.5),
+    0 0 26px rgb(222 146 85 / 0.22);
+}
+.rounds-win--live .rounds-win__h {
+  border-bottom-color: rgb(222 146 85 / 0.5);
+  background: linear-gradient(90deg, rgb(222 146 85 / 0.16), transparent 72%);
+}
+.rounds-win--live .rounds-win__t {
+  color: var(--mon-run);
+}
+.rounds-win__live {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mon-run);
+  box-shadow: 0 0 8px rgb(222 146 85 / 0.9);
+}
 .rounds-win__h {
   display: flex;
   flex: none;

@@ -7,7 +7,7 @@ import { useStageView } from "../../hooks/useStage";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import type { ActivityRow, StageItem } from "../../types/stage";
+import type { ActivityRow, StageItem, StageMode } from "../../types/stage";
 
 /**
  * Everything the Rounds face draws, derived once per render pass.
@@ -32,6 +32,8 @@ export interface RoundsData {
   rowsVersion: number;
   /** What the Stage column is showing right now (live, pinned, or replay). */
   item?: StageItem;
+  /** Live, pinned, or replay — the reader's chosen view of the Stage. */
+  mode: StageMode;
   following: boolean;
   /** The agent's own status (listening, reading, …). */
   status: AgentStatus;
@@ -48,7 +50,7 @@ export function useRoundsData(): RoundsData {
   const status = useSessionStore((s) => s.agent.status);
   const eggVersion = useSessionStore((s) => s.eggState.version);
   const files = useFileStore((s) => s.files);
-  const { item, following } = useStageView();
+  const { item, following, mode } = useStageView();
 
   const showProcessRows = displayInActivity || observed;
   const rows = useMemo(
@@ -81,6 +83,7 @@ export function useRoundsData(): RoundsData {
     rows,
     rowsVersion,
     item,
+    mode,
     following,
     status,
     peek,
