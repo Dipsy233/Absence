@@ -14,7 +14,14 @@ export type StageMode =
   | "process"
   | "approval";
 
-export type StageItemType = "file" | "diff" | "terminal" | "thought" | "process" | "approval";
+export type StageItemType =
+  | "file"
+  | "diff"
+  | "terminal"
+  | "thought"
+  | "speech"
+  | "process"
+  | "approval";
 
 export type StagePayload =
   | {
@@ -85,6 +92,8 @@ export type StagePayload =
     }
   /** The agent's own reasoning, streamed as it arrives. */
   | { kind: "thought"; text: string; streaming?: boolean }
+  /** The agent's reply to the user, streamed as it arrives. */
+  | { kind: "speech"; text: string; streaming?: boolean }
   /** An OS process the agent laid (an "egg"). */
   | {
       kind: "process";

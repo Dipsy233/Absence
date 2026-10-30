@@ -173,6 +173,25 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
         event,
       };
     }
+    case "message": {
+      // The reply is the content, like reasoning: one page per session so a
+      // streaming answer grows in place instead of re-mounting every delta.
+      // A user message is the run's opening, which the Stage already shows as
+      // its scene, and a system message is Absence's own notice — neither is
+      // something the agent said.
+      if (event.payload.role !== "assistant" || event.payload.content.trim().length === 0) {
+        return undefined;
+      }
+      return {
+        id: `say_${event.sessionId}`,
+        type: "speech",
+        title: "Reply",
+        source: { eventId: event.id },
+        payload: { kind: "speech", text: event.payload.content, streaming: event.payload.streaming },
+        createdAt: event.timestamp,
+        event,
+      };
+    }
     case "file_read": {
       const { path, content, startLine, endLine, language } = event.payload;
       return baseItem(
@@ -587,8 +606,21 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
     case "message": {
       const { role, content, streaming } = event.payload;
       // A system message is Absence's own notice (a command result, a warning),
-      // not the agent talking to the user, so it is not an answer.
+      // not a message in the feed.
       if (role === "system" || content.trim().length === 0) return undefined;
+      // The user's message is how a run opens: it is the START row, the same
+      // ones the run cards and the History switcher show, not an agent answer.
+      if (role === "user") {
+        return {
+          id,
+          event,
+          time,
+          action: "START",
+          primary: firstLine(content),
+          secondary: "your message",
+          tone: "lifecycle",
+        };
+      }
       return {
         id,
         event,

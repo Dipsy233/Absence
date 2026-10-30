@@ -400,7 +400,7 @@ export function MonitorLeft({
                       ? row.id === replayRowId
                       : following
                         ? row.stageItem?.source?.eventId !== undefined && row.stageItem.source.eventId === liveEventId
-                        : row.stageItem?.source?.eventId === activeEventId
+                        : activeEventId !== undefined && row.stageItem?.source?.eventId === activeEventId
                   }
                   focused={row.id === focusedEventId}
                   onOpen={onOpen}

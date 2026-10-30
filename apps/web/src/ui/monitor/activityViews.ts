@@ -17,7 +17,14 @@ import type { StageItem } from "../../types/stage";
  * the Stage showing an unrelated edit from ten activities ago. Every view here
  * is derived from the one event that is pinned.
  */
-export type ActivityViewKind = "file" | "diff" | "terminal" | "thought" | "process" | "approval";
+export type ActivityViewKind =
+  | "file"
+  | "diff"
+  | "terminal"
+  | "thought"
+  | "speech"
+  | "process"
+  | "approval";
 
 export type ActivityViews = Partial<Record<ActivityViewKind, StageItem>>;
 
@@ -28,7 +35,12 @@ export function activityViews(item: StageItem | undefined): ActivityViews {
 
   // The activity's own card, whatever kind it is (a thought, an egg, an
   // approval). Always present: it is the thing the row actually was.
-  if (item.type === "thought" || item.type === "process" || item.type === "approval") {
+  if (
+    item.type === "thought" ||
+    item.type === "speech" ||
+    item.type === "process" ||
+    item.type === "approval"
+  ) {
     views[item.type] = item;
     return views;
   }

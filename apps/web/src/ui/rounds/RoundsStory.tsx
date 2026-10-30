@@ -103,7 +103,13 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
           <span className="rounds-story__empty">{t("Nothing yet. Send the agent a task.")}</span>
         ) : (
           shown.map((row) => {
-            const now = inReplay ? row.id === currentId : row.stageItem?.id === currentId;            return (
+            // A row is current only when the clock has a row to point at: with
+            // nothing pinned (currentId undefined) an undefined-vs-undefined
+            // comparison used to light up every stage-less row (START, END).
+            const now = inReplay
+              ? row.id === currentId
+              : row.stageItem !== undefined && row.stageItem.id === currentId;
+            return (
               <span key={row.id} className="rounds-cardpair">
                 <button
                   type="button"
