@@ -332,8 +332,8 @@
   background: var(--ch-s1);
 }
 
-.chart-kpi--egg {
-  border-color: rgba(223, 132, 168, 0.35);
+.chart-kpi--att {
+  border-color: rgba(233, 115, 102, 0.35);
 }
 
 .chart-kpi__row {
@@ -736,60 +736,58 @@
   color: var(--ch-err);
 }
 
-.chart-att-pop {
-  position: absolute;
-  top: 44px;
-  right: 10px;
-  z-index: 6;
-  width: min(320px, calc(100% - 20px));
-  max-height: calc(100% - 56px);
-  overflow-y: auto;
-  padding: 10px 12px;
-  border: 1px solid var(--ch-bd2);
-  border-radius: 8px;
-  background: var(--ch-s2);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
-}
-
-.chart-att-pop__head {
+/* The triggered rules, listed in the evidence pane when the verdict is open:
+   one row per rule, level tag first, the sentence it stands for after. */
+.chart-att-list {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--ch-t2);
-}
-
-.chart-att-pop--high .chart-att-pop__head {
-  color: var(--ch-err);
-}
-
-.chart-att-pop--medium .chart-att-pop__head {
-  color: var(--ch-run);
-}
-
-.chart-att-pop--low .chart-att-pop__head {
-  color: var(--ch-edit);
-}
-
-.chart-att-pop__list {
-  margin: 5px 0 0;
-  padding: 0;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
   list-style: none;
-  font-size: 11.5px;
+}
+
+.chart-att-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: var(--ch-t2);
 }
 
-.chart-att-pop__list li {
-  display: flex;
-  gap: 6px;
+.chart-att-lvl {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--ch-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  background: var(--ch-s2);
+  color: var(--ch-t3);
 }
 
-.chart-att-pop__none {
-  margin-top: 4px;
-  font-size: 11.5px;
-  color: var(--ch-t3);
+.chart-att-lvl--low {
+  background: rgba(114, 188, 143, 0.14);
+  color: var(--ch-edit);
+}
+
+.chart-att-lvl--medium {
+  background: rgba(222, 146, 85, 0.14);
+  color: var(--ch-run);
+}
+
+.chart-att-lvl--high {
+  background: rgba(233, 115, 102, 0.14);
+  color: var(--ch-err);
+}
+
+.chart-att-close {
+  margin-left: auto;
+  height: 24px;
+  font-size: 11px;
 }
 
 .chart-body {

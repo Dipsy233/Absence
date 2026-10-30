@@ -2,8 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import type { AbsenceEvent } from "@absence/core";
 import { formatClock, formatOffset } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
+import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { useT } from "../../lib/i18n";
-import { renderRun } from "../../lib/report";
+import {
+  DEFAULT_AGENT_STOPPED_LEVEL,
+  DEFAULT_COMMAND_RETRY_LOOP_LEVEL,
+  DEFAULT_FILE_VERSION_LOOP_LEVEL,
+  DEFAULT_OUTSIDE_CHANGE_LEVEL,
+  DEFAULT_PROCESS_LEFT_RUNNING_LEVEL,
+  DEFAULT_UNRESOLVED_ERROR_LEVEL,
+  renderRun,
+} from "../../lib/report";
 import { eventToStageItem } from "../../lib/events";
 import { leaveSession } from "../../stores/reset";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -12,7 +21,15 @@ import { WindowControls } from "../../components/common/WindowControls";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { ATTENTION_REASON_TEXT } from "../../components/stage/ReportOverlay";
 import { useMonitorData } from "../monitor/useMonitorData";
-import type { CommandFact, FileDelta, TimelineKind } from "../../types/report";
+import type {
+  AttentionLevel,
+  AttentionReason,
+  CommandFact,
+  FileDelta,
+  ReportAttentionOptions,
+  TimelineKind,
+} from "../../types/report";
+
 import { ChartTimeline, type TimelinePick } from "./ChartTimeline";
 import "./chart.css";
 
@@ -44,6 +61,14 @@ const KIND_CHIP: Record<TimelineKind, string> = {
   end: "mute",
 };
 
+/** The chip a level wears: green / orange / red, grey when nothing fired. */
+const ATTENTION_CHIP: Record<AttentionLevel, string> = {
+  none: "mute",
+  low: "edit",
+  medium: "run",
+  high: "err",
+};
+
 const OUTCOME_CHIP: Record<string, string> = {
   completed: "edit",
   completed_with_warnings: "run",
@@ -57,6 +82,7 @@ type Tab = "changes" | "executions" | "knows";
 export function ChartUI() {
   const t = useT();
   const now = useNow(1000);
+  const attentionOptions = useAttentionOptions();
   const data = useMonitorData();
   const session = useSessionStore((s) => s.session);
   const connected = useSessionStore((s) => s.connected);
@@ -86,6 +112,7 @@ export function ChartUI() {
     }
     const event = chosen ?? fallback;
     if (!event) return;
+    setAttOpen(false);
     setPick({
       eventId: event.id,
       node,
@@ -140,6 +167,12 @@ export function ChartUI() {
 
   const running = run.status === "running";
   const attention = data.attention;
+  const attentionLevels = attention.reasons.map((reason) => reasonLevel(reason, attentionOptions));
+  const attentionCounts = {
+    low: attentionLevels.filter((level) => level === "low").length,
+    medium: attentionLevels.filter((level) => level === "medium").length,
+    high: attentionLevels.filter((level) => level === "high").length,
+  };
   const linesInContext = report.knows.reads.reduce((sum, read) => sum + (read.endLine - read.startLine + 1), 0);
   const changesTotal =
     report.changes.created.length +
@@ -267,23 +300,18 @@ export function ChartUI() {
             </div>
           </div>
 
-          <div className={`chart-kpi${report.processesRunning > 0 ? " chart-kpi--egg" : ""}`}>
+          <div className={`chart-kpi${attention.level === "high" ? " chart-kpi--att" : ""}`}>
             <div className="chart-kpi__row">
-              <span className="chart-kpi__cap">{t("Eggs")}</span>
-              <span className="chart-chip chart-chip--egg">{t("EGG")}</span>
+              <span className="chart-kpi__cap">{t("Attention")}</span>
+              <span className={`chart-chip chart-chip--${ATTENTION_CHIP[attention.level]}`}>{t(attention.level)}</span>
             </div>
-            <div className="chart-kpi__v">
-              {report.processesRunning > 0
-                ? t("{n} still running", { n: report.processesRunning })
-                : t("{n} eggs", { n: report.processes.length })}
-            </div>
+            <div className="chart-kpi__v">{t("{n} triggers", { n: attention.reasons.length })}</div>
             <div className="chart-kpi__s">
-              {report.processes.length > 0
-                ? t("{p} primary · {h} helpers folded", {
-                    p: report.processes.length,
-                    h: facts.processes.tools,
-                  })
-                : t("No eggs laid.")}
+              {t("{h} high · {m} medium · {l} low", {
+                h: attentionCounts.high,
+                m: attentionCounts.medium,
+                l: attentionCounts.low,
+              })}
             </div>
           </div>
         </section>
@@ -301,7 +329,10 @@ export function ChartUI() {
             startedAt={run.startedAt}
             totalMs={Math.max(1, durationMs)}
             selected={pick}
-            onPick={setPick}
+            onPick={(next) => {
+              setAttOpen(false);
+              setPick(next);
+            }}
           />
         </section>
 
@@ -341,40 +372,14 @@ export function ChartUI() {
                 className={`chart-att-btn chart-att-btn--${attention.level}`}
                 onClick={() => setAttOpen((open) => !open)}
                 aria-expanded={attOpen}
-                aria-haspopup="dialog"
+                aria-controls="chart-att-panel"
                 title={t("Human attention")}
               >
                 <span className="chart-att-btn__dot" aria-hidden />
-                {attention.level === "none"
-                  ? t("Human attention")
-                  : `${t(attention.level)} · ${attention.reasons.length}`}
+                {t("Attention")} · {attention.reasons.length}
                 <span aria-hidden>{attOpen ? "▴" : "▾"}</span>
               </button>
             </div>
-
-            {attOpen ? (
-              <div
-                className={`chart-att-pop chart-att-pop--${attention.level}`}
-                role="dialog"
-                aria-label={t("Human attention")}
-              >
-                <div className="chart-att-pop__head">
-                  {t("Human attention")} · {t(attention.level)}
-                </div>
-                {attention.reasons.length > 0 ? (
-                  <ul className="chart-att-pop__list">
-                    {attention.reasons.map((reason) => (
-                      <li key={reason}>
-                        <span aria-hidden>•</span>
-                        <span>{t(ATTENTION_REASON_TEXT[reason])}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="chart-att-pop__none">{t("Agent is working normally.")}</p>
-                )}
-              </div>
-            ) : null}
 
             <div className="chart-body">
               {tab === "changes" ? (
@@ -510,8 +515,42 @@ export function ChartUI() {
             ) : null}
           </div>
 
-          <div className="chart-panel chart-panel--preview">
-            {previewEvent ? (
+          <div className="chart-panel chart-panel--preview" id="chart-att-panel">
+            {attOpen ? (
+              <>
+                <div className="chart-pt">
+                  <span className={`chart-chip chart-chip--${ATTENTION_CHIP[attention.level]}`}>
+                    {t(attention.level)}
+                  </span>
+                  <span className="chart-pt__name">{t("Attention")}</span>
+                  <span className="chart-pt__meta">{t("{n} reasons", { n: attention.reasons.length })}</span>
+                  <button
+                    type="button"
+                    className="chart-btn chart-att-close"
+                    onClick={() => setAttOpen(false)}
+                  >
+                    {t("Close")}
+                  </button>
+                </div>
+                <div className="chart-body">
+                  {attention.reasons.length > 0 ? (
+                    <ul className="chart-att-list">
+                      {attention.reasons.map((reason) => {
+                        const level = reasonLevel(reason, attentionOptions);
+                        return (
+                          <li key={reason} className="chart-att-item">
+                            <span className={`chart-att-lvl chart-att-lvl--${level}`}>{t(level)}</span>
+                            <span className="chart-att-txt">{t(ATTENTION_REASON_TEXT[reason])}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="chart-empty">{t("Agent is working normally.")}</p>
+                  )}
+                </div>
+              </>
+            ) : previewEvent ? (
               <>
                 <div className="chart-pt">
                   <span className={`chart-chip chart-chip--${pick?.node ? KIND_CHIP[pick.node.kind] : "mute"}`}>
@@ -611,4 +650,34 @@ function commandLabel(
   if (command.exitCode !== undefined) return t("exit {code}", { code: command.exitCode });
   if (command.status === "failed") return t("failed");
   return t("unknown");
+}
+
+/**
+ * The level a fired reason raised, from the user's settings with the engine's
+ * own defaults. `computeAttention` keeps only the loudest level for the run;
+ * this restores the per-rule reading so the card can count by level.
+ */
+function reasonLevel(reason: AttentionReason, options: ReportAttentionOptions): AttentionLevel {
+  switch (reason) {
+    case "agent_stopped":
+      return options.agentStoppedLevel ?? DEFAULT_AGENT_STOPPED_LEVEL;
+    case "unresolved_error":
+      return options.unresolvedErrorLevel ?? DEFAULT_UNRESOLVED_ERROR_LEVEL;
+    case "command_failed":
+      return options.commandFailLevel ?? "low";
+    case "command_failure_streak":
+      return options.commandStreakLevel ?? "low";
+    case "activity_stalled":
+      return options.activityStallLevel ?? "medium";
+    case "process_left_running":
+      return options.processLeftRunningLevel ?? DEFAULT_PROCESS_LEFT_RUNNING_LEVEL;
+    case "outside_change":
+      return options.outsideChangeLevel ?? DEFAULT_OUTSIDE_CHANGE_LEVEL;
+    case "file_version_loop":
+      return options.fileVersionLoopLevel ?? DEFAULT_FILE_VERSION_LOOP_LEVEL;
+    case "command_retry_loop":
+      return options.commandRetryLoopLevel ?? DEFAULT_COMMAND_RETRY_LOOP_LEVEL;
+    default:
+      return "none";
+  }
 }
