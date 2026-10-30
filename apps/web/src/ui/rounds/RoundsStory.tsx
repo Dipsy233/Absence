@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { formatOffset } from "../../lib/format";
+import { formatClock, formatOffset } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
@@ -165,6 +165,7 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
                   <span className="rounds-card__tm mon-mono">
                     {runStart !== undefined ? formatOffset(row.event.timestamp - runStart) : "—"}
                   </span>
+                  <span className="rounds-card__at mon-mono">{formatClock(row.event.timestamp)}</span>
                 </button>
                 {i < shown.length - 1 ? <i className="rounds-conn" aria-hidden /> : null}
               </span>

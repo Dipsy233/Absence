@@ -500,10 +500,23 @@
   min-width: 0;
   flex: 1;
   overflow: hidden;
+  /* Leave the bottom-right corner to the wall-clock stamp. */
+  padding-right: 42px;
   font-size: 10.5px;
   color: var(--mon-t3);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+/* The wall clock at the card's foot: the offset above says "when in the run",
+   this says "when on the wall". */
+.rounds-card__at {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  font-size: 9px;
+  color: var(--mon-t3);
+  opacity: 0.85;
+  pointer-events: none;
 }
 .rounds-card__tm {
   position: absolute;
