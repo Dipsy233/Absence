@@ -1,9 +1,10 @@
+import type { ComponentType } from "react";
 import { ActivityPanel } from "../activity/ActivityPanel";
 import { FilePanel } from "../files/FilePanel";
 import { HistoryPanel } from "../history/HistoryPanel";
 import { useSettingsStore, type LeftPanelId } from "../../stores/settingsStore";
 
-const PANELS: Record<LeftPanelId, () => React.ReactElement> = {
+const PANELS: Record<LeftPanelId, ComponentType> = {
   files: FilePanel,
   history: HistoryPanel,
   activity: ActivityPanel,

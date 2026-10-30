@@ -135,13 +135,9 @@ export function DockBody({
   panel: DockPanel;
   onOpenEggMetrics: (pid: number, name: string) => void;
 }) {
-  if (panel === "files") {
-    return (
-      <div className="rounds-drawer__tree">
-        <FilePanel />
-      </div>
-    );
-  }
+  // The window's title bar already says "Files"; the panel must not print a
+  // second header under it.
+  if (panel === "files") return <FilePanel chrome={false} />;
   if (panel === "folder") return <FolderPanel />;
   if (panel === "eggs") return <EggsBody onOpenEggMetrics={onOpenEggMetrics} />;
   return <RunPanel data={data} />;
