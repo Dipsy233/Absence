@@ -442,6 +442,15 @@
   align-items: flex-end;
   line-height: 1.35;
 }
+/* One round's size, beside `#6 · done` — every event in the run's inclusive
+   sequence range, in the same tabular figures as the clocks. */
+.mon-runmenu__events {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--mon-t3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .mon-runmenu__duration {
   font-size: 11px;
   color: var(--mon-t2);
@@ -449,6 +458,13 @@
 }
 .mon-runmenu__clock {
   font-size: 10.5px;
+  color: var(--mon-t3);
+  font-variant-numeric: tabular-nums;
+}
+/* The tools a round used, under the clock: the same R/S/E/$ line the selector
+   and the other faces print. */
+.mon-runmenu__counts {
+  font-size: 10px;
   color: var(--mon-t3);
   font-variant-numeric: tabular-nums;
 }

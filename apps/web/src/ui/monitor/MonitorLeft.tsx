@@ -336,14 +336,24 @@ export function MonitorLeft({
                       <span className="mon-runmenu__index">
                         #{entry.index} · {t(STATUS_WORD[entry.status])}
                       </span>
+                      {/* How much of the session one round is: the store's
+                          sequence range is inclusive, so this is every event
+                          the run holds, not just the tool counts below it. */}
+                      <span className="mon-runmenu__events mon-mono">
+                        {t("{n} events", { n: entry.toSeq - entry.fromSeq + 1 })}
+                      </span>
                       <span className="mon-runmenu__times">
-                        {/* Right side, two lines: how long the round ran (or is
-                            running), then when it started — the two questions
-                            "how much" and "when" in the order they're asked. */}
+                        {/* Right side, three lines: how long the round ran (or
+                            is running), when it started, and what it did — the
+                            questions "how much", "when" and "which tools", in
+                            the order they're asked. */}
                         <span className="mon-runmenu__duration mon-mono">
                           {formatOffset((entry.endedAt ?? now) - entry.startedAt)}
                         </span>
                         <span className="mon-runmenu__clock mon-mono">{formatClock(entry.startedAt)}</span>
+                        <span className="mon-runmenu__counts mon-mono">
+                          R{entry.counts.read} S{entry.counts.search} E{entry.counts.edit} ${entry.counts.run}
+                        </span>
                       </span>
                     </span>
                     <span className="mon-runmenu__prompt">{entry.prompt || t("(observed activity)")}</span>
