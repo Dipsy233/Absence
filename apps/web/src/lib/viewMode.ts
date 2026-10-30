@@ -29,7 +29,7 @@ export interface ViewModeSpec {
 export const VIEW_MODES: ViewModeSpec[] = [
   { id: "rounds", name: "Rounds", zh: "查房陪诊", intent: "Light — the agent leads, you follow", ready: true },
   { id: "monitor", name: "Monitor", zh: "机器监护", intent: "Heavy — every trace on one screen", ready: true },
-  { id: "chart", name: "Chart", zh: "病历报告", intent: "The run is over — read what it amounted to", ready: false },
+  { id: "chart", name: "Chart", zh: "病历报告", intent: "The run is over — read what it amounted to", ready: true },
   { id: "drip", name: "Drip", zh: "输液", intent: "Almost nothing — a floating card, always on top", ready: false },
   { id: "classic", name: "Classic", zh: "旧版", intent: "The pre-split layout", ready: true },
 ];

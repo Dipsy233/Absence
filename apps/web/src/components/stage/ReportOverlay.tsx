@@ -629,6 +629,9 @@ const REASON_TEXT: Record<AttentionReason, string> = {
   command_retry_loop: "The same command failed repeatedly",
 };
 
+/** The one sentence per attention reason, shared with the Chart face. */
+export const ATTENTION_REASON_TEXT = REASON_TEXT;
+
 function AttentionBlock({ attention }: { attention: Attention }) {
   const t = useT();
   return (

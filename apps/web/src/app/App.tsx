@@ -10,6 +10,7 @@ import { Stage } from "../components/layout/Stage";
 import { ProjectPicker } from "../components/ProjectPicker/ProjectPicker";
 import { MonitorUI } from "../ui/monitor/MonitorUI";
 import { RoundsUI } from "../ui/rounds/RoundsUI";
+import { ChartUI } from "../ui/chart/ChartUI";
 
 /**
  * The shell. Three things decide what it renders:
@@ -52,6 +53,15 @@ export default function App() {
     return (
       <>
         <RoundsUI />
+        <ContextMenu />
+      </>
+    );
+  }
+
+  if (mode === "chart") {
+    return (
+      <>
+        <ChartUI />
         <ContextMenu />
       </>
     );
