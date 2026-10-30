@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { formatClock } from "../../lib/format";
+import { formatBytes, formatClock } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useT } from "../../lib/i18n";
 import { useStageStore } from "../../stores/stageStore";
@@ -52,12 +52,25 @@ import "../monitor/monitor.css";
 const TOP_SIZE = { w: 440, h: 430 };
 const CHILD_SIZE = { w: 580, h: 470 };
 
-/** "path · v3" for one recorded version; the path alone for a whole file. */
+/**
+ * The title bar carries what a stage toolbar would: the file, the version when
+ * it is one, the size, and the line range (the whole file's when the content
+ * is not a slice). A long path truncates; the hover title still has all of it.
+ */
 function fileWindowTitle(item: StageItem): string {
   const payload = item.payload;
-  return payload.kind === "file" && payload.version !== undefined
-    ? `${payload.path} · v${payload.version}`
-    : item.title;
+  if (payload.kind !== "file") return item.title;
+
+  const parts = [payload.path];
+  if (payload.version !== undefined) parts.push(`v${payload.version}`);
+  parts.push(formatBytes(payload.content.length));
+  parts.push(
+    payload.startLine !== undefined && payload.endLine !== undefined
+      ? `${payload.startLine}–${payload.endLine}`
+      : `1–${payload.content.split("\n").length}`,
+  );
+  if (payload.badge) parts.push(payload.badge);
+  return parts.join(" · ");
 }
 
 export function RoundsUI() {
@@ -261,7 +274,7 @@ export function RoundsUI() {
             onClose={() => setFileWins((wins) => wins.filter((w) => w.id !== id))}
           >
             <div className="rounds-win__stage">
-              <StageItemView item={item} showPath={false} />
+              <StageItemView item={item} showToolbar={false} />
             </div>
           </RoundsWindow>
         ))}

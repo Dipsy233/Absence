@@ -18,8 +18,9 @@ interface FileStageProps {
   caption?: string;
   badge?: string;
   badgeTone?: "normal" | "warn";
-  /** False when the host's own title bar already names the file (Rounds' windows). */
-  showPath?: boolean;
+  /** False when the host's own title bar already carries path, size and range
+      (Rounds' windows): the editor keeps the caption, not a second toolbar. */
+  showToolbar?: boolean;
 }
 
 export function FileStage({
@@ -32,7 +33,7 @@ export function FileStage({
   caption,
   badge,
   badgeTone = "normal",
-  showPath = true,
+  showToolbar = true,
 }: FileStageProps) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const collectionRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
@@ -77,34 +78,36 @@ export function FileStage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-desk-line px-3 py-2 font-mono text-xs">
-        {showPath ? (
+      {showToolbar ? (
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-desk-line px-3 py-2 font-mono text-xs">
           <span className="truncate text-desk-ink" title={path}>
             {path}
           </span>
-        ) : null}
-        <div className="ml-auto flex items-center gap-2">
-          {badge ? (
-            <span className={["chip", badgeTone === "warn" ? "text-desk-ember" : "text-desk-teal"].join(" ")}>
-              {badge}
-            </span>
-          ) : null}
-          {badge ? <span className="text-desk-dim">{formatBytes(content.length)}</span> : null}
-          {startLine !== undefined && endLine !== undefined ? (
-            <span className="text-desk-amber">
-              {startLine}–{endLine}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => addContext(fileContext(path, content))}
-            className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-            title={t("Add this file to Chat")}
-          >
-            {t("+ Chat")}
-          </button>
+          <div className="flex items-center gap-2">
+            {badge ? (
+              <span className={["chip", badgeTone === "warn" ? "text-desk-ember" : "text-desk-teal"].join(" ")}>
+                {badge}
+              </span>
+            ) : null}
+            <span className="text-desk-dim">{formatBytes(content.length)}</span>
+            {startLine !== undefined && endLine !== undefined ? (
+              <span className="text-desk-amber">
+                {startLine}–{endLine}
+              </span>
+            ) : (
+              <span className="text-desk-dim">{t("{n} lines", { n: content.split("\n").length })}</span>
+            )}
+            <button
+              type="button"
+              onClick={() => addContext(fileContext(path, content))}
+              className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
+              title={t("Add this file to Chat")}
+            >
+              {t("+ Chat")}
+            </button>
+          </div>
         </div>
-      </div>
+      ) : null}
       <div className="min-h-0 flex-1">
         <Editor
           height="100%"

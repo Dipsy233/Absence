@@ -253,6 +253,7 @@ const ZH: Record<string, string> = {
   "Show v{v}": "显示 v{v}",
   "Show the newest agent-known content": "显示智能体所知的最新内容",
   "whole file": "完整文件",
+  "{n} lines": "{n} 行",
   "lines {a}–{b}": "第 {a}–{b} 行",
   "{r}/{a} running": "{r}/{a} 运行中",
   none: "无",
