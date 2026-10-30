@@ -13,10 +13,9 @@ import type { RoundsData } from "./useRoundsData";
  * The scene: the agent on its own stage, alone.
  *
  * The avatar never overlaps text — b.html's rule, and a hard one: the bubble
- * hangs above the figure, the thought line sits below it, and both are
- * siblings of the stage in a column, so no amount of text can slide under the
- * character. The bubble says what it is doing *now* (the status word, then the
- * one thing in its hands); the thought line quotes the latest reasoning.
+ * hangs above the figure, and both are siblings of the stage in a column, so
+ * no amount of text can slide under the character. The bubble says what it is
+ * doing *now* (the status word, then the one thing in its hands).
  *
  * The pose follows *what is on screen*, not the socket — Classic's `Stage` and
  * Monitor's `AgentHead` rule, reused rather than re-derived: in replay it
@@ -70,12 +69,6 @@ export function RoundsScene({ data, onLive }: { data: RoundsData; onLive: () => 
         )}
         <span className="rounds-shadow" aria-hidden />
       </button>
-
-      {data.thinking ? (
-        <p className="rounds-thought">
-          <span title={data.thinking}>{data.thinking}</span>
-        </p>
-      ) : null}
     </div>
   );
 }

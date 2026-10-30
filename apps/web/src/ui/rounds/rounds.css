@@ -331,23 +331,6 @@
   pointer-events: none;
 }
 
-.rounds-thought {
-  min-width: 0;
-  max-width: min(540px, 100%);
-  margin: 14px 0 4px;
-  overflow: hidden;
-  font-size: 13.5px;
-  font-style: italic;
-  color: var(--mon-t2);
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* The quote is the ellipsis target; the paragraph caps the box. */
-.rounds-thought span {
-  min-width: 0;
-}
-
 /* ── The story ──────────────────────────────────────────────────────────── */
 
 .rounds-story {

@@ -35,8 +35,6 @@ export interface RoundsData {
   following: boolean;
   /** The agent's own status (listening, reading, …). */
   status: AgentStatus;
-  /** The latest thought text in the run, for the scene's thought line. */
-  thinking?: string;
   /** The file the agent is looking at: the live view, else the last read. */
   peek?: StageItem;
   /** Counts behind the dock's badges. */
@@ -58,16 +56,6 @@ export function useRoundsData(): RoundsData {
     [events, run, showProcessRows],
   );
   const rowsVersion = activityRowsVersion();
-
-  /** The latest thought: the scene's quiet line under the bubble. */
-  const thinking = useMemo(() => {
-    void rowsVersion;
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const row = rows[i]!;
-      if (row.tone === "think") return row.primary;
-    }
-    return undefined;
-  }, [rows, rowsVersion]);
 
   /**
    * The peek: the file the agent is looking at. Live (or replay) that is the
@@ -95,7 +83,6 @@ export function useRoundsData(): RoundsData {
     item,
     following,
     status,
-    thinking,
     peek,
     badges: { folder: folderCount, eggs: eggCounts.running, activity: rows.length },
   };
