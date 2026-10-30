@@ -9,6 +9,7 @@ export const ACTIVITY_TYPES = new Set<AbsenceEvent["type"]>([
   "agent_start",
   "agent_end",
   "thinking",
+  "message",
   "file_read",
   "file_write",
   "file_edit",
@@ -381,20 +382,23 @@ export function firstLine(text: string): string {
 }
 
 /**
- * Append a row to the Activity list, folding a streamed thought into the row
- * it continues.
+ * Append a row to the Activity list, folding streamed text into the row it
+ * continues.
  *
- * Reasoning streams as a run of `thinking` events — one per token before the
- * adapters coalesce them, one per flush window after — and each event used to
- * become its own row, so one thought filled the panel with THINK lines that
- * differ only in how much text they had. Consecutive thinking events are the
- * same thought growing (the report's timeline collapses them the same way, see
- * `buildTimeline`), so here the last row is replaced instead of a new one
- * appended. Any other event in between ends the thought and starts a new row.
+ * Reasoning and answers both stream as a run of events — one per token before
+ * the adapters coalesce them, one per flush window after — and each event used
+ * to become its own row, so one thought filled the panel with THINK lines that
+ * differ only in how much text they had. Consecutive events of the same kind
+ * are the same text growing (the report's timeline collapses them the same way,
+ * see `buildTimeline`), so here the last row is replaced instead of a new one
+ * appended. Any other event in between ends the run of text and starts a new row.
  */
 export function appendActivityRow(rows: ActivityRow[], row: ActivityRow): boolean {
   const last = rows[rows.length - 1];
-  if (row.tone === "think" && last?.tone === "think") {
+  // Streamed text keeps one row per run of the same kind: a thought or an
+  // answer arrives chunk by chunk, each chunk carrying the text so far, so the
+  // newest one replaces the row it continues instead of appending per token.
+  if (last && last.tone === row.tone && (row.tone === "think" || row.tone === "say")) {
     rows[rows.length - 1] = row;
     return true;
   }
@@ -577,6 +581,22 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
         primary: name,
         secondary: `pid ${pid}${children > 0 ? ` · +${children}` : ""}`,
         tone: "process",
+        stageItem,
+      };
+    }
+    case "message": {
+      const { role, content, streaming } = event.payload;
+      // A system message is Absence's own notice (a command result, a warning),
+      // not the agent talking to the user, so it is not an answer.
+      if (role === "system" || content.trim().length === 0) return undefined;
+      return {
+        id,
+        event,
+        time,
+        action: "SPEAK",
+        primary: firstLine(content),
+        secondary: streaming ? "speaking…" : `${formatBytes(content.length)} · reply`,
+        tone: "say",
         stageItem,
       };
     }

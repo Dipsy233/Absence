@@ -152,6 +152,7 @@ export interface ActivityRow {
     | "run"
     | "lifecycle"
     | "think"
+    | "say"
     | "process"
     | "approval"
     | "error"

@@ -14,6 +14,7 @@ const TONE_CLASS: Record<ActivityRow["tone"], string> = {
   run: "text-desk-ink",
   lifecycle: "text-desk-dim",
   think: "text-desk-dim",
+  say: "text-desk-dim",
   process: "text-desk-ink",
   approval: "text-desk-amber",
   error: "text-desk-ember",

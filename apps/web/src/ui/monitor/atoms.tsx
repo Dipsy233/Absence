@@ -16,6 +16,7 @@ export type MonTone = "think" | "read" | "search" | "edit" | "run" | "egg" | "er
 /** Activity row tone → Monitor tone. */
 export const TONE_FOR_ROW: Record<ActivityRow["tone"], MonTone> = {
   think: "think",
+  say: "think",
   read: "read",
   search: "search",
   edit: "edit",
