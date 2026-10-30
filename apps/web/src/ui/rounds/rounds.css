@@ -99,6 +99,75 @@
 .rounds-wallpaper__thread {
   background: transparent;
 }
+/* The conversation as chat bubbles: the reader on the right, the agent on the
+   left, and one voice's consecutive messages sharing one rounded block —
+   joined, never fused: each message keeps its own seam line inside it. */
+/* Bubbles align against the column's edges, so the thread becomes a column. */
+.rounds-thread--bubbles {
+  display: flex;
+  flex-direction: column;
+}
+.rounds-thread--bubbles > * {
+  flex: none;
+}
+.rounds-bubblewrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 86%;
+}
+.rounds-bubblewrap--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.rounds-bubblewrap--assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+.rounds-bubblewrap--system {
+  align-self: center;
+  align-items: center;
+  max-width: 94%;
+}
+.rounds-bubblewrap__who {
+  padding: 0 7px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mon-t3);
+}
+.rounds-bubble {
+  overflow: hidden;
+  border: 1px solid var(--mon-bd);
+  border-radius: 14px;
+  background: rgb(26 30 38 / 0.8);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.3);
+  backdrop-filter: blur(6px);
+}
+.rounds-bubblewrap--user .rounds-bubble {
+  border-color: rgb(222 146 85 / 0.34);
+  background: rgb(222 146 85 / 0.12);
+}
+.rounds-bubblewrap--system .rounds-bubble {
+  border-radius: 10px;
+  background: rgb(22 26 33 / 0.62);
+  box-shadow: none;
+}
+.rounds-bubble__msg {
+  padding: 7px 11px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--mon-t);
+}
+/* The seam: joined messages share the block but stay countable. */
+.rounds-bubble__msg[data-seam="true"] {
+  border-top: 1px solid rgb(255 255 255 / 0.16);
+}
+.rounds-bubblewrap--system .rounds-bubble__msg {
+  font: 11px/1.5 var(--mon-mono);
+  color: var(--mon-t3);
+}
 
 /* ── Floating windows ─────────────────────────────────────────────────────
    Desktop windows: glass sheets with a drag handle, floating above the chat

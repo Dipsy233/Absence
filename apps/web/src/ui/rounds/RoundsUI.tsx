@@ -257,7 +257,7 @@ export function RoundsUI() {
       */}
       <div className="rounds-main">
         <div className="rounds-wallpaper">
-          <ChatThread className="rounds-wallpaper__thread" />
+          <ChatThread className="rounds-wallpaper__thread" layout="bubbles" />
         </div>
 
         <RoundsScene data={data} onLive={goLive} />

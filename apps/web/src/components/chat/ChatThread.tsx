@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ChatMessage } from "@absence/core";
 import { useChatStore } from "../../stores/chatStore";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -12,9 +12,36 @@ import { Markdown } from "../common/Markdown";
    Both show the same messages the same way — role label, bubble, Markdown
    unless the reader asked for raw text — so the rendering lives here and the
    two faces only decide where the box goes.
+
+   `layout="bubbles"` is Rounds' reading: the reader's messages sit on the
+   right, the agent's on the left, and consecutive messages of one voice share
+   a single rounded block whose seams are drawn between them.
    ══════════════════════════════════════════════════════════════════════════ */
 
-export function ChatThread({ scrollRef, className }: { scrollRef?: React.RefObject<HTMLDivElement | null>; className?: string }) {
+/** One message's content, in either layout. */
+function MessageBody({ message, markdown }: { message: ChatMessage; markdown: boolean }) {
+  return message.role === "assistant" && markdown ? (
+    <Markdown text={message.content} streaming={message.streaming} />
+  ) : (
+    <>
+      <span className="whitespace-pre-wrap">{message.content}</span>
+      {message.streaming ? <span className="ml-0.5 animate-pulse text-desk-amber">▍</span> : null}
+    </>
+  );
+}
+
+/** Consecutive messages from the same voice, one bubble block. */
+type BubbleGroup = { role: ChatMessage["role"]; messages: ChatMessage[] };
+
+export function ChatThread({
+  scrollRef,
+  className,
+  layout = "plain",
+}: {
+  scrollRef?: React.RefObject<HTMLDivElement | null>;
+  className?: string;
+  layout?: "plain" | "bubbles";
+}) {
   const t = useT();
   const messages = useChatStore((s) => s.messages);
   const chatMarkdown = useSettingsStore((s) => s.chatMarkdown);
@@ -36,13 +63,28 @@ export function ChatThread({ scrollRef, className }: { scrollRef?: React.RefObje
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
+  const groups = useMemo(() => {
+    const out: BubbleGroup[] = [];
+    for (const message of messages) {
+      const last = out[out.length - 1];
+      if (last && last.role === message.role) last.messages.push(message);
+      else out.push({ role: message.role, messages: [message] });
+    }
+    return out;
+  }, [messages]);
+
+  const who = (role: ChatMessage["role"]) =>
+    role === "user" ? t("You") : role === "system" ? "ABSENCE" : t("Agent");
+
   return (
     <div
       ref={(node) => {
         innerRef.current = node;
         if (scrollRef) scrollRef.current = node;
       }}
-      className={["min-h-0 flex-1 space-y-2 overflow-auto px-3 py-2", className].filter(Boolean).join(" ")}
+      className={["min-h-0 flex-1 space-y-2 overflow-auto px-3 py-2", layout === "bubbles" ? "rounds-thread--bubbles" : "", className]
+        .filter(Boolean)
+        .join(" ")}
     >
       {messages.length === 0 ? (
         <p className="text-xs text-desk-dim">
@@ -56,12 +98,23 @@ export function ChatThread({ scrollRef, className }: { scrollRef?: React.RefObje
           )
             .split("<slash>")[1]}
         </p>
+      ) : layout === "bubbles" ? (
+        groups.map((group) => (
+          <div key={group.messages[0]!.id} className={`rounds-bubblewrap rounds-bubblewrap--${group.role}`}>
+            <span className="rounds-bubblewrap__who">{who(group.role)}</span>
+            <div className="rounds-bubble">
+              {group.messages.map((message, i) => (
+                <div key={message.id} className="rounds-bubble__msg" data-seam={i > 0 ? "true" : undefined}>
+                  <MessageBody message={message} markdown={chatMarkdown} />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
       ) : (
         messages.map((message: ChatMessage) => (
           <div key={message.id}>
-            <div className="label mb-0.5">
-              {message.role === "user" ? t("You") : message.role === "system" ? "ABSENCE" : t("Agent")}
-            </div>
+            <div className="label mb-0.5">{who(message.role)}</div>
             <div
               className={[
                 "rounded px-2 py-1.5 text-xs leading-relaxed",
@@ -72,14 +125,7 @@ export function ChatThread({ scrollRef, className }: { scrollRef?: React.RefObje
                     : "border border-desk-line bg-desk-bg text-desk-ink/90",
               ].join(" ")}
             >
-              {message.role === "assistant" && chatMarkdown ? (
-                <Markdown text={message.content} streaming={message.streaming} />
-              ) : (
-                <>
-                  <span className="whitespace-pre-wrap">{message.content}</span>
-                  {message.streaming ? <span className="ml-0.5 animate-pulse text-desk-amber">▍</span> : null}
-                </>
-              )}
+              <MessageBody message={message} markdown={chatMarkdown} />
             </div>
           </div>
         ))
