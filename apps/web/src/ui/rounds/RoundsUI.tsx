@@ -290,7 +290,7 @@ export function RoundsUI() {
             onClose={() => setMetricsWins((wins) => wins.filter((w) => w.pid !== pid))}
           >
             <div className="rounds-win__stage">
-              <MetricsDashboard embedded />
+              <MetricsDashboard embedded eggPid={pid} />
             </div>
           </RoundsWindow>
         ))}

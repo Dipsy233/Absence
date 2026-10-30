@@ -38,11 +38,18 @@ const EMPTY: ChartSeries = { ts: [], cpuCores: [], rssMiB: [] };
  * not reached the 15s disk flush yet) is merged onto the persisted chunks. That
  * is why a session closed and reopened later still shows its curve — and why
  * the hours it was closed render as holes rather than a line.
+ *
+ * What it observes: `eggPid` pins it to one egg (Rounds' metrics windows do
+ * this — each window is opened for a process and must keep showing that
+ * process while other windows open). Without it the dashboard follows the
+ * store's selection, which is how Monitor's METRICS page and Classic's overlay
+ * work.
  */
-export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
+export function MetricsDashboard({ embedded = false, eggPid }: { embedded?: boolean; eggPid?: number }) {
   const t = useT();
   const version = useMetricsStore((s) => s.version);
-  const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
+  const storedSelection = useMetricsStore((s) => s.selectedEggPid);
+  const selectedEggPid = eggPid ?? storedSelection;
   const selectEgg = useMetricsStore((s) => s.selectEgg);
   const session = useSessionStore((s) => s.session);
   const eggVersion = useSessionStore((s) => s.eggState.version);
