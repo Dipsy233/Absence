@@ -253,10 +253,7 @@ export function ChartUI() {
         {/* ── the run, in one sentence ──────────────────────────────────── */}
         <section className="chart-hero">
           <span className="chart-hero__icon" aria-hidden>
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <circle cx="14" cy="14" r="10.5" stroke="currentColor" strokeWidth="1.2" opacity="0.5" />
-              <circle cx="14" cy="14" r="4" stroke="currentColor" strokeWidth="1.2" />
-            </svg>
+            <img src="/app-icon.png" alt="" />
           </span>
 
           <div style={{ minWidth: 0 }}>
