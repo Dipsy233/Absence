@@ -1,63 +1,67 @@
 /*
- * CHART (病历报告) — the light face.
+ * CHART (病历报告) — the record, in the same dark room as Monitor.
  *
- * The report is the whole page: one run, read as a record. The palette is
- * paper, not screen — white cards on a warm off-white, ink for text, and one
- * colour per kind of activity so the timeline reads at a glance.
+ * The face is a page of findings on the agent's work: hero, four numbers, the
+ * world line, and lists beside their evidence. The palette is Monitor's — the
+ * two faces are read side by side — and `.chart-root` re-points the `--desk-*`
+ * triplets at it, so the shared pieces this face borrows (`ViewModeSwitch`,
+ * `WindowControls`, `StageItemView`) land in this face's colours without a
+ * second copy of any of them.
  *
- * `.chart-root` also re-points the `--desk-*` triplets at this palette, the way
- * `.mon-root` does for Monitor: the shared pieces this face borrows (`ViewModeSwitch`,
- * `WindowControls`, `StageItemView`) are written in desk classes, and they
- * should come out light here without a second copy of any of them.
+ * The face fills the window (`height: 100vh`), because App renders it as
+ * #root's only child. Its own content scrolls, and the split gives way last:
+ * the page is read top to bottom, and the lists/evidence pair is the part that
+ * grows.
  */
 
 .chart-root {
-  /* paper */
-  --ch-bg: #f9f8f7;
-  --ch-s1: #ffffff;
-  --ch-s2: #f0efed;
-  --ch-s3: #e6e5e3;
-  --ch-bd: #e6e5e3;
-  --ch-bd2: #d6d4d0;
-  --ch-t: #2c2c2b;
-  --ch-t2: #5f5c57;
-  /* #7D7A75 was 4.28:1 on white — darkened to clear 4.5:1 */
-  --ch-t3: #6f6c67;
-  --ch-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+  /* Monitor's dark tokens (contrast floor: t3 5.9:1, t2 8.9:1 on s1) */
+  --ch-bg: #121212;
+  --ch-s1: #191919;
+  --ch-s2: #202020;
+  --ch-s3: #2c2c2b;
+  --ch-bd: rgba(255, 255, 255, 0.08);
+  --ch-bd2: rgba(255, 255, 255, 0.16);
+  --ch-t: #f2f2f0;
+  --ch-t2: #b9b9b6;
+  --ch-t3: #96968f;
 
-  /* one colour per kind of activity */
-  --ch-think: #8a4fb0;
-  --ch-read: #1f6fc0;
-  --ch-search: #16757f;
-  --ch-edit: #2f7a50;
-  --ch-run: #b25f1d;
-  --ch-egg: #b03a6b;
-  --ch-err: #c23f32;
-  --ch-acc: #1f6fc0;
+  --ch-think: #bf8eda;
+  --ch-read: #5e9fe8;
+  --ch-search: #4fb9c9;
+  --ch-edit: #72bc8f;
+  --ch-run: #de9255;
+  --ch-egg: #df84a8;
+  --ch-err: #e97366;
+  --ch-acc: #5e9fe8;
 
-  /* desk bridge — light */
-  --desk-bg: 249 248 247;
-  --desk-panel: 255 255 255;
-  --desk-panel2: 240 239 237;
-  --desk-deep: 249 248 247;
-  --desk-line: 230 229 227;
-  --desk-ink: 44 44 43;
-  --desk-dim: 95 92 87;
-  --desk-amber: 178 95 29;
-  --desk-accent: 31 111 192;
-  --desk-ember: 194 63 50;
-  --desk-teal: 31 111 192;
-  --desk-wood: 230 229 227;
-  --desk-woodLit: 214 212 208;
-  --desk-lavender: 138 79 176;
+  --ch-sans: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Liberation Sans", Arial,
+    sans-serif;
+  --ch-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* desk bridge — dark, the same triplets Monitor uses */
+  --desk-bg: 18 18 18;
+  --desk-panel: 25 25 25;
+  --desk-panel2: 32 32 32;
+  --desk-deep: 14 14 14;
+  --desk-line: 46 46 45;
+  --desk-ink: 242 242 240;
+  --desk-dim: 150 150 143;
+  --desk-accent: 94 159 232;
+  --desk-ember: 233 115 88;
+  --desk-teal: 114 188 143;
+  --desk-wood: 44 44 43;
+  --desk-wood-lit: 59 59 57;
+  --desk-lavender: 191 142 218;
 
   display: flex;
-  height: 100%;
+  height: 100vh;
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
   background: var(--ch-bg);
   color: var(--ch-t);
+  font: 13px/1.45 var(--ch-sans);
 }
 
 .chart-root :focus-visible {
@@ -74,13 +78,18 @@
 
 .chart-top {
   display: flex;
-  flex: 0 0 auto;
+  flex: none;
   align-items: center;
   gap: 12px;
   height: 52px;
-  padding: 0 12px 0 24px;
+  padding: 0 12px 0 20px;
+  overflow: hidden;
   background: var(--ch-s1);
   border-bottom: 1px solid var(--ch-bd);
+}
+
+.chart-top > * {
+  flex: none;
 }
 
 .chart-drag {
@@ -88,7 +97,6 @@
 }
 
 .chart-top button,
-.chart-top a,
 .chart-top .chart-nodrag {
   -webkit-app-region: no-drag;
 }
@@ -128,7 +136,8 @@
 }
 
 .chart-top__path {
-  min-width: 0;
+  flex: 0 1 auto;
+  min-width: 60px;
   max-width: 34vw;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -138,7 +147,8 @@
 }
 
 .chart-top__spacer {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .chart-btn {
@@ -149,7 +159,7 @@
   padding: 0 10px;
   border: 1px solid var(--ch-bd2);
   border-radius: 7px;
-  background: var(--ch-s1);
+  background: transparent;
   font-size: 11.5px;
   color: var(--ch-t2);
   cursor: pointer;
@@ -165,7 +175,7 @@
 
 .chart-chip {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: none;
   align-items: center;
   gap: 5px;
   height: 19px;
@@ -183,50 +193,50 @@
 }
 
 .chart-chip--live {
-  border-color: #bfe0cb;
-  background: #eef4f0;
-  color: #2f7a50;
+  border-color: rgba(114, 188, 143, 0.35);
+  background: rgba(114, 188, 143, 0.12);
+  color: var(--ch-edit);
 }
 
 .chart-chip--think {
-  border-color: #e2d0ef;
-  background: #f3eaf8;
+  border-color: rgba(191, 142, 218, 0.35);
+  background: rgba(191, 142, 218, 0.12);
   color: var(--ch-think);
 }
 
 .chart-chip--read {
-  border-color: #cfe2f6;
-  background: #e5f2fc;
+  border-color: rgba(94, 159, 232, 0.35);
+  background: rgba(94, 159, 232, 0.12);
   color: var(--ch-read);
 }
 
 .chart-chip--search {
-  border-color: #c6e5e8;
-  background: #e0f3f5;
+  border-color: rgba(79, 185, 201, 0.35);
+  background: rgba(79, 185, 201, 0.12);
   color: var(--ch-search);
 }
 
 .chart-chip--edit {
-  border-color: #cfe2d8;
-  background: #e8f1ec;
+  border-color: rgba(114, 188, 143, 0.35);
+  background: rgba(114, 188, 143, 0.12);
   color: var(--ch-edit);
 }
 
 .chart-chip--run {
-  border-color: #f0d3b9;
-  background: #fbebde;
+  border-color: rgba(222, 146, 85, 0.35);
+  background: rgba(222, 146, 85, 0.12);
   color: var(--ch-run);
 }
 
 .chart-chip--egg {
-  border-color: #f0c9da;
-  background: #fae6ee;
+  border-color: rgba(223, 132, 168, 0.35);
+  background: rgba(223, 132, 168, 0.12);
   color: var(--ch-egg);
 }
 
 .chart-chip--err {
-  border-color: #f3c7c1;
-  background: #fce9e7;
+  border-color: rgba(233, 115, 102, 0.35);
+  background: rgba(233, 115, 102, 0.12);
   color: var(--ch-err);
 }
 
@@ -244,22 +254,23 @@
   flex-direction: column;
   gap: 14px;
   overflow: auto;
-  padding: 20px 24px 24px;
+  padding: 18px 20px 20px;
 }
 
 .chart-hero {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 360px;
+  flex: none;
+  grid-template-columns: 60px minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
 .chart-hero__icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
+  width: 60px;
+  height: 60px;
   border: 1px solid var(--ch-bd);
   border-radius: 50%;
   background: var(--ch-s1);
@@ -268,7 +279,7 @@
 
 .chart-h1 {
   overflow: hidden;
-  font-size: 25px;
+  font-size: 24px;
   font-weight: 650;
   letter-spacing: -0.01em;
   line-height: 1.16;
@@ -280,7 +291,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
   font-size: 12px;
   color: var(--ch-t3);
 }
@@ -302,77 +312,11 @@
   white-space: nowrap;
 }
 
-/* attention card */
-
-.chart-att {
-  min-width: 0;
-  padding: 11px 13px;
-  border: 1px solid var(--ch-bd);
-  border-radius: 12px;
-  background: var(--ch-s1);
-}
-
-.chart-att--medium {
-  border-color: #ecd6b4;
-  background: #fbf2e5;
-}
-
-.chart-att--high {
-  border-color: #f3c7c1;
-  background: #fce9e7;
-}
-
-.chart-att--low {
-  border-color: #cfe2d8;
-  background: #eef4f0;
-}
-
-.chart-att__head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--ch-t2);
-}
-
-.chart-att--high .chart-att__head {
-  color: var(--ch-err);
-}
-
-.chart-att--medium .chart-att__head {
-  color: var(--ch-run);
-}
-
-.chart-att--low .chart-att__head {
-  color: var(--ch-edit);
-}
-
-.chart-att__list {
-  margin: 5px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 12px;
-  color: var(--ch-t2);
-  line-height: 1.5;
-}
-
-.chart-att__list li {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chart-att__none {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--ch-t3);
-}
-
-/* KPI row */
+/* ── KPI row ─────────────────────────────────────────────────────────────── */
 
 .chart-kpis {
   display: grid;
+  flex: none;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
@@ -382,18 +326,14 @@
   min-width: 0;
   flex-direction: column;
   gap: 2px;
-  padding: 11px 13px;
+  padding: 10px 12px;
   border: 1px solid var(--ch-bd);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--ch-s1);
 }
 
 .chart-kpi--egg {
-  border-color: #f0c9da;
-}
-
-.chart-kpi--err {
-  border-color: #f3c7c1;
+  border-color: rgba(223, 132, 168, 0.35);
 }
 
 .chart-kpi__row {
@@ -413,19 +353,15 @@
 
 .chart-kpi__v {
   overflow: hidden;
-  font-size: 21px;
+  font-size: 20px;
   font-weight: 650;
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.chart-kpi__v b {
-  font-weight: 650;
-}
-
 .chart-kpi__delta {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -445,12 +381,13 @@
   white-space: nowrap;
 }
 
-/* ── timeline ────────────────────────────────────────────────────────────── */
+/* ── timeline: one world line, lanes as marks ────────────────────────────── */
 
 .chart-tlc {
-  padding: 11px 16px 8px;
+  flex: none;
+  padding: 10px 14px 8px;
   border: 1px solid var(--ch-bd);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--ch-s1);
 }
 
@@ -458,7 +395,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .chart-tlh__cap {
@@ -481,102 +418,188 @@
   color: var(--ch-t3);
 }
 
-.chart-lanes {
-  position: relative;
-  display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
+.chart-tl {
+  display: flex;
+  flex-direction: column;
 }
 
-.chart-ll {
-  height: 26px;
-  overflow: hidden;
-  font-size: 11px;
-  line-height: 26px;
+.chart-tl__body {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.chart-labels {
+  display: flex;
+  width: 56px;
+  flex: none;
+  flex-direction: column;
+  padding-top: 1px;
+  font-family: var(--ch-mono);
+  font-size: 10px;
   color: var(--ch-t3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.chart-labels > span {
+  display: block;
+  overflow: hidden;
+  line-height: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.chart-lt {
+.chart-track {
   position: relative;
-  height: 26px;
-  border-top: 1px dashed var(--ch-bd);
+  min-width: 0;
+  flex: 1;
 }
 
-.chart-b {
+.chart-lane {
   position: absolute;
-  top: 6px;
-  height: 14px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--ch-bd);
+}
+
+.chart-blk {
+  position: absolute;
+  height: 8px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
-  background: var(--ch-mute, #6f6c67);
+  border-radius: 2px;
+  background: var(--ch-t3);
   cursor: pointer;
   transition: filter 0.12s ease;
 }
 
-.chart-b:hover {
-  filter: brightness(1.1);
+.chart-blk:hover {
+  filter: brightness(1.22);
 }
 
-.chart-b--sel {
-  outline: 2px solid rgba(44, 44, 43, 0.6);
+.chart-blk--sel {
+  outline: 1.5px solid var(--ch-t);
   outline-offset: 1px;
 }
 
-.chart-b--egg {
-  background-image: repeating-linear-gradient(45deg, var(--ch-egg) 0 5px, #d9789f 5px 10px);
+.chart-blk--think {
+  background: var(--ch-think);
+}
+
+.chart-blk--read {
+  background: var(--ch-read);
+}
+
+.chart-blk--search {
+  background: var(--ch-search);
+}
+
+.chart-blk--edit {
+  background: var(--ch-edit);
+}
+
+.chart-blk--write {
+  background: #8fcf9f;
+}
+
+.chart-blk--run {
+  background: var(--ch-run);
+}
+
+.chart-blk--egg {
+  background: repeating-linear-gradient(45deg, var(--ch-egg) 0 4px, #eea9c1 4px 8px);
+}
+
+.chart-ghost {
+  position: absolute;
+  top: -4px;
+  bottom: -6px;
+  width: 1px;
+  background: var(--ch-t2);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.chart-ghost__label {
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--ch-mono);
+  font-size: 10px;
+  color: var(--ch-t2);
+  white-space: nowrap;
+}
+
+.chart-head {
+  position: absolute;
+  top: -4px;
+  bottom: -6px;
+  width: 2px;
+  background: var(--ch-t);
+  transition: left 0.08s linear;
+  pointer-events: none;
+}
+
+.chart-head__label {
+  position: absolute;
+  top: -15px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--ch-mono);
+  font-size: 10px;
+  color: var(--ch-t);
+  white-space: nowrap;
+}
+
+.chart-livehead {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  bottom: -6px;
+  width: 2px;
+  background: var(--ch-edit);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.chart-axis-row {
+  display: flex;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.chart-axis-spacer {
+  width: 56px;
+  flex: none;
 }
 
 .chart-axis {
   display: flex;
-  grid-column: 2;
+  flex: 1;
   justify-content: space-between;
-  margin-top: 2px;
-  padding-top: 4px;
-  border-top: 1px solid var(--ch-bd2);
   font-family: var(--ch-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--ch-t3);
 }
 
-.chart-guide {
-  position: absolute;
-  top: -4px;
-  bottom: 20px;
-  width: 2px;
-  background: var(--ch-t);
-  pointer-events: none;
-}
-
-.chart-guide span {
-  position: absolute;
-  top: -16px;
-  left: -38px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--ch-t);
-  color: #fff;
-  font-family: var(--ch-mono);
-  font-size: 10.5px;
-  white-space: nowrap;
-}
-
-.chart-empty-note {
-  padding: 18px 2px 14px;
-  font-size: 12px;
+.chart-tl__empty {
+  padding: 14px 2px 10px;
+  font-size: 11.5px;
   color: var(--ch-t3);
 }
 
-/* ── split: lists | preview ─────────────────────────────────────────────── */
+/* ── split: lists | evidence ─────────────────────────────────────────────── */
 
 .chart-split {
   display: grid;
-  flex: 0 0 auto;
-  grid-template-columns: minmax(0, 470px) minmax(0, 1fr);
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
   gap: 12px;
-  height: 396px;
-  min-height: 300px;
+  min-height: 280px;
 }
 
 .chart-panel {
@@ -586,17 +609,27 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--ch-bd);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--ch-s1);
+}
+
+.chart-panel--lists {
+  position: relative;
+}
+
+/* The list panel's header is right-aligned: the three counts travel as one
+   group, and the attention verdict sits beside them as its own control. */
+.chart-pt--lists {
+  justify-content: flex-end;
 }
 
 .chart-pt {
   display: flex;
-  flex: 0 0 auto;
+  flex: none;
   align-items: center;
   gap: 9px;
   min-width: 0;
-  padding: 9px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--ch-bd);
 }
 
@@ -611,7 +644,7 @@
 }
 
 .chart-pt__meta {
-  flex: 0 0 auto;
+  flex: none;
   font-family: var(--ch-mono);
   font-size: 11px;
   color: var(--ch-t3);
@@ -620,6 +653,7 @@
 
 .chart-tabs {
   display: inline-flex;
+  flex: none;
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--ch-bd);
@@ -650,7 +684,112 @@
 .chart-tab--on {
   background: var(--ch-s1);
   color: var(--ch-t);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* The attention verdict: a button at the panel's top-right, separate from the
+   tabs, and its reasons open over the list rather than pushing it down. */
+.chart-att-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--ch-bd);
+  border-radius: 999px;
+  background: var(--ch-s2);
+  font-family: var(--ch-mono);
+  font-size: 10.5px;
+  color: var(--ch-t2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chart-att-btn:hover {
+  color: var(--ch-t);
+  border-color: var(--ch-bd2);
+}
+
+.chart-att-btn__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.chart-att-btn--low {
+  border-color: rgba(114, 188, 143, 0.4);
+  color: var(--ch-edit);
+}
+
+.chart-att-btn--medium {
+  border-color: rgba(222, 146, 85, 0.4);
+  color: var(--ch-run);
+}
+
+.chart-att-btn--high {
+  border-color: rgba(233, 115, 102, 0.45);
+  color: var(--ch-err);
+}
+
+.chart-att-pop {
+  position: absolute;
+  top: 44px;
+  right: 10px;
+  z-index: 6;
+  width: min(320px, calc(100% - 20px));
+  max-height: calc(100% - 56px);
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--ch-bd2);
+  border-radius: 8px;
+  background: var(--ch-s2);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+.chart-att-pop__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ch-t2);
+}
+
+.chart-att-pop--high .chart-att-pop__head {
+  color: var(--ch-err);
+}
+
+.chart-att-pop--medium .chart-att-pop__head {
+  color: var(--ch-run);
+}
+
+.chart-att-pop--low .chart-att-pop__head {
+  color: var(--ch-edit);
+}
+
+.chart-att-pop__list {
+  margin: 5px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ch-t2);
+}
+
+.chart-att-pop__list li {
+  display: flex;
+  gap: 6px;
+}
+
+.chart-att-pop__none {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--ch-t3);
 }
 
 .chart-body {
@@ -687,7 +826,7 @@
 }
 
 .chart-it--sel {
-  background: #e5f2fc;
+  background: rgba(94, 159, 232, 0.14);
   box-shadow: inset 3px 0 0 var(--ch-read);
 }
 
@@ -702,7 +841,7 @@
 }
 
 .chart-it__m {
-  flex: 0 0 auto;
+  flex: none;
   font-family: var(--ch-mono);
   font-size: 10.5px;
   color: var(--ch-t3);
@@ -733,12 +872,12 @@
 }
 
 .chart-reply {
-  flex: 0 0 auto;
-  max-height: 116px;
-  margin: 8px 12px 12px;
+  flex: none;
+  max-height: 112px;
+  margin: 8px 10px 10px;
   padding: 9px 11px;
   overflow: auto;
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--ch-s2);
   font-size: 12px;
   line-height: 1.5;
@@ -786,36 +925,60 @@
 
 /* ── small screens ───────────────────────────────────────────────────────── */
 
-@media (max-width: 1180px) {
-  .chart-hero {
-    grid-template-columns: 56px minmax(0, 1fr);
-  }
-
-  .chart-hero__icon {
-    width: 56px;
-    height: 56px;
-  }
-
-  .chart-att {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (max-width: 1080px) {
+@media (max-width: 1100px) {
   .chart-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .chart-split {
     grid-template-columns: minmax(0, 1fr);
-    height: auto;
+    flex: none;
   }
 
   .chart-panel--lists {
-    height: 360px;
+    height: 340px;
   }
 
   .chart-panel--preview {
-    height: 340px;
+    height: 320px;
+  }
+}
+
+@media (max-width: 860px) {
+  .chart-top__path,
+  .chart-top__clock {
+    display: none;
+  }
+
+  .chart-hero {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .chart-hero__icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .chart-h1 {
+    font-size: 20px;
+  }
+
+  .chart-wrap {
+    padding: 14px 14px 16px;
+  }
+
+  .chart-tlh__hint {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .chart-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chart-tabs {
+    flex-wrap: wrap;
+    border-radius: 8px;
   }
 }

@@ -67,8 +67,10 @@ export function ChartUI() {
 
   const [tab, setTab] = useState<Tab>("changes");
   const [pick, setPick] = useState<TimelinePick | undefined>(undefined);
+  const [attOpen, setAttOpen] = useState(false);
   useEffect(() => {
     setPick(undefined);
+    setAttOpen(false);
   }, [run?.id]);
 
   /** Prefer the newest event behind a set of evidence ids that has something to render. */
@@ -214,43 +216,6 @@ export function ChartUI() {
               </span>
             </div>
           </div>
-
-          <div
-            className={`chart-att${
-              attention.level === "none"
-                ? ""
-                : attention.level === "high"
-                  ? " chart-att--high"
-                  : attention.level === "medium"
-                    ? " chart-att--medium"
-                    : " chart-att--low"
-            }`}
-          >
-            <div className="chart-att__head">
-              {attention.level === "none" ? (
-                t("Human attention")
-              ) : (
-                <>
-                  <span aria-hidden>▲</span>
-                  {t("{level} attention · {n} reasons", {
-                    level: t(attention.level),
-                    n: attention.reasons.length,
-                  })}
-                </>
-              )}
-            </div>
-            {attention.reasons.length > 0 ? (
-              <ul className="chart-att__list">
-                {attention.reasons.map((reason) => (
-                  <li key={reason} title={t(ATTENTION_REASON_TEXT[reason])}>
-                    {t(ATTENTION_REASON_TEXT[reason])}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="chart-att__none">{t("Agent is working normally.")}</div>
-            )}
-          </div>
         </section>
 
         {/* ── four numbers ───────────────────────────────────────────────── */}
@@ -333,7 +298,6 @@ export function ChartUI() {
           <ChartTimeline
             nodes={report.timeline}
             processes={report.processes}
-            commands={report.executions}
             startedAt={run.startedAt}
             totalMs={Math.max(1, durationMs)}
             selected={pick}
@@ -344,7 +308,7 @@ export function ChartUI() {
         {/* ── lists | evidence ───────────────────────────────────────────── */}
         <section className="chart-split">
           <div className="chart-panel chart-panel--lists">
-            <div className="chart-pt">
+            <div className="chart-pt chart-pt--lists">
               <div className="chart-tabs">
                 <button
                   type="button"
@@ -371,7 +335,46 @@ export function ChartUI() {
                   <em>{report.knows.reads.length + report.knows.searches.length}</em>
                 </button>
               </div>
+
+              <button
+                type="button"
+                className={`chart-att-btn chart-att-btn--${attention.level}`}
+                onClick={() => setAttOpen((open) => !open)}
+                aria-expanded={attOpen}
+                aria-haspopup="dialog"
+                title={t("Human attention")}
+              >
+                <span className="chart-att-btn__dot" aria-hidden />
+                {attention.level === "none"
+                  ? t("Human attention")
+                  : `${t(attention.level)} · ${attention.reasons.length}`}
+                <span aria-hidden>{attOpen ? "▴" : "▾"}</span>
+              </button>
             </div>
+
+            {attOpen ? (
+              <div
+                className={`chart-att-pop chart-att-pop--${attention.level}`}
+                role="dialog"
+                aria-label={t("Human attention")}
+              >
+                <div className="chart-att-pop__head">
+                  {t("Human attention")} · {t(attention.level)}
+                </div>
+                {attention.reasons.length > 0 ? (
+                  <ul className="chart-att-pop__list">
+                    {attention.reasons.map((reason) => (
+                      <li key={reason}>
+                        <span aria-hidden>•</span>
+                        <span>{t(ATTENTION_REASON_TEXT[reason])}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="chart-att-pop__none">{t("Agent is working normally.")}</p>
+                )}
+              </div>
+            ) : null}
 
             <div className="chart-body">
               {tab === "changes" ? (
