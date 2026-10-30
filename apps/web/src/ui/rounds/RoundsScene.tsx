@@ -73,7 +73,6 @@ export function RoundsScene({ data, onLive }: { data: RoundsData; onLive: () => 
 
       {data.thinking ? (
         <p className="rounds-thought">
-          <b>{t("THINKING")}</b>
           <span title={data.thinking}>{data.thinking}</span>
         </p>
       ) : null}
