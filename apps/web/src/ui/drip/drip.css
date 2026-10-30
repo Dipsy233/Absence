@@ -54,17 +54,16 @@
 }
 
 /* At rest the pill is exactly one ball: the left cap is the whole width. Hover
-   stretches the middle and reveals the right cap, whose two small orbs sit
-   inscribed in its circle. */
+   stretches the middle, which ends in the pill's own rounded cap. The pill must
+   not clip, or the attention dot could not float over its edge. */
 .drip-pill {
   display: flex;
   max-width: 100%;
-  height: 72px;
+  height: 84px;
   align-items: center;
   padding: 0;
-  overflow: hidden;
   border: 1px solid var(--drip-bd2);
-  border-radius: 36px;
+  border-radius: 42px;
   background: rgba(32, 32, 32, 0.96);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.42);
   color: var(--drip-t);
@@ -85,28 +84,9 @@
 }
 
 .drip-cap--left {
-  width: 72px;
-  height: 72px;
-}
-
-.drip-cap--right {
-  width: 0;
-  height: 72px;
-  flex-direction: column;
-  gap: 4px;
-  overflow: hidden;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
-  opacity: 0;
-  transition:
-    width 0.24s ease,
-    opacity 0.2s ease;
-}
-
-.drip-pill:hover .drip-cap--right,
-.drip-pill.is-open .drip-cap--right {
-  width: 72px;
-  opacity: 1;
+  position: relative;
+  width: 84px;
+  height: 84px;
 }
 
 .drip-orb {
@@ -116,33 +96,35 @@
   border-radius: 50%;
 }
 
-/* The left circle is the app, ringed in the run's own status: green working,
-   blue listening, red only when the run ended in error. Attention is not read
-   here — it lives in the small orb on the right. */
+/* The left circle is the app, ringed in the run's own status: blue while
+   working, green while listening, red only when the run ended in error. The
+   ring hugs the icon — no padding, no fill between them. */
 .drip-orb--state {
-  width: 54px;
-  height: 54px;
-  padding: 4px;
-  border: 2px solid var(--drip-listen);
-  background: rgba(0, 0, 0, 0.28);
+  width: 66px;
+  height: 66px;
+  padding: 0;
+  overflow: hidden;
+  border: 3px solid var(--drip-ok);
+  background: transparent;
   transition: border-color 0.18s ease;
 }
 
 .drip-orb--state img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  border-radius: 50%;
+  object-fit: cover;
   user-select: none;
   -webkit-user-drag: none;
 }
 
 .drip-pill--running .drip-orb--state {
-  border-color: var(--drip-ok);
-  box-shadow: 0 0 0 3px rgba(114, 188, 143, 0.12);
+  border-color: var(--drip-listen);
+  box-shadow: 0 0 0 3px rgba(94, 159, 232, 0.14);
 }
 
 .drip-pill--idle .drip-orb--state {
-  box-shadow: 0 0 0 3px rgba(94, 159, 232, 0.12);
+  box-shadow: 0 0 0 3px rgba(114, 188, 143, 0.12);
 }
 
 .drip-pill--error .drip-orb--state {
@@ -162,7 +144,7 @@
 
 .drip-pill:hover .drip-mid,
 .drip-pill.is-open .drip-mid {
-  width: min(320px, calc(100vw - 200px));
+  width: min(320px, calc(100vw - 220px));
 }
 
 .drip-mid__now {
@@ -181,18 +163,35 @@
   opacity: 1;
 }
 
-.drip-orb--status,
-.drip-orb--level {
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--drip-bd2);
-  font-family: var(--drip-mono);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
+/* The attention badge: one dot, floating over the ball's bottom-right corner,
+   in the same grey / blue / orange / red as the levels. */
+.drip-dot {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(32, 32, 32, 0.95);
 }
 
-/* ── tones: one palette for the letter orb and the event tags ───────────── */
+.drip-dot--none {
+  background: var(--drip-t3);
+}
+
+.drip-dot--low {
+  background: var(--drip-listen);
+}
+
+.drip-dot--medium {
+  background: var(--drip-run);
+}
+
+.drip-dot--high {
+  background: var(--drip-err);
+}
+
+/* ── tones: one palette for the event tags ──────────────────────────────── */
 
 .drip-tone--think {
   color: var(--drip-think);
@@ -239,31 +238,6 @@
   background: rgba(217, 180, 95, 0.14);
 }
 
-/* ── attention levels: grey / blue / orange / red, count inside ─────────── */
-
-.drip-level--none {
-  color: var(--drip-t3);
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.drip-level--low {
-  border-color: rgba(94, 159, 232, 0.4);
-  color: var(--drip-listen);
-  background: rgba(94, 159, 232, 0.14);
-}
-
-.drip-level--medium {
-  border-color: rgba(222, 146, 85, 0.45);
-  color: var(--drip-run);
-  background: rgba(222, 146, 85, 0.16);
-}
-
-.drip-level--high {
-  border-color: rgba(233, 115, 102, 0.5);
-  color: var(--drip-err);
-  background: rgba(233, 115, 102, 0.18);
-}
-
 /* ── the card under the pill ────────────────────────────────────────────── */
 
 .drip-card {
@@ -273,7 +247,7 @@
   display: flex;
   width: 380px;
   max-width: calc(100vw - 64px);
-  max-height: min(440px, calc(50vh - 70px));
+  max-height: min(440px, calc(50vh - 100px));
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--drip-bd2);

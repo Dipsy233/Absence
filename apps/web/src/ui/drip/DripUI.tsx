@@ -4,7 +4,6 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useViewModeStore } from "../../stores/viewModeStore";
 import { useT } from "../../lib/i18n";
 import { renderRun } from "../../lib/report";
-import type { ActivityRow } from "../../types/stage";
 import "./drip.css";
 
 /**
@@ -17,27 +16,11 @@ import "./drip.css";
  * desktop build should mount this same component in a small window instead of
  * in `#root`; nothing here assumes the window is large.
  *
- * Reading order, collapsed: the icon (state), the middle (what is happening
- * now, revealed on hover), the two small orbs (the activity's letter, the
- * attention level and its count). Clicking opens the card below: the live event
- * list while the agent works, the final reply when it rests, and the composer
- * in either case.
+ * Reading order, collapsed: the icon (state) and one dot at its bottom-right
+ * (the attention level). Hovering stretches the middle to say what is
+ * happening now. Clicking opens the card below: the live event list while the
+ * agent works, the final reply when it rests, and the composer in either case.
  */
-
-/** A row's tone, cut to the one character the small orb can hold. */
-const TONE_LETTER: Record<ActivityRow["tone"], string> = {
-  think: "T",
-  read: "R",
-  search: "S",
-  edit: "E",
-  run: "$",
-  process: "P",
-  approval: "A",
-  lifecycle: "L",
-  say: "S",
-  error: "E",
-  warn: "W",
-};
 
 export function DripUI() {
   const t = useT();
@@ -99,22 +82,14 @@ export function DripUI() {
             <span className="drip-orb drip-orb--state">
               <img src="/app-icon.png" alt="" />
             </span>
+            <span
+              className={`drip-dot drip-dot--${attention.level}`}
+              title={`${t(attention.level)} · ${attention.reasons.length}`}
+            />
           </span>
 
           <span className="drip-mid">
             <span className="drip-mid__now">{nowText}</span>
-          </span>
-
-          <span className="drip-cap drip-cap--right">
-            <span className={`drip-orb drip-orb--status drip-tone--${last?.tone ?? "lifecycle"}`}>
-              {last ? TONE_LETTER[last.tone] : "·"}
-            </span>
-            <span
-              className={`drip-orb drip-orb--level drip-level--${attention.level}`}
-              title={`${t(attention.level)} · ${attention.reasons.length}`}
-            >
-              {attention.reasons.length}
-            </span>
           </span>
         </button>
 
