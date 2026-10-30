@@ -821,6 +821,10 @@
   margin: 0;
   padding: 0 8px 8px;
   list-style: none;
+  /* Runs and their steps outgrow the window: the list is what scrolls, the
+     title bar stays put. */
+  min-height: 0;
+  overflow: auto;
 }
 .rounds-run {
   border-bottom: 1px solid var(--mon-bd);

@@ -88,8 +88,8 @@ function fileWindowTitle(item: StageItem): string {
   return parts.join(" · ");
 }
 
-/** The live window's title: the subject of the event, in one line. */
-function liveTitle(item: StageItem): string {
+/** The event window's title: the subject of the event, in one line. */
+function itemTitle(item: StageItem): string {
   const payload = item.payload;
   if (payload.kind === "file" || payload.kind === "diff") return payload.path;
   if (payload.kind === "thought") return "Thinking";
@@ -164,6 +164,22 @@ export function RoundsUI() {
     const item = knownFileItem(path, version);
     if (!item || item.payload.kind !== "file") return;
     showFileWindow(`v${item.payload.version}:${path}`, item);
+  };
+
+  /**
+   * One of a run's events, opened from the Run window. Identity is the item,
+   * so clicking the same event again brings its window forward instead of
+   * opening a second one — and a still-growing answer updates its page in place.
+   */
+  const [eventWins, setEventWins] = useState<Array<{ id: string; item: StageItem }>>([]);
+
+  const openEventWindow = (item: StageItem) => {
+    setEventWins((wins) =>
+      wins.some((w) => w.id === item.id)
+        ? wins.map((w) => (w.id === item.id ? { id: w.id, item } : w))
+        : [...wins, { id: item.id, item }],
+    );
+    focus(`event-${item.id}`);
   };
 
   /**
@@ -254,7 +270,7 @@ export function RoundsUI() {
           <RoundsWindow
             key="activity"
             accent="live"
-            title={liveTitle(liveItem)}
+            title={itemTitle(liveItem)}
             initial={childSpot(0)}
             size={CHILD_SIZE}
             z={zmap.activity ?? 2}
@@ -287,6 +303,7 @@ export function RoundsUI() {
               onOpenEggMetrics={openEggMetrics}
               onOpenFile={openFileWindow}
               onOpenVersion={openVersionWindow}
+              onOpenEvent={openEventWindow}
             />
           </RoundsWindow>
         ))}
@@ -304,6 +321,26 @@ export function RoundsUI() {
             <div className="rounds-win__stage">
               <StageItemView item={item} showToolbar={false} />
             </div>
+          </RoundsWindow>
+        ))}
+
+        {eventWins.map(({ id, item }, index) => (
+          <RoundsWindow
+            key={`event-${id}`}
+            title={itemTitle(item)}
+            initial={childSpot(index)}
+            size={CHILD_SIZE}
+            z={zmap[`event-${id}`] ?? 1}
+            onFocus={() => focus(`event-${id}`)}
+            onClose={() => setEventWins((wins) => wins.filter((w) => w.id !== id))}
+          >
+            {item.payload.kind === "file" ? (
+              <RoundsPeek item={item} />
+            ) : (
+              <div className="rounds-win__stage">
+                <StageItemView item={item} />
+              </div>
+            )}
           </RoundsWindow>
         ))}
 

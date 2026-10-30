@@ -15,6 +15,7 @@ import { FilePanel } from "../../components/files/FilePanel";
 import { Usage } from "../monitor/MonitorRight";
 import { TONE_FOR_ROW } from "../monitor/atoms";
 import type { RoundsData } from "./useRoundsData";
+import type { StageItem } from "../../types/stage";
 
 /**
  * The dock: desktop shortcuts on the right edge.
@@ -153,6 +154,7 @@ export function DockBody({
   onOpenEggMetrics,
   onOpenFile,
   onOpenVersion,
+  onOpenEvent,
 }: {
   data: RoundsData;
   panel: DockPanel;
@@ -161,13 +163,15 @@ export function DockBody({
   onOpenFile: (path: string) => void;
   /** Open one recorded version of an agent-known file, in a Rounds window. */
   onOpenVersion: (path: string, version?: number) => void;
+  /** Open one of a run's events in a window of its own. */
+  onOpenEvent: (item: StageItem) => void;
 }) {
   // The window's title bar already says "Files"; the panel must not print a
   // second header under it.
   if (panel === "files") return <FilePanel chrome={false} onOpen={onOpenFile} />;
   if (panel === "folder") return <FolderPanel onOpenVersion={onOpenVersion} />;
   if (panel === "eggs") return <EggsBody onOpenEggMetrics={onOpenEggMetrics} />;
-  return <RunPanel data={data} />;
+  return <RunPanel data={data} onOpenEvent={onOpenEvent} />;
 }
 
 /* ── Agent Folder ────────────────────────────────────────────────────────── */
@@ -369,7 +373,7 @@ const RUN_WORD: Record<RunSummary["status"], string> = {
  * that are no longer the selected one, and only their summaries are loaded —
  * a run's events are fetched when its card is opened, one run at a time.
  */
-function RunPanel({ data }: { data: RoundsData }) {
+function RunPanel({ data, onOpenEvent }: { data: RoundsData; onOpenEvent: (item: StageItem) => void }) {
   const t = useT();
   const sessionId = useSessionStore((s) => s.session?.id);
   const runs = useRunsStore((s) => s.runs);
@@ -380,7 +384,6 @@ function RunPanel({ data }: { data: RoundsData }) {
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const now = useNow(1000);
 
-  const openStage = useStageStore((s) => s.openStage);
   const seek = useReplayStore((s) => s.seekTimestamp);
   const inReplay = useStageStore((s) => s.mode === "replay");
 
@@ -439,7 +442,7 @@ function RunPanel({ data }: { data: RoundsData }) {
                         type="button"
                         onClick={() => {
                           if (inReplay) seek(row.event.timestamp);
-                          else if (row.stageItem) openStage(row.stageItem);
+                          else if (row.stageItem) onOpenEvent(row.stageItem);
                         }}
                         title={row.stageItem ? row.primary : `${row.action} · ${row.primary}`}
                       >
