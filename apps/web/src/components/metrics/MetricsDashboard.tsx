@@ -57,8 +57,25 @@ export function MetricsDashboard({ embedded = false }: { embedded?: boolean }) {
 
   const eggs = useMemo(() => eggList(frames), [frames, version]);
   const primary = useMemo(() => eggs.filter((egg) => egg.kind === "primary"), [eggs]);
+  /**
+   * The session's egg record is the authority for *which* egg is observed.
+   *
+   * The ring only holds eggs that were sampled while they lived, so a process
+   * that came and went between two 5s ticks never appears in `eggList` — yet it
+   * is still on the Eggs panel, and clicking its metrics button used to land on
+   * "Agent" because the lookup below found nothing. The egg map keeps the record
+   * (name, pid, status) for exactly that case; the ring is the fallback.
+   */
+  const storedEgg = useSessionStore((s) =>
+    selectedEggPid !== undefined ? s.eggState.eggs.get(selectedEggPid) : undefined,
+  );
   const selected =
-    selectedEggPid !== undefined ? primary.find((egg) => egg.eggPid === selectedEggPid) : undefined;
+    selectedEggPid === undefined
+      ? undefined
+      : (primary.find((egg) => egg.eggPid === selectedEggPid) ??
+        (storedEgg
+          ? { eggPid: storedEgg.pid, name: storedEgg.name, status: storedEgg.status }
+          : undefined));
 
   const range = RANGES.find((entry) => entry.id === rangeId) ?? RANGES[1]!;
   // Each range is its own window, floored to its own step so it only moves when
