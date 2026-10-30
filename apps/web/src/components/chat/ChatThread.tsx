@@ -3,6 +3,7 @@ import type { ChatMessage } from "@absence/core";
 import { useChatStore } from "../../stores/chatStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useT } from "../../lib/i18n";
+import { formatClock } from "../../lib/format";
 import { Markdown } from "../common/Markdown";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -101,7 +102,10 @@ export function ChatThread({
       ) : layout === "bubbles" ? (
         groups.map((group) => (
           <div key={group.messages[0]!.id} className={`rounds-bubblewrap rounds-bubblewrap--${group.role}`}>
-            <span className="rounds-bubblewrap__who">{who(group.role)}</span>
+            <span className="rounds-bubblewrap__who">
+              {who(group.role)}
+              <span className="rounds-bubblewrap__at mon-mono">{formatClock(group.messages[0]!.timestamp)}</span>
+            </span>
             <div className="rounds-bubble">
               {group.messages.map((message, i) => (
                 <div key={message.id} className="rounds-bubble__msg" data-seam={i > 0 ? "true" : undefined}>

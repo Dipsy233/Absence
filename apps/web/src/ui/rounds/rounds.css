@@ -137,6 +137,14 @@
   text-transform: uppercase;
   color: var(--mon-t3);
 }
+/* The wall clock beside the voice's name: when this message was said. */
+.rounds-bubblewrap__at {
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
 .rounds-bubble {
   overflow: hidden;
   border: 1px solid var(--mon-bd);
