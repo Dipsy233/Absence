@@ -436,6 +436,8 @@ const ZH: Record<string, string> = {
   Think: "思考",
   "Read · Search": "读取 · 搜索",
   "Edit · Write": "编辑 · 写入",
+  Read: "读取",
+  Edit: "编辑",
   Shell: "命令",
   Eggs: "进程蛋",
   EGG: "蛋",

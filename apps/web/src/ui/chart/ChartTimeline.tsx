@@ -38,8 +38,8 @@ const TRACK_TOP = 8;
 /** Lane ids, in the order they are drawn. */
 const LANES: Array<{ id: string; label: string }> = [
   { id: "think", label: "Think" },
-  { id: "knows", label: "Read · Search" },
-  { id: "files", label: "Edit · Write" },
+  { id: "knows", label: "Read" },
+  { id: "files", label: "Edit" },
   { id: "shell", label: "Shell" },
 ];
 
