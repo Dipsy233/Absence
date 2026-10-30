@@ -479,7 +479,7 @@
 }
 .rounds-conn {
   flex: none;
-  width: 30px;
+  width: 46px;
   height: 2px;
   margin: 0 -10px;
   background: var(--mon-bd2);

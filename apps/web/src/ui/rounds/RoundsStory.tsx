@@ -56,15 +56,14 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
    *
    * A run announces itself twice: the user's message opens it, then
    * `agent_start` names the model. Two START cards for one beginning read as
-   * two runs, so the model becomes the meta line of the prompt's card. END
-   * stays out — the clock at the bottom already says when it stopped.
+   * two runs, so the model becomes the meta line of the prompt's card. The run
+   * ends on its own card — an END is how the reader sees the run stop.
    */
   const shown = useMemo(() => {
     void data.rowsVersion;
     const out: ActivityRow[] = [];
     let open: number | undefined;
     for (const row of data.rows) {
-      if (row.action === "END") continue;
       if (row.action === "START") {
         if (open !== undefined) {
           out[open] = { ...out[open]!, secondary: row.primary };
@@ -128,7 +127,7 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
         {shown.length === 0 ? (
           <span className="rounds-story__empty">{t("Nothing yet. Send the agent a task.")}</span>
         ) : (
-          shown.map((row) => {
+          shown.map((row, i) => {
             // A row is current only when the clock has a row to point at: with
             // nothing pinned (currentId undefined) an undefined-vs-undefined
             // comparison used to light up every stage-less row (START, END).
@@ -156,7 +155,7 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
                     {runStart !== undefined ? formatOffset(row.event.timestamp - runStart) : "—"}
                   </span>
                 </button>
-                <i className="rounds-conn" aria-hidden />
+                {i < shown.length - 1 ? <i className="rounds-conn" aria-hidden /> : null}
               </span>
             );
           })
