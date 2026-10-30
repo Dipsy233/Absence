@@ -55,15 +55,15 @@ const CHILD_SIZE = { w: 580, h: 470 };
 
 /**
  * Level one opens on the left, near the shortcuts that spawn it; a child —
- * a file's content, an egg's metrics, the live page — opens to the left of the
- * screen's vertical midline, at the top, so it sits beside the panel rather
- * than over the dock or the conversation. It stacks above the panels. Siblings
- * step left a little so two children do not sit exactly on top of each other.
+ * a file's content, an egg's metrics, the live page — opens at the conversation
+ * overlay's top-left corner (`.rounds-wallpaper`: 46% of the width, 76px off
+ * the right edge), the part of the desktop still free. Each further window
+ * steps toward the lower right, so a stack reads as a stack.
  */
 function childSpot(index: number): { x: number; y: number } {
   return {
-    x: Math.max(60, Math.round(window.innerWidth / 2) - CHILD_SIZE.w - 16 - index * 24),
-    y: 56 + index * 26,
+    x: Math.max(60, Math.round(window.innerWidth * 0.54) - 76 + index * 24),
+    y: 10 + index * 26,
   };
 }
 
