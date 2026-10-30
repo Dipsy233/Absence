@@ -12,7 +12,7 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNod
 export function RoundsWindow({
   title,
   initial,
-  width = 460,
+  size,
   z = 1,
   onFocus,
   onClose,
@@ -20,14 +20,18 @@ export function RoundsWindow({
 }: {
   title: string;
   initial: { x: number; y: number };
-  width?: number;
+  /** The window's size. Sibling windows share one; children another (see the
+      face's two default sizes), and the corner handle adjusts either. */
+  size: { w: number; h: number };
   z?: number;
   onFocus?: () => void;
   onClose?: () => void;
   children: ReactNode;
 }) {
   const [pos, setPos] = useState(initial);
+  const [dim, setDim] = useState(size);
   const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
+  const grow = useRef<{ px: number; py: number; w: number; h: number } | null>(null);
 
   const down = (event: ReactPointerEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest(".rounds-win__x")) return;
@@ -43,12 +47,27 @@ export function RoundsWindow({
   };
   const up = () => {
     drag.current = null;
+    grow.current = null;
+  };
+
+  const growDown = (event: ReactPointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    grow.current = { px: event.clientX, py: event.clientY, w: dim.w, h: dim.h };
+    onFocus?.();
+  };
+  const growMove = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!grow.current) return;
+    setDim({
+      w: Math.min(Math.max(300, grow.current.w + event.clientX - grow.current.px), window.innerWidth - 60),
+      h: Math.min(Math.max(200, grow.current.h + event.clientY - grow.current.py), window.innerHeight - 80),
+    });
   };
 
   return (
     <section
       className="rounds-win"
-      style={{ left: pos.x, top: pos.y, width, zIndex: 5 + z }}
+      style={{ left: pos.x, top: pos.y, width: dim.w, height: dim.h, zIndex: 5 + z }}
       onPointerDown={onFocus}
       role="dialog"
       aria-label={title}
@@ -70,6 +89,13 @@ export function RoundsWindow({
         ) : null}
       </header>
       <div className="rounds-win__b">{children}</div>
+      <span
+        className="rounds-win__rs"
+        onPointerDown={growDown}
+        onPointerMove={growMove}
+        onPointerUp={up}
+        aria-hidden
+      />
     </section>
   );
 }

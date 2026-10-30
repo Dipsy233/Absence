@@ -2,28 +2,34 @@ import { formatClock, formatDuration } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { openKnownFile } from "../../lib/openFile";
 import { eventToStageItem } from "../../lib/events";
-import { sortEggs } from "../../lib/eggs";
+import { primaryEggs, sortEggs, summarizeTools } from "../../lib/eggs";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useReplayStore } from "../../stores/replayStore";
-import { useNow } from "../../hooks/useNow";
-import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { FilePanel } from "../../components/files/FilePanel";
+import { Usage } from "../monitor/MonitorRight";
 import { TONE_FOR_ROW } from "../monitor/atoms";
 import type { RoundsData } from "./useRoundsData";
 
 /**
- * The dock: a rail of icons on the right edge; the panels a supervision face
- * needs but the narrative does not always show.
+ * The dock: desktop shortcuts on the right edge.
  *
- * Clicking an icon expands a stage — a drawer over the peek column holding the
- * relevant content, reusing the exact panels the other faces use (the metrics
- * dashboard, the project tree) so a fact cannot disagree between faces. The
- * badges count what deserves a glance: files known, eggs running, steps taken.
- * Egg toasts are deliberately absent for now.
+ * Files is the explorer; Folder is the agent's own; Eggs holds the processes
+ * the agent left running, with its cost on top; Run is the round's trace.
+ * There is deliberately no Metrics shortcut — metrics open from an egg, in
+ * that egg's scope. The badges count what deserves a glance. Egg toasts are
+ * deliberately absent for now.
  */
-export type DockPanel = "files" | "folder" | "eggs" | "metrics" | "activity";
+export type DockPanel = "files" | "folder" | "eggs" | "run";
+
+/** The floating window's title per dock panel. */
+export const WINDOW_TITLE: Record<DockPanel, string> = {
+  files: "Files",
+  folder: "Agent Folder",
+  eggs: "Agent Eggs",
+  run: "Run",
+};
 
 export function RoundsDock({
   data,
@@ -35,8 +41,6 @@ export function RoundsDock({
   setPanel: (panel: DockPanel) => void;
 }) {
   const t = useT();
-  const toggle = (id: DockPanel) => setPanel(id);
-
   return (
     <nav className="rounds-dock" aria-label={t("Panels")}>
       <DockButton
@@ -44,7 +48,7 @@ export function RoundsDock({
         label={t("Files")}
         icon={<path d="M3 7h6l2 2h10v10H3z" />}
         on={open.includes("files")}
-        onClick={() => toggle("files")}
+        onClick={() => setPanel("files")}
       />
       <DockButton
         id="folder"
@@ -53,36 +57,25 @@ export function RoundsDock({
         badge={data.badges.folder > 0 ? data.badges.folder : undefined}
         badgeTone="read"
         on={open.includes("folder")}
-        onClick={() => toggle("folder")}
+        onClick={() => setPanel("folder")}
       />
       <DockButton
         id="eggs"
         label={t("Agent Eggs")}
-        icon={
-          <>
-            <ellipse cx="12" cy="13" rx="6.5" ry="8" />
-          </>
-        }
+        icon={<ellipse cx="12" cy="13" rx="6.5" ry="8" />}
         badge={data.badges.eggs > 0 ? data.badges.eggs : undefined}
         badgeTone="egg"
         on={open.includes("eggs")}
-        onClick={() => toggle("eggs")}
+        onClick={() => setPanel("eggs")}
       />
       <DockButton
-        id="metrics"
-        label={t("Metrics")}
-        icon={<path d="M3 17l5-6 4 3 6-8 3 4" />}
-        on={open.includes("metrics")}
-        onClick={() => toggle("metrics")}
-      />
-      <DockButton
-        id="activity"
-        label={t("Activity")}
+        id="run"
+        label={t("Run")}
         icon={<path d="M4 6h16M4 12h16M4 18h10" />}
         badge={data.badges.activity > 0 ? data.badges.activity : undefined}
         badgeTone="read"
-        on={open.includes("activity")}
-        onClick={() => toggle("activity")}
+        on={open.includes("run")}
+        onClick={() => setPanel("run")}
       />
     </nav>
   );
@@ -131,9 +124,17 @@ function DockButton({
 
 /**
  * The window bodies: one panel per dock icon, each a reuse, not a fork —
- * the same metrics dashboard, project tree and stores the other faces read.
+ * the same project tree, stores and cost panel the other faces read.
  */
-export function DockBody({ data, panel }: { data: RoundsData; panel: DockPanel }) {
+export function DockBody({
+  data,
+  panel,
+  onOpenEggMetrics,
+}: {
+  data: RoundsData;
+  panel: DockPanel;
+  onOpenEggMetrics: (pid: number, name: string) => void;
+}) {
   if (panel === "files") {
     return (
       <div className="rounds-drawer__tree">
@@ -142,19 +143,9 @@ export function DockBody({ data, panel }: { data: RoundsData; panel: DockPanel }
     );
   }
   if (panel === "folder") return <FolderPanel />;
-  if (panel === "eggs") return <EggsPanel />;
-  if (panel === "metrics") return <MetricsDashboard embedded />;
-  return <ActivityPanel data={data} />;
+  if (panel === "eggs") return <EggsBody onOpenEggMetrics={onOpenEggMetrics} />;
+  return <RunPanel data={data} />;
 }
-
-/** The floating window's title per dock panel. */
-export const WINDOW_TITLE: Record<DockPanel, string> = {
-  files: "Files",
-  folder: "Agent Folder",
-  eggs: "Agent Eggs",
-  metrics: "Metrics",
-  activity: "Activity",
-};
 
 /* ── Agent Folder ────────────────────────────────────────────────────────── */
 
@@ -187,55 +178,87 @@ function FolderPanel() {
 
 /* ── Agent Eggs ──────────────────────────────────────────────────────────── */
 
-function EggsPanel() {
+/**
+ * Eggs, as the explorer would show them: the agent's current cost on top (the
+ * same cost panel Monitor's rail uses), then one card per egg. The card opens
+ * the event that laid it; the small button on its right opens that egg's full
+ * metrics, scoped.
+ */
+function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: string) => void }) {
   const t = useT();
   const version = useSessionStore((s) => s.eggState.version);
   const eggsMap = useSessionStore.getState().eggState.eggs;
-  const openStage = useStageStore((s) => s.openStage);
-  const now = useNow(1000);
-  const eggs = sortEggs(eggsMap);
+  const sorted = sortEggs(eggsMap);
+  // Only *primary* eggs get a card — helpers (`cat`, `grep`) fold into a count
+  // on the bottom line, the same reading the Monitor rail gives.
+  const eggs = primaryEggs(sorted);
+  const tools = summarizeTools(sorted);
   // `version` is the re-render trigger: the map above is read via getState().
   void version;
-  if (eggs.length === 0) {
-    return <p className="rounds-drawer__empty">{t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")}</p>;
-  }
   return (
-    <ul className="rounds-eggs">
-      {eggs.map((egg) => {
-        const alive = egg.status === "running";
-        return (
-          <li key={egg.pid}>
-            <button
-              type="button"
-              onClick={() => {
-                const item = eventToStageItem(egg.event);
-                if (item) openStage(item);
-              }}
-              title={t("Open pid {n} on the Stage", { n: egg.pid })}
-            >
-              <i className="rounds-dot" data-tone={alive ? "egg" : "mute"} aria-hidden />
-              <span className="rounds-eggs__name" title={egg.name}>
-                {egg.name}
-              </span>
-              <span className="rounds-eggs__meta mon-mono">
-                pid {egg.pid} · {alive ? formatDuration((egg.exitedAt ?? now) - egg.startedAt) : t("exited")}
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+    <div className="rounds-eggsbody">
+      <div className="rounds-eggsbody__cost">
+        <Usage />
+      </div>
+      {eggs.length === 0 ? (
+        <p className="rounds-drawer__empty">
+          {t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")}
+        </p>
+      ) : (
+        <>
+        <ul className="rounds-eggs">
+          {eggs.map((egg) => {
+            const alive = egg.status === "running";
+            return (
+              <li key={egg.pid} className="rounds-egg">
+                <button
+                  type="button"
+                  className="rounds-egg__body"
+                  onClick={() => {
+                    const item = eventToStageItem(egg.event);
+                    if (item) useStageStore.getState().openStage(item);
+                  }}
+                  title={t("The event that laid this egg")}
+                >
+                  <i className="rounds-dot" data-tone={alive ? "egg" : "mute"} aria-hidden />
+                  <span className="rounds-eggs__name" title={egg.name}>
+                    {egg.name}
+                  </span>
+                  <span className="rounds-eggs__meta mon-mono">
+                    pid {egg.pid} · {alive ? formatDuration((egg.exitedAt ?? Date.now()) - egg.startedAt) : t("exited")}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="rounds-egg__m"
+                  onClick={() => onOpenEggMetrics(egg.pid, egg.name)}
+                  title={t("Show this egg's resource metrics")}
+                  aria-label={t("Show this egg's resource metrics")}
+                >
+                  ▤
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {tools.count > 0 ? (
+          <p className="rounds-drawer__empty rounds-eggsbody__fold">
+            {t("folded {n} helpers: {names}", { n: tools.count, names: tools.names.join(", ") })}
+          </p>
+        ) : null}
+        </>
+      )}
+    </div>
   );
 }
 
-/* ── Activity ────────────────────────────────────────────────────────────── */
+/* ── Run ─────────────────────────────────────────────────────────────────── */
 
-function ActivityPanel({ data }: { data: RoundsData }) {
+function RunPanel({ data }: { data: RoundsData }) {
   const t = useT();
   const openStage = useStageStore((s) => s.openStage);
   const seek = useReplayStore((s) => s.seekTimestamp);
   const inReplay = useStageStore((s) => s.mode === "replay");
-  const runStart = data.run?.startedAt;
   if (data.rows.length === 0) {
     return <p className="rounds-drawer__empty">{t("Nothing yet. Send the agent a task.")}</p>;
   }
@@ -253,9 +276,7 @@ function ActivityPanel({ data }: { data: RoundsData }) {
           >
             <span className={`rounds-chip rounds-chip--${TONE_FOR_ROW[row.tone] ?? "mute"}`}>{row.action}</span>
             <span className="rounds-act__p">{row.primary}</span>
-            <span className="rounds-act__t mon-mono">
-              {runStart !== undefined ? formatClock(row.event.timestamp) : ""}
-            </span>
+            <span className="rounds-act__t mon-mono">{formatClock(row.event.timestamp)}</span>
           </button>
         </li>
       ))}

@@ -190,7 +190,7 @@ function AgentHead({ data }: { data: MonitorData }) {
 
 /* ── Cost ───────────────────────────────────────────────────────────────── */
 
-function Usage() {
+export function Usage() {
   const t = useT();
   const version = useMetricsStore((s) => s.version);
   const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);

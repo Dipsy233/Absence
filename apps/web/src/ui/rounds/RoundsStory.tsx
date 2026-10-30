@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { formatOffset } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { useReplayStore } from "../../stores/replayStore";
@@ -53,6 +53,24 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
 
   const shown = data.rows.filter((row) => row.action !== "END");
 
+  /**
+   * A story reads sideways, so the wheel reads sideways too: the wheel's
+   * vertical delta scrolls the chain horizontally, the way every filmstrip
+   * widget does.
+   */
+  const cardsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = cardsRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      el.scrollLeft += event.deltaY;
+      event.preventDefault();
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   return (
     <div className="rounds-story">
       <div className="rounds-story__h">
@@ -67,7 +85,7 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
           </button>
         ) : null}
       </div>
-      <div className="rounds-cards">
+      <div className="rounds-cards" ref={cardsRef}>
         {shown.length === 0 ? (
           <span className="rounds-story__empty">{t("Nothing yet. Send the agent a task.")}</span>
         ) : (

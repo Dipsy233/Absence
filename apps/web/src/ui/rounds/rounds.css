@@ -79,42 +79,25 @@
 /* ── Main grid ──────────────────────────────────────────────────────────── */
 
 .rounds-main {
-  display: grid;
+  position: relative;
   min-height: 0;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 560px) 72px;
-}
-.rounds-left {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  /* The column must be capped: an implicit track is sized to max-content, and
-     the thought line is one long nowrap sentence — without the cap it widened
-     the whole column and pushed the stage into the peek. */
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 168px;
-  border-right: 1px solid var(--mon-bd);
-}
-.rounds-right {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
   overflow: hidden;
 }
-/* The wallpaper: the conversation itself, transparent, so the moving ambience
-   behind it shows through. When no window is up, this is the whole right side. */
+/* The wallpaper: the conversation, floating over the ambience on the right
+   and above the story — a lyrics overlay, not a column. */
 .rounds-wallpaper {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 76px;
+  bottom: 236px;
+  width: 46%;
+  min-width: 0;
   display: flex;
-  min-height: 0;
   flex-direction: column;
 }
 .rounds-wallpaper__thread {
   background: transparent;
-}
-.rounds-wallpaper > form {
-  margin-top: auto;
 }
 
 /* ── Floating windows ─────────────────────────────────────────────────────
@@ -180,24 +163,38 @@
 }
 .rounds-win__b > * {
   min-height: 0;
+  flex: 1;
 }
 .rounds-win__stage {
   overflow: auto;
+}
+/* The corner handle: every window is resizable, whatever its default size. */
+.rounds-win__rs {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 15px;
+  height: 15px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background:
+    linear-gradient(135deg, transparent 0 46%, var(--mon-bd2) 46% 54%, transparent 54% 71%, var(--mon-bd2) 71% 79%, transparent 79%);
 }
 
 /* ── The scene ──────────────────────────────────────────────────────────── */
 
 .rounds-scene {
+  position: absolute;
+  left: 5%;
+  top: 46%;
+  transform: translateY(-50%);
   display: flex;
-  /* The grid item must be allowed to shrink below its content's min-content:
-     the thought line is one long nowrap sentence, and without this the scene
-     overflowed its column and pushed the whole stage into the peek. */
   min-width: 0;
-  max-width: 100%;
+  max-width: 34%;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 18px 24px 6px;
+  padding: 0 8px;
 }
 /* The bubble hangs above the figure and is its sibling in the column — text
    can never slide under the character, which is the one hard rule of this
@@ -362,11 +359,15 @@
 /* ── The story ──────────────────────────────────────────────────────────── */
 
 .rounds-story {
+  position: absolute;
+  left: 12px;
+  right: 88px;
+  bottom: 66px;
   display: flex;
   min-height: 0;
   flex-direction: column;
   gap: 8px;
-  padding: 0 24px;
+  padding: 0 4px;
 }
 .rounds-story__h {
   display: flex;
@@ -492,21 +493,24 @@
 }
 .rounds-conn {
   flex: none;
-  width: 14px;
+  width: 30px;
   height: 2px;
-  margin: 0 -6px;
+  margin: 0 -10px;
   background: var(--mon-bd2);
 }
 
 /* ── The chat row ───────────────────────────────────────────────────────── */
 
 .rounds-chat {
+  position: absolute;
+  left: 12px;
+  right: 88px;
+  bottom: 10px;
   display: flex;
   flex: none;
   align-items: center;
   gap: 10px;
-  padding: 0 24px 16px;
-  position: relative;
+  padding: 0;
 }
 .rounds-inp {
   display: flex;
@@ -693,9 +697,14 @@
 /* ── The dock ───────────────────────────────────────────────────────────── */
 
 .rounds-dock {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   min-height: 0;
   flex: none;
+  width: 72px;
   flex-direction: column;
   align-items: center;
   gap: 6px;
@@ -798,6 +807,47 @@
   flex: none;
   font-size: 10.5px;
   color: var(--mon-t3);
+}
+.rounds-eggsbody {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.rounds-eggsbody__cost {
+  flex: none;
+  border-bottom: 1px solid var(--mon-bd);
+  padding-bottom: 4px;
+}
+.rounds-eggsbody > .rounds-drawer__empty,
+.rounds-eggsbody > .rounds-eggs {
+  flex: 1;
+  overflow-y: auto;
+}
+.rounds-egg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rounds-egg__body {
+  min-width: 0;
+  flex: 1;
+}
+.rounds-egg__m {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mon-t3);
+  font-size: 12px;
+  line-height: 1;
+}
+.rounds-egg__m:hover {
+  border-color: rgb(94 159 232 / 0.55);
+  color: var(--mon-acc);
 }
 .rounds-eggs__name {
   min-width: 0;
