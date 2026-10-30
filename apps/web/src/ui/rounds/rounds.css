@@ -768,13 +768,11 @@
 
 /* ── The drawer ─────────────────────────────────────────────────────────── */
 
-.rounds-eggs,
 .rounds-act {
   margin: 0;
   padding: 0 8px;
   list-style: none;
 }
-.rounds-eggs button,
 .rounds-act button {
   display: flex;
   width: 100%;
@@ -787,10 +785,14 @@
   color: var(--mon-t2);
   text-align: left;
 }
-.rounds-eggs button:hover,
 .rounds-act button:hover {
   background: var(--mon-s3);
   color: var(--mon-t);
+}
+.rounds-eggs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .rounds-drawer__empty {
   padding: 10px 12px;
@@ -907,29 +909,47 @@
   flex: 1;
   overflow-y: auto;
 }
+/* An egg card is two zones: the egg on the left, a narrow metrics strip on the
+   right. They hover as separate targets, because they do different things. */
 .rounds-egg {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: stretch;
+  border-bottom: 1px solid var(--mon-bd);
+}
+.rounds-egg:last-child {
+  border-bottom: 0;
 }
 .rounds-egg__body {
+  display: flex;
   min-width: 0;
   flex: 1;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--mon-t2);
+  text-align: left;
+}
+.rounds-egg__body:hover {
+  background: var(--mon-s2);
+  color: var(--mon-t);
 }
 .rounds-egg__m {
+  display: flex;
   flex: none;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--mon-bd2);
-  border-radius: 6px;
+  width: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-left: 1px solid var(--mon-bd);
   background: transparent;
   color: var(--mon-t3);
   font-size: 12px;
   line-height: 1;
 }
 .rounds-egg__m:hover {
-  border-color: rgb(94 159 232 / 0.55);
+  background: var(--mon-s2);
   color: var(--mon-acc);
 }
 .rounds-eggs__name {

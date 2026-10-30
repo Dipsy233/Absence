@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { formatBytes, formatClock, formatDuration } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { eventToStageItem } from "../../lib/events";
-import { primaryEggs, sortEggs, summarizeTools } from "../../lib/eggs";
+import { primaryEggs, sortEggs } from "../../lib/eggs";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useStageStore } from "../../stores/stageStore";
@@ -252,19 +252,18 @@ function FolderPanel({ onOpenVersion }: { onOpenVersion: (path: string, version?
 
 /**
  * Eggs, as the explorer would show them: the agent's current cost on top (the
- * same cost panel Monitor's rail uses), then one card per egg. The card opens
- * the event that laid it; the small button on its right opens that egg's full
- * metrics, scoped.
+ * same cost panel Monitor's rail uses), then one card per egg.
+ *
+ * A card has two zones. The left is the egg itself — click it to jump to the
+ * event that laid it. The right is a narrow strip: click it to open that egg's
+ * metrics, scoped to its pid. Helpers are not listed at all; they are processes
+ * the classifier folded away, and counting them here only added noise.
  */
 function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: string) => void }) {
   const t = useT();
   const version = useSessionStore((s) => s.eggState.version);
   const eggsMap = useSessionStore.getState().eggState.eggs;
-  const sorted = sortEggs(eggsMap);
-  // Only *primary* eggs get a card — helpers (`cat`, `grep`) fold into a count
-  // on the bottom line, the same reading the Monitor rail gives.
-  const eggs = primaryEggs(sorted);
-  const tools = summarizeTools(sorted);
+  const eggs = primaryEggs(sortEggs(eggsMap));
   // `version` is the re-render trigger: the map above is read via getState().
   void version;
   return (
@@ -277,7 +276,6 @@ function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: 
           {t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")}
         </p>
       ) : (
-        <>
         <ul className="rounds-eggs">
           {eggs.map((egg) => {
             const alive = egg.status === "running";
@@ -313,12 +311,6 @@ function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: 
             );
           })}
         </ul>
-        {tools.count > 0 ? (
-          <p className="rounds-drawer__empty rounds-eggsbody__fold">
-            {t("folded {n} helpers: {names}", { n: tools.count, names: tools.names.join(", ") })}
-          </p>
-        ) : null}
-        </>
       )}
     </div>
   );
