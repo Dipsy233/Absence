@@ -4,6 +4,8 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useViewModeStore } from "../../stores/viewModeStore";
 import { useT } from "../../lib/i18n";
 import { renderRun } from "../../lib/report";
+import { formatOffset } from "../../lib/format";
+import { useNow } from "../../hooks/useNow";
 import "./drip.css";
 
 /**
@@ -76,6 +78,17 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
   const running = run?.status === "running";
   const report = useMemo(() => (data.facts ? renderRun(data.facts) : undefined), [data.facts]);
 
+  /**
+   * The strip's second line, mirrored from the Monitor's run selector: how
+   * long this round has been going and the tools it has used so far. A live
+   * run's clock has to move without new events, hence its own second hand.
+   */
+  const now = useNow(1000);
+  const elapsed = run ? formatOffset((run.endedAt ?? now) - run.startedAt) : "—";
+  const counts = run
+    ? `${elapsed} · R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}`
+    : "—";
+
   const last = data.rows[data.rows.length - 1];
   const attention = data.attention;
 
@@ -134,6 +147,7 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
 
           <span className="drip-mid">
             <span className="drip-mid__now">{nowText}</span>
+            {pip ? <span className="drip-mid__meta">{counts}</span> : null}
           </span>
         </button>
 

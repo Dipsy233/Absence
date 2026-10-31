@@ -415,17 +415,21 @@
 }
 
 /* A PiP window cannot shrink below the browser's minimum — about 242×132 CSS
-   px, which reads as 293×160 device px at 120% scaling. The ball alone is
-   therefore impossible, so the window keeps that minimum and a hovered pill
-   stretches to fill it: the ball plus the sentence equal the window's width,
-   minus its 8px margins. `--drip-pip-w` is measured from the real window at
-   runtime, because the minimum depends on the browser and the display scale. */
+   px, which reads as 293×160 device px at 120% scaling. There is therefore no
+   ball-sized state left to protect, so the strip stays open and always fills
+   the window: the current event on top, the run's clock and the R/S/E/$ counts
+   underneath. `--drip-pip-w` is measured from the real window at runtime,
+   because the minimum depends on the browser and the display scale. */
 .drip-root--pip .drip-mid {
-  width: 0;
+  width: calc(var(--drip-pip-w, 242px) - 100px);
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
 }
 
 .drip-root--pip .drip-pill:hover .drip-mid {
-  width: max(0px, calc(var(--drip-pip-w, 242px) - 100px));
+  width: calc(var(--drip-pip-w, 242px) - 100px);
 }
 
 .drip-root--pip .drip-pill.is-open .drip-mid {
@@ -433,12 +437,18 @@
 }
 
 .drip-root--pip .drip-mid__now {
-  opacity: 0;
+  opacity: 1;
 }
 
-.drip-root--pip .drip-pill:hover .drip-mid__now,
-.drip-root--pip .drip-pill.is-open .drip-mid__now {
-  opacity: 1;
+/* Same line as the Monitor's run selector: elapsed, reads, searches, edits,
+   shell runs, spend. */
+.drip-root--pip .drip-mid__meta {
+  overflow: hidden;
+  padding: 0 4px;
+  font: 10.5px var(--drip-mono);
+  color: var(--drip-t3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The card must measure the same while the window is still ball-sized, so its
