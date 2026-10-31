@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld("absenceDesktop", {
   openDrip: (sessionId) => ipcRenderer.send("desktop:openDrip", sessionId),
   leaveDrip: () => ipcRenderer.send("desktop:leaveDrip"),
   resizeDrip: (size) => ipcRenderer.send("desktop:dripResize", size),
+  startDripDrag: () => ipcRenderer.send("desktop:dripDragStart"),
+  endDripDrag: () => ipcRenderer.send("desktop:dripDragEnd"),
   onDripClosed: (callback) => {
     const listener = () => callback();
     ipcRenderer.on("desktop:dripClosed", listener);

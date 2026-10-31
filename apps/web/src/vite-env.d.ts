@@ -17,6 +17,9 @@ interface Window {
     leaveDrip: () => void;
     /** Resize the floating window; `{ width: 100, height: 100 }` is the ball. */
     resizeDrip: (size: { width: number; height: number }) => void;
+    /** Drag the floating window: the shell follows the cursor until the end. */
+    startDripDrag: () => void;
+    endDripDrag: () => void;
     /** The floating window closed; the main window is visible again. */
     onDripClosed: (callback: () => void) => () => void;
   };

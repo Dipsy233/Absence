@@ -428,6 +428,19 @@
   -webkit-app-region: no-drag;
 }
 
+/* The desktop host wraps the face so one pointer gesture can be followed from
+   the press to the click: the pill is the drag handle, and a press that travels
+   farther than a few pixels is a drag rather than a click. */
+.drip-desktop {
+  position: fixed;
+  inset: 0;
+}
+
+/* Dragging the ball must not select the strip's text. */
+.drip-root--pip .drip-pill {
+  user-select: none;
+}
+
 .drip-root--pip .drip-widget {
   top: 8px;
   left: 8px;
