@@ -414,23 +414,29 @@
   max-width: none;
 }
 
-/* At rest the PiP window is the ball, so the middle collapses to nothing: a
-   hover cannot resize the window, and any sentence drawn outside it would be
-   clipped. It only stretches once the card is open and the window is wide. */
-.drip-root--pip .drip-mid,
-.drip-root--pip .drip-pill:hover .drip-mid {
+/* A PiP window cannot shrink below the browser's minimum — about 242×132 CSS
+   px, which reads as 293×160 device px at 120% scaling. The ball alone is
+   therefore impossible, so the window keeps that minimum and a hovered pill
+   stretches to fill it: the ball plus the sentence equal the window's width,
+   minus its 8px margins. `--drip-pip-w` is measured from the real window at
+   runtime, because the minimum depends on the browser and the display scale. */
+.drip-root--pip .drip-mid {
   width: 0;
+}
+
+.drip-root--pip .drip-pill:hover .drip-mid {
+  width: max(0px, calc(var(--drip-pip-w, 242px) - 100px));
 }
 
 .drip-root--pip .drip-pill.is-open .drip-mid {
   width: 248px;
 }
 
-.drip-root--pip .drip-mid__now,
-.drip-root--pip .drip-pill:hover .drip-mid__now {
+.drip-root--pip .drip-mid__now {
   opacity: 0;
 }
 
+.drip-root--pip .drip-pill:hover .drip-mid__now,
 .drip-root--pip .drip-pill.is-open .drip-mid__now {
   opacity: 1;
 }

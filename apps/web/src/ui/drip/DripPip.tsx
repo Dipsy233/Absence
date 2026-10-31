@@ -17,10 +17,11 @@ import "./drip.css";
  * with the document that opened it, so `window.close()` would take the ball
  * down with the tab. Emptying the tab is the closest a page can get.
  *
- * At rest the window is exactly the ball. A hover cannot resize a PiP window
- * (`resizeTo` needs a click's gesture), so the sentence only appears once the
- * card is opened and the window has grown; closing returns it to the ball. The
- * widget is pinned to the window's top-left so growing never moves it.
+ * A PiP window cannot shrink below the browser's minimum (about 242×132 CSS
+ * px here), so the ball alone is impossible. The window keeps that minimum at
+ * rest and a hovered pill stretches to fill its width; clicking still grows the
+ * window to fit the card. The widget is pinned to the window's top-left so
+ * growing never moves it.
  */
 
 /**
@@ -73,6 +74,19 @@ function requestPipWindow(): Promise<Window> | null {
       });
   }
   return pipPromise;
+}
+
+/**
+ * Publish the window's real width to the stylesheet.
+ *
+ * A PiP window cannot shrink below the browser's minimum, so the width it
+ * grants can be wider than the one requested — about 242 CSS px here, which
+ * reads as 293 device px at 120% scaling. The resting pill widens to whatever
+ * that is on hover, so the sentence never runs past the window's edge.
+ */
+function syncWidth(win: Window) {
+  const width = Math.round(win.innerWidth);
+  if (width > 0) win.document.documentElement.style.setProperty("--drip-pip-w", `${width}px`);
 }
 
 /**
@@ -138,6 +152,13 @@ export function DripPipHost() {
     if (!supported) return;
     let alive = true;
 
+    // The browser clamps the window to its own minimum size, so the granted
+    // width is only known after a resize: re-publish it every time.
+    const onResize = () => {
+      const win = winRef.current;
+      if (win) syncWidth(win);
+    };
+
     const onHide = () => {
       // The PiP document is going away: unmount React while its nodes still
       // exist, then restore the face in the tab.
@@ -178,6 +199,8 @@ export function DripPipHost() {
       }
       win.document.documentElement.style.height = "100%";
       win.document.body.style.cssText = "margin:0;height:100%;overflow:hidden;background:#121212";
+      syncWidth(win);
+      win.addEventListener("resize", onResize);
       const el = win.document.createElement("div");
       el.style.height = "100%";
       win.document.body.append(el);
@@ -187,6 +210,7 @@ export function DripPipHost() {
 
     return () => {
       alive = false;
+      winRef.current?.removeEventListener("resize", onResize);
     };
   }, [supported, exitDrip]);
 
