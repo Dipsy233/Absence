@@ -19,8 +19,18 @@ contextBridge.exposeInMainWorld("absenceDesktop", {
   openDrip: (sessionId) => ipcRenderer.send("desktop:openDrip", sessionId),
   leaveDrip: () => ipcRenderer.send("desktop:leaveDrip"),
   resizeDrip: (size) => ipcRenderer.send("desktop:dripResize", size),
+  // A drag is three signals, never coordinates: the shell reads the cursor
+  // itself, because the window slides under the pointer while it moves.
   startDripDrag: () => ipcRenderer.send("desktop:dripDragStart"),
+  dragDrip: () => ipcRenderer.send("desktop:dripDrag"),
   endDripDrag: () => ipcRenderer.send("desktop:dripDragEnd"),
+  // Which way the window grows from the ball ("left"/"right", "down"/"up").
+  dripGrow: () => ipcRenderer.invoke("desktop:dripGrow"),
+  onDripGrow: (callback) => {
+    const listener = (_event, grow) => callback(grow);
+    ipcRenderer.on("desktop:dripGrow", listener);
+    return () => ipcRenderer.removeListener("desktop:dripGrow", listener);
+  },
   onDripClosed: (callback) => {
     const listener = () => callback();
     ipcRenderer.on("desktop:dripClosed", listener);

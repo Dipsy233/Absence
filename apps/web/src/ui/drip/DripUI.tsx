@@ -39,6 +39,13 @@ export interface DripProps {
    * stays where it was on screen.
    */
   anchor?: "left" | "right";
+  /**
+   * Which way the card opens from the pill. The desktop shell grows its window
+   * downwards unless the ball is too close to the bottom of the screen, in
+   * which case the card unfolds upwards and the widget sits on the floor of
+   * the window instead of its ceiling.
+   */
+  vertical?: "down" | "up";
   /** Leave Drip and bring the last face back. Defaults to the mode store. */
   onOpenAbsence?: () => void;
   /**
@@ -59,6 +66,7 @@ export interface DripProps {
 export function DripUI({
   pip = false,
   anchor = "left",
+  vertical = "down",
   onOpenAbsence,
   onHover,
   onLayout,
@@ -158,7 +166,7 @@ export function DripUI({
     <div
       className={`drip-root${pip ? " drip-root--pip" : ""}${
         anchor === "right" ? " drip-root--anchor-right" : ""
-      }`}
+      }${vertical === "up" ? " drip-root--grow-up" : ""}`}
     >
       <div className="drip-widget">
         <button

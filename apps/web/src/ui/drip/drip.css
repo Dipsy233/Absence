@@ -415,17 +415,12 @@
 /* The PiP window is sized to the pill and grows as it expands, so the widget
    pins to the window's top-left and grows rightwards. A right-anchored ball
    would jump sideways every time the window resized. The gradient room belongs
-   to a full-page tab, not to a window that *is* the widget, so it is dropped. */
+   to a full-page tab, not to a window that *is* the widget, so it is dropped.
+   Nor is there an `-webkit-app-region: drag`: on a transparent frameless
+   window it swallows the pointer events the drag gesture needs. The ball is
+   the handle, and the shell moves it. */
 .drip-root--pip {
   background: transparent;
-  /* Desktop shell: the window is frameless, so its transparent margin doubles
-     as the drag handle. The face itself stays clickable. Inert in a browser. */
-  -webkit-app-region: drag;
-}
-
-.drip-root--pip .drip-pill,
-.drip-root--pip .drip-card {
-  -webkit-app-region: no-drag;
 }
 
 /* The desktop host wraps the face so one pointer gesture can be followed from
@@ -469,6 +464,19 @@
 .drip-root--pip.drip-root--anchor-right .drip-card {
   left: auto;
   right: 0;
+}
+
+/* Grown upwards: the ball sits on the window's floor and the card hangs above
+   it, so unfolding towards the top of the screen still leaves the ball where
+   it was. Mirrors the anchor rules above, one axis at a time. */
+.drip-root--pip.drip-root--grow-up .drip-widget {
+  top: auto;
+  bottom: 8px;
+}
+
+.drip-root--pip.drip-root--grow-up .drip-card {
+  top: auto;
+  bottom: calc(100% + 10px);
 }
 
 /* A PiP window cannot shrink below the browser's minimum — about 242×132 CSS
