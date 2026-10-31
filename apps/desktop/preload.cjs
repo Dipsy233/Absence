@@ -14,4 +14,14 @@ contextBridge.exposeInMainWorld("absenceDesktop", {
     ipcRenderer.on("desktop:maximizedChanged", listener);
     return () => ipcRenderer.removeListener("desktop:maximizedChanged", listener);
   },
+  // Drip's floating window: the web face measures itself and the shell owns
+  // the real window, so opening, resizing and leaving all go through here.
+  openDrip: (sessionId) => ipcRenderer.send("desktop:openDrip", sessionId),
+  leaveDrip: () => ipcRenderer.send("desktop:leaveDrip"),
+  resizeDrip: (size) => ipcRenderer.send("desktop:dripResize", size),
+  onDripClosed: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("desktop:dripClosed", listener);
+    return () => ipcRenderer.removeListener("desktop:dripClosed", listener);
+  },
 });

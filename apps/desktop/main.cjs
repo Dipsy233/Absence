@@ -6,7 +6,7 @@
 // CJS loader lets a CommonJS Electron main process require it directly.
 //
 // The window loads the same built web app the browser would — no UI fork.
-const { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, Notification, ipcMain } = require("electron");
+const { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, Notification, ipcMain, screen } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
@@ -33,6 +33,8 @@ if (!app.requestSingleInstanceLock()) {
 let server = null;
 /** @type {import("electron").BrowserWindow | null} */
 let win = null;
+/** @type {import("electron").BrowserWindow | null} */
+let dripWin = null;
 /** @type {import("electron").Tray | null} */
 let tray = null;
 let quitting = false;
@@ -262,6 +264,91 @@ function createWindow(url) {
   if (IS_DEV) win.webContents.openDevTools({ mode: "detach" });
 }
 
+/**
+ * Drip's floating window: frameless, transparent, always on top.
+ *
+ * The face gets a real window instead of a Document Picture-in-Picture one,
+ * because the shell can resize it at any time — a PiP window only resizes
+ * inside a click's gesture. The web face measures itself and sends the size
+ * over IPC; the window grows leftwards from the ball's right edge, so the ball
+ * keeps its place on screen while the card unfolds.
+ *
+ * The main window is hidden as soon as the face is up; closing this window
+ * (Open Absence, Alt+F4, or a failed load) brings it back and leaves Drip.
+ */
+function createDripWindow(sessionId) {
+  if (dripWin && !dripWin.isDestroyed()) {
+    dripWin.showInactive();
+    return;
+  }
+  if (!windowUrl) return;
+
+  const BALL = 100;
+  const url = `${windowUrl}${windowUrl.includes("?") ? "&" : "?"}face=drip&session=${encodeURIComponent(sessionId)}`;
+  const area = screen.getDisplayMatching(win ? win.getBounds() : screen.getPrimaryDisplay().workArea).workArea;
+
+  dripWin = new BrowserWindow({
+    width: BALL,
+    height: BALL,
+    useContentSize: true,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    hasShadow: false,
+    fullscreenable: false,
+    maximizable: false,
+    minimizable: false,
+    title: "Absence",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: path.join(__dirname, "preload.cjs"),
+    },
+  });
+
+  // Fixed right edge: the card opens leftwards, so the ball never moves.
+  dripWin.setPosition(
+    Math.round(area.x + area.width - BALL - 40),
+    Math.round(area.y + (area.height - BALL) / 2),
+  );
+
+  const restoreMain = () => {
+    if (!win || win.isDestroyed()) return;
+    win.show();
+    win.focus();
+    win.webContents.send("desktop:dripClosed");
+  };
+
+  dripWin.once("ready-to-show", () => {
+    if (dripWin) dripWin.showInactive();
+  });
+
+  dripWin.webContents.on("did-fail-load", (_event, _code, _text, _url, isMainFrame) => {
+    if (isMainFrame && dripWin && !dripWin.isDestroyed()) dripWin.destroy();
+  });
+
+  dripWin.on("closed", () => {
+    dripWin = null;
+    restoreMain();
+  });
+
+  dripWin.loadURL(url);
+
+  // The launcher window has already rendered empty, so hide it now rather than
+  // after `ready-to-show`: that would flash a blank window. If the face fails
+  // to load, `closed` brings it back.
+  if (win && !win.isDestroyed()) win.hide();
+}
+
+function closeDripWindow() {
+  if (dripWin && !dripWin.isDestroyed()) dripWin.close();
+}
+
 function createTray() {
   const iconPath = path.join(__dirname, "assets", "tray.png");
   let image = nativeImage.createFromPath(iconPath);
@@ -275,6 +362,12 @@ function createTray() {
     {
       label: "Show ABSENCE",
       click: () => {
+        // While Drip is floating the main window is the hidden launcher; show
+        // the normal UI again instead of revealing a blank window.
+        if (dripWin) {
+          closeDripWindow();
+          return;
+        }
         if (win) {
           win.show();
           win.focus();
@@ -298,6 +391,10 @@ function createTray() {
   ]);
   tray.setContextMenu(menu);
   tray.on("click", () => {
+    if (dripWin) {
+      closeDripWindow();
+      return;
+    }
     if (!win) {
       if (windowUrl) createWindow(windowUrl);
       return;
@@ -316,6 +413,33 @@ ipcMain.on("desktop:maximizeToggle", () => {
   win.isMaximized() ? win.unmaximize() : win.maximize();
 });
 ipcMain.on("desktop:close", () => win && win.close());
+
+// Drip's floating window. `sessionId` comes from the face that asked for it; it
+// becomes a query parameter so the new window can attach to the same session.
+ipcMain.on("desktop:openDrip", (_event, sessionId) => {
+  if (typeof sessionId === "string" && sessionId) createDripWindow(sessionId);
+});
+ipcMain.on("desktop:leaveDrip", () => closeDripWindow());
+ipcMain.on("desktop:dripResize", (_event, size) => {
+  if (!dripWin || dripWin.isDestroyed() || !size) return;
+  const width = Math.round(Number(size.width));
+  const height = Math.round(Number(size.height));
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return;
+
+  const bounds = dripWin.getBounds();
+  const area = screen.getDisplayMatching(bounds).workArea;
+  const w = Math.min(width, area.width);
+  const h = Math.min(height, area.height);
+  dripWin.setBounds({
+    // Keep the right edge, where the ball sits, still; grow leftwards.
+    x: Math.max(area.x, bounds.x + bounds.width - w),
+    // Keep the top edge (the ball's) still; grow downwards, nudging up only
+    // when the card would fall off the bottom of the screen.
+    y: Math.min(bounds.y, area.y + area.height - h),
+    width: w,
+    height: h,
+  });
+});
 
 app.on("second-instance", () => {
   if (win) {

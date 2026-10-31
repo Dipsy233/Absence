@@ -418,6 +418,14 @@
    to a full-page tab, not to a window that *is* the widget, so it is dropped. */
 .drip-root--pip {
   background: transparent;
+  /* Desktop shell: the window is frameless, so its transparent margin doubles
+     as the drag handle. The face itself stays clickable. Inert in a browser. */
+  -webkit-app-region: drag;
+}
+
+.drip-root--pip .drip-pill,
+.drip-root--pip .drip-card {
+  -webkit-app-region: no-drag;
 }
 
 .drip-root--pip .drip-widget {
@@ -426,6 +434,28 @@
   right: auto;
   transform: none;
   max-width: none;
+}
+
+/* The desktop shell grows its window from the ball's right edge, so the
+   widget and the card hug the right side instead: the ball keeps its place on
+   screen while the card unfolds leftwards. Reversing the pill puts the ball
+   at the right end and the strip to its left, so widening the strip never
+   drags the ball sideways. */
+.drip-root--pip.drip-root--anchor-right .drip-widget {
+  left: auto;
+  right: 8px;
+}
+
+.drip-root--pip.drip-root--anchor-right .drip-pill {
+  flex-direction: row-reverse;
+  /* The floating window is exactly the ball plus 8px margins, so the 30px
+     blur used in a tab would be cut off at the window's edge. */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.drip-root--pip.drip-root--anchor-right .drip-card {
+  left: auto;
+  right: 0;
 }
 
 /* A PiP window cannot shrink below the browser's minimum — about 242×132 CSS

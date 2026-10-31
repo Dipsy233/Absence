@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useSessionSocket } from "../hooks/useSessionSocket";
 import { useSounds } from "../hooks/useSounds";
 import { useSessionStore } from "../stores/sessionStore";
@@ -11,8 +12,17 @@ import { ProjectPicker } from "../components/ProjectPicker/ProjectPicker";
 import { MonitorUI } from "../ui/monitor/MonitorUI";
 import { RoundsUI } from "../ui/rounds/RoundsUI";
 import { ChartUI } from "../ui/chart/ChartUI";
-import { DripUI } from "../ui/drip/DripUI";
 import { DripPipHost } from "../ui/drip/DripPip";
+import { DripDesktop } from "../ui/drip/DripDesktop";
+
+/**
+ * The desktop shell opens Drip as a second window: it loads this same app with
+ * `?face=drip&session=<id>`, and that window draws only the floating ball.
+ * Both values are fixed for the life of a window, so they are read once.
+ */
+const DRIP_PARAMS = new URLSearchParams(window.location.search);
+const DRIP_WINDOW = DRIP_PARAMS.get("face") === "drip";
+const DRIP_SESSION = DRIP_PARAMS.get("session") ?? undefined;
 
 /**
  * The shell. Three things decide what it renders:
@@ -27,11 +37,34 @@ import { DripPipHost } from "../ui/drip/DripPip";
 export default function App() {
   const session = useSessionStore((s) => s.session);
   const mode = useViewModeStore((s) => s.mode);
-  useSessionSocket(session?.id);
-  useSounds();
   // Inside the desktop shell the session bar is the frameless window's title
   // bar, so it must sit flush with the top edge.
   const desktop = Boolean(window.absenceDesktop);
+  /**
+   * Desktop Drip's launcher window: the shell hides it as soon as the floating
+   * window is up, so its socket is closed here. Otherwise the hidden window
+   * would ring a second time and compete with the visible one for the session.
+   */
+  const dripLauncher = desktop && mode === "drip" && !DRIP_WINDOW;
+
+  useSessionSocket(DRIP_WINDOW ? DRIP_SESSION : dripLauncher ? undefined : session?.id);
+  useSounds();
+
+  useEffect(() => {
+    if (!dripLauncher || !session?.id) return;
+    window.absenceDesktop?.openDrip(session.id);
+  }, [dripLauncher, session?.id]);
+
+  // Closing the floating window (Open Absence, Alt+F4, or a load failure)
+  // brings the main window back; its face must leave Drip too.
+  useEffect(() => {
+    if (!desktop || DRIP_WINDOW) return;
+    return window.absenceDesktop?.onDripClosed(() => useViewModeStore.getState().exitDrip());
+  }, [desktop]);
+
+  if (DRIP_WINDOW) {
+    return <DripDesktop />;
+  }
 
   if (!session) {
     return (
@@ -70,13 +103,14 @@ export default function App() {
   }
 
   if (mode === "drip") {
-    // The packaged app can resize its own always-on-top window, so Drip lives
-    // there directly. A browser tab cannot stay on top of other tabs; the
-    // browser build moves the face into a Document Picture-in-Picture window
-    // and empties the tab.
+    // The desktop shell gives Drip its own always-on-top window and hides this
+    // one (see the launcher effect above), so nothing is left to draw here.
+    // A browser tab cannot stay on top of other tabs; the browser build moves
+    // the face into a Document Picture-in-Picture window and empties the tab.
+    if (desktop) return null;
     return (
       <>
-        {desktop ? <DripUI /> : <DripPipHost />}
+        <DripPipHost />
         <ContextMenu />
       </>
     );

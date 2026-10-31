@@ -32,8 +32,21 @@ export interface DripProps {
    * every time the window grew.
    */
   pip?: boolean;
+  /**
+   * Which edge of the window the widget hugs. The browser build grows a PiP
+   * window rightwards, so it anchors left; the desktop shell grows its window
+   * leftwards from the ball's right edge, so it anchors right and the ball
+   * stays where it was on screen.
+   */
+  anchor?: "left" | "right";
   /** Leave Drip and bring the last face back. Defaults to the mode store. */
   onOpenAbsence?: () => void;
+  /**
+   * Desktop only: the floating window grows on hover so the strip can speak
+   * before the card is opened. A Document PiP window cannot do this — it only
+   * resizes during a click's gesture — so the browser build never passes it.
+   */
+  onHover?: (hovered: boolean) => void;
   /**
    * Reports the exact window size the face needs: `null` for the ball, or the
    * card's measured box plus its margins. Called from a layout effect, which
@@ -43,7 +56,13 @@ export interface DripProps {
   onLayout?: (size: { width: number; height: number } | null) => void;
 }
 
-export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {}) {
+export function DripUI({
+  pip = false,
+  anchor = "left",
+  onOpenAbsence,
+  onHover,
+  onLayout,
+}: DripProps = {}) {
   const t = useT();
   const data = useMonitorData();
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
@@ -136,12 +155,18 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
   };
 
   return (
-    <div className={`drip-root${pip ? " drip-root--pip" : ""}`}>
+    <div
+      className={`drip-root${pip ? " drip-root--pip" : ""}${
+        anchor === "right" ? " drip-root--anchor-right" : ""
+      }`}
+    >
       <div className="drip-widget">
         <button
           type="button"
           className={`drip-pill drip-pill--${state}${open ? " is-open" : ""}`}
           onClick={() => setOpen((value) => !value)}
+          onMouseEnter={onHover ? () => onHover(true) : undefined}
+          onMouseLeave={onHover ? () => onHover(false) : undefined}
           aria-expanded={open}
           /* No `title`: a tooltip would hang outside the ball's window and read
              as the sentence leaking out of it. */
