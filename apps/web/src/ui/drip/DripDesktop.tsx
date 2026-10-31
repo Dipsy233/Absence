@@ -42,9 +42,8 @@ const BALL = 56;
 /** The strip's width beside the ball when hovered; longer text is ellipsised. */
 const STRIP = 170;
 
-/** The card's tallest height, matching drip.css, plus the gap. */
+/** The card's tallest height, matching drip.css. */
 const CARD_MAX_H = 286;
-const GAP = 8;
 
 /** A press that travels farther than this is a drag, not a click. */
 const DRAG_SLOP = 4;
@@ -82,8 +81,8 @@ function layoutFor(frame: DripFrame): Layout {
   const anchor = roomRight >= roomLeft ? "left" : "right";
   const strip = clamp(anchor === "left" ? roomRight : roomLeft, 0, STRIP);
 
-  const roomBelow = h - by - BALL - GAP;
-  const roomAbove = by - GAP;
+  const roomBelow = h - by - BALL;
+  const roomAbove = by;
   const vertical =
     roomBelow >= CARD_MAX_H
       ? "down"

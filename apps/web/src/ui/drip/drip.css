@@ -609,6 +609,18 @@ html.drip-transparent #root {
   flex-direction: row-reverse;
 }
 
+/* Opened, the ball, the strip and the card share one outline: the pill squares
+   off the edge the card grows from, so there is no seam between them and the
+   three read as a single window. */
+.drip-root--desktop .drip-pill.is-open {
+  border-radius: calc(var(--drip-ball-size, 84px) / 2) calc(var(--drip-ball-size, 84px) / 2) 0 0;
+  box-shadow: none;
+}
+
+.drip-root--desktop.drip-root--grow-up .drip-pill.is-open {
+  border-radius: 0 0 calc(var(--drip-ball-size, 84px) / 2) calc(var(--drip-ball-size, 84px) / 2);
+}
+
 /* The room beside the ball is already there — the sheet is the work area — so
    the strip simply slides out towards the side the face chose, as wide as that
    side allows (`--drip-strip-w`). */
@@ -686,20 +698,25 @@ html.drip-transparent #root {
   font-size: 11.5px;
 }
 
-/* The card is exactly as wide as the ball and the strip beside it, and starts
-   from the same edge the ball does: opened, the three read as one panel. The
-   strip was capped to the room on its side, so the card cannot run off screen;
-   `--drip-card-max-h` is the room it found below or above. */
+/* The card continues the pill: it starts exactly where the pill ends, without a
+   gap, and is exactly as wide as the ball and the strip together. It sits
+   behind the pill (`z-index: -1`) so the shadow it casts cannot darken the seam,
+   and its own corners are square at that edge, round at the far one. */
 .drip-root--desktop .drip-card {
-  top: calc(100% + 8px);
+  top: 100%;
   left: 0;
   right: auto;
+  z-index: -1;
   width: calc(var(--drip-ball-size, 56px) + var(--drip-strip-w, 0px));
   max-width: none;
   max-height: var(--drip-card-max-h, 286px);
-  border-radius: 12px;
+  border: 0;
+  border-radius: 0 0 12px 12px;
+  background: rgba(32, 32, 32, 0.96);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  animation: drip-card-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  /* Held back until the strip has stretched, so the two never disagree on
+     width for a frame. */
+  animation: drip-card-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s both;
 }
 
 .drip-root--desktop.drip-root--anchor-right .drip-card {
@@ -707,10 +724,11 @@ html.drip-transparent #root {
   right: 0;
 }
 
-/* Grown upwards: the card hangs above the ball and arrives from below. */
+/* Grown upwards: the card continues the pill above it, rounded at the top. */
 .drip-root--desktop.drip-root--grow-up .drip-card {
   top: auto;
-  bottom: calc(100% + 8px);
+  bottom: 100%;
+  border-radius: 12px 12px 0 0;
   animation-name: drip-card-in-up;
 }
 
