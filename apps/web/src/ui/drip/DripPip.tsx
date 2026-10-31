@@ -164,19 +164,31 @@ export function DripPipHost() {
 
       winRef.current = win;
       // Chrome's title strip is part of the window, not of the document: the
-      // document only gets `innerHeight`, which is smaller than the height we
-      // asked for. Learn that difference once and add it to every resize, or
+      // document only gets `innerHeight`, which can be smaller than the height
+      // we asked for. Learn that difference once and add it to every resize, or
       // the ball and the card are both cut off at the bottom.
-      const frameW = Math.round(win.outerWidth - win.innerWidth);
-      const frameH = Math.round(win.outerHeight - win.innerHeight);
+      //
+      // It must be measured against what we *asked for*, not against
+      // `outerHeight`: the outer size can be a remembered size from a previous
+      // PiP window, and subtracting it produced a nonsense 4x padding.
+      const innerW = Math.round(win.innerWidth);
+      const innerH = Math.round(win.innerHeight);
       padRef.current = {
-        w: frameW > 0 ? frameW : Math.max(0, BALL[0] - Math.round(win.innerWidth)),
-        h: frameH > 0 ? frameH : Math.max(0, BALL[1] - Math.round(win.innerHeight)),
+        w: innerW > 0 ? Math.max(0, BALL[0] - innerW) : 0,
+        h: innerH > 0 ? Math.max(0, BALL[1] - innerH) : 0,
       };
       copyStyles(win.document);
       // Without a title the PiP window's title bar shows the page's origin
       // ("localhost:5173"); the app's own name replaces it.
       win.document.title = document.title || "Absence";
+      // Chrome reuses the previous PiP window's size, so the request above is
+      // only a hint; state the ball's size outright while the click's gesture
+      // is still alive.
+      try {
+        win.resizeTo(BALL[0] + padRef.current.w, BALL[1] + padRef.current.h);
+      } catch {
+        // No activation left: the first layout pass will try again.
+      }
       win.document.documentElement.style.height = "100%";
       win.document.body.style.cssText = "margin:0;height:100%;overflow:hidden;background:#121212";
       const el = win.document.createElement("div");
