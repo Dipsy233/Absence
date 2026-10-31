@@ -280,7 +280,7 @@ function createWindow(url) {
 }
 
 /** The ball's diameter, as the face draws it. */
-const DRIP_BALL = 84;
+const DRIP_BALL = 56;
 
 /** Whole-number clamp; nested `Math.min`/`Math.max` reads poorly inline. */
 function clampDrip(value, min, max) {

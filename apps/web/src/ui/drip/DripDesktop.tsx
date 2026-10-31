@@ -37,18 +37,14 @@ import "./drip.css";
  */
 
 /** The ball's diameter, as DripUI draws it. */
-const BALL = 84;
-
-/** The transparent margin kept along the screen edges. */
-const INSET = 8;
+const BALL = 56;
 
 /** The strip's width beside the ball when hovered; longer text is ellipsised. */
-const STRIP = 256;
+const STRIP = 170;
 
-/** The card's width and tallest height, matching drip.css, plus the gap. */
-const CARD_W = 380;
-const CARD_MAX_H = 430;
-const GAP = 10;
+/** The card's tallest height, matching drip.css, plus the gap. */
+const CARD_MAX_H = 286;
+const GAP = 8;
 
 /** A press that travels farther than this is a drag, not a click. */
 const DRAG_SLOP = 4;
@@ -96,14 +92,11 @@ function layoutFor(frame: DripFrame): Layout {
         : roomBelow >= roomAbove
           ? "down"
           : "up";
-  const cardH = Math.max(120, Math.min(CARD_MAX_H, vertical === "down" ? roomBelow : roomAbove));
+  const cardH = Math.max(100, Math.min(CARD_MAX_H, vertical === "down" ? roomBelow : roomAbove));
 
-  // The card is centred under the ball but never leaves the screen.
-  const cardLeft = clamp(bx + BALL / 2 - CARD_W / 2, INSET, Math.max(INSET, w - INSET - CARD_W));
-  // Where its left (or right) edge sits relative to the widget, whose own edge
-  // is the ball's; drip.css anchors the card from that side.
-  const cardDx = anchor === "left" ? cardLeft - bx : bx + BALL - (cardLeft + CARD_W);
-
+  // The card is exactly as wide as the ball and the strip beside it, and starts
+  // from the same edge: opened, the three read as a single panel. The strip was
+  // capped to the room on that side, so the card cannot run off screen either.
   return {
     anchor,
     vertical,
@@ -112,8 +105,8 @@ function layoutFor(frame: DripFrame): Layout {
       "--drip-ball-x": `${bx}px`,
       "--drip-ball-y": `${by}px`,
       "--drip-widget-right": `${w - bx - BALL}px`,
+      "--drip-ball-size": `${BALL}px`,
       "--drip-strip-w": `${strip}px`,
-      "--drip-card-dx": `${cardDx}px`,
       "--drip-card-max-h": `${cardH}px`,
     } as CSSProperties,
   };

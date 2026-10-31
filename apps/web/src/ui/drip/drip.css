@@ -60,11 +60,11 @@
 .drip-pill {
   display: flex;
   max-width: 100%;
-  height: 84px;
+  height: var(--drip-ball-size, 84px);
   align-items: center;
   padding: 0;
   border: 0;
-  border-radius: 42px;
+  border-radius: calc(var(--drip-ball-size, 84px) / 2);
   background: rgba(32, 32, 32, 0.96);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.42);
   color: var(--drip-t);
@@ -81,8 +81,8 @@
 
 .drip-cap--left {
   position: relative;
-  width: 84px;
-  height: 84px;
+  width: var(--drip-ball-size, 84px);
+  height: var(--drip-ball-size, 84px);
 }
 
 .drip-orb {
@@ -97,8 +97,8 @@
    ring is the ball's outer edge — it fills the cap, so no dark margin separates
    the circle from the icon. */
 .drip-orb--state {
-  width: 84px;
-  height: 84px;
+  width: var(--drip-ball-size, 84px);
+  height: var(--drip-ball-size, 84px);
   padding: 0;
   overflow: hidden;
   border: 3px solid var(--drip-ok);
@@ -627,6 +627,7 @@ html.drip-transparent #root {
 }
 
 .drip-root--desktop .drip-mid__now {
+  font-size: 12px;
   opacity: 1;
 }
 
@@ -634,33 +635,82 @@ html.drip-transparent #root {
 .drip-root--desktop .drip-mid__meta {
   overflow: hidden;
   padding: 0 4px;
-  font: 10.5px var(--drip-mono);
+  font: 10px var(--drip-mono);
   color: var(--drip-t3);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The card hangs off the widget edge that is the ball's, at the offset the face
-   measured so it stays on screen; `--drip-card-max-h` is the room it found. */
+/* The sheet's type and controls shrink with its ball: the card is only the
+   ball plus the strip wide, so the tab's padding would leave it cramped. */
+.drip-root--desktop .drip-dot {
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 0 2px rgba(32, 32, 32, 0.95);
+}
+
+.drip-root--desktop .drip-card__head {
+  padding: 6px 8px;
+}
+
+.drip-root--desktop .drip-open {
+  height: 20px;
+  padding: 0 7px;
+  font-size: 10px;
+}
+
+.drip-root--desktop .drip-e {
+  gap: 6px;
+  padding: 4px;
+}
+
+.drip-root--desktop .drip-e__tag {
+  width: 44px;
+  font-size: 9px;
+}
+
+.drip-root--desktop .drip-e__time {
+  font-size: 9.5px;
+}
+
+.drip-root--desktop .drip-form {
+  gap: 6px;
+  padding: 8px 8px 10px;
+}
+
+.drip-root--desktop .drip-form__input,
+.drip-root--desktop .drip-form__send {
+  height: 26px;
+  font-size: 11.5px;
+}
+
+/* The card is exactly as wide as the ball and the strip beside it, and starts
+   from the same edge the ball does: opened, the three read as one panel. The
+   strip was capped to the room on its side, so the card cannot run off screen;
+   `--drip-card-max-h` is the room it found below or above. */
 .drip-root--desktop .drip-card {
-  left: var(--drip-card-dx, 0px);
+  top: calc(100% + 8px);
+  left: 0;
   right: auto;
-  width: 380px;
+  width: calc(var(--drip-ball-size, 56px) + var(--drip-strip-w, 0px));
   max-width: none;
-  max-height: var(--drip-card-max-h, 430px);
+  max-height: var(--drip-card-max-h, 286px);
+  border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   animation: drip-card-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .drip-root--desktop.drip-root--anchor-right .drip-card {
   left: auto;
-  right: var(--drip-card-dx, 0px);
+  right: 0;
 }
 
 /* Grown upwards: the card hangs above the ball and arrives from below. */
 .drip-root--desktop.drip-root--grow-up .drip-card {
   top: auto;
-  bottom: calc(100% + 10px);
+  bottom: calc(100% + 8px);
   animation-name: drip-card-in-up;
 }
 
