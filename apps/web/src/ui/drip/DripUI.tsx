@@ -47,6 +47,7 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
   const t = useT();
   const data = useMonitorData();
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
+  const runtime = useSessionStore((s) => s.session?.agentRuntime);
   const exitDrip = useViewModeStore((s) => s.exitDrip);
 
   const [open, setOpen] = useState(false);
@@ -100,7 +101,7 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
   const counts = run
     ? `${elapsed} · R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}`
     : "—";
-  const round = run ? `run #${run.index} · ${run.prompt || "—"}` : "—";
+  const round = run ? `run #${run.index} · ${runtime ?? "—"}` : "—";
 
   const last = data.rows[data.rows.length - 1];
   const attention = data.attention;
