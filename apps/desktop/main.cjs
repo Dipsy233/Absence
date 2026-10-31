@@ -318,8 +318,9 @@ function createDripWindow(sessionId) {
     height: DRIP_REST,
     useContentSize: true,
     frame: false,
+    // No `backgroundColor`: on Windows an explicitly coloured surface is the
+    // one thing that can still paint over a transparent window.
     transparent: true,
-    backgroundColor: "#00000000",
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
@@ -560,6 +561,23 @@ ipcMain.on("desktop:dripDragEnd", () => dripRelease());
 // The face asks once on load, because the direction may have been decided
 // before it could listen for `desktop:dripGrow`.
 ipcMain.handle("desktop:dripGrow", () => dripGrow);
+// The same numbers the direction is derived from, so the face can predict it
+// and lay the pill out in the same tick as the resize it asks for.
+ipcMain.handle("desktop:dripGeometry", () => {
+  if (!dripBall) return null;
+  const area = screen.getDisplayMatching({
+    x: dripBall.x,
+    y: dripBall.y,
+    width: DRIP_BALL,
+    height: DRIP_BALL,
+  }).workArea;
+  return {
+    ball: { x: dripBall.x, y: dripBall.y },
+    area: { x: area.x, y: area.y, width: area.width, height: area.height },
+    ballSize: DRIP_BALL,
+    inset: DRIP_INSET,
+  };
+});
 
 app.on("second-instance", () => {
   if (win) {

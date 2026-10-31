@@ -11,6 +11,21 @@ interface DripGrow {
 }
 
 /**
+ * Where the ball is and how much room its screen offers. The face re-derives
+ * `DripGrow` from this so the pill can be laid out in the same tick as a resize.
+ */
+interface DripGeometry {
+  /** The ball's top-left, in the same screen coordinates `setBounds` uses. */
+  ball: { x: number; y: number };
+  /** The work area of the display the ball sits on. */
+  area: { x: number; y: number; width: number; height: number };
+  /** The ball's diameter, as the shell draws it. */
+  ballSize: number;
+  /** The transparent margin the face leaves around the ball. */
+  inset: number;
+}
+
+/**
  * Bridge exposed by the desktop shell's preload (apps/desktop/preload.cjs).
  * Undefined in a plain browser tab — WindowControls keys off its presence.
  */
@@ -37,6 +52,8 @@ interface Window {
     /** Which way the window grows from the ball; the face lays the pill out to match. */
     dripGrow: () => Promise<DripGrow | null>;
     onDripGrow: (callback: (grow: DripGrow) => void) => () => void;
+    /** The ball's screen position; `null` while no floating window exists. */
+    dripGeometry: () => Promise<DripGeometry | null>;
     /** The floating window closed; the main window is visible again. */
     onDripClosed: (callback: () => void) => () => void;
   };

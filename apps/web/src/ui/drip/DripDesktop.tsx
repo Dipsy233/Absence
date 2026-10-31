@@ -14,21 +14,24 @@ import "./drip.css";
  * The desktop build of Drip — the packaged app's floating ball.
  *
  * The shell gives this face its own frameless, transparent, always-on-top
- * window (loaded with `?face=drip`), and owns the geometry: it keeps a single
- * fixed ball on screen and derives the window from it every time this face
- * reports a new size. The face never learns the window's position, so nothing
- * here can drift — the shell also announces which way the panel grows
- * ("left"/"right", "down"/"up") and the pill is laid out to match.
+ * window (loaded with `?face=drip`) and owns the geometry: it keeps one fixed
+ * ball on screen and derives the window from it every time this face reports a
+ * size, so nothing here can drift.
  *
- * A PiP window cannot resize on hover (it needs a click's gesture); this one
- * can, so hovering widens it enough to show the strip before anything is
- * clicked.
+ * The shell also decides which way the panel grows from the ball ("left"/"right",
+ * "down"/"up"). This face predicts that decision from the geometry the shell
+ * hands it (same ball, same rule) and lays the pill out *before* it asks for the
+ * resize — a direction that arrived afterwards would leave the ball at the
+ * wrong end of the window for a frame, which reads as a flicker on every
+ * expand and collapse.
  *
- * The ball is also the drag handle: a press asks the shell to grab the ball,
- * and every move afterwards tells it to re-place the ball under the cursor.
- * Coordinates never cross the bridge — the window slides under the pointer,
- * so the shell reads the cursor from the screen instead. A press that never
- * travels more than a few pixels still counts as a click and opens the card.
+ * The ball is also the drag handle: a press asks the shell to grab it, and every
+ * move afterwards tells the shell to re-place it under the cursor. Coordinates
+ * never cross the bridge — the window slides under the pointer, so the shell
+ * reads the cursor from the screen instead. A press that never travels more than
+ * a few pixels still counts as a click that opens the card, so the pointer
+ * capture is taken on the pill itself: the click then lands on the pill's own
+ * handler instead of the wrapper, which would swallow it.
  */
 
 /** The ball plus its 8px margins — the window at rest. */
@@ -47,68 +50,97 @@ const DRAG_SLOP = 4;
  */
 const COLLAPSE_MS = 180;
 
+/**
+ * The shell's rule, restated (see `dripGrowFor` in apps/desktop/main.cjs): the
+ * panel unfolds away from the nearer work-area edge and downwards, unless the
+ * ball is too close to the bottom for the requested height. Both sides must
+ * agree, or the ball would be placed for one direction and drawn for another.
+ */
+function growFor(
+  geometry: DripGeometry | null,
+  size: { width: number; height: number },
+  fallback: DripGrow,
+): DripGrow {
+  if (!geometry) return fallback;
+  const { ball, area, ballSize, inset } = geometry;
+  const horizontal = ball.x + ballSize / 2 > area.x + area.width / 2 ? "left" : "right";
+  const roomBelow = area.y + area.height - (ball.y + ballSize);
+  const needed = size.height - ballSize - inset;
+  const vertical = size.height <= ballSize + inset * 2 || roomBelow >= needed ? "down" : "up";
+  return { horizontal, vertical };
+}
+
 export function DripDesktop() {
   const shell = window.absenceDesktop;
   const openRef = useRef(false);
   const hoverRef = useRef(false);
-  /** The size currently applied, so the direction can be re-asked for later. */
+  /** The size currently applied, so the layout can be re-derived later. */
   const sizeRef = useRef(BALL);
+  /** Where the ball and its work area were when the size was last applied. */
+  const geometryRef = useRef<DripGeometry | null>(null);
+  /** The direction last applied; only rendered state changes when it flips. */
+  const growRef = useRef<DripGrow>({ horizontal: "left", vertical: "down" });
   /** The press in flight, if any. */
-  const pressRef = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
+  const pressRef = useRef<{ x: number; y: number; dragging: boolean; pill: HTMLElement } | null>(null);
   /** Set on release so the click that follows a drag can be swallowed. */
   const swallowClickRef = useRef(false);
   /** The pending hover-out collapse, if any. */
   const collapseRef = useRef<number | null>(null);
-  /** Which way the shell grows the window; the pill mirrors it. */
-  const [grow, setGrow] = useState<DripGrow>({ horizontal: "left", vertical: "down" });
+  const [grow, setGrow] = useState<DripGrow>(growRef.current);
 
-  // The shell's window is transparent, but index.css paints the page dark for
-  // every face. Clear both backgrounds so only the ball and the card are seen.
+  // The shell's window is transparent, and index.css paints the page dark for
+  // every face. The class keeps html, body and #root clear (see drip.css) —
+  // an opaque page would show as a rectangle behind the ball.
   useLayoutEffect(() => {
     const html = document.documentElement;
-    const body = document.body;
-    const prevHtml = html.style.background;
-    const prevBody = body.style.background;
-    html.style.background = "transparent";
-    body.style.background = "transparent";
-    return () => {
-      html.style.background = prevHtml;
-      body.style.background = prevBody;
-    };
+    html.classList.add("drip-transparent");
+    return () => html.classList.remove("drip-transparent");
   }, []);
 
-  // The shell decides the direction (it may have done so before this face was
-  // loaded), so ask once and follow every later change.
-  useEffect(() => {
-    if (!shell) return;
-    let live = true;
-    shell
-      .dripGrow()
-      .then((value) => {
-        if (live && value) setGrow(value);
-      })
-      .catch(() => {
-        // A shell that cannot answer keeps the neutral default.
-      });
-    const off = shell.onDripGrow((value) => setGrow(value));
-    return () => {
-      live = false;
-      off();
-    };
-  }, [shell]);
+  const setGrowIfChanged = useCallback((value: DripGrow) => {
+    const prev = growRef.current;
+    if (prev.horizontal === value.horizontal && prev.vertical === value.vertical) return;
+    growRef.current = value;
+    setGrow(value);
+  }, []);
 
   /**
-   * Apply a window size: tell the shell, and tell the PiP styles how wide the
-   * window is (they size the strip as `window - 100px`, see drip.css).
+   * Apply a window size: pick the direction first, then tell the shell and the
+   * PiP styles (which size the strip as `window - 100px`, see drip.css).
    */
   const apply = useCallback(
     (size: { width: number; height: number }) => {
       sizeRef.current = size;
+      setGrowIfChanged(growFor(geometryRef.current, size, growRef.current));
       document.documentElement.style.setProperty("--drip-pip-w", `${size.width}px`);
       shell?.resizeDrip(size);
     },
-    [shell],
+    [shell, setGrowIfChanged],
   );
+
+  /** Re-read the ball's screen position, then re-place for the current size. */
+  const refreshGeometry = useCallback(() => {
+    if (!shell) return;
+    shell
+      .dripGeometry()
+      .then((value) => {
+        if (!value) return;
+        geometryRef.current = value;
+        // Same size, possibly a different side: the shell places the window
+        // from the geometry too, so both end up agreeing.
+        apply(sizeRef.current);
+      })
+      .catch(() => {
+        // A shell that cannot answer keeps the last geometry it reported.
+      });
+  }, [shell, apply]);
+
+  useEffect(() => {
+    if (!shell) return;
+    refreshGeometry();
+    const off = shell.onDripGrow((value) => setGrowIfChanged(value));
+    return off;
+  }, [shell, refreshGeometry, setGrowIfChanged]);
 
   /** Measured by the face: `null` closed, the card's box when open. */
   const resize = useCallback(
@@ -131,10 +163,13 @@ export function DripDesktop() {
 
   const hover = useCallback(
     (on: boolean) => {
+      // A press owns the size until it ends: pointer capture retargets the
+      // boundary events, and a stray "leave" must not shrink the window out
+      // from under a drag.
+      if (pressRef.current) return;
       if (on) {
         clearCollapse();
         hoverRef.current = true;
-        // Once the card is open it owns the size until it closes.
         if (!openRef.current) apply(HOVER);
         return;
       }
@@ -156,16 +191,16 @@ export function DripDesktop() {
   const onPointerDownCapture = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!shell || event.button !== 0) return;
-      const target = event.target as Element | null;
-      // Only the ball moves the window; the card and its composer stay put.
-      if (!target?.closest(".drip-pill")) return;
+      const pill = (event.target as Element | null)?.closest(".drip-pill");
+      if (!(pill instanceof HTMLElement)) return;
 
       // A new press invalidates the previous gesture's swallow flag.
       swallowClickRef.current = false;
-      pressRef.current = { x: event.clientX, y: event.clientY, dragging: false };
-      // Capture on the wrapper so the moves keep arriving while the window
-      // slides under the pointer.
-      event.currentTarget.setPointerCapture(event.pointerId);
+      pressRef.current = { x: event.clientX, y: event.clientY, dragging: false, pill };
+      // Capture on the pill, not on the wrapper: with capture the click that
+      // follows a press is delivered to the capturing element, and only the
+      // pill's own handler knows how to open the card.
+      pill.setPointerCapture(event.pointerId);
       shell.startDripDrag();
     },
     [shell],
@@ -194,12 +229,14 @@ export function DripDesktop() {
       if (!press) return;
       swallowClickRef.current = press.dragging;
       pressRef.current = null;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
+      if (press.pill.hasPointerCapture(event.pointerId)) {
+        press.pill.releasePointerCapture(event.pointerId);
       }
       shell?.endDripDrag();
+      // The ball may have moved; the panel's side is decided from where it is.
+      refreshGeometry();
     },
-    [shell],
+    [shell, refreshGeometry],
   );
 
   const onClickCapture = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
@@ -220,7 +257,8 @@ export function DripDesktop() {
     pressRef.current = null;
     swallowClickRef.current = true;
     shell?.endDripDrag();
-  }, [shell]);
+    refreshGeometry();
+  }, [shell, refreshGeometry]);
 
   // Losing focus ends the gesture too — a drag has no business continuing
   // after the shell has handed the window to another app.
@@ -230,10 +268,11 @@ export function DripDesktop() {
       pressRef.current = null;
       swallowClickRef.current = true;
       shell?.endDripDrag();
+      refreshGeometry();
     };
     window.addEventListener("blur", onBlur);
     return () => window.removeEventListener("blur", onBlur);
-  }, [shell]);
+  }, [shell, refreshGeometry]);
 
   return (
     <div

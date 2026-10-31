@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld("absenceDesktop", {
   endDripDrag: () => ipcRenderer.send("desktop:dripDragEnd"),
   // Which way the window grows from the ball ("left"/"right", "down"/"up").
   dripGrow: () => ipcRenderer.invoke("desktop:dripGrow"),
+  // Where the ball is on screen, so the face can predict that direction before
+  // it asks for a resize instead of a round trip later.
+  dripGeometry: () => ipcRenderer.invoke("desktop:dripGeometry"),
   onDripGrow: (callback) => {
     const listener = (_event, grow) => callback(grow);
     ipcRenderer.on("desktop:dripGrow", listener);

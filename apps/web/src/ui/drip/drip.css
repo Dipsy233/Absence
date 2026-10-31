@@ -423,6 +423,15 @@
   background: transparent;
 }
 
+/* The shell's window *is* the widget: anything painted behind it shows as a
+   rectangle around the ball. `!important` so index.css's page background cannot
+   win, whatever order the stylesheets land in. DripDesktop adds the class. */
+html.drip-transparent,
+html.drip-transparent body,
+html.drip-transparent #root {
+  background: transparent !important;
+}
+
 /* The desktop host wraps the face so one pointer gesture can be followed from
    the press to the click: the pill is the drag handle, and a press that travels
    farther than a few pixels is a drag rather than a click. */
@@ -491,6 +500,9 @@
   align-items: stretch;
   justify-content: center;
   gap: 1px;
+  /* The window itself changes width in the same tick, so an animated strip
+     would slide inside a window that has already jumped — read as a flicker. */
+  transition: none;
 }
 
 .drip-root--pip .drip-pill:hover .drip-mid {
