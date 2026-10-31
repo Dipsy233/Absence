@@ -175,6 +175,7 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
             style={pip && cardH ? { height: cardH } : undefined}
           >
             <div className="drip-card__head">
+              <span className="drip-card__prompt">{run?.prompt ?? ""}</span>
               <button type="button" className="drip-open" onClick={leave}>
                 {t("Open Absence")}
               </button>

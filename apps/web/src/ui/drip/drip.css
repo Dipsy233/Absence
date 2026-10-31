@@ -256,13 +256,27 @@
 .drip-card__head {
   display: flex;
   flex: none;
+  gap: 8px;
   align-items: center;
   padding: 8px 10px;
   border-bottom: 1px solid var(--drip-bd);
 }
 
+/* The round's prompt sits at the left of the header and is cut with an
+   ellipsis; "Open Absence" keeps its size at the right. */
+.drip-card__prompt {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--drip-t3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .drip-open {
   height: 22px;
+  flex: none;
   margin-left: auto;
   padding: 0 8px;
   border: 1px solid var(--drip-bd2);
