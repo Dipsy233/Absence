@@ -1,5 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import type { AbsenceEvent } from "@absence/core";
+import type {
+  AbsenceEvent,
+  SessionClientMessage,
+  SessionServerMessage,
+  TerminalServerMessage,
+} from "@absence/core";
 import { sessionStore } from "../sessions/SessionStore";
 
 /** Minimal shape of the ws socket we use — avoids depending on ws types. */
@@ -21,7 +26,7 @@ const OPEN = 1;
 const EVENT_FLUSH_MS = 50;
 const EVENT_BATCH_MAX = 200;
 
-function send(socket: ClientSocket, message: unknown): void {
+function send(socket: ClientSocket, message: SessionServerMessage | TerminalServerMessage): void {
   if (socket.readyState !== OPEN) return;
   try {
     socket.send(JSON.stringify(message));
@@ -87,7 +92,7 @@ export async function wsRoutes(app: FastifyInstance): Promise<void> {
     // open. Nothing else on this socket is client-to-server.
     client.on("message", (raw: unknown) => {
       try {
-        const message = JSON.parse(String(raw)) as { type?: string; eggPid?: number };
+        const message = JSON.parse(String(raw)) as SessionClientMessage;
         if (message.type === "metrics_subscribe") {
           session.setMetricsHotEgg(
             typeof message.eggPid === "number" && message.eggPid > 0 ? message.eggPid : undefined,

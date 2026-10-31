@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import type { AvatarSkinMeta } from "@absence/core";
 
 /* ══════════════════════════════════════════════════════════════════════════
    Avatar skins — user-uploaded character animations, managed entirely from
@@ -81,13 +82,8 @@ function ensureDir(): void {
   fs.mkdirSync(DIR, { recursive: true });
 }
 
-export interface SkinMeta {
-  name: string;
-  /** Status → uploaded file name (as stored on disk). */
-  files: Partial<Record<string, string>>;
-  /** True when every status has a file, so no WhaleBun fallback shows. */
-  complete: boolean;
-}
+/** The wire shape is the shared contract (packages/core/api). */
+export type SkinMeta = AvatarSkinMeta;
 
 function readSkin(name: string): SkinMeta | undefined {
   const dir = skinDir(name);

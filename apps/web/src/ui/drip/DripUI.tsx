@@ -1,11 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useMonitorData } from "../monitor/useMonitorData";
+import { useMonitorData } from "../../hooks/useMonitorData";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useViewModeStore } from "../../stores/viewModeStore";
 import { moodFor, type AgentVisualState } from "../../lib/agent";
 import { Avatar } from "../../components/agent/Avatar";
 import { useT } from "../../lib/i18n";
-import { renderRun } from "../../lib/report";
 import { formatOffset } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import "./drip.css";
@@ -118,7 +117,7 @@ export function DripUI({
 
   const run = data.run;
   const running = run?.status === "running";
-  const report = useMemo(() => (data.facts ? renderRun(data.facts) : undefined), [data.facts]);
+  const report = data.report;
 
   /**
    * The strip's second line, mirrored from the Monitor's run selector: how

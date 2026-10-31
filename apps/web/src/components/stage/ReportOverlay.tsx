@@ -11,6 +11,7 @@ import { useSelectedRun } from "../../hooks/useSelectedRun";
 import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { useUiStore } from "../../stores/uiStore";
 import { useT } from "../../lib/i18n";
+import { ATTENTION_REASON_TEXT } from "../../lib/attention";
 import { StageItemView } from "./StageItemView";
 import type { HistoryRun } from "../../types/history";
 import type {
@@ -614,23 +615,8 @@ const ATTENTION_TONE: Record<Attention["level"], string> = {
   high: "text-desk-ember",
 };
 
-const REASON_TEXT: Record<AttentionReason, string> = {
-  command_failed: "A command failed",
-  command_failure_streak: "Commands failed back-to-back — the agent may be flailing",
-  activity_stalled: "No activity for a long time — something may be stuck",
-  unresolved_error: "Unresolved error — no successful recovery detected",
-  agent_waiting: "Agent is waiting",
-  agent_stopped: "Agent stopped",
-  no_progress: "No progress detected",
-  external_change: "External file change observed",
-  process_left_running: "A process the agent started is still running",
-  outside_change: "A file outside the project was changed",
-  file_version_loop: "File versions oscillated — the agent may have undone its own edit",
-  command_retry_loop: "The same command failed repeatedly",
-};
-
-/** The one sentence per attention reason, shared with the Chart face. */
-export const ATTENTION_REASON_TEXT = REASON_TEXT;
+/* The reason sentences are the shared lib/attention table — the Chart face and
+   the shared atoms read the same one, so no face can rename a verdict. */
 
 function AttentionBlock({ attention }: { attention: Attention }) {
   const t = useT();
@@ -643,7 +629,7 @@ function AttentionBlock({ attention }: { attention: Attention }) {
         <ul className="mt-1 space-y-0.5">
           {attention.reasons.map((reason) => (
             <li key={reason} className="text-desk-ink/80">
-              • {t(REASON_TEXT[reason])}
+              • {t(ATTENTION_REASON_TEXT[reason])}
             </li>
           ))}
         </ul>

@@ -4,9 +4,10 @@ import { useT } from "../../lib/i18n";
 import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
 import type { ActivityRow } from "../../types/stage";
-import { Dot, TONE_FOR_ROW } from "../monitor/atoms";
+import { playingState, replayRowAt } from "../../lib/history";
+import { Dot, TONE_FOR_ROW } from "../shared/atoms";
 import type { RoundsData } from "./useRoundsData";
-import { RUN_TONE, RUN_WORD } from "./RoundsDock";
+import { RUN_TONE, RUN_WORD } from "../shared/atoms";
 
 /**
  * The story: the run's steps as a chain of cards, oldest first.
@@ -34,12 +35,8 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
       stage item's id (rows and items agree on it — see eventToStageItem). */
   const currentId = useMemo(() => {
     if (inReplay) {
-      let found: string | undefined;
-      for (const row of data.rows) {
-        if (row.event.timestamp <= replayTime) found = row.id;
-        else break;
-      }
-      return found;
+      // The shared scan (lib/history) — the same rule Monitor's feed follows.
+      return replayRowAt(data.rows, replayTime)?.id;
     }
     return data.item?.id;
   }, [inReplay, replayTime, data.rows, data.following, data.item]);
@@ -80,12 +77,11 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
   }, [data.rows, data.rowsVersion]);
 
   /**
-   * What the story is doing with the run — Monitor's rule, same words: a
-   * walking replay and a pinned moment are the same answer to the reader
-   * ("the clock has stopped here"), so both read REPLAY.
+   * What the story is doing with the run — the shared `playingState` rule
+   * (lib/history), the same words Monitor's rail prints: a walking replay and
+   * a pinned moment both read REPLAY.
    */
-  const holding = !data.following && data.item !== undefined;
-  const playing: "live" | "replay" = inReplay || holding ? "replay" : "live";
+  const playing = playingState(data.following, data.item, inReplay);
   const playingTone = playing === "replay" ? "run" : "edit";
 
   /**

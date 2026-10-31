@@ -3,7 +3,6 @@ import type { RunSummary } from "@absence/core";
 import { formatBytes, formatClock, formatDuration } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { eventToStageItem } from "../../lib/events";
-import { primaryEggs, sortEggs } from "../../lib/eggs";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useStageStore } from "../../stores/stageStore";
@@ -11,9 +10,10 @@ import { useReplayStore } from "../../stores/replayStore";
 import { useRunsStore } from "../../stores/runsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useNow } from "../../hooks/useNow";
+import { useEggs } from "../../hooks/useEggs";
 import { FilePanel } from "../../components/files/FilePanel";
-import { Usage } from "../monitor/MonitorRight";
-import { TONE_FOR_ROW } from "../monitor/atoms";
+import { Usage } from "../../components/metrics/Usage";
+import { TONE_FOR_ROW, RUN_TONE, RUN_WORD } from "../shared/atoms";
 import type { RoundsData } from "./useRoundsData";
 import type { StageItem } from "../../types/stage";
 
@@ -286,11 +286,9 @@ function FolderPanel({ onOpenVersion }: { onOpenVersion: (path: string, version?
  */
 function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: string) => void }) {
   const t = useT();
-  const version = useSessionStore((s) => s.eggState.version);
-  const eggsMap = useSessionStore.getState().eggState.eggs;
-  const eggs = primaryEggs(sortEggs(eggsMap));
-  // `version` is the re-render trigger: the map above is read via getState().
-  void version;
+  // One derivation, shared with Monitor's rail (the dock badge reads it too):
+  // sorted → primary (helpers folded) → list.
+  const { eggs } = useEggs();
   return (
     <div className="rounds-eggsbody">
       <div className="rounds-eggsbody__cost">
@@ -343,21 +341,9 @@ function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: 
 
 /* ── Run ─────────────────────────────────────────────────────────────────── */
 
-/** A run's dot, in this face's tones. */
-export const RUN_TONE: Record<RunSummary["status"], string> = {
-  running: "run",
-  completed: "edit",
-  interrupted: "mute",
-  error: "err",
-};
-
-/** A run's status, in the words Monitor's switcher uses. */
-export const RUN_WORD: Record<RunSummary["status"], string> = {
-  running: "running",
-  completed: "done",
-  interrupted: "stopped",
-  error: "error",
-};
+/* RUN_TONE / RUN_WORD (a run's dot and its spoken status) are the shared
+   vocabulary — ui/shared/atoms — so chart's run list and the story's card read
+   the same words. */
 
 /**
  * The session's runs, newest first — Classic's History and Monitor's run
@@ -378,7 +364,7 @@ function RunPanel({ data, onOpenEvent }: { data: RoundsData; onOpenEvent: (item:
   const sessionId = useSessionStore((s) => s.session?.id);
   const runs = useRunsStore((s) => s.runs);
   const runsLoading = useRunsStore((s) => s.loading);
-  const loadRuns = useRunsStore((s) => s.loadRuns);
+  const ensureLoaded = useRunsStore((s) => s.ensureLoaded);
   const selectRun = useUiStore((s) => s.selectRun);
   const selectedRunId = useUiStore((s) => s.selectedRunId);
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
@@ -388,8 +374,9 @@ function RunPanel({ data, onOpenEvent }: { data: RoundsData; onOpenEvent: (item:
   const inReplay = useStageStore((s) => s.mode === "replay");
 
   useEffect(() => {
-    if (sessionId && runs.length === 0) void loadRuns(sessionId);
-  }, [sessionId, runs.length, loadRuns]);
+    // The guarded fetch lives in the store (`ensureLoaded`).
+    ensureLoaded(sessionId);
+  }, [sessionId, ensureLoaded]);
 
   if (runs.length === 0) {
     return (

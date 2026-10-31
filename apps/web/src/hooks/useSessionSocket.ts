@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { AbsenceEvent, SessionRuntimeState, SessionSnapshot } from "@absence/core";
+import type { AbsenceEvent, SessionClientMessage, SessionServerMessage } from "@absence/core";
 import { useSessionStore } from "../stores/sessionStore";
 import { useFileStore } from "../stores/fileStore";
 import { useChatStore } from "../stores/chatStore";
@@ -7,15 +7,6 @@ import { useStageStore } from "../stores/stageStore";
 import { useRunsStore } from "../stores/runsStore";
 import { useUiStore } from "../stores/uiStore";
 import { useMetricsStore } from "../stores/metricsStore";
-import type { MetricsFrame } from "@absence/core";
-
-type ServerMessage =
-  | { type: "snapshot"; state: SessionSnapshot }
-  | { type: "event"; event: AbsenceEvent }
-  | { type: "events"; events: AbsenceEvent[] }
-  | { type: "metrics"; frame: MetricsFrame }
-  | { type: "session_state"; state: SessionRuntimeState }
-  | { type: "error"; message: string };
 
 /** A user message opens a run; agent_end closes it. Both change History. */
 function isRunBoundary(events: AbsenceEvent[]): boolean {
@@ -49,12 +40,11 @@ export function useSessionSocket(sessionId: string | undefined): void {
     const sendHotEgg = () => {
       if (socket?.readyState !== WebSocket.OPEN) return;
       const open = useUiStore.getState().metricsOpen;
-      socket.send(
-        JSON.stringify({
-          type: "metrics_subscribe",
-          eggPid: open ? useMetricsStore.getState().selectedEggPid : undefined,
-        }),
-      );
+      const frame: SessionClientMessage = {
+        type: "metrics_subscribe",
+        eggPid: open ? useMetricsStore.getState().selectedEggPid : undefined,
+      };
+      socket.send(JSON.stringify(frame));
     };
     const unsubscribeHotEgg = useMetricsStore.subscribe((state, previous) => {
       if (state.selectedEggPid !== previous.selectedEggPid) sendHotEgg();
@@ -75,9 +65,9 @@ export function useSessionSocket(sessionId: string | undefined): void {
       };
 
       socket.onmessage = (raw) => {
-        let message: ServerMessage;
+        let message: SessionServerMessage;
         try {
-          message = JSON.parse(raw.data as string) as ServerMessage;
+          message = JSON.parse(raw.data as string) as SessionServerMessage;
         } catch {
           return;
         }
@@ -87,12 +77,6 @@ export function useSessionSocket(sessionId: string | undefined): void {
             useFileStore.getState().hydrate(message.state);
             useChatStore.getState().hydrate(message.state);
             useMetricsStore.getState().hydrate(message.state.metrics);
-            break;
-          case "event":
-            useSessionStore.getState().ingestEvent(message.event);
-            useFileStore.getState().ingest(message.event);
-            useChatStore.getState().ingest(message.event);
-            if (isRunBoundary([message.event])) void useRunsStore.getState().loadRuns(sessionId);
             break;
           case "events":
             // One store update per socket batch: the server already coalesced

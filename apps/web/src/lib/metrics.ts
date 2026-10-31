@@ -158,6 +158,59 @@ export function hostMemoryPercent(frames: MetricsFrame[]): number {
   return (used / frame.host.memTotalBytes) * 100;
 }
 
+/**
+ * Everything the cost panel (Usage) draws, derived once.
+ *
+ * The numbers for the asked-for scope: one egg when one is selected (the same
+ * selection Agent Eggs sets), otherwise the whole agent. The sparklines are the
+ * per-sample CPU rate (cores) and RSS (MiB) over the last 90 samples. This used
+ * to be a useMemo inside MonitorRight's Usage — which Rounds then imported
+ * across faces — so the derivation lives in the shared metrics library and the
+ * component only renders it.
+ */
+export interface UsageSummary {
+  cores: number;
+  avgCores: number;
+  memMiB: number;
+  peakMiB: number;
+  cpuSpark: number[];
+  memSpark: number[];
+  cpuCount: number;
+  scope?: string;
+}
+
+export function usageSummary(frames: MetricsFrame[], selectedEggPid?: number): UsageSummary {
+  const latest = latestFrame(frames);
+  const cpuCount = latest?.host.cpuCount ?? 1;
+  const scoped = selectedEggPid !== undefined;
+  const points = scoped ? eggPoints(frames, selectedEggPid) : agentPoints(frames);
+  const cpuSpark = points.slice(-90).map((point, index, list) => {
+    if (index === 0) return 0;
+    const seconds = (point.ts - list[index - 1]!.ts) / 1000;
+    return seconds > 0 ? Math.max(0, (point.cpuSeconds - list[index - 1]!.cpuSeconds) / seconds) : 0;
+  });
+  const memSpark = points.slice(-90).map((point) => point.rssBytes / (1024 * 1024));
+  const egg = scoped ? findEgg(frames, selectedEggPid) : undefined;
+  return {
+    cores: scoped ? eggCpuCores(frames, selectedEggPid) : agentCpuCores(frames),
+    avgCores: scoped
+      ? eggAverageCores(frames, selectedEggPid, 5 * 60_000)
+      : agentAverageCores(frames, 5 * 60_000),
+    memMiB: egg?.rssBytes
+      ? egg.rssBytes / (1024 * 1024)
+      : scoped
+        ? (memSpark.at(-1) ?? 0)
+        : latest?.agent?.rssBytes
+          ? latest.agent.rssBytes / (1024 * 1024)
+          : (memSpark.at(-1) ?? 0),
+    peakMiB: memSpark.length > 0 ? Math.max(...memSpark) : 0,
+    cpuSpark,
+    memSpark,
+    cpuCount,
+    scope: scoped ? (egg?.name ?? `pid ${selectedEggPid}`) : undefined,
+  };
+}
+
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const units = ["B", "KiB", "MiB", "GiB", "TiB"];

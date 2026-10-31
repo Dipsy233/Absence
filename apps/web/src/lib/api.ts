@@ -1,12 +1,41 @@
 import type {
   AbsenceEvent,
+  AvatarSkinMeta,
+  AvatarSkinState,
   CommandOption,
+  EggFilterProfileMeta,
+  EggFilterSaveResponse,
+  EggFilterState,
+  FileContent,
   FileVersionInfo,
   MetricsResponse,
   Project,
+  ResumeTarget,
   RunSummary,
+  RuntimeKind,
+  RuntimeStatus,
   SessionHistoryEntry,
   SessionSnapshot,
+  SoundSetMeta,
+  SoundSetState,
+} from "@absence/core";
+
+/* The wire shapes are the shared contracts (packages/core/api) — the same
+   declarations the server's routes are annotated against, not hand-kept
+   copies. Re-exported here because the settings panes import them from this
+   module. */
+export type {
+  AvatarSkinMeta,
+  AvatarSkinState,
+  EggFilterProfileMeta,
+  EggFilterSaveResponse,
+  EggFilterState,
+  FileContent,
+  ResumeTarget,
+  RuntimeKind,
+  RuntimeStatus,
+  SoundSetMeta,
+  SoundSetState,
 } from "@absence/core";
 
 async function json<T>(response: Response): Promise<T> {
@@ -25,18 +54,6 @@ async function json<T>(response: Response): Promise<T> {
     throw new Error(message);
   }
   return (await response.json()) as T;
-}
-
-export type RuntimeKind = "pi" | "codex" | "dsh" | "mock";
-
-/** One agent runtime and whether it can start right now (GET /api/runtimes). */
-export interface RuntimeStatus {
-  kind: RuntimeKind;
-  label: string;
-  available: boolean;
-  configurable: boolean;
-  path?: string;
-  note: string;
 }
 
 export async function fetchRuntimes(): Promise<RuntimeStatus[]> {
@@ -63,13 +80,6 @@ export async function saveRuntimePaths(patch: {
 export async function fetchProjects(root?: string): Promise<Project[]> {
   const query = root ? `?root=${encodeURIComponent(root)}` : "";
   return json<Project[]>(await fetch(`/api/projects${query}`));
-}
-
-/** What to reopen when resuming a persisted session. */
-export interface ResumeTarget {
-  absenceSessionId?: string;
-  piSessionFile?: string;
-  piSessionId?: string;
 }
 
 export async function createSession(
@@ -151,12 +161,6 @@ export async function closeSession(id: string): Promise<void> {
   await fetch(`/api/sessions/${encodeURIComponent(id)}/close`, { method: "POST" });
 }
 
-export interface FileContent {
-  path: string;
-  content: string;
-  size: number;
-}
-
 /** Read a project file from disk (the user's view of the project). */
 export async function readFile(sessionId: string, path: string): Promise<FileContent> {
   return json<FileContent>(
@@ -196,27 +200,6 @@ export async function respondApproval(sessionId: string, id: string, value: stri
 
 /* ── Agent Eggs filter profiles (server-side named files) ───────────────── */
 
-export interface EggFilterProfileMeta {
-  name: string;
-  savedAt: number;
-  count: number;
-}
-
-export interface EggFilterState {
-  dir: string;
-  active: string;
-  /** True when the active profile overrides even "named by the command". */
-  force: boolean;
-  profiles: EggFilterProfileMeta[];
-  current: string[];
-}
-
-export interface EggFilterSaveResponse {
-  ok: boolean;
-  active: string;
-  profile: EggFilterProfileMeta & { names: string[] };
-}
-
 export async function fetchEggFilter(): Promise<EggFilterState> {
   return json<EggFilterState>(await fetch("/api/egg-filter"));
 }
@@ -247,21 +230,6 @@ export async function deleteEggFilter(name: string): Promise<void> {
 }
 
 /* ── Avatar skins (user-uploaded animation files) ─────────────────────────── */
-
-export interface AvatarSkinMeta {
-  name: string;
-  /** Status → stored file name. */
-  files: Partial<Record<string, string>>;
-  complete: boolean;
-}
-
-export interface AvatarSkinState {
-  dir: string;
-  active: string;
-  builtin: string;
-  skins: AvatarSkinMeta[];
-  activeFiles: Partial<Record<string, string>>;
-}
 
 export async function fetchAvatarSkins(): Promise<AvatarSkinState> {
   return json<AvatarSkinState>(await fetch("/api/avatar-skins"));
@@ -305,21 +273,6 @@ export async function activateAvatarSkin(name: string): Promise<{ active: string
 }
 
 /* ── Sound sets (user-uploaded chimes) ────────────────────────────────────── */
-
-export interface SoundSetMeta {
-  name: string;
-  /** Event → stored file name. */
-  files: Partial<Record<string, string>>;
-  complete: boolean;
-}
-
-export interface SoundSetState {
-  dir: string;
-  active: string;
-  builtin: string;
-  sets: SoundSetMeta[];
-  activeFiles: Partial<Record<string, string>>;
-}
 
 export async function fetchSounds(): Promise<SoundSetState> {
   return json<SoundSetState>(await fetch("/api/sounds"));

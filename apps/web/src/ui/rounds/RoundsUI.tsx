@@ -22,7 +22,7 @@ import { RoundsChat } from "./RoundsChat";
 import { RoundsDock, DockBody, WINDOW_TITLE, type DockPanel } from "./RoundsDock";
 import { RoundsWindow } from "./RoundsWindow";
 import "./rounds.css";
-import "../monitor/monitor.css";
+import "../shared/shared.css";
 
 /**
  * ROUNDS (查房陪诊) — the light face, as a desktop.

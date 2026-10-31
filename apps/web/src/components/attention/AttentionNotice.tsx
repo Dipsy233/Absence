@@ -1,6 +1,6 @@
 import { formatClock } from "../../lib/format";
 import { useT } from "../../lib/i18n";
-import { useReasonText } from "../../ui/monitor/atoms";
+import { useReasonText } from "../../ui/shared/atoms";
 import type { AttentionNotice as Notice } from "../../hooks/useAttentionNotices";
 import "./attention.css";
 

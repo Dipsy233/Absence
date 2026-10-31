@@ -1,14 +1,15 @@
 import { useMemo } from "react";
 import type { AbsenceEvent } from "@absence/core";
-import { useSelectedRun } from "../../hooks/useSelectedRun";
-import { useLiveItem } from "../../hooks/useStage";
-import { useRunAttention } from "../../hooks/useRunAttention";
-import { activityRowsVersion, memoRunRows } from "../../lib/history";
-import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
-import { useSettingsStore } from "../../stores/settingsStore";
-import type { ActivityRow } from "../../types/stage";
-import type { Attention, RunFacts } from "../../types/report";
-import type { HistoryRun } from "../../types/history";
+import { useSelectedRun } from "./useSelectedRun";
+import { useLiveItem } from "./useStage";
+import { useRunAttention } from "./useRunAttention";
+import { activityRowsVersion, memoRunRows } from "../lib/history";
+import { renderRun } from "../lib/report";
+import { useIsObserved, useSessionStore } from "../stores/sessionStore";
+import { useSettingsStore } from "../stores/settingsStore";
+import type { ActivityRow } from "../types/stage";
+import type { Attention, RunFacts, RunReport } from "../types/report";
+import type { HistoryRun } from "../types/history";
 
 /**
  * Everything the Monitor draws, derived once per render pass.
@@ -25,6 +26,8 @@ export interface MonitorData {
   /** Feed rows for the selected run, converted incrementally. */
   rows: ActivityRow[];
   facts?: RunFacts;
+  /** The finished-run report rendered from the facts, or nothing while live. */
+  report?: RunReport;
   attention: Attention;
   /** The live "what is it doing" sentence, only while the run is in flight. */
   liveHeadline?: string;
@@ -43,6 +46,13 @@ export interface MonitorData {
   rowsVersion: number;
 }
 
+/**
+ * One face-neutral aggregation over the selected run.
+ *
+ * It used to live under `ui/monitor/`, but chart and drip read it too — the
+ * hook is the *shared* run view, not Monitor's property, so it sits beside the
+ * other hooks. It composes stores and hooks only; it never touches the server.
+ */
 export function useMonitorData(): MonitorData {
   const { run, events, loading } = useSelectedRun();
   const displayInActivity = useSettingsStore((s) => s.displayInActivity);
@@ -59,6 +69,10 @@ export function useMonitorData(): MonitorData {
   );
 
   const { facts, attention, headline } = useRunAttention(run, events, status);
+
+  // The finished-run report, rendered once per facts identity — chart and drip
+  // both drew `renderRun(facts)` at their tops, so the derivation lives here.
+  const report = useMemo(() => (facts ? renderRun(facts) : undefined), [facts]);
 
   /**
    * What the Stage follows while it is live: the agent's *current action*, not
@@ -83,6 +97,7 @@ export function useMonitorData(): MonitorData {
     loading,
     rows,
     facts,
+    report,
     attention,
     liveHeadline: headline,
     liveEventId: liveItem?.source?.eventId,

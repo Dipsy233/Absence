@@ -6,9 +6,10 @@ import {
   type AbsenceEvent,
   type RunCounts,
 } from "@absence/core";
-import type { ActivityRow } from "../types/stage";
+import type { ActivityRow, StageItem } from "../types/stage";
 import { appendActivityRow, eventToActivityRow } from "./events";
 import type { HistoryRun } from "../types/history";
+import type { PhaseType } from "../types/report";
 
 export { isObservedStream } from "@absence/core";
 
@@ -506,4 +507,171 @@ export function memoRunRows(
 export function resetEventCaches(): void {
   cache = undefined;
   rowCache = undefined;
+}
+
+/**
+ * The row the replay cursor is on: the last row at or before `timestamp`.
+ *
+ * Classic's `replayCurrent` rule, and the reason the feed's highlight walks
+ * down the run while a replay plays. Rows are chronological, so a binary
+ * search keeps it cheap on the 80ms replay tick — both faces (Monitor's feed
+ * and Rounds' story) used to implement this scan themselves.
+ *
+ * Callers deriving this per render must also depend on `activityRowsVersion()`:
+ * the rows array keeps one identity, so the version is what says "re-derive".
+ */
+export function replayRowAt(rows: ActivityRow[], timestamp: number): ActivityRow | undefined {
+  let low = 0;
+  let high = rows.length - 1;
+  let found = -1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (rows[mid]!.event.timestamp <= timestamp) {
+      found = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return found >= 0 ? rows[found] : undefined;
+}
+
+/**
+ * LIVE or REPLAY — what a face is doing with the run, in Monitor's words: a
+ * walking replay and a pinned moment are the same answer to the reader ("the
+ * clock has stopped here"), so both read REPLAY.
+ */
+export function playingState(
+  following: boolean,
+  item: StageItem | undefined,
+  inReplay: boolean,
+): "live" | "replay" {
+  return inReplay || (!following && item !== undefined) ? "replay" : "live";
+}
+
+/* ── The feed's reading view ──────────────────────────────────────────────
+   Phase grouping, repeat folding and the anchored boundaries. This is a
+   *derivation over the rows*, not rendering, so it lives here beside
+   `memoRunRows` — the component that draws the feed only lays the groups out. */
+
+/** Monitor's coarse phase: what kind of work a run is doing (see atoms). */
+export type MonPhase = "investigating" | "executing" | "implementing";
+
+const PHASE_FOLD: Record<PhaseType, MonPhase> = {
+  investigating: "investigating",
+  executing: "executing",
+  implementing: "implementing",
+  verifying: "executing",
+  recovering: "executing",
+};
+
+export function monPhase(phase: PhaseType): MonPhase {
+  return PHASE_FOLD[phase];
+}
+
+/**
+ * The phase a *row* belongs to, read off the row's own kind.
+ *
+ * The report's phase signals are anchored on `command` events, which arrive
+ * when a command finishes — so a RUN row (a `tool_start`) landed under the
+ * phase the *previous* command had opened, and a shell row could appear under
+ * "reading files". A feed knows what each row is, so the divider is derived
+ * from the rows themselves and cannot disagree with them.
+ *
+ * Reasoning, lifecycle, approvals and errors do not change the kind of work, so
+ * they inherit the current phase instead of opening one.
+ */
+export function phaseForRow(row: ActivityRow): MonPhase | undefined {
+  switch (row.tone) {
+    case "read":
+    case "search":
+      return "investigating";
+    case "edit":
+      return "implementing";
+    case "run":
+    case "process":
+      return "executing";
+    default:
+      return undefined;
+  }
+}
+
+/** One feed entry: the newest row that acted, and how many reports folded in. */
+export interface FeedRow {
+  row: ActivityRow;
+  count: number;
+}
+
+/** A run of consecutive rows under one phase (or under no phase at all). */
+export interface FeedGroup {
+  id: string;
+  phase?: MonPhase;
+  rows: FeedRow[];
+}
+
+/**
+ * The feed's groups: consecutive rows under a phase divider, with state
+ * re-reports folded into the row they re-report.
+ *
+ * The kind comes from the row itself (`phaseForRow`), so a divider only
+ * appears where the kind of work actually changes — and a shell row can never
+ * be filed under "reading files".
+ *
+ * The fold only collapses *state re-reports of one thing*: the same action,
+ * the same subject, the same stage card. Required because a `process` event is
+ * an update (the child count moves), not a new act. The Stage item id is part
+ * of the key so two different `npm test` runs are never merged, and RUN vs
+ * EXIT stay separate — they are the same command's two ends, and collapsing
+ * them would lose the fact that it finished.
+ */
+export function groupFeedRows(rows: ActivityRow[]): FeedGroup[] {
+  const out: FeedGroup[] = [];
+  for (const row of rows) {
+    const phase = phaseForRow(row);
+    let group = out[out.length - 1];
+    if (phase && group?.phase !== phase) {
+      group = { id: `p_${row.id}`, phase, rows: [] };
+      out.push(group);
+    } else if (!group) {
+      group = { id: `h_${row.id}`, rows: [] };
+      out.push(group);
+    }
+    const previous = group.rows[group.rows.length - 1];
+    if (
+      previous &&
+      previous.row.action === row.action &&
+      previous.row.primary === row.primary &&
+      previous.row.stageItem?.id === row.stageItem?.id
+    ) {
+      previous.row = row;
+      previous.count += 1;
+      continue;
+    }
+    group.rows.push({ row, count: 1 });
+  }
+  return out;
+}
+
+/**
+ * Lift the run's two boundaries out of the stream.
+ *
+ * START and END are the only rows that answer "where does this run start and
+ * end", and scrolling a long feed used to lose both. They are pinned outside
+ * the scroll container, so the body must not repeat them.
+ */
+export function feedAnchors(rows: ActivityRow[]): { start?: ActivityRow; end?: ActivityRow } {
+  return {
+    start: rows.find((row) => row.action === "START"),
+    end: [...rows].reverse().find((row) => row.action === "END"),
+  };
+}
+
+/** The groups a scrolling feed shows: every anchor row removed. */
+export function stripFeedAnchors(groups: FeedGroup[]): FeedGroup[] {
+  return groups
+    .map((group) => ({
+      ...group,
+      rows: group.rows.filter(({ row }) => row.action !== "START" && row.action !== "END"),
+    }))
+    .filter((group) => group.rows.length > 0);
 }

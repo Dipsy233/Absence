@@ -38,19 +38,17 @@ export function HistoryPanel() {
   const observed = useIsObserved();
   const runs = useRunsStore((s) => s.runs);
   const loading = useRunsStore((s) => s.loading);
-  const loadRuns = useRunsStore((s) => s.loadRuns);
+  const ensureLoaded = useRunsStore((s) => s.ensureLoaded);
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
-  const requestedFor = useRef<string | undefined>(undefined);
 
   // A snapshot carries the run list, but a direct start/resume can mount this
   // panel before the socket snapshot arrives. Fetch once per session; a zero-run
   // session must not trigger an endless loading loop.
   useEffect(() => {
-    if (!sessionId || requestedFor.current === sessionId) return;
-    requestedFor.current = sessionId;
-    if (runs.length === 0) void loadRuns(sessionId);
-  }, [sessionId, runs.length, loadRuns]);
+    // The guarded fetch lives in the store (`ensureLoaded`).
+    ensureLoaded(sessionId);
+  }, [sessionId, ensureLoaded]);
 
   // Follow new runs only while the user is at the bottom; reading an older run
   // must not be interrupted by the next one.

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { formatClock, formatContext, formatTokens } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useT } from "../../lib/i18n";
@@ -6,8 +7,9 @@ import { useViewModeStore } from "../../stores/viewModeStore";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { leaveSession } from "../../stores/reset";
 import { WindowControls } from "../common/WindowControls";
-import { Chip, Dot } from "../../ui/monitor/atoms";
-import "../../ui/monitor/monitor.css";
+import { SettingsDialog } from "../common/SettingsDialog";
+import { Chip, Dot } from "../../ui/shared/atoms";
+import "../../ui/shared/shared.css";
 
 /**
  * The one top bar of the faces — Monitor's bar, worn by Rounds and Chart too.
@@ -36,13 +38,15 @@ export function FaceBar() {
   const drip = useViewModeStore((s) => s.drip);
   const toggleDrip = useViewModeStore((s) => s.toggleDrip);
   const desktop = Boolean(window.absenceDesktop);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const used = context?.used ?? null;
   const total = context?.total ?? null;
   const percent = used !== null && total ? Math.min(100, Math.round((used / total) * 100)) : 0;
 
   return (
-    <header className={`mon-bar${desktop ? " mon-drag" : ""}`}>
+    <>
+      <header className={`mon-bar${desktop ? " mon-drag" : ""}`}>
       <span className="mon-logo">ABSENCE</span>
       <span className="mon-mono" style={{ fontSize: 12, color: "var(--mon-t3)" }}>
         {/* `now`, not `Date.now()`: the component re-renders once a second
@@ -127,11 +131,31 @@ export function FaceBar() {
         {connected ? t("online") : t("offline")}
       </Chip>
 
+      {/* Settings: Classic's dialog, worn by this face. Rendered as the
+          header's sibling, inside the face root — the face's `--desk-*` bridge
+          re-points the dialog's classes at this face's palette, and being
+          outside the bar keeps it clear of the drag region. */}
+      <button
+        type="button"
+        className="mon-btn mon-btn--ghost mon-nodrag"
+        onClick={() => setSettingsOpen(true)}
+        title={t("Settings")}
+        aria-label={t("Settings")}
+        aria-haspopup="dialog"
+      >
+        <span aria-hidden style={{ fontSize: 13, lineHeight: 1 }}>
+          ⚙
+        </span>
+      </button>
+
       <button type="button" className="mon-btn mon-btn--ghost mon-nodrag" onClick={() => void leaveSession()}>
         {t("change")}
       </button>
 
       <WindowControls />
     </header>
+
+    <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} portal={false} />
+  </>
   );
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { formatBytes, formatClock, formatDuration } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
+import { useEggs } from "../../hooks/useEggs";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useStageStore } from "../../stores/stageStore";
@@ -8,27 +9,17 @@ import { useMetricsStore } from "../../stores/metricsStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { openKnownFile } from "../../lib/openFile";
 import { eventToStageItem } from "../../lib/events";
-import { countEggs, filterEggs, primaryEggs, sortEggs, summarizeTools, type Egg, type EggFilter } from "../../lib/eggs";
-import {
-  agentCpuCores,
-  agentAverageCores,
-  agentPoints,
-  eggAverageCores,
-  eggCpuCores,
-  eggPoints,
-  findEgg,
-  formatPercent,
-  latestFrame,
-} from "../../lib/metrics";
+import { playingState } from "../../lib/history";
+import { filterEggs, type Egg, type EggFilter } from "../../lib/eggs";
 import { moodFor, statusLabel, type AgentVisualState } from "../../lib/agent";
 import { statusFromEvent } from "../../lib/events";
 import { useT } from "../../lib/i18n";
+import { Usage } from "../../components/metrics/Usage";
 import { Avatar } from "../../components/agent/Avatar";
 import { MediaAvatar } from "../../components/agent/MediaAvatar";
 import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
-import { CPU_COLOR, MEM_COLOR } from "../../lib/metricColors";
-import { Dot, Spark, attentionTone, toneForStatus } from "./atoms";
-import type { MonitorData } from "./useMonitorData";
+import { Dot, attentionTone, toneForStatus } from "../shared/atoms";
+import type { MonitorData } from "../../hooks/useMonitorData";
 
 /**
  * Right column: who is working, what it is worth in resources, what it knows,
@@ -109,7 +100,8 @@ function AgentHead({ data }: { data: MonitorData }) {
   // a pin made anywhere in the face has to flip the chip at once.
   const activeItem = useStageStore((s) => s.activeItem);
   const holding = !following && activeItem !== undefined;
-  const playing: "live" | "replay" = replaying || holding ? "replay" : "live";
+  // The shared rule (lib/history) — the same words Rounds' story prints.
+  const playing = playingState(following, activeItem, replaying);
   const playingTone = playing === "replay" ? "run" : "edit";
 
   /**
@@ -190,101 +182,9 @@ function AgentHead({ data }: { data: MonitorData }) {
 
 /* ── Cost ───────────────────────────────────────────────────────────────── */
 
-export function Usage() {
-  const t = useT();
-  const version = useMetricsStore((s) => s.version);
-  const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
-  const frames = useMetricsStore.getState().frames;
-  const now = useNow(2000);
-
-  /**
-   * The numbers for the asked-for scope: one egg when one is selected (the same
-   * selection Agent Eggs sets), otherwise the whole agent.
-   */
-  const { cores, avgCores, memMiB, peakMiB, cpuSpark, memSpark, cpuCount, scope } = useMemo(() => {
-    const latest = latestFrame(frames);
-    const cpuCountNow = latest?.host.cpuCount ?? 1;
-    const scoped = selectedEggPid !== undefined;
-    const points = scoped ? eggPoints(frames, selectedEggPid) : agentPoints(frames);
-    const spark = points.slice(-90).map((point, index, list) => {
-      if (index === 0) return 0;
-      const seconds = (point.ts - list[index - 1]!.ts) / 1000;
-      return seconds > 0 ? Math.max(0, (point.cpuSeconds - list[index - 1]!.cpuSeconds) / seconds) : 0;
-    });
-    const mem = points.slice(-90).map((point) => point.rssBytes / (1024 * 1024));
-    const egg = scoped ? findEgg(frames, selectedEggPid) : undefined;
-    return {
-      cores: scoped ? eggCpuCores(frames, selectedEggPid) : agentCpuCores(frames),
-      avgCores: scoped ? eggAverageCores(frames, selectedEggPid, 5 * 60_000) : agentAverageCores(frames, 5 * 60_000),
-      memMiB: egg?.rssBytes
-        ? egg.rssBytes / (1024 * 1024)
-        : scoped
-          ? (mem.at(-1) ?? 0)
-          : latest?.agent?.rssBytes
-            ? latest.agent.rssBytes / (1024 * 1024)
-            : (mem.at(-1) ?? 0),
-      peakMiB: mem.length > 0 ? Math.max(...mem) : 0,
-      cpuSpark: spark,
-      memSpark: mem,
-      cpuCount: cpuCountNow,
-      scope: scoped ? (egg?.name ?? `pid ${selectedEggPid}`) : undefined,
-    };
-  }, [frames, version, now, selectedEggPid]);
-
-  /**
-   * One row of labels, one row of figures.
-   *
-   *   CPU        <the process being watched>        MEM
-   *   0.30% avg 0.37%                          252 MB peak 292
-   *
-   * The label row names the *scope* in the middle, because the two figures are
-   * whatever that scope is: the whole agent by default, one egg when one is
-   * selected. Putting the name between them is what makes "CPU" and "MEM" mean
-   * something without a second caption line.
-   *
-   * The figure is one line, not three: the current value in its metric's colour,
-   * the secondary value beside it in small grey. `cores` and `host` were dropped
-   * — a rail this narrow is read at a glance, and "0.00 cores" beside "0.30%"
-   * says the same thing twice in different units.
-   */
-  const name = scope ?? t("Agent");
-
-  return (
-    <div className="mon-met">
-      <div className="mon-met__head">
-        <span>{t("CPU")}</span>
-        <span className="mon-met__name" title={name}>
-          {name}
-        </span>
-        <span>{t("MEM")}</span>
-      </div>
-
-      <div className="mon-met__row">
-        <div className="mon-met__cell">
-          <b style={{ color: CPU_COLOR }}>
-            {frames.length === 0 ? "—" : formatPercent((cores / Math.max(1, cpuCount)) * 100)}
-          </b>
-          {frames.length === 0 ? (
-            <small>{t("Waiting for the first sample…")}</small>
-          ) : (
-            <small>
-              {t("avg")} {formatPercent((avgCores / Math.max(1, cpuCount)) * 100)}
-            </small>
-          )}
-          {frames.length > 0 ? <Spark values={cpuSpark} tone="run" /> : null}
-        </div>
-
-        <div className="mon-met__cell mon-met__cell--end">
-          <b style={{ color: MEM_COLOR }}>
-            {frames.length === 0 ? "—" : formatBytes(memMiB * 1024 * 1024)}
-          </b>
-          {frames.length === 0 ? <small>&nbsp;</small> : <small>{`${t("peak")} ${Math.round(peakMiB)}`}</small>}
-          {frames.length > 0 ? <Spark values={memSpark} tone="read" /> : null}
-        </div>
-      </div>
-    </div>
-  );
-}
+/* The cost panel is the shared `components/metrics/Usage` — Monitor's rail and
+   Rounds' eggs window render the same one, and its derivation lives in
+   `lib/metrics` (`usageSummary`). */
 
 /* ── What it knows ──────────────────────────────────────────────────────── */
 
@@ -423,9 +323,7 @@ const EGG_FILTERS: EggFilter[] = ["running", "dead", "all"];
  */
 function Eggs() {
   const t = useT();
-  const version = useSessionStore((s) => s.eggState.version);
-  const retired = useSessionStore((s) => s.eggState.retired);
-  const eggsMap = useSessionStore.getState().eggState.eggs;
+  const { eggs, tools, counts, retired } = useEggs();
   const selectEgg = useMetricsStore((s) => s.selectEgg);
   const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
   const goMetrics = useStageStore((s) => s.goMetrics);
@@ -439,10 +337,6 @@ function Eggs() {
   const [filter, setFilter] = useState<EggFilter | undefined>(undefined);
   const [query, setQuery] = useState("");
 
-  const sorted = useMemo(() => sortEggs(eggsMap), [eggsMap, version]);
-  const eggs = useMemo(() => primaryEggs(sorted), [sorted]);
-  const tools = useMemo(() => summarizeTools(sorted), [sorted]);
-  const counts = countEggs(eggs);
   const activeFilter: EggFilter = filter ?? (counts.running > 0 ? "running" : "all");
   const shown = useMemo(() => {
     const base = filterEggs(eggs, activeFilter);

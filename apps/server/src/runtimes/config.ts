@@ -5,6 +5,9 @@ import { config, configure } from "../config";
 import { resolveDshBin } from "../agents/DshClient";
 import { resolveCodexBinDetailed } from "../agents/CodexBin";
 import { resolvePiDetailed } from "../agents/PiBin";
+import type { RuntimeStatus } from "@absence/core";
+
+export type { RuntimeStatus };
 
 /* ══════════════════════════════════════════════════════════════════════════
    Runtime configuration — the binary paths the agent runtimes need, editable
@@ -29,20 +32,6 @@ export interface RuntimePaths {
   codexBin?: string;
   /** dsh (DeepSeek Harness) CLI entry. */
   dshBin?: string;
-}
-
-/** One runtime's status row, as the picker shows it. */
-export interface RuntimeStatus {
-  kind: "pi" | "codex" | "dsh" | "mock";
-  label: string;
-  /** True when the runtime looks startable right now. */
-  available: boolean;
-  /** True when this runtime takes a configurable binary path. */
-  configurable: boolean;
-  /** The path currently in use (resolved), when the runtime has one. */
-  path?: string;
-  /** A short human note: why it is unavailable, or how it is provided. */
-  note: string;
 }
 
 function read(): RuntimePaths {

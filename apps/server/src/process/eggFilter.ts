@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { EggFilterProfileMeta } from "@absence/core";
 
 /* ══════════════════════════════════════════════════════════════════════════
    Egg filter profiles — named files of command names the classifier treats
@@ -25,13 +26,8 @@ const DEFAULT_NAMES = [
   "cat", "grep", "sleep", "echo", "pwd", "whoami", "uname", "ps",
 ];
 
-export interface ProfileMeta {
-  name: string;
-  /** Epoch ms of the file's last modification. */
-  savedAt: number;
-  /** Number of names in the profile. */
-  count: number;
-}
+/** The wire shape is the shared contract (packages/core/api). */
+export type ProfileMeta = EggFilterProfileMeta;
 
 export interface Profile extends ProfileMeta {
   names: string[];

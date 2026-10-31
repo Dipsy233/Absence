@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { SoundSetMeta as SoundSetMetaWire } from "@absence/core";
 
 /* ══════════════════════════════════════════════════════════════════════════
    Sound sets — user-uploaded chimes, managed entirely from the Settings
@@ -79,13 +80,8 @@ function ensureDir(): void {
   fs.mkdirSync(DIR, { recursive: true });
 }
 
-export interface SoundSetMeta {
-  name: string;
-  /** Event → uploaded file name (as stored on disk). */
-  files: Partial<Record<string, string>>;
-  /** True when every event has a file, so no synthesised fallback rings. */
-  complete: boolean;
-}
+/** The wire shape is the shared contract (packages/core/api). */
+export type SoundSetMeta = SoundSetMetaWire;
 
 function readSet(name: string): SoundSetMeta | undefined {
   const dir = setDir(name);

@@ -1,14 +1,18 @@
 import type { ReactNode } from "react";
-import type { Attention, AttentionReason, PhaseType } from "../../types/report";
+import type { RunSummary } from "@absence/core";
+import type { Attention, AttentionReason } from "../../types/report";
 import type { ActivityRow } from "../../types/stage";
 import { useT } from "../../lib/i18n";
+import { ATTENTION_REASON_TEXT } from "../../lib/attention";
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The Monitor's shared vocabulary: a tone per kind, the phase words, the
-   attention verdict, and the two or three atoms every column reuses.
+   The faces' shared vocabulary: a tone per kind, the phase words, the
+   attention verdict, and the two or three atoms every face reuses.
 
    Tones are class suffixes (`mon-chip--read`), not raw colours, so the palette
-   stays in monitor.css and a theme change has one place to land.
+   stays in shared.css and a theme change has one place to land. This module
+   sits above the individual faces (monitor, rounds, chart, drip) — it must
+   never import from one, or the faces couple through their own primitives.
    ══════════════════════════════════════════════════════════════════════════ */
 
 export type MonTone = "think" | "read" | "search" | "edit" | "run" | "egg" | "err" | "mute";
@@ -44,62 +48,13 @@ export const TONE_FOR_KIND: Record<string, MonTone> = {
 };
 
 /**
- * Monitor's phases: three, not the report's five.
- *
- * A phase answers "what is the agent doing to the project", and there are only
- * three answers worth a divider in a feed:
- *
- *   investigating — reading files
- *   executing     — running commands
- *   implementing  — changing files
- *
- * The report engine also emits `verifying` (a command succeeded after a
- * failure) and `recovering` (a command failed). Both are *command* activity, so
- * they read as `executing` here: a feed that relabelled the same act three
- * times would put three dividers between two shell commands, and a red
- * RECOVERING band made a normal retry look like an incident. The report keeps
- * the finer phases; the feed keeps the honest coarse one.
+ * The feed's coarse phase and its per-row derivation are data logic — they
+ * live in lib/history beside the row builders; the words below are what a
+ * face prints for them.
  */
-export type MonPhase = "investigating" | "executing" | "implementing";
-
-const PHASE_FOLD: Record<PhaseType, MonPhase> = {
-  investigating: "investigating",
-  executing: "executing",
-  implementing: "implementing",
-  verifying: "executing",
-  recovering: "executing",
-};
-
-export function monPhase(phase: PhaseType): MonPhase {
-  return PHASE_FOLD[phase];
-}
-
-/**
- * The phase a *row* belongs to, read off the row's own kind.
- *
- * The report's phase signals are anchored on `command` events, which arrive
- * when a command finishes — so a RUN row (a `tool_start`) landed under the
- * phase the *previous* command had opened, and a shell row could appear under
- * "reading files". A feed knows what each row is, so the divider is derived
- * from the rows themselves and cannot disagree with them.
- *
- * Reasoning, lifecycle, approvals and errors do not change the kind of work, so
- * they inherit the current phase instead of opening one.
- */
-export function phaseForRow(row: ActivityRow): MonPhase | undefined {
-  switch (row.tone) {
-    case "read":
-    case "search":
-      return "investigating";
-    case "edit":
-      return "implementing";
-    case "run":
-    case "process":
-      return "executing";
-    default:
-      return undefined;
-  }
-}
+export type { MonPhase } from "../../lib/history";
+export { monPhase, phaseForRow } from "../../lib/history";
+import type { MonPhase } from "../../lib/history";
 
 /** Status dot colour: what the avatar is doing, in one hue. */
 export function toneForStatus(status: string): MonTone {
@@ -205,27 +160,30 @@ export function phaseIntent(phase: MonPhase): string {
   return PHASE_INTENT[phase];
 }
 
-const REASON_TEXT: Record<AttentionReason, string> = {
-  command_failed: "A command failed",
-  command_failure_streak: "Commands failed back-to-back — the agent may be flailing",
-  activity_stalled: "No activity for a long time — something may be stuck",
-  unresolved_error: "Unresolved error — no successful recovery detected",
-  agent_waiting: "Agent is waiting",
-  agent_stopped: "Agent stopped",
-  no_progress: "No progress detected",
-  external_change: "External file change observed",
-  process_left_running: "A process the agent started is still running",
-  outside_change: "A file outside the project was changed",
-  file_version_loop: "File versions oscillated — the agent may have undone its own edit",
-  command_retry_loop: "The same command failed repeatedly",
-};
-
 /** The human sentence for one attention reason (translated via the i18n table). */
 export function useReasonText(): (reason: AttentionReason) => string {
   const t = useT();
-  return (reason) => t(REASON_TEXT[reason]);
+  return (reason) => t(ATTENTION_REASON_TEXT[reason]);
 }
 
 export function attentionTone(level: Attention["level"]): MonTone {
   return level === "high" ? "err" : level === "medium" ? "run" : level === "low" ? "read" : "mute";
 }
+
+/* ── Run status ─────────────────────────────────────────────────────────── */
+
+/** A run's dot, in the shared tones. */
+export const RUN_TONE: Record<RunSummary["status"], MonTone> = {
+  running: "run",
+  completed: "edit",
+  interrupted: "mute",
+  error: "err",
+};
+
+/** How a run's status is spoken, matching Monitor's run list. */
+export const RUN_WORD: Record<RunSummary["status"], string> = {
+  running: "running",
+  completed: "done",
+  interrupted: "stopped",
+  error: "error",
+};

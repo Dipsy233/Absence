@@ -12,9 +12,9 @@ import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { StageItem } from "../../types/stage";
 import { REPLAY_SPEEDS } from "../../types/replay";
-import { Chip, TONE_FOR_KIND, type MonTone } from "./atoms";
+import { Chip, TONE_FOR_KIND, type MonTone } from "../shared/atoms";
 import { activityViews } from "./activityViews";
-import type { MonitorData } from "./useMonitorData";
+import type { MonitorData } from "../../hooks/useMonitorData";
 
 /**
  * The pages the Stage can be showing.
@@ -568,27 +568,14 @@ function Timeline({ data }: { data: MonitorData }) {
 
   /**
    * Re-load the replay store when the run has grown past what it holds.
-   *
-   * The store's events are a snapshot taken when replay was entered; a live run
-   * keeps appending after that. A replay gesture that aims past the loaded end
-   * — a track click, or a step forward — clamps to that stale end: the cursor
-   * creeps a hair and the page stays on the newest *loaded* event, which reads
-   * as "the click did nothing". Refreshing before the gesture keeps the cursor
-   * where it was and lets it reach the new tail.
+   * The staleness check and the position/playing-state restore live in the
+   * store (`refresh`) — they are facts about its own snapshot.
    */
   const ensureReplayFresh = () => {
     if (!data.run) return;
-    const replay = useReplayStore.getState();
-    const current = runEvents(data.events, data.run);
-    const stale =
-      replay.events.length !== current.length ||
-      replay.events.at(-1)?.timestamp !== current.at(-1)?.timestamp;
-    if (!stale) return;
-    const wasPlaying = replay.status === "playing";
-    const at = replay.currentTime;
-    load(current, { label: `#${data.run.index} · ${data.run.prompt}` });
-    useReplayStore.getState().seekTimestamp(at);
-    if (wasPlaying) play();
+    useReplayStore
+      .getState()
+      .refresh(runEvents(data.events, data.run), `#${data.run.index} · ${data.run.prompt}`);
   };
 
   /**

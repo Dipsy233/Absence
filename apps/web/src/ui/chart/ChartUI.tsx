@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AbsenceEvent, RunSummary } from "@absence/core";
+import type { AbsenceEvent } from "@absence/core";
 import { formatClock, formatOffset } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { useT } from "../../lib/i18n";
 import {
   reasonLevel,
-  renderRun,
 } from "../../lib/report";
 import { eventToStageItem } from "../../lib/events";
 import { useRunsStore } from "../../stores/runsStore";
@@ -14,8 +13,9 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
 import { FaceBar } from "../../components/layout/FaceBar";
 import { StageItemView } from "../../components/stage/StageItemView";
-import { ATTENTION_REASON_TEXT } from "../../components/stage/ReportOverlay";
-import { useMonitorData } from "../monitor/useMonitorData";
+import { ATTENTION_REASON_TEXT } from "../../lib/attention";
+import { RUN_WORD } from "../shared/atoms";
+import { useMonitorData } from "../../hooks/useMonitorData";
 import type {
   AttentionLevel,
   AttentionReason,
@@ -27,6 +27,7 @@ import type {
 import type { HistoryRun } from "../../types/history";
 
 import { ChartTimeline, type TimelinePick } from "./ChartTimeline";
+import { ChartChat } from "./ChartChat";
 import "./chart.css";
 
 /**
@@ -57,14 +58,6 @@ const KIND_CHIP: Record<TimelineKind, string> = {
   end: "mute",
 };
 
-/** How a run's status is spoken, matching Monitor's run list. */
-const RUN_WORD: Record<RunSummary["status"], string> = {
-  running: "running",
-  completed: "done",
-  interrupted: "stopped",
-  error: "error",
-};
-
 /** The chip a level wears: green / orange / red, grey when nothing fired. */
 const ATTENTION_CHIP: Record<AttentionLevel, string> = {
   none: "mute",
@@ -91,7 +84,9 @@ export function ChartUI() {
   const session = useSessionStore((s) => s.session);
 
   const run = data.run;
-  const report = useMemo(() => (data.facts ? renderRun(data.facts) : undefined), [data.facts]);
+  // The finished-run report comes rendered from the shared hook — one
+  // derivation, not a second `renderRun` per face.
+  const report = data.report;
 
   const [tab, setTab] = useState<Tab>("changes");
   const [pick, setPick] = useState<TimelinePick | undefined>(undefined);
@@ -105,11 +100,12 @@ export function ChartUI() {
   }, [run?.id]);
 
   const runs = useRunsStore((s) => s.runs);
-  const loadRuns = useRunsStore((s) => s.loadRuns);
+  const ensureLoaded = useRunsStore((s) => s.ensureLoaded);
   const selectRun = useUiStore((s) => s.selectRun);
+  // One guarded fetch lives in the store now; every face calls the same one.
   useEffect(() => {
-    if (session?.id && runs.length === 0) void loadRuns(session.id);
-  }, [session?.id, runs.length, loadRuns]);
+    ensureLoaded(session?.id);
+  }, [session?.id, ensureLoaded]);
 
   /** A click anywhere but the menu closes it. */
   useEffect(() => {
@@ -160,6 +156,7 @@ export function ChartUI() {
       <div className="mon-root chart-root">
         <FaceBar />
         <div className="chart-page-empty">{t("Nothing to report yet — send the agent a task.")}</div>
+        <ChartChat />
       </div>
     );
   }
@@ -651,6 +648,10 @@ export function ChartUI() {
           </div>
         </section>
       </div>
+
+      {/* The report page scrolls; the input does not — one rounded line, always
+          reachable at the bottom, in the same FaceChat skin as every face. */}
+      <ChartChat />
     </div>
   );
 }

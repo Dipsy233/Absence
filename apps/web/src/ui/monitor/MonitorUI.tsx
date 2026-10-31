@@ -7,7 +7,7 @@ import { FaceBar } from "../../components/layout/FaceBar";
 import { MonitorLeft } from "./MonitorLeft";
 import { MonitorStage } from "./MonitorStage";
 import { MonitorRight } from "./MonitorRight";
-import { useMonitorData } from "./useMonitorData";
+import { useMonitorData } from "../../hooks/useMonitorData";
 import type { ActivityRow } from "../../types/stage";
 import "./monitor.css";
 

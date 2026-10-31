@@ -23,6 +23,12 @@ interface RunsStore {
 
   hydrate: (runs: RunSummary[]) => void;
   loadRuns: (sessionId: string) => Promise<void>;
+  /**
+   * Fetch the run list once per session — the "if empty, load" guard every
+   * face's run list used to write for itself (chart, monitor, rounds, Classic's
+   * history panel, and the socket wiring, five copies of the same conditional).
+   */
+  ensureLoaded: (sessionId: string | undefined) => void;
   loadRunEvents: (sessionId: string, run: RunSummary) => Promise<void>;
   clear: () => void;
 }
@@ -58,6 +64,11 @@ export const useRunsStore = create<RunsStore>((set, get) => ({
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  },
+
+  ensureLoaded: (sessionId) => {
+    if (!sessionId || get().runs.length > 0 || get().loading) return;
+    void get().loadRuns(sessionId);
   },
 
   loadRunEvents: async (sessionId, run) => {

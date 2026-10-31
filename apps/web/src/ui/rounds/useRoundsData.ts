@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import type { AgentStatus } from "@absence/core";
-import { countEggs } from "../../lib/eggs";
 import { activityRowsVersion, memoRunRows } from "../../lib/history";
 import { useSelectedRun } from "../../hooks/useSelectedRun";
 import { useRunAttention } from "../../hooks/useRunAttention";
 import { useStageView } from "../../hooks/useStage";
+import { useEggs } from "../../hooks/useEggs";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -52,7 +52,6 @@ export function useRoundsData(): RoundsData {
   const displayInActivity = useSettingsStore((s) => s.displayInActivity);
   const observed = useIsObserved();
   const status = useSessionStore((s) => s.agent.status);
-  const eggVersion = useSessionStore((s) => s.eggState.version);
   const files = useFileStore((s) => s.files);
   const { item, following, mode } = useStageView();
   const { attention } = useRunAttention(run, events, status);
@@ -77,8 +76,9 @@ export function useRoundsData(): RoundsData {
     return asFile(item) ?? asFile(lastReadItem(rows));
   }, [item, rows, rowsVersion]);
 
-  const eggsMap = useSessionStore.getState().eggState.eggs;
-  const eggCounts = useMemo(() => countEggs(Object.values(eggsMap)), [eggsMap, eggVersion]);
+  // The badge reads the same derivation the eggs window lists (`useEggs`):
+  // helpers are folded, so the dock badge and the list cannot disagree.
+  const { counts: eggCounts } = useEggs();
   const folderCount = Object.keys(files).length;
 
   return {

@@ -6,21 +6,18 @@
  * captured at that moment, so later changes on disk can never rewrite what the
  * agent actually had in context.
  */
-export interface FileVersion {
-  version: number;
-  timestamp: number;
-  source: "read" | "write" | "edit";
-  /** Display-ready content captured at this version. */
-  content: string;
-  /** True when this version holds the whole file. */
-  complete: boolean;
-  /** Original line number of the first displayed line (1 = whole file). */
-  lineOffset: number;
-  /** Highlight range, in original file coordinates. */
-  startLine?: number;
-  endLine?: number;
-  caption?: string;
-}
+import type { FileVersionInfo } from "@absence/core";
+
+/**
+ * The web's view of one recorded version.
+ *
+ * The fields are the shared `FileVersionInfo` contract (packages/core) minus
+ * the two only the persisted file index carries (`path` — the web view keeps it
+ * on the FileView, and `knownLines` — an archive-read concern). Deriving from
+ * the contract keeps the live view from drifting from what Agent Folder reads
+ * off disk.
+ */
+export type FileVersion = Omit<FileVersionInfo, "path" | "knownLines">;
 
 export type FileStatus = "idle" | "reading" | "editing" | "modified";
 

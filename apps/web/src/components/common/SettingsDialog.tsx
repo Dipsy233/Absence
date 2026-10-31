@@ -55,12 +55,24 @@ const FAIL_LEVEL_TEXT: Record<CommandFailLevel, string> = {
  * same place Pi and Codex put them, so they sit next to the prompt they act on.
  *
  * Rendered through a portal so the session bar's overflow/drag rules cannot
- * clip or swallow it.
+ * clip or swallow it — except when `portal={false}`: the faces' top bar mounts
+ * the dialog inside the face root instead, where the face's own `--desk-*`
+ * bridge re-points every `bg-desk-*` class at that face's palette (a portal to
+ * `document.body` would escape the face and fall back to Classic's colours).
  */
-export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsDialog({
+  open,
+  onClose,
+  portal = true,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Portal to document.body (Classic). The faces render in place instead. */
+  portal?: boolean;
+}) {
   if (!open || typeof document === "undefined") return null;
 
-  return createPortal(
+  const dialog = (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onMouseDown={(e) => {
@@ -86,9 +98,10 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         {/* ════ Right: egg filter profiles ══════════════════ */}
         <EggFilterPane />
       </div>
-    </div>,
-    document.body,
+    </div>
   );
+
+  return portal ? createPortal(dialog, document.body) : dialog;
 }
 
 /* ══════════════════════════════════════════════════════════════════════

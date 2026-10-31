@@ -1,0 +1,550 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   SHARED — the palette and chrome every face (monitor, rounds, chart, drip)
+   renders on, plus the atoms (chip, dot, button) and the top bar's own parts.
+
+   This file is the single home of the --mon-* tokens and of every class more
+   than one face uses. A face must not reach into another face's stylesheet:
+   import this file (directly or through FaceBar) instead. The `.mon-root`
+   scope keeps the palette from leaking into Classic's --desk-* desk world;
+   both live in the same bundle and the user can switch at any time.
+
+   Contrast floor: every text token clears 4.5:1 on its own surface (t3 is
+   5.9:1 on --mon-s1, t2 is 8.9:1). The kind colours (think/read/search/edit/
+   run/egg/err) are all ≥5.5:1 on the panel, so a tag is readable at 11px.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.mon-root {
+  --mon-bg: #121212;
+  --mon-s1: #191919;
+  --mon-s2: #202020;
+  --mon-s3: #2c2c2b;
+  --mon-bd: rgba(255, 255, 255, 0.08);
+  --mon-bd2: rgba(255, 255, 255, 0.16);
+  --mon-t: #f2f2f0;
+  --mon-t2: #b9b9b6;
+  --mon-t3: #96968f;
+
+  --mon-think: #bf8eda;
+  --mon-read: #5e9fe8;
+  --mon-search: #4fb9c9;
+  --mon-edit: #72bc8f;
+  --mon-run: #de9255;
+  --mon-egg: #df84a8;
+  --mon-err: #e97366;
+  --mon-acc: #5e9fe8;
+
+  --mon-sans: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Liberation Sans", Arial,
+    sans-serif;
+  --mon-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+
+  background: var(--mon-bg);
+  color: var(--mon-t);
+  font: 13px/1.45 var(--mon-sans);
+  /* The face fills the window: App renders it as #root's only child, which is
+     not a flex container, so the height has to come from here. */
+  display: flex;
+  height: 100vh;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+
+  /* ── The bridge to Classic's components ─────────────────────────────────
+     StageItemView, MetricsDashboard and the Markdown renderer are shared with
+     Classic and are written against --desk-* tokens. Re-pointing those tokens
+     at Monitor's palette here means every reused view lands in this face's
+     colours, with no fork of the views themselves. Channel triples keep the
+     `/40` opacity modifiers working. */
+  --desk-bg: 18 18 18;
+  --desk-panel: 25 25 25;
+  --desk-panel2: 32 32 32;
+  --desk-deep: 14 14 14;
+  --desk-line: 46 46 45;
+  --desk-ink: 242 242 240;
+  --desk-dim: 150 150 143;
+  --desk-accent: 94 159 232;
+  --desk-ember: 233 115 88;
+  --desk-teal: 114 188 143;
+  --desk-wood: 44 44 43;
+  --desk-wood-lit: 59 59 57;
+  --desk-lavender: 191 142 218;
+}
+
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+
+.mon-shell {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mon-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--mon-bd);
+  background: var(--mon-s1);
+  /* The bar is one row that must never wrap or scroll: the desktop shell's
+     minimum window is 1100px, and at that width the run block, the mode
+     switcher and the context meter together do not fit. Everything in it is
+     `flex: none` except the project path, which shrinks first, so the bar
+     loses a truncated path before it loses a control. */
+  overflow: hidden;
+}
+.mon-bar > * {
+  flex: none;
+}
+.mon-bar > .mon-bar__path {
+  /* Sits immediately left of the run block, and is the only thing in the bar
+     that may give way: the path truncates before any control does. `flex: 0 1
+     auto` (not `1`) is the point — a growing path would push the run block into
+     the middle of the bar instead of leaving it flush against the path. */
+  flex: 0 1 auto; /* shrink only */
+  min-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--mon-t2);
+}
+/* Everything after the run block is pushed to the right edge. */
+.mon-bar > .mon-bar__spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mon-drag {
+  -webkit-app-region: drag;
+}
+.mon-drag button,
+.mon-drag input,
+.mon-nodrag {
+  -webkit-app-region: no-drag;
+}
+
+/* ── Atoms ──────────────────────────────────────────────────────────────── */
+
+.mon-logo {
+  font-family: var(--mon-mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--mon-t);
+}
+
+.mon-mono {
+  font-family: var(--mon-mono);
+}
+
+.mon-cap {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mon-t3);
+}
+
+.mon-chip {
+  display: inline-flex;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: var(--mon-s3);
+  color: var(--mon-t2);
+}
+
+.mon-chip--think {
+  color: var(--mon-think);
+  background: rgb(191 142 218 / 0.14);
+}
+.mon-chip--read {
+  color: var(--mon-read);
+  background: rgb(94 159 232 / 0.14);
+}
+.mon-chip--search {
+  color: var(--mon-search);
+  background: rgb(79 185 201 / 0.14);
+}
+.mon-chip--edit {
+  color: var(--mon-edit);
+  background: rgb(114 188 143 / 0.14);
+}
+.mon-chip--run {
+  color: var(--mon-run);
+  background: rgb(222 146 85 / 0.14);
+}
+.mon-chip--egg {
+  color: var(--mon-egg);
+  background: rgb(223 132 168 / 0.14);
+}
+.mon-chip--err {
+  color: var(--mon-err);
+  background: rgb(233 115 88 / 0.14);
+}
+
+.mon-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.mon-btn {
+  display: inline-flex;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--mon-t);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+.mon-btn:hover:not(:disabled) {
+  border-color: rgb(94 159 232 / 0.55);
+  color: var(--mon-acc);
+}
+.mon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.mon-btn--ghost {
+  border-color: transparent;
+  color: var(--mon-t2);
+}
+.mon-btn--ghost:hover:not(:disabled) {
+  background: var(--mon-s3);
+  border-color: transparent;
+  color: var(--mon-t);
+}
+.mon-btn--pri {
+  border-color: var(--mon-acc);
+  background: var(--mon-acc);
+  color: #0b1626;
+  font-weight: 600;
+}
+.mon-btn--pri:hover:not(:disabled) {
+  border-color: #7fb4ef;
+  background: #7fb4ef;
+  color: #0b1626;
+}
+.mon-btn--danger {
+  border-color: rgb(233 115 88 / 0.5);
+  color: var(--mon-err);
+}
+
+/* The attached terminal + session id, in a small card before the project path:
+   which session, then where it works. Click-through is not a goal — this is a
+   read-out you quote, so it is one line, dimmed, always visible. */
+.mon-termcard {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 7px;
+  background: var(--mon-s2);
+}
+.mon-termcard__term {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mon-t2);
+}
+.mon-termcard__sep {
+  width: 1px;
+  height: 12px;
+  background: var(--mon-bd2);
+}
+.mon-termcard__sid {
+  font-size: 10.5px;
+  color: var(--mon-t3);
+}
+
+.mon-empty {
+  padding: 18px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--mon-t3);
+}
+
+/* ── Mode switcher ──────────────────────────────────────────────────────── */
+
+.mon-modes {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 8px;
+  background: var(--mon-bg);
+}
+.mon-modes > button {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mon-t3);
+  font: 11.5px/1 var(--mon-sans);
+  white-space: nowrap;
+}
+.mon-modes > button:hover:not(:disabled) {
+  background: var(--mon-s2);
+  color: var(--mon-t);
+}
+.mon-modes > button[aria-pressed="true"] {
+  background: var(--mon-s3);
+  color: var(--mon-t);
+  font-weight: 600;
+}
+.mon-modes > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+/* Drip's switch: a small IV bag, not a tab. On means the floating window is up
+   over this face; off means it is not. It never changes which face you are on.
+
+   26px, the height of the bar's other controls: the bag is drawn inside it at
+   17px, where its outline is still a pixel of stroke. The bag is hollow when
+   off and holds fluid when on, and the drop under it is the one moving pixel in
+   the bar — the switch's state is legible without reading a colour. */
+.mon-drip {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 999px;
+  background: var(--mon-bg);
+  color: var(--mon-t3);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.mon-drip__icon {
+  width: 17px;
+  height: 17px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mon-drip__bag {
+  transition: fill 0.15s ease;
+}
+
+/* The falling drop is drawn only while the switch is on, so "off" is a still,
+   hollow bag rather than a bag with something moving in it. Filled, because a
+   1.4px circle left as an outline is a speck, not a drop. */
+.mon-drip__drop {
+  fill: currentColor;
+  opacity: 0;
+}
+
+.mon-drip:hover {
+  border-color: var(--mon-acc);
+  color: var(--mon-t);
+}
+
+.mon-drip[aria-pressed="true"] {
+  border-color: var(--mon-acc);
+  background: rgb(94 159 232 / 0.12);
+  color: var(--mon-acc);
+}
+
+.mon-drip[aria-pressed="true"] .mon-drip__bag {
+  fill: rgb(94 159 232 / 0.22);
+}
+
+.mon-drip[aria-pressed="true"] .mon-drip__drop {
+  animation: mon-drip-fall 2.4s ease-in infinite;
+}
+
+/* SVG user units, not CSS px: in a 24-unit box drawn at 17px a 4-unit fall is
+   about 2.8px on screen — the drip travels a little, it does not blink. */
+@keyframes mon-drip-fall {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  60% {
+    transform: translateY(2.4px);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(4px);
+    opacity: 0;
+  }
+}
+
+/* ── Health: focus, motion, scrollbars ──────────────────────────────────── */
+
+.mon-root :focus-visible {
+  outline: 2px solid rgb(94 159 232 / 0.85);
+  outline-offset: 2px;
+}
+/* A text field is not a button: the caret is its focus cue, not a ring. */
+.mon-root .mon-chat__input:focus-visible,
+.mon-root .rounds-inp__input:focus-visible {
+  outline: none;
+}
+.mon-root button,
+.mon-root input,
+.mon-root select {
+  font: inherit;
+}
+.mon-root button {
+  cursor: pointer;
+}
+.mon-root button:disabled {
+  cursor: not-allowed;
+}
+.mon-root ::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+.mon-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.mon-root ::-webkit-scrollbar-thumb {
+  border: 2px solid var(--mon-bg);
+  border-radius: 6px;
+  background: #3a3a38;
+}
+.mon-root ::-webkit-scrollbar-thumb:hover {
+  background: #4b4b48;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mon-root *,
+  .mon-root *::before,
+  .mon-root *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .mon-root .whalebun-root .stage * {
+    animation: none !important;
+  }
+}
+
+/* The desktop shell's minimum width. The mode switcher keeps its names, and
+   the context meter drops its total — the used/total text above it says both. */
+@media (max-width: 1140px) {
+  .mon-bar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+  .mon-modes > button {
+    padding: 0 6px;
+  }
+}
+
+/* ── The cost panel ───────────────────────────────────────────────────────
+   CPU · <scope> · MEM, then the two figures under them. Rendered by
+   components/metrics/Usage in Monitor's rail and Rounds' eggs window alike.
+   A label row and a figure row, no card, no background: the numbers are the
+   content and the section rule above them is the only chrome. */
+.mon-met {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  border-top: 1px solid var(--mon-bd);
+}
+.mon-met__head {
+  display: grid;
+  align-items: baseline;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px 14px 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mon-t3);
+}
+/* The middle slot names what the figures are *of*. It is the only thing in this
+   block that can be long, so it truncates and the two labels never move. */
+.mon-met__name {
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0;
+  text-transform: none;
+  font: 11px var(--mon-mono);
+  color: var(--mon-t2);
+}
+.mon-met__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 2px 14px 8px;
+}
+.mon-met__cell {
+  min-width: 0;
+}
+.mon-met__cell--end {
+  text-align: right;
+}
+/* One line: the current value in its metric's colour (set from metricColors by
+   the component, so it cannot drift from the chart), the secondary value beside
+   it small and grey. */
+.mon-met b,
+.mon-met small {
+  display: inline;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+.mon-met b {
+  font: 600 15px var(--mon-mono);
+}
+.mon-met small {
+  margin-left: 5px;
+  font: 11px var(--mon-sans);
+  color: var(--mon-t3);
+}
+.mon-met svg {
+  margin-top: 3px;
+}

@@ -1005,6 +1005,81 @@
   color: var(--ch-t3);
 }
 
+
+/* ── The chat row ─────────────────────────────────────────────────────────
+   One rounded line pinned under the report page (the shared FaceChat bar in
+   Chart's chrome). The page scrolls; the bar does not — a question is always
+   reachable, and the palette opens above it like in the other faces. */
+.chart-chat {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px 14px;
+  border-top: 1px solid var(--ch-bd);
+  background: var(--ch-s1);
+}
+.chart-chat__box {
+  display: flex;
+  height: 40px;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 14px;
+  border: 1px solid var(--ch-bd2);
+  border-radius: 20px;
+  background: var(--ch-bg);
+  transition: border-color 0.16s ease;
+}
+.chart-chat__box:focus-within {
+  border-color: rgb(94 159 232 / 0.55);
+}
+.chart-chat__input {
+  min-width: 60px;
+  flex: 1;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ch-t);
+  font: 13px var(--ch-sans);
+  outline: none;
+}
+.chart-chat__input::placeholder {
+  color: var(--ch-t3);
+}
+.chart-chat__note {
+  font-size: 12px;
+  color: var(--ch-t3);
+}
+/* The send/stop pair: the one filled element on the row, 36px so it sits
+   inside the 40px box with room to breathe. */
+.chart-chat__send {
+  flex: none;
+  height: 36px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--ch-acc);
+  color: #10151c;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.chart-chat__send:disabled {
+  opacity: 0.4;
+}
+.chart-chat__stop {
+  flex: none;
+  height: 36px;
+  padding: 0 18px;
+  border: 1px solid rgb(233 115 88 / 0.5);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--ch-err);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
 /* ── small screens ───────────────────────────────────────────────────────── */
 
 @media (max-width: 1100px) {

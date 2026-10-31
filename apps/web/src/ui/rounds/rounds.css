@@ -7,7 +7,7 @@
    panels the narrative does not always show.
 
    The palette is the Monitor vocabulary (`mon-root` remaps the desk tokens;
-   `mon-chip--*` and the termcard come from monitor.css), so a tone change has
+   `mon-chip--*` and the termcard come from shared.css), so a tone change has
    one place to land and the two faces can never disagree about what green
    means.
    ══════════════════════════════════════════════════════════════════════════ */

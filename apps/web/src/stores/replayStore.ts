@@ -33,6 +33,19 @@ interface ReplayStore {
 
   /** Load a run to replay. `startAtEnd` keeps the view at live instead. */
   load: (events: AbsenceEvent[], options?: { startAtEnd?: boolean; label?: string }) => void;
+  /**
+   * Reload when the run has grown past what the store holds.
+   *
+   * The store's events are a snapshot taken when replay was entered; a live run
+   * keeps appending after that. A replay gesture that aims past the loaded end
+   * — a track click, or a step forward — would clamp to that stale end: the
+   * cursor creeps a hair and the page stays on the newest *loaded* event, which
+   * reads as "the click did nothing". Refreshing before the gesture keeps the
+   * cursor where it was and lets it reach the new tail. Whether the snapshot is
+   * stale is a fact about the store's own contents, so the check lives here and
+   * not in every view that replays. Returns true when a reload happened.
+   */
+  refresh: (events: AbsenceEvent[], label?: string) => boolean;
   play: () => void;
   pause: () => void;
   stop: () => void;
@@ -70,6 +83,20 @@ export const useReplayStore = create<ReplayStore>((set, get) => {
         currentTime: at,
         view: seek(events, snapshots, at),
       });
+    },
+
+    refresh: (events, label) => {
+      const state = get();
+      const stale =
+        state.events.length !== events.length ||
+        state.events.at(-1)?.timestamp !== events.at(-1)?.timestamp;
+      if (!stale) return false;
+      const wasPlaying = state.status === "playing";
+      const at = state.currentTime;
+      get().load(events, { label: label ?? state.label });
+      get().seekTimestamp(at);
+      if (wasPlaying) get().play();
+      return true;
     },
 
     play: () => {

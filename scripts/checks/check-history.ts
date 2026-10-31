@@ -26,12 +26,12 @@ import {
   lastStageAction,
   STAGE_EVENT_TYPES,
 } from "../../apps/web/src/lib/events";
-import { EPHEMERAL_MS } from "../../apps/server/src/process/classify";
 import { openKnownFile, openUserFile } from "../../apps/web/src/lib/openFile";
 import { useStageStore } from "../../apps/web/src/stores/stageStore";
 import { useSessionStore } from "../../apps/web/src/stores/sessionStore";
 import { useFileStore } from "../../apps/web/src/stores/fileStore";
 import { buildSnapshots, seek, timelineEnd, timelineStart } from "../../apps/web/src/lib/replay";
+import { EPHEMERAL_MS } from "@absence/core";
 
 // The check boots its own server on an ephemeral port with an isolated state
 // dir, so it needs nothing running beforehand and never touches the user's

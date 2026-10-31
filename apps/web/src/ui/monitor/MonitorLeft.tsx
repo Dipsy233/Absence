@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { RunSummary } from "@absence/core";
 import { formatClock, formatOffset } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { useRunsStore } from "../../stores/runsStore";
@@ -14,32 +13,20 @@ import { attentionRecords, type AttentionNotice } from "../../hooks/useAttention
 import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { useChatStore } from "../../stores/chatStore";
 import { eventContext } from "../../lib/context";
+import { feedAnchors, groupFeedRows, replayRowAt, stripFeedAnchors } from "../../lib/history";
 import type { ActivityRow } from "../../types/stage";
 import {
   Chip,
   Dot,
+  RUN_TONE,
+  RUN_WORD,
   TONE_FOR_ROW,
-  phaseForRow,
   phaseIntent,
   phaseWord,
-  type MonPhase,
   type MonTone,
-} from "./atoms";
-import type { MonitorData } from "./useMonitorData";
+} from "../shared/atoms";
+import type { MonitorData } from "../../hooks/useMonitorData";
 
-const STATUS_TONE: Record<RunSummary["status"], MonTone> = {
-  running: "run",
-  completed: "edit",
-  interrupted: "mute",
-  error: "err",
-};
-
-const STATUS_WORD: Record<RunSummary["status"], string> = {
-  running: "running",
-  completed: "done",
-  interrupted: "stopped",
-  error: "error",
-};
 
 /**
  * Left column: the run selector, then the selected run's actions as a feed.
@@ -60,7 +47,6 @@ export function MonitorLeft({
 }) {
   const t = useT();
   const runs = useRunsStore((s) => s.runs);
-  const loadRuns = useRunsStore((s) => s.loadRuns);
   const sessionId = useSessionStore((s) => s.session?.id);
   const activeEventId = useStageStore((s) => s.activeItem?.source?.eventId);
   const following = useStageStore((s) => s.following);
@@ -86,20 +72,9 @@ export function MonitorLeft({
   const stageMode = useStageStore((s) => s.mode);
   const replayTime = useReplayStore((s) => s.currentTime);
   const replayRowId = useMemo(() => {
-    if (stageMode !== "replay" || data.rows.length === 0) return undefined;
-    let low = 0;
-    let high = data.rows.length - 1;
-    let found = -1;
-    while (low <= high) {
-      const mid = (low + high) >> 1;
-      if (data.rows[mid]!.event.timestamp <= replayTime) {
-        found = mid;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-    return found >= 0 ? data.rows[found]!.id : undefined;
+    if (stageMode !== "replay") return undefined;
+    // The shared binary scan (lib/history): the last row at or before the cursor.
+    return replayRowAt(data.rows, replayTime)?.id;
   }, [stageMode, data.rows, data.rowsVersion, replayTime]);
   const focusedEventId = useUiStore((s) => s.focusedEventId);
   const focusEvent = useUiStore((s) => s.focusEvent);
@@ -144,14 +119,12 @@ export function MonitorLeft({
   const stickToBottom = useRef(true);
 
   // A snapshot carries the run list, but a resumed session can mount before it
-  // arrives; one fetch per session is enough and a zero-run session is not a
-  // reason to loop.
-  const requested = useRef<string | undefined>(undefined);
+  // arrives. The guarded fetch lives in the store (`ensureLoaded`) — idempotent
+  // per session, so the effect can just follow the session id.
+  const ensureLoaded = useRunsStore((s) => s.ensureLoaded);
   useEffect(() => {
-    if (!sessionId || requested.current === sessionId) return;
-    requested.current = sessionId;
-    if (runs.length === 0) void loadRuns(sessionId);
-  }, [sessionId, runs.length, loadRuns]);
+    ensureLoaded(sessionId);
+  }, [sessionId, ensureLoaded]);
 
   useEffect(() => {
     const element = feedRef.current;
@@ -203,46 +176,14 @@ export function MonitorLeft({
    * Activity's own list (and the report) keep every event — only this reading
    * of them is compressed, and the count says so.
    */
-  const groups = useMemo(() => {
-    type Feed = { row: ActivityRow; count: number };
-    const out: Array<{ id: string; phase?: MonPhase; rows: Feed[] }> = [];
-    for (const row of data.rows) {
-      // The kind comes from the row itself (see `phaseForRow`), so a divider
-      // only appears where the kind of work actually changes — and a shell row
-      // can never be filed under "reading files".
-      const phase = phaseForRow(row);
-      let group = out[out.length - 1];
-      if (phase && group?.phase !== phase) {
-        group = { id: `p_${row.id}`, phase, rows: [] };
-        out.push(group);
-      } else if (!group) {
-        group = { id: `h_${row.id}`, rows: [] };
-        out.push(group);
-      }
-      // Fold only *state re-reports of one thing*: the same action, the same
-      // subject, the same stage card. Required because a `process` event is an
-      // update (the child count moves), not a new act. The Stage item id is part
-      // of the key so two different `npm test` runs are never merged, and
-      // RUN vs EXIT stay separate — they are the same command's two ends, and
-      // collapsing them would lose the fact that it finished.
-      const previous = group.rows[group.rows.length - 1];
-      if (
-        previous &&
-        previous.row.action === row.action &&
-        previous.row.primary === row.primary &&
-        previous.row.stageItem?.id === row.stageItem?.id
-      ) {
-        previous.row = row;
-        previous.count += 1;
-        continue;
-      }
-      group.rows.push({ row, count: 1 });
-    }
-    // `rowsVersion`, not `data.rows`: the array is the same object across
-    // updates (see `memoRunRows`), so depending on it froze the feed at its
-    // first render and every activity appeared only when the run ended.
-    return out;
-  }, [data.rows, data.rowsVersion]);
+  // The grouping, the fold and the anchors are lib/history derivations now —
+  // one reading view, not rules painted into this component. `rowsVersion`,
+  // not `data.rows`, is the dependency: the array is the same object across
+  // updates (see `memoRunRows`), so depending on it froze the feed at its
+  // first render and every activity appeared only when the run ended.
+  const groups = useMemo(() => groupFeedRows(data.rows), [data.rows, data.rowsVersion]);
+  const anchors = useMemo(() => feedAnchors(data.rows), [data.rows, data.rowsVersion]);
+  const bodyRows = useMemo(() => stripFeedAnchors(groups), [groups]);
 
   /**
    * The run's two boundaries, pinned above and below the scrolling feed.
@@ -252,18 +193,7 @@ export function MonitorLeft({
    * were looking at the first activity or the four-hundredth. They are taken
    * out of the stream (the fold above skips them) so they cannot appear twice.
    */
-  const startRow = data.rows.find((row) => row.action === "START");
-  const endRow = [...data.rows].reverse().find((row) => row.action === "END");
-  const bodyRows = useMemo(
-    () =>
-      groups
-        .map((group) => ({
-          ...group,
-          rows: group.rows.filter(({ row }) => row.action !== "START" && row.action !== "END"),
-        }))
-        .filter((group) => group.rows.length > 0),
-    [groups],
-  );
+  const { start: startRow, end: endRow } = anchors;
 
   const run = data.run;
   // A live run's duration has to move when nothing else changes, so this
@@ -343,12 +273,12 @@ export function MonitorLeft({
             aria-expanded={menuOpen}
             title={runs.length > 1 ? t("Switch run") : t("The run Activity is showing")}
           >
-            <Dot tone={run ? STATUS_TONE[run.status] : "mute"} />
+            <Dot tone={run ? RUN_TONE[run.status] : "mute"} />
             <span className="mon-runsel__q">
               {/* The run's state lives here, not in the rail's agent head: this
                   is where the reader picks between rounds, so this is where
                   "which round, how did it end" is answered. */}
-              {run ? `#${run.index} · ${t(STATUS_WORD[run.status])} — ${run.prompt || t("(observed activity)")}` : t("No run yet")}
+              {run ? `#${run.index} · ${t(RUN_WORD[run.status])} — ${run.prompt || t("(observed activity)")}` : t("No run yet")}
             </span>
             <span className="mon-runsel__c">
               {run ? `R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}` : "—"}
@@ -372,9 +302,9 @@ export function MonitorLeft({
                     }}
                   >
                     <span className="mon-runmenu__row">
-                      <Dot tone={STATUS_TONE[entry.status]} />
+                      <Dot tone={RUN_TONE[entry.status]} />
                       <span className="mon-runmenu__index">
-                        #{entry.index} · {t(STATUS_WORD[entry.status])}
+                        #{entry.index} · {t(RUN_WORD[entry.status])}
                       </span>
                       {/* How much of the session one round is: the store's
                           sequence range is inclusive, so this is every event
@@ -477,7 +407,7 @@ export function MonitorLeft({
         className="mon-fold"
         style={{ borderTop: "1px solid var(--mon-bd)", display: "flex", gap: 8, alignItems: "center" }}
       >
-        <Chip tone={run ? STATUS_TONE[run.status] : "mute"}>{run ? t(STATUS_WORD[run.status]) : t("idle")}</Chip>
+        <Chip tone={run ? RUN_TONE[run.status] : "mute"}>{run ? t(RUN_WORD[run.status]) : t("idle")}</Chip>
         <span className="mon-mono" style={{ fontSize: 11 }}>
           {elapsed}
         </span>
