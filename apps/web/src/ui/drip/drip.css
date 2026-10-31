@@ -467,11 +467,16 @@ html.drip-transparent #root {
   right: 8px;
 }
 
+/* A transparent floating window has no room for the tab's 30px shadow: the
+   window clips it, and what survives fills the 8px margin as a dark frame
+   around the ball — which reads as an opaque backdrop for the whole window.
+   Both anchors are flattened, or only one half of the screen would show it. */
+.drip-root--pip .drip-pill {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
 .drip-root--pip.drip-root--anchor-right .drip-pill {
   flex-direction: row-reverse;
-  /* The floating window is exactly the ball plus 8px margins, so the 30px
-     blur used in a tab would be cut off at the window's edge. */
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 .drip-root--pip.drip-root--anchor-right .drip-card {
@@ -549,6 +554,10 @@ html.drip-transparent #root {
   width: 380px;
   max-width: none;
   max-height: 430px;
+  /* Same reason as the pill: the 50px shadow would paint the window's margin
+     black. A hairline shadow keeps the card off the desktop without needing
+     room the window does not have. */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   animation: drip-card-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
