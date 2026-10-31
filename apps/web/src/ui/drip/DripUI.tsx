@@ -2,6 +2,8 @@ import { useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "reac
 import { useMonitorData } from "../monitor/useMonitorData";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useViewModeStore } from "../../stores/viewModeStore";
+import { moodFor, type AgentVisualState } from "../../lib/agent";
+import { Avatar } from "../../components/agent/Avatar";
 import { useT } from "../../lib/i18n";
 import { renderRun } from "../../lib/report";
 import { formatOffset } from "../../lib/format";
@@ -74,6 +76,7 @@ export function DripUI({
   const data = useMonitorData();
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
   const runtime = useSessionStore((s) => s.session?.agentRuntime);
+  const agentStatus = useSessionStore((s) => s.agent.status);
   const exitDrip = useViewModeStore((s) => s.exitDrip);
 
   const [open, setOpen] = useState(false);
@@ -93,9 +96,8 @@ export function DripUI({
 
   /**
    * The window is fitted to the card, not to a guessed size: a short reply
-   * gets a short window, a long event list gets one tall enough for all 430px.
-   * The window has 8px above the pill, the 84px pill, a 10px gap and 8px
-   * below.
+   * gets a short window, a long event list gets one tall enough for all 286px.
+   * The window has 8px above the 56px pill, no gap, and 8px below the card.
    */
   const cardRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
@@ -110,7 +112,7 @@ export function DripUI({
     const box = card.getBoundingClientRect();
     const height = Math.ceil(box.height);
     if (pip) setCardH(height);
-    onLayout({ width: Math.ceil(box.width) + 16, height: height + 110 });
+    onLayout({ width: Math.ceil(box.width) + 16, height: height + 72 });
   }, [open, pip, onLayout]);
 
   const run = data.run;
@@ -140,6 +142,13 @@ export function DripUI({
    */
   const state = run?.status === "error" ? "error" : running ? "running" : "idle";
 
+  /**
+   * The ball shows the agent itself, in the same animated pose the classic
+   * Agent panel uses: the status drives the character, the run only drives the
+   * ring around it.
+   */
+  const visual: AgentVisualState = { status: agentStatus, mood: moodFor(agentStatus) };
+
   const nowText = running
     ? (data.liveHeadline ?? (last ? `${last.action} ${last.primary}` : t("Waiting for the first event.")))
     : (last ? `${last.action} ${last.primary}` : t("Listening"));
@@ -164,6 +173,8 @@ export function DripUI({
   return (
     <div
       className={`drip-root${pip ? " drip-root--pip" : ""}${desktop ? " drip-root--desktop" : ""}${
+        pip || desktop ? " drip-root--float" : ""
+      }${
         anchor === "right" ? " drip-root--anchor-right" : ""
       }${vertical === "up" ? " drip-root--grow-up" : ""}`}
     >
@@ -179,7 +190,7 @@ export function DripUI({
         >
           <span className="drip-cap drip-cap--left">
             <span className="drip-orb drip-orb--state">
-              <img src="/app-icon.png" alt="" />
+              <Avatar visual={visual} compact />
             </span>
             {attention.level !== "none" ? (
               <span

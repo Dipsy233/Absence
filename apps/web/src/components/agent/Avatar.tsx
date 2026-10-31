@@ -305,7 +305,7 @@ function useFace(state: WhaleBunState): string {
 }
 
 /** Scale the 2048px canvas to fit the container, like the original page's fit(). */
-function useFit() {
+function useFit(pad = 24) {
   const ref = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.2);
 
@@ -313,14 +313,14 @@ function useFit() {
     const el = ref.current;
     if (!el) return;
     const fit = () => {
-      const s = Math.min((el.clientWidth - 24) / 1420, (el.clientHeight - 24) / 1330, 1.25);
+      const s = Math.min((el.clientWidth - pad) / 1420, (el.clientHeight - pad) / 1330, 1.25);
       setScale(Math.max(s, 0.02));
     };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [pad]);
 
   return { ref, scale };
 }
@@ -328,13 +328,15 @@ function useFit() {
 /**
  * The agent's avatar: the WhaleBun character, posed entirely by the event stream.
  * Drop-in replacement for the old CSS/SVG placeholder — same `visual` prop.
+ * `compact` drops the status row and the fit margin, so the character can live
+ * inside the floating ball, whose face is only 56px wide.
  */
-export function Avatar({ visual }: { visual: AgentVisualState }) {
+export function Avatar({ visual, compact = false }: { visual: AgentVisualState; compact?: boolean }) {
   const status = visual.status;
   const mood = visual.mood ?? "calm";
   const state = STATE_FOR[status];
   const face = useFace(state);
-  const { ref, scale } = useFit();
+  const { ref, scale } = useFit(compact ? 0 : 24);
 
   return (
     <div className="whalebun-root flex h-full flex-col" data-mood={mood} data-state={state}>
@@ -376,7 +378,7 @@ export function Avatar({ visual }: { visual: AgentVisualState }) {
         </div>
       </div>
 
-      <AgentStatusRow status={status} />
+      {compact ? null : <AgentStatusRow status={status} />}
     </div>
   );
 }

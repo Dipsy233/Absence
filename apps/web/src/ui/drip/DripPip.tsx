@@ -25,16 +25,14 @@ import "./drip.css";
  */
 
 /**
- * The resting size. The open size is measured from the card itself — see
- * DripUI's layout effect — so a short reply gets a short window instead of a
- * guessed 548px box.
+ * The resting size: the 56px ball plus the 8px margin on each side.
  */
-const BALL: [number, number] = [100, 100];
+const BALL: [number, number] = [72, 72];
 
 /**
  * Chrome draws a title strip above the document, and the window size includes
  * it, so the document gets less height than the number passed in. It is about
- * a third of the ball (84px), hence 28px: both the ball and the card are
+ * a third of the old 84px ball, hence 28px: both the ball and the card are
  * shortened by exactly that much otherwise.
  */
 const TITLE_H = 28;

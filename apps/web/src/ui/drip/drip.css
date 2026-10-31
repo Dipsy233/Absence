@@ -106,13 +106,11 @@
   transition: border-color 0.18s ease;
 }
 
-.drip-orb--state img {
+/* The ball's icon is the agent itself — the same compact WhaleBun avatar the
+   classic Agent panel draws — cropped to the ring's circle. */
+.drip-orb--state > .whalebun-root {
   width: 100%;
   height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-  user-select: none;
-  -webkit-user-drag: none;
 }
 
 .drip-pill--running .drip-orb--state {
@@ -423,6 +421,11 @@
    window it swallows the pointer events the drag gesture needs. The ball is
    the handle, and the shell moves it. */
 .drip-root--pip {
+  /* The browser window cannot shrink below ~242px, so the strip fills whatever
+     width it grants, capped at the same 170px the desktop sheet uses. The card
+     then matches the pill exactly, like the desktop one. */
+  --drip-ball-size: 56px;
+  --drip-pip-strip: min(170px, calc(var(--drip-pip-w, 242px) - var(--drip-ball-size) - 16px));
   background: transparent;
 }
 
@@ -478,6 +481,17 @@ html.drip-transparent #root {
   flex-direction: row-reverse;
 }
 
+/* Opened, the pill joins the card exactly as on the desktop: the shared edge is
+   square, the outer one stays rounded. */
+.drip-root--pip .drip-pill.is-open {
+  border-radius: calc(var(--drip-ball-size, 84px) / 2) calc(var(--drip-ball-size, 84px) / 2) 0 0;
+  box-shadow: none;
+}
+
+.drip-root--pip.drip-root--grow-up .drip-pill.is-open {
+  border-radius: 0 0 calc(var(--drip-ball-size, 84px) / 2) calc(var(--drip-ball-size, 84px) / 2);
+}
+
 .drip-root--pip.drip-root--anchor-right .drip-card {
   left: auto;
   right: 0;
@@ -503,7 +517,7 @@ html.drip-transparent #root {
    underneath. `--drip-pip-w` is measured from the real window at runtime,
    because the minimum depends on the browser and the display scale. */
 .drip-root--pip .drip-mid {
-  width: calc(var(--drip-pip-w, 242px) - 100px);
+  width: var(--drip-pip-strip);
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
@@ -512,7 +526,7 @@ html.drip-transparent #root {
 }
 
 .drip-root--pip .drip-pill.is-open .drip-mid {
-  width: 248px;
+  width: var(--drip-pip-strip);
 }
 
 .drip-root--pip .drip-mid__now {
@@ -531,22 +545,24 @@ html.drip-transparent #root {
   white-space: nowrap;
 }
 
-/* The card must measure the same while the window is still ball-sized, so its
-   width cannot depend on `vw`; the host sizes the window from the card's box.
-   The window has already grown by the time it appears, and the card cannot
-   grow into a box that was measured before it was shown — so it fades and
-   slides in instead of unfolding. */
+/* The card continues the pill: no gap, the same width, square at the shared
+   edge and behind the pill so its shadow cannot darken the joint. */
 .drip-root--pip .drip-card {
+  top: 100%;
   right: auto;
   left: 0;
-  width: 380px;
+  z-index: -1;
+  width: calc(var(--drip-ball-size, 84px) + var(--drip-pip-strip, 170px));
   max-width: none;
-  max-height: 430px;
+  max-height: 286px;
+  border: 0;
+  border-radius: 0 0 12px 12px;
+  background: rgba(32, 32, 32, 0.96);
   /* Same reason as the pill: the 50px shadow would paint the window's margin
      black. A hairline shadow keeps the card off the desktop without needing
      room the window does not have. */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  animation: drip-card-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: drip-card-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s both;
 }
 
 @keyframes drip-card-in {
@@ -560,8 +576,11 @@ html.drip-transparent #root {
   }
 }
 
-/* Grown upwards the card hangs above the ball, so it arrives from below. */
+/* Grown upwards the card continues the pill above it, arriving from below. */
 .drip-root--pip.drip-root--grow-up .drip-card {
+  top: auto;
+  bottom: 100%;
+  border-radius: 12px 12px 0 0;
   animation-name: drip-card-in-up;
 }
 
@@ -638,13 +657,13 @@ html.drip-transparent #root {
   width: var(--drip-strip-w, 0px);
 }
 
-.drip-root--desktop .drip-mid__now {
+.drip-root--float .drip-mid__now {
   font-size: 12px;
   opacity: 1;
 }
 
-.drip-root--desktop .drip-mid__round,
-.drip-root--desktop .drip-mid__meta {
+.drip-root--float .drip-mid__round,
+.drip-root--float .drip-mid__meta {
   overflow: hidden;
   padding: 0 4px;
   font: 10px var(--drip-mono);
@@ -653,9 +672,10 @@ html.drip-transparent #root {
   white-space: nowrap;
 }
 
-/* The sheet's type and controls shrink with its ball: the card is only the
-   ball plus the strip wide, so the tab's padding would leave it cramped. */
-.drip-root--desktop .drip-dot {
+/* Both floating faces shrink their type and controls with the 56px ball: the
+   card is only the ball plus the strip wide, so the tab's padding would leave
+   it cramped. */
+.drip-root--float .drip-dot {
   right: 4px;
   bottom: 4px;
   width: 10px;
@@ -663,37 +683,37 @@ html.drip-transparent #root {
   box-shadow: 0 0 0 2px rgba(32, 32, 32, 0.95);
 }
 
-.drip-root--desktop .drip-card__head {
+.drip-root--float .drip-card__head {
   padding: 6px 8px;
 }
 
-.drip-root--desktop .drip-open {
+.drip-root--float .drip-open {
   height: 20px;
   padding: 0 7px;
   font-size: 10px;
 }
 
-.drip-root--desktop .drip-e {
+.drip-root--float .drip-e {
   gap: 6px;
   padding: 4px;
 }
 
-.drip-root--desktop .drip-e__tag {
+.drip-root--float .drip-e__tag {
   width: 44px;
   font-size: 9px;
 }
 
-.drip-root--desktop .drip-e__time {
+.drip-root--float .drip-e__time {
   font-size: 9.5px;
 }
 
-.drip-root--desktop .drip-form {
+.drip-root--float .drip-form {
   gap: 6px;
   padding: 8px 8px 10px;
 }
 
-.drip-root--desktop .drip-form__input,
-.drip-root--desktop .drip-form__send {
+.drip-root--float .drip-form__input,
+.drip-root--float .drip-form__send {
   height: 26px;
   font-size: 11.5px;
 }
