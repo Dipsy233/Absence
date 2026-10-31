@@ -102,6 +102,13 @@ export function DripPipHost() {
   const [failed, setFailed] = useState(false);
   const winRef = useRef<Window | undefined>(undefined);
   const rootRef = useRef<Root | undefined>(undefined);
+  /**
+   * The window's own chrome — the title strip Chrome draws above the document.
+   * `requestWindow`'s width/height describe the whole window, and `innerHeight`
+   * is what the document actually gets, so every window size has to be that
+   * much larger than the layout it has to show.
+   */
+  const padRef = useRef({ w: 0, h: 0 });
 
   /** Measured by the face, applied while the click's gesture is still live. */
   const resize = useCallback((size: { width: number; height: number } | null) => {
@@ -109,7 +116,7 @@ export function DripPipHost() {
     if (!win) return;
     const [width, height] = size ? [size.width, size.height] : BALL;
     try {
-      win.resizeTo(width, height);
+      win.resizeTo(width + padRef.current.w, height + padRef.current.h);
     } catch {
       // A browser that refuses resizeTo still shows the widget, just clipped.
     }
@@ -156,6 +163,16 @@ export function DripPipHost() {
       if (!alive) return;
 
       winRef.current = win;
+      // Chrome's title strip is part of the window, not of the document: the
+      // document only gets `innerHeight`, which is smaller than the height we
+      // asked for. Learn that difference once and add it to every resize, or
+      // the ball and the card are both cut off at the bottom.
+      const frameW = Math.round(win.outerWidth - win.innerWidth);
+      const frameH = Math.round(win.outerHeight - win.innerHeight);
+      padRef.current = {
+        w: frameW > 0 ? frameW : Math.max(0, BALL[0] - Math.round(win.innerWidth)),
+        h: frameH > 0 ? frameH : Math.max(0, BALL[1] - Math.round(win.innerHeight)),
+      };
       copyStyles(win.document);
       // Without a title the PiP window's title bar shows the page's origin
       // ("localhost:5173"); the app's own name replaces it.
