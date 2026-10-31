@@ -24,8 +24,12 @@ import { attentionOptionsNow } from "./useAttentionOptions";
  * Silent until the user interacts with the page (the browser's autoplay
  * policy), which is the right default: sound arrives only for sessions you
  * have already touched.
+ *
+ * `enabled` lets a second window bow out: while Drip floats over the face, the
+ * face is still open and listening to the same run, and two windows must not
+ * ring the same chime twice.
  */
-export function useSounds(): void {
+export function useSounds(enabled = true): void {
   const events = useEvents();
   const status = useSessionStore((s) => s.agent.status);
   const prevAttention = useRef<AttentionLevel>("none");
@@ -38,10 +42,12 @@ export function useSounds(): void {
   // Poll which events the active custom sound set covers, so uploaded chimes
   // play instead of the synthesised ones without a reload.
   useEffect(() => {
+    if (!enabled) return;
     startSoundCoveragePolling();
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     const last = events[events.length - 1];
 
     // A pending approval is the one thing the user must act on, so it rings
@@ -88,7 +94,7 @@ export function useSounds(): void {
     } else if (attentionTimer.current === undefined) {
       attentionTimer.current = setTimeout(judge, ATTENTION_INTERVAL_MS - since);
     }
-  }, [events, status]);
+  }, [events, status, enabled]);
 
   // A pending timer holds the newest event, so it still runs after unmount is
   // not needed — but leaving it armed across a session switch would judge the

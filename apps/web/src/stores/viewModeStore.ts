@@ -11,13 +11,18 @@ import { readStoredViewMode, storeViewMode, viewModeSpec, type ViewMode } from "
 interface ViewModeStore {
   mode: ViewMode;
   setMode: (mode: ViewMode) => void;
-  /** Leave Drip and hand the tab back to the last face that was showing. */
+  /** Drip floating over the current face — its own window, not a page. */
+  drip: boolean;
+  setDrip: (on: boolean) => void;
+  toggleDrip: () => void;
+  /** Drip was closed outside the toggle; come back to the face underneath. */
   exitDrip: () => void;
   reset: () => void;
 }
 
 export const useViewModeStore = create<ViewModeStore>((set) => ({
   mode: readStoredViewMode(),
+  drip: false,
 
   setMode: (mode) => {
     if (!viewModeSpec(mode).ready) return;
@@ -25,13 +30,18 @@ export const useViewModeStore = create<ViewModeStore>((set) => ({
     // face, and the browser closes that window with the tab that opened it.
     // Persisting `drip` would make every fresh visit to the port boot into a
     // tab that immediately hands itself over to a pop-up, so the stored mode
-    // always stays on the last real face — which is also the mode `exitDrip`
-    // restores.
+    // always stays on the last real face.
     if (mode !== "drip") storeViewMode(mode);
     set({ mode });
   },
 
-  exitDrip: () => set({ mode: readStoredViewMode() }),
+  setDrip: (on) => set({ drip: on }),
+
+  toggleDrip: () => set((state) => ({ drip: !state.drip })),
+
+  // A window manager closed Drip, or the browser took the PiP window down:
+  // the face underneath stays exactly where it was.
+  exitDrip: () => set({ drip: false }),
 
   // A user preference: leaving a session (reset) must not change it.
   reset: () => {},

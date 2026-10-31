@@ -37,26 +37,28 @@ const DRIP_SESSION = DRIP_PARAMS.get("session") ?? undefined;
 export default function App() {
   const session = useSessionStore((s) => s.session);
   const mode = useViewModeStore((s) => s.mode);
+  /** Drip is a switch over the current face, not a face of its own. */
+  const drip = useViewModeStore((s) => s.drip);
   // Inside the desktop shell the session bar is the frameless window's title
   // bar, so it must sit flush with the top edge.
   const desktop = Boolean(window.absenceDesktop);
-  /**
-   * Desktop Drip's launcher window: the shell hides it as soon as the floating
-   * window is up, so its socket is closed here. Otherwise the hidden window
-   * would ring a second time and compete with the visible one for the session.
-   */
-  const dripLauncher = desktop && mode === "drip" && !DRIP_WINDOW;
 
-  useSessionSocket(DRIP_WINDOW ? DRIP_SESSION : dripLauncher ? undefined : session?.id);
-  useSounds();
+  useSessionSocket(DRIP_WINDOW ? DRIP_SESSION : session?.id);
+  // The floating window has its own session and its own chimes; muting the face
+  // underneath keeps every event from ringing twice while Drip is up.
+  useSounds(!(desktop && drip));
 
+  // The desktop shell opens Drip as a second always-on-top window. The face
+  // underneath stays open and live — turning the switch off closes only the
+  // floating window.
   useEffect(() => {
-    if (!dripLauncher || !session?.id) return;
-    window.absenceDesktop?.openDrip(session.id);
-  }, [dripLauncher, session?.id]);
+    if (!desktop || DRIP_WINDOW) return;
+    if (drip && session?.id) window.absenceDesktop?.openDrip(session.id);
+    else window.absenceDesktop?.leaveDrip();
+  }, [desktop, drip, session?.id]);
 
-  // Closing the floating window (Open Absence, Alt+F4, or a load failure)
-  // brings the main window back; its face must leave Drip too.
+  // Closing the floating window (Open Absence, Alt+F4, or a load failure) turns
+  // the toggle back off, so the bar never claims Drip is up when it is not.
   useEffect(() => {
     if (!desktop || DRIP_WINDOW) return;
     return window.absenceDesktop?.onDripClosed(() => useViewModeStore.getState().exitDrip());
@@ -75,11 +77,15 @@ export default function App() {
     );
   }
 
+  /** The browser build's Drip: a Document PiP window over the tab's face. */
+  const pip = !desktop && drip ? <DripPipHost /> : null;
+
   if (mode === "monitor") {
     return (
       <>
         <MonitorUI />
         <ContextMenu />
+        {pip}
       </>
     );
   }
@@ -89,6 +95,7 @@ export default function App() {
       <>
         <RoundsUI />
         <ContextMenu />
+        {pip}
       </>
     );
   }
@@ -98,20 +105,7 @@ export default function App() {
       <>
         <ChartUI />
         <ContextMenu />
-      </>
-    );
-  }
-
-  if (mode === "drip") {
-    // The desktop shell gives Drip its own always-on-top window and hides this
-    // one (see the launcher effect above), so nothing is left to draw here.
-    // A browser tab cannot stay on top of other tabs; the browser build moves
-    // the face into a Document Picture-in-Picture window and empties the tab.
-    if (desktop) return null;
-    return (
-      <>
-        <DripPipHost />
-        <ContextMenu />
+        {pip}
       </>
     );
   }
@@ -125,6 +119,7 @@ export default function App() {
         <RightRail />
       </div>
       <ContextMenu />
+      {pip}
     </div>
   );
 }

@@ -1,21 +1,19 @@
 import { useRef, useState } from "react";
 import { isAgentBusy } from "@absence/core";
-import { formatBytes, formatClock } from "../../lib/format";
-import { useNow } from "../../hooks/useNow";
+import { formatBytes } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { useStageStore } from "../../stores/stageStore";
 import { useMetricsStore } from "../../stores/metricsStore";
-import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
-import { leaveSession } from "../../stores/reset";
-import { VIEW_MODES, viewModeSpec } from "../../lib/viewMode";
+import { viewModeSpec } from "../../lib/viewMode";
 import { useViewModeStore } from "../../stores/viewModeStore";
-import { WindowControls } from "../../components/common/WindowControls";
+import { FaceBar } from "../../components/layout/FaceBar";
 import { ChatThread } from "../../components/chat/ChatThread";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
+import { AttentionStack } from "../../components/attention/AttentionNotice";
+import { useAttentionNotices, type AttentionNotice } from "../../hooks/useAttentionNotices";
 import { knownFileItem, userFileItem } from "../../lib/openFile";
 import type { ActivityRow, StageItem } from "../../types/stage";
-import { Chip, Dot } from "../monitor/atoms";
 import { useRoundsData } from "./useRoundsData";
 import { RoundsScene } from "./RoundsScene";
 import { RoundsPeek } from "./RoundsPeek";
@@ -108,16 +106,12 @@ function newestItem(rows: ActivityRow[]): StageItem | undefined {
 
 export function RoundsUI() {
   const t = useT();
-  const now = useNow(1000);
   const data = useRoundsData();
-  const session = useSessionStore((s) => s.session);
-  const connected = useSessionStore((s) => s.connected);
-  const observed = useIsObserved();
+  /** What the run is asking a human to look at, as cards in the top-left corner. */
+  const notices = useAttentionNotices(data.run?.id, data.attention, data.rows);
   const mode = useViewModeStore((s) => s.mode);
-  const setMode = useViewModeStore((s) => s.setMode);
   const goLive = useStageStore((s) => s.goLive);
   const selectEgg = useMetricsStore((s) => s.selectEgg);
-  const desktop = Boolean(window.absenceDesktop);
 
   /** Open dock windows, in open order (later windows stack on top). */
   const [dockWins, setDockWins] = useState<DockPanel[]>([]);
@@ -183,6 +177,22 @@ export function RoundsUI() {
   };
 
   /**
+   * A notice card opened onto the desktop. The event it names gets its window,
+   * the same one the Run list would give that row; a row with nothing to put on
+   * a page (a tool boundary, say) falls back to the Run window, which is where
+   * every event is listed.
+   */
+  const openNotice = (notice: AttentionNotice) => {
+    if (!notice.eventId) return;
+    const row = data.rows.find((entry) => entry.id === notice.eventId);
+    if (row?.stageItem) {
+      openEventWindow(row.stageItem);
+      return;
+    }
+    if (!dockWins.includes("run")) toggleDock("run");
+  };
+
+  /**
    * The live activity window: while the agent is actually working, its newest
    * event gets its own page, the way Classic's Stage and Monitor's centre pop
    * the current event. One window is kept and its content replaced — never one
@@ -203,52 +213,7 @@ export function RoundsUI() {
 
   return (
     <div className="mon-root rounds-root mon-shell">
-      <header className={`rounds-top${desktop ? " mon-drag" : ""}`}>
-        <span className="mon-logo">ABSENCE</span>
-        <span className="mon-mono rounds-top__clock">{formatClock(now)}</span>
-
-        {session ? (
-          <div className="mon-termcard mon-nodrag" title={t("Connected terminal and session id")}>
-            <span className="mon-termcard__term">{session.agentRuntime}</span>
-            <span className="mon-termcard__sep" aria-hidden />
-            <span className="mon-termcard__sid mon-mono">{session.id}</span>
-          </div>
-        ) : null}
-
-        <span className="rounds-top__run" title={data.run?.prompt}>
-          {data.run ? `#${data.run.index} — ${data.run.prompt || t("(observed activity)")}` : t("No run yet")}
-        </span>
-
-        <span className="mon-bar__spacer" aria-hidden />
-
-        <div className="mon-modes mon-nodrag" role="group" aria-label={t("Interface mode")}>
-          {VIEW_MODES.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              aria-pressed={mode === entry.id}
-              disabled={!entry.ready}
-              onClick={() => setMode(entry.id)}
-              title={`${entry.name} — ${entry.intent}`}
-            >
-              {entry.name}
-            </button>
-          ))}
-        </div>
-
-        {observed ? <Chip tone="read">{t("OBSERVING")}</Chip> : null}
-
-        <Chip tone={connected ? "edit" : "err"} title={connected ? t("online") : t("offline")}>
-          <Dot tone={connected ? "edit" : "err"} />
-          {connected ? t("online") : t("offline")}
-        </Chip>
-
-        <button type="button" className="mon-btn mon-btn--ghost mon-nodrag" onClick={() => void leaveSession()}>
-          {t("change")}
-        </button>
-
-        <WindowControls />
-      </header>
+      <FaceBar />
 
       {/*
         The desktop, one relative canvas: the conversation floats on the right
@@ -366,6 +331,13 @@ export function RoundsUI() {
           live={liveOn}
           setPanel={toggleDock}
           onToggleLive={() => setLiveOn((on) => !on)}
+        />
+
+        <AttentionStack
+          notices={notices.notices}
+          onOpen={openNotice}
+          onDismiss={notices.dismiss}
+          onDismissAll={notices.dismissAll}
         />
       </div>
 

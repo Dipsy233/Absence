@@ -310,6 +310,20 @@
   color: var(--mon-t3);
 }
 
+/* The left column's panel switch: every view gets an equal share of the strip,
+   so the three labels read as one control rather than three loose buttons. */
+.mon-seg--fill {
+  display: flex;
+  width: 100%;
+}
+.mon-seg--fill > button {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
 /* ── Left: the run + the feed ───────────────────────────────────────────── */
 
 .mon-lefthead {
@@ -1562,6 +1576,93 @@
 .mon-modes > button:disabled {
   cursor: not-allowed;
   opacity: 0.35;
+}
+
+/* Drip's switch: a small IV bag, not a tab. On means the floating window is up
+   over this face; off means it is not. It never changes which face you are on.
+
+   26px, the height of the bar's other controls: the bag is drawn inside it at
+   17px, where its outline is still a pixel of stroke. The bag is hollow when
+   off and holds fluid when on, and the drop under it is the one moving pixel in
+   the bar — the switch's state is legible without reading a colour. */
+.mon-drip {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 999px;
+  background: var(--mon-bg);
+  color: var(--mon-t3);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.mon-drip__icon {
+  width: 17px;
+  height: 17px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mon-drip__bag {
+  transition: fill 0.15s ease;
+}
+
+/* The falling drop is drawn only while the switch is on, so "off" is a still,
+   hollow bag rather than a bag with something moving in it. Filled, because a
+   1.4px circle left as an outline is a speck, not a drop. */
+.mon-drip__drop {
+  fill: currentColor;
+  opacity: 0;
+}
+
+.mon-drip:hover {
+  border-color: var(--mon-acc);
+  color: var(--mon-t);
+}
+
+.mon-drip[aria-pressed="true"] {
+  border-color: var(--mon-acc);
+  background: rgb(94 159 232 / 0.12);
+  color: var(--mon-acc);
+}
+
+.mon-drip[aria-pressed="true"] .mon-drip__bag {
+  fill: rgb(94 159 232 / 0.22);
+}
+
+.mon-drip[aria-pressed="true"] .mon-drip__drop {
+  animation: mon-drip-fall 2.4s ease-in infinite;
+}
+
+/* SVG user units, not CSS px: in a 24-unit box drawn at 17px a 4-unit fall is
+   about 2.8px on screen — the drip travels a little, it does not blink. */
+@keyframes mon-drip-fall {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  60% {
+    transform: translateY(2.4px);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(4px);
+    opacity: 0;
+  }
 }
 
 /* ── Health: focus, motion, scrollbars ──────────────────────────────────── */

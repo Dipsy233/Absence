@@ -13,9 +13,9 @@ import "./drip.css";
 /**
  * Drip — 输液: almost nothing.
  *
- * The packaged app puts this face in its own always-on-top window and shrinks
- * the main window around it. A browser cannot resize itself, so the browser
- * build keeps the whole viewport and hides the app behind the same backdrop the
+ * The packaged app puts this face in its own always-on-top window over the face
+ * it was turned on from. A browser cannot resize itself, so the browser build
+ * keeps the whole viewport and hides the app behind the same backdrop the
  * widget floats over: the face is the pill, everything else is empty. The
  * desktop build should mount this same component in a small window instead of
  * in `#root`; nothing here assumes the window is large.

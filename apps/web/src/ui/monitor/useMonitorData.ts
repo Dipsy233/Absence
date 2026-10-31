@@ -1,10 +1,8 @@
-import { useMemo, useRef } from "react";
-import { isAgentBusy, type AbsenceEvent } from "@absence/core";
+import { useMemo } from "react";
+import type { AbsenceEvent } from "@absence/core";
 import { useSelectedRun } from "../../hooks/useSelectedRun";
 import { useLiveItem } from "../../hooks/useStage";
-import { useNow } from "../../hooks/useNow";
-import { useAttentionOptions } from "../../hooks/useAttentionOptions";
-import { buildRunFacts, renderLive } from "../../lib/report";
+import { useRunAttention } from "../../hooks/useRunAttention";
 import { activityRowsVersion, memoRunRows } from "../../lib/history";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -15,11 +13,10 @@ import type { HistoryRun } from "../../types/history";
 /**
  * Everything the Monitor draws, derived once per render pass.
  *
- * The expensive part is `buildRunFacts` — it walks the whole run — and it is
- * clamped to twice a second (the same budget the attention chime uses). A
- * streamed token therefore updates the feed immediately (rows are incremental)
- * while the phase / attention verdict lags by at most 500 ms, which is
- * indistinguishable from live and keeps the frame cheap.
+ * The expensive part — `buildRunFacts` and the live attention verdict — lives
+ * in `useRunAttention` with the same 500ms clamp the chime uses, so a streamed
+ * token updates the feed immediately (rows are incremental) while the phase /
+ * attention verdict lags by at most half a second.
  */
 export interface MonitorData {
   run?: HistoryRun;
@@ -46,18 +43,11 @@ export interface MonitorData {
   rowsVersion: number;
 }
 
-const NO_ATTENTION: Attention = { level: "none", reasons: [], evidence: [] };
-
-/** Recompute facts at most this often (ms). */
-const FACTS_INTERVAL_MS = 500;
-
 export function useMonitorData(): MonitorData {
   const { run, events, loading } = useSelectedRun();
-  const attentionOptions = useAttentionOptions();
   const displayInActivity = useSettingsStore((s) => s.displayInActivity);
   const observed = useIsObserved();
   const status = useSessionStore((s) => s.agent.status);
-  const tick = useNow(FACTS_INTERVAL_MS);
 
   // Classic's rule (`settings || observed`): an observed session always shows
   // its process rows, because for a watched agent they are the whole story.
@@ -68,30 +58,7 @@ export function useMonitorData(): MonitorData {
     [events, run, showProcessRows],
   );
 
-  /**
-   * `tick` really is the throttle — and the latest events reach the engine
-   * through a ref for the same reason.
-   *
-   * The session store hands out a new `events` array with every socket batch
-   * (one per ~50 ms), so keeping `events` in the dependency list recomputed the
-   * whole run twenty times a second — the "clamped to 500 ms" this module
-   * promises was not happening. Depending on `tick` alone recomputes exactly
-   * twice a second (plus when the run or the attention settings change),
-   * reading the freshest events through the ref.
-   */
-  const eventsRef = useRef(events);
-  eventsRef.current = events;
-  const facts = useMemo(() => {
-    void tick;
-    if (!run) return undefined;
-    try {
-      return buildRunFacts(eventsRef.current, run, attentionOptions);
-    } catch {
-      // A partially-built run (a snapshot that arrived mid-stream) must not
-      // take the whole Monitor down; the feed still works without the facts.
-      return undefined;
-    }
-  }, [run?.id, run?.status, tick, attentionOptions]);
+  const { facts, attention, headline } = useRunAttention(run, events, status);
 
   /**
    * What the Stage follows while it is live: the agent's *current action*, not
@@ -110,21 +77,14 @@ export function useMonitorData(): MonitorData {
    */
   const liveItem = useLiveItem();
 
-  const running = run?.status === "running";
-  const busy = isAgentBusy(status);
-  const live = useMemo(
-    () => (facts && running ? renderLive(facts, { busy, status }, attentionOptions) : undefined),
-    [facts, running, busy, status, attentionOptions],
-  );
-
   return {
     run,
     events,
     loading,
     rows,
     facts,
-    attention: live?.attention ?? facts?.attention ?? NO_ATTENTION,
-    liveHeadline: live?.headline,
+    attention,
+    liveHeadline: headline,
     liveEventId: liveItem?.source?.eventId,
     // Read after the rows memo above, so a fold that happened during this
     // render is counted in the version handed out with it.

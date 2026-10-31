@@ -5,21 +5,14 @@ import { useNow } from "../../hooks/useNow";
 import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { useT } from "../../lib/i18n";
 import {
-  DEFAULT_AGENT_STOPPED_LEVEL,
-  DEFAULT_COMMAND_RETRY_LOOP_LEVEL,
-  DEFAULT_FILE_VERSION_LOOP_LEVEL,
-  DEFAULT_OUTSIDE_CHANGE_LEVEL,
-  DEFAULT_PROCESS_LEFT_RUNNING_LEVEL,
-  DEFAULT_UNRESOLVED_ERROR_LEVEL,
+  reasonLevel,
   renderRun,
 } from "../../lib/report";
 import { eventToStageItem } from "../../lib/events";
-import { leaveSession } from "../../stores/reset";
 import { useRunsStore } from "../../stores/runsStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUiStore } from "../../stores/uiStore";
-import { ViewModeSwitch } from "../../components/layout/ViewModeSwitch";
-import { WindowControls } from "../../components/common/WindowControls";
+import { FaceBar } from "../../components/layout/FaceBar";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { ATTENTION_REASON_TEXT } from "../../components/stage/ReportOverlay";
 import { useMonitorData } from "../monitor/useMonitorData";
@@ -96,8 +89,6 @@ export function ChartUI() {
   const attentionOptions = useAttentionOptions();
   const data = useMonitorData();
   const session = useSessionStore((s) => s.session);
-  const connected = useSessionStore((s) => s.connected);
-  const desktop = Boolean(window.absenceDesktop);
 
   const run = data.run;
   const report = useMemo(() => (data.facts ? renderRun(data.facts) : undefined), [data.facts]);
@@ -166,15 +157,8 @@ export function ChartUI() {
 
   if (!run) {
     return (
-      <div className="chart-root">
-        <Header
-          nowMs={now}
-          desktop={desktop}
-          runtime={session?.agentRuntime}
-          sessionId={session?.id}
-          path={session?.projectPath}
-          connected={connected}
-        />
+      <div className="mon-root chart-root">
+        <FaceBar />
         <div className="chart-page-empty">{t("Nothing to report yet — send the agent a task.")}</div>
       </div>
     );
@@ -182,15 +166,8 @@ export function ChartUI() {
 
   if (!report || !facts) {
     return (
-      <div className="chart-root">
-        <Header
-          nowMs={now}
-          desktop={desktop}
-          runtime={session?.agentRuntime}
-          sessionId={session?.id}
-          path={session?.projectPath}
-          connected={connected}
-        />
+      <div className="mon-root chart-root">
+        <FaceBar />
         <div className="chart-page-empty">{t("loading…")}</div>
       </div>
     );
@@ -239,15 +216,8 @@ export function ChartUI() {
   };
 
   return (
-    <div className="chart-root">
-      <Header
-        nowMs={now}
-        desktop={desktop}
-        runtime={session?.agentRuntime}
-        sessionId={session?.id}
-        path={session?.projectPath}
-        connected={connected}
-      />
+    <div className="mon-root chart-root">
+      <FaceBar />
 
       <div className="chart-wrap">
         {/* ── the run, in one sentence ──────────────────────────────────── */}
@@ -685,62 +655,6 @@ export function ChartUI() {
   );
 }
 
-function Header({
-  nowMs,
-  desktop,
-  runtime,
-  sessionId,
-  path,
-  connected,
-}: {
-  nowMs: number;
-  desktop: boolean;
-  runtime?: string;
-  sessionId?: string;
-  path?: string;
-  connected: boolean;
-}) {
-  const t = useT();
-  return (
-    <header className={`chart-top${desktop ? " chart-drag" : ""}`}>
-      <span className="chart-top__logo">ABSENCE</span>
-      <span className="chart-top__clock chart-mono">{formatClock(nowMs)}</span>
-
-      {runtime ? (
-        <span className="chart-term chart-nodrag" title={t("Connected terminal and session id")}>
-          <span>{runtime}</span>
-          {sessionId ? <span className="chart-term__sid chart-mono">{sessionId}</span> : null}
-        </span>
-      ) : null}
-
-      <span className="chart-top__path chart-mono" title={path}>
-        {path ?? t("No run yet")}
-      </span>
-
-      <span className="chart-top__spacer" aria-hidden />
-
-      <span className={`chart-chip${connected ? " chart-chip--live" : ""}`}>
-        <span aria-hidden>●</span> {connected ? t("live") : t("offline")}
-      </span>
-
-      <div className="chart-nodrag">
-        <ViewModeSwitch />
-      </div>
-
-      <button
-        type="button"
-        onClick={leaveSession}
-        title={t("Close this session and pick another project")}
-        className="chart-btn chart-nodrag"
-      >
-        {t("change")}
-      </button>
-
-      <WindowControls />
-    </header>
-  );
-}
-
 function commandLabel(
   t: (key: string, params?: Record<string, string | number>) => string,
   command: CommandFact,
@@ -749,34 +663,4 @@ function commandLabel(
   if (command.exitCode !== undefined) return t("exit {code}", { code: command.exitCode });
   if (command.status === "failed") return t("failed");
   return t("unknown");
-}
-
-/**
- * The level a fired reason raised, from the user's settings with the engine's
- * own defaults. `computeAttention` keeps only the loudest level for the run;
- * this restores the per-rule reading so the card can count by level.
- */
-function reasonLevel(reason: AttentionReason, options: ReportAttentionOptions): AttentionLevel {
-  switch (reason) {
-    case "agent_stopped":
-      return options.agentStoppedLevel ?? DEFAULT_AGENT_STOPPED_LEVEL;
-    case "unresolved_error":
-      return options.unresolvedErrorLevel ?? DEFAULT_UNRESOLVED_ERROR_LEVEL;
-    case "command_failed":
-      return options.commandFailLevel ?? "low";
-    case "command_failure_streak":
-      return options.commandStreakLevel ?? "low";
-    case "activity_stalled":
-      return options.activityStallLevel ?? "medium";
-    case "process_left_running":
-      return options.processLeftRunningLevel ?? DEFAULT_PROCESS_LEFT_RUNNING_LEVEL;
-    case "outside_change":
-      return options.outsideChangeLevel ?? DEFAULT_OUTSIDE_CHANGE_LEVEL;
-    case "file_version_loop":
-      return options.fileVersionLoopLevel ?? DEFAULT_FILE_VERSION_LOOP_LEVEL;
-    case "command_retry_loop":
-      return options.commandRetryLoopLevel ?? DEFAULT_COMMAND_RETRY_LOOP_LEVEL;
-    default:
-      return "none";
-  }
 }

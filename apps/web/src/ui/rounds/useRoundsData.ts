@@ -3,11 +3,13 @@ import type { AgentStatus } from "@absence/core";
 import { countEggs } from "../../lib/eggs";
 import { activityRowsVersion, memoRunRows } from "../../lib/history";
 import { useSelectedRun } from "../../hooks/useSelectedRun";
+import { useRunAttention } from "../../hooks/useRunAttention";
 import { useStageView } from "../../hooks/useStage";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import type { ActivityRow, StageItem, StageMode } from "../../types/stage";
+import type { Attention } from "../../types/report";
 
 /**
  * Everything the Rounds face draws, derived once per render pass.
@@ -39,6 +41,8 @@ export interface RoundsData {
   status: AgentStatus;
   /** The file the agent is looking at: the live view, else the last read. */
   peek?: StageItem;
+  /** The run's human-attention verdict — what the notice cards are raised from. */
+  attention: Attention;
   /** Counts behind the dock's badges. */
   badges: { folder: number; eggs: number; activity: number };
 }
@@ -51,6 +55,7 @@ export function useRoundsData(): RoundsData {
   const eggVersion = useSessionStore((s) => s.eggState.version);
   const files = useFileStore((s) => s.files);
   const { item, following, mode } = useStageView();
+  const { attention } = useRunAttention(run, events, status);
 
   const showProcessRows = displayInActivity || observed;
   const rows = useMemo(
@@ -87,6 +92,7 @@ export function useRoundsData(): RoundsData {
     following,
     status,
     peek,
+    attention,
     badges: { folder: folderCount, eggs: eggCounts.running, activity: rows.length },
   };
 }

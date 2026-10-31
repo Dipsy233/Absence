@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useViewModeStore } from "../../stores/viewModeStore";
-import { useT } from "../../lib/i18n";
 import { DripUI } from "./DripUI";
 import "./drip.css";
 
@@ -114,8 +113,7 @@ function copyStyles(doc: Document) {
 }
 
 export function DripPipHost() {
-  const t = useT();
-  const exitDrip = useViewModeStore((s) => s.exitDrip);
+  const setDrip = useViewModeStore((s) => s.setDrip);
   const supported = pipApi() !== undefined;
 
   const [host, setHost] = useState<HTMLDivElement | undefined>();
@@ -135,16 +133,8 @@ export function DripPipHost() {
     }
   }, []);
 
-  /** Open Absence: hand the tab back, which also takes the PiP window down. */
-  const leave = useCallback(() => {
-    const win = winRef.current;
-    // Closing the window destroys the React root inside it; deferring keeps
-    // that teardown out of the button's own event dispatch.
-    window.setTimeout(() => {
-      win?.close();
-      exitDrip();
-    }, 0);
-  }, [exitDrip]);
+  /** Open Absence: the switch goes off, and the window goes with the host. */
+  const leave = useCallback(() => setDrip(false), [setDrip]);
 
   useEffect(() => {
     if (!supported) return;
@@ -159,12 +149,12 @@ export function DripPipHost() {
 
     const onHide = () => {
       // The PiP document is going away: unmount React while its nodes still
-      // exist, then restore the face in the tab.
+      // exist, then flip the switch back off so the bar agrees.
       const root = rootRef.current;
       rootRef.current = undefined;
       root?.unmount();
       setHost(undefined);
-      exitDrip();
+      setDrip(false);
     };
 
     void (async () => {
@@ -180,7 +170,13 @@ export function DripPipHost() {
         return;
       }
       // Strict Mode ran this effect twice; the second run owns the window.
-      if (!alive) return;
+      if (!alive) {
+        // The switch was turned back off before the request resolved: the
+        // browser still granted a window, so it has to be closed here or it
+        // would float with no owner.
+        win.close();
+        return;
+      }
 
       winRef.current = win;
       copyStyles(win.document);
@@ -210,7 +206,23 @@ export function DripPipHost() {
       alive = false;
       winRef.current?.removeEventListener("resize", onResize);
     };
-  }, [supported, exitDrip]);
+  }, [supported, setDrip]);
+
+  /**
+   * Turning the switch off unmounts this host, and the floating window must go
+   * with it. The close is deferred so it never runs inside React's teardown.
+   */
+  useEffect(
+    () => () => {
+      const root = rootRef.current;
+      rootRef.current = undefined;
+      const win = winRef.current;
+      winRef.current = undefined;
+      root?.unmount();
+      window.setTimeout(() => win?.close(), 0);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!host) return;
@@ -227,14 +239,10 @@ export function DripPipHost() {
     };
   }, [host, leave, resize]);
 
+  // PiP blocked or unavailable: the ball stays in the page instead.
   if (!supported || failed) return <DripUI />;
 
-  return (
-    <div className="drip-away">
-      <p>{t("Drip is floating outside this tab.")}</p>
-      <button type="button" onClick={leave}>
-        {t("Bring it back")}
-      </button>
-    </div>
-  );
+  // While the window is up the face behind it stays exactly as it was — the
+  // tab is no longer sacrificed to hold the widget.
+  return null;
 }

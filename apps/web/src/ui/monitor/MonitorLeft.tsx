@@ -9,6 +9,9 @@ import { useStageStore } from "../../stores/stageStore";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { useT } from "../../lib/i18n";
 import { FilePanel } from "../../components/files/FilePanel";
+import { AttentionList } from "../../components/attention/AttentionNotice";
+import { attentionRecords, type AttentionNotice } from "../../hooks/useAttentionNotices";
+import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { useChatStore } from "../../stores/chatStore";
 import { eventContext } from "../../lib/context";
 import type { ActivityRow } from "../../types/stage";
@@ -99,6 +102,7 @@ export function MonitorLeft({
     return found >= 0 ? data.rows[found]!.id : undefined;
   }, [stageMode, data.rows, data.rowsVersion, replayTime]);
   const focusedEventId = useUiStore((s) => s.focusedEventId);
+  const focusEvent = useUiStore((s) => s.focusEvent);
   const observed = useIsObserved();
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -123,8 +127,19 @@ export function MonitorLeft({
       document.removeEventListener("pointerdown", onPointerDown, true);
     };
   }, [menuOpen]);
-  /** Activity (what the agent did) or Files (the whole project, your view). */
-  const [view, setView] = useState<"activity" | "files">("activity");
+  /** Activity (what the agent did), Files (the project itself), Attention (what needs a human). */
+  const [view, setView] = useState<"activity" | "files" | "attention">("activity");
+  const attentionOptions = useAttentionOptions();
+  /**
+   * Read the run's attention the way Activity is read: from the persisted run,
+   * not from what happened to arrive while this page was open — so a historical
+   * run still lists what it needed a human for. The popup cards (Rounds) are the
+   * only thing that reacts to a reason being *new*.
+   */
+  const notices = useMemo(
+    () => attentionRecords(data.attention, data.facts, data.rows, attentionOptions),
+    [data.attention, data.facts, data.rows, data.rowsVersion, attentionOptions],
+  );
   const feedRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
@@ -159,7 +174,7 @@ export function MonitorLeft({
     if (!focusedEventId) return;
     const element = feedRef.current?.querySelector<HTMLElement>(`[data-event="${CSS.escape(focusedEventId)}"]`);
     element?.scrollIntoView({ block: "nearest" });
-  }, [focusedEventId, data.rows]);
+  }, [focusedEventId, data.rows, view]);
 
   /**
    * In replay the highlighted row must stay on screen as the cursor walks down
@@ -266,13 +281,27 @@ export function MonitorLeft({
     0,
   );
 
+  /**
+   * A notice click: its event on the Stage, and the feed scrolled to that row.
+   * It leaves the Attention tab first, because the thing the notice points at
+   * lives in Activity — a jump that stayed in the list would not be a jump.
+   */
+  const openNotice = (notice: AttentionNotice) => {
+    if (!notice.eventId) return;
+    setView("activity");
+    focusEvent(notice.eventId);
+    const row = data.rows.find((entry) => entry.id === notice.eventId);
+    if (row?.stageItem) onOpen(row);
+  };
+
   return (
     <div className="mon-col mon-col--left">
       <div className="mon-lefthead">
-        {/* Two views of one column: what the agent did, and the project it did
-            it to. The right rail is the *agent's* files, so the project tree
-            has to live here or the user cannot reach it at all. */}
-        <div className="mon-seg" role="tablist" aria-label={t("Left panel")}>
+        {/* Three views of one column: what the agent did, the project it did it
+            to, and what it is asking a human to look at. The right rail is the
+            *agent's* files, so the project tree has to live here or the user
+            cannot reach it at all. */}
+        <div className="mon-seg mon-seg--fill" role="tablist" aria-label={t("Left panel")}>
           <button
             type="button"
             role="tab"
@@ -292,6 +321,17 @@ export function MonitorLeft({
           >
             {t("Files")}
             <em>{t("{n} seen", { n: data.facts?.files.read.length ?? 0 })}</em>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "attention"}
+            data-on={view === "attention" ? "true" : undefined}
+            onClick={() => setView("attention")}
+            title={t("What the run needs a human for")}
+          >
+            {t("Attention")}
+            <em>{notices.length}</em>
           </button>
         </div>
 
@@ -368,6 +408,10 @@ export function MonitorLeft({
       {view === "files" ? (
         <div className="mon-feed" style={{ padding: 8 }}>
           <FilePanel />
+        </div>
+      ) : view === "attention" ? (
+        <div className="mon-feed" style={{ padding: 8 }}>
+          <AttentionList notices={notices} onOpen={openNotice} />
         </div>
       ) : (
       <>

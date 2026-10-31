@@ -760,39 +760,5 @@ html.drip-transparent #root {
   animation-name: drip-card-in-up;
 }
 
-/* ── The tab while the ball floats ──────────────────────────────────────── */
-
-.drip-away {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: #121212;
-  color: #b9b9b6;
-  font: 13px/1.5 "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Liberation Sans", Arial,
-    sans-serif;
-}
-
-.drip-away p {
-  margin: 0;
-}
-
-.drip-away button {
-  height: 30px;
-  padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 7px;
-  background: transparent;
-  color: #f2f2f0;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.drip-away button:hover {
-  border-color: rgba(94, 159, 232, 0.55);
-  color: #5e9fe8;
-}
+/* The browser build's PiP window is its own surface: when it is up, the tab is
+   given back to the face underneath rather than covered by a notice. */

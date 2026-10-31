@@ -925,6 +925,37 @@ export const DEFAULT_OUTSIDE_CHANGE_LEVEL: AttentionLevel = "low";
 export const DEFAULT_FILE_VERSION_LOOP_LEVEL: AttentionLevel = "medium";
 export const DEFAULT_COMMAND_RETRY_LOOP_LEVEL: AttentionLevel = "medium";
 
+/**
+ * The level one fired reason raised, from the user's settings with the engine's
+ * own defaults. `computeAttention` keeps only the loudest level for the run;
+ * this restores the per-rule reading, so a notice can colour itself and a quiet
+ * rule can be filtered out.
+ */
+export function reasonLevel(reason: AttentionReason, options: ReportAttentionOptions): AttentionLevel {
+  switch (reason) {
+    case "agent_stopped":
+      return options.agentStoppedLevel ?? DEFAULT_AGENT_STOPPED_LEVEL;
+    case "unresolved_error":
+      return options.unresolvedErrorLevel ?? DEFAULT_UNRESOLVED_ERROR_LEVEL;
+    case "command_failed":
+      return options.commandFailLevel ?? "low";
+    case "command_failure_streak":
+      return options.commandStreakLevel ?? "low";
+    case "activity_stalled":
+      return options.activityStallLevel ?? "medium";
+    case "process_left_running":
+      return options.processLeftRunningLevel ?? DEFAULT_PROCESS_LEFT_RUNNING_LEVEL;
+    case "outside_change":
+      return options.outsideChangeLevel ?? DEFAULT_OUTSIDE_CHANGE_LEVEL;
+    case "file_version_loop":
+      return options.fileVersionLoopLevel ?? DEFAULT_FILE_VERSION_LOOP_LEVEL;
+    case "command_retry_loop":
+      return options.commandRetryLoopLevel ?? DEFAULT_COMMAND_RETRY_LOOP_LEVEL;
+    default:
+      return "none";
+  }
+}
+
 /** A positive repeat count, or `fallback` when the value is unusable. */
 function loopThreshold(value: unknown, fallback: number): number {
   const n = typeof value === "number" ? Math.floor(value) : NaN;

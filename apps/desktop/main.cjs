@@ -301,8 +301,9 @@ function clampDrip(value, min, max) {
  * turns click-through off, anywhere else back on. That is the only state that
  * crosses the bridge besides the ball's offset.
  *
- * The main window is hidden as soon as the face is up; closing this window
- * (Open Absence, Alt+F4, or a failed load) brings it back and leaves Drip.
+ * The main window stays visible underneath: Drip floats over it, it does not
+ * replace it. Closing this window (Open Absence, Alt+F4, or a failed load)
+ * tells the face Drip is off and leaves the face where it was.
  */
 function createDripWindow(sessionId) {
   if (dripWin && !dripWin.isDestroyed()) {
@@ -365,7 +366,7 @@ function createDripWindow(sessionId) {
 
   const restoreMain = () => {
     if (!win || win.isDestroyed()) return;
-    win.show();
+    if (!win.isVisible()) win.show();
     win.focus();
     win.webContents.send("desktop:dripClosed");
   };
@@ -387,11 +388,6 @@ function createDripWindow(sessionId) {
   });
 
   dripWin.loadURL(url);
-
-  // The launcher window has already rendered empty, so hide it now rather than
-  // after `ready-to-show`: that would flash a blank window. If the face fails
-  // to load, `closed` brings it back.
-  if (win && !win.isDestroyed()) win.hide();
 }
 
 /**
