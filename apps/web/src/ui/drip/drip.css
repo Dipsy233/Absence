@@ -414,17 +414,23 @@
   max-width: none;
 }
 
-/* The PiP window cannot resize on hover — `resizeTo` needs a click's gesture —
-   so it keeps the width of an expanded pill and the sentence is always on show.
-   `100vw` inside a 352px window would leave only a sliver, hence the fixed
-   width, which the host's window size is derived from. */
+/* At rest the PiP window is the ball, so the middle collapses to nothing: a
+   hover cannot resize the window, and any sentence drawn outside it would be
+   clipped. It only stretches once the card is open and the window is wide. */
 .drip-root--pip .drip-mid,
-.drip-root--pip .drip-pill:hover .drip-mid,
+.drip-root--pip .drip-pill:hover .drip-mid {
+  width: 0;
+}
+
 .drip-root--pip .drip-pill.is-open .drip-mid {
   width: 248px;
 }
 
 .drip-root--pip .drip-mid__now {
+  opacity: 0;
+}
+
+.drip-root--pip .drip-pill.is-open .drip-mid__now {
   opacity: 1;
 }
 

@@ -17,21 +17,20 @@ import "./drip.css";
  * with the document that opened it, so `window.close()` would take the ball
  * down with the tab. Emptying the tab is the closest a page can get.
  *
- * The window is drawn as a bar rather than a ball: a PiP window cannot be
- * circular, and it cannot be resized by a hover, so it keeps the width the pill
- * needs and grows downwards only when the card is opened. The widget is pinned
- * to the window's top-left so growing never moves the ball.
+ * At rest the window is exactly the ball. A hover cannot resize a PiP window
+ * (`resizeTo` needs a click's gesture), so the sentence only appears once the
+ * card is opened and the window has grown; closing returns it to the ball. The
+ * widget is pinned to the window's top-left so growing never moves it.
  */
 
 /**
  * The two window sizes.
  *
- * There is no ball-sized state: `resizeTo` needs a user gesture, and a hover
- * is not one, so the window cannot grow when the pointer enters. It therefore
- * stays at the full bar — ball plus the current event — and only the click
- * (which *is* a gesture) opens the card and grows the window downwards.
+ * While resting the window is the ball alone; opening grows it to the card.
+ * Both calls happen inside the pill's click, because `resizeTo` only works
+ * while a user gesture is alive. Hover is not a gesture, so it cannot resize.
  */
-const BAR: [number, number] = [352, 100];
+const BALL: [number, number] = [100, 100];
 const OPENED: [number, number] = [400, 548];
 
 interface PipApi {
@@ -63,7 +62,7 @@ function requestPipWindow(): Promise<Window> | null {
   if (api.window) return Promise.resolve(api.window);
   if (!pipPromise) {
     pipPromise = api
-      .requestWindow({ width: BAR[0], height: BAR[1], disallowReturnToOpener: true })
+      .requestWindow({ width: BALL[0], height: BALL[1], disallowReturnToOpener: true })
       .finally(() => {
         pipPromise = null;
       });
@@ -111,7 +110,7 @@ export function DripPipHost() {
   const resize = useCallback((open: boolean) => {
     const win = winRef.current;
     if (!win) return;
-    const [width, height] = open ? OPENED : BAR;
+    const [width, height] = open ? OPENED : BALL;
     try {
       win.resizeTo(width, height);
     } catch {
