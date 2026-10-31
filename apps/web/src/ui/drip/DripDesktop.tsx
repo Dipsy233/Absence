@@ -2,8 +2,10 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -13,86 +15,145 @@ import "./drip.css";
 /**
  * The desktop build of Drip — the packaged app's floating ball.
  *
- * The shell gives this face its own frameless, transparent, always-on-top
- * window (loaded with `?face=drip`) and owns the geometry: it keeps one fixed
- * ball on screen and derives the window from it every time this face reports a
- * size, so nothing here can drift.
+ * The shell gives this face a frameless, transparent, always-on-top window that
+ * covers the whole work area. That window is a sheet, not a widget: it never
+ * moves and never resizes. The ball is only a position inside it (`bx`/`by`,
+ * pushed by the shell), so the panel can unfold whichever way is roomier
+ * without the window changing bounds at all. Resizing a transparent window on
+ * the same frame it moves was what made expanding flicker before; now there is
+ * nothing to resize.
  *
- * The shell also decides which way the panel grows from the ball ("left"/"right",
- * "down"/"up"). This face predicts that decision from the geometry the shell
- * hands it (same ball, same rule) and lays the pill out *before* it asks for the
- * resize — a direction that arrived afterwards would leave the ball at the
- * wrong end of the window for a frame, which reads as a flicker on every
- * expand and collapse.
+ * Because the sheet covers the screen, it must not eat the desktop's clicks:
+ * the shell keeps it click-through (`setIgnoreMouseEvents(true, { forward:
+ * true })`). Every pointer move, this face hit-tests the ball and the open
+ * panel and turns click-through off only while the pointer is on them.
  *
  * The ball is also the drag handle: a press asks the shell to grab it, and every
- * move afterwards tells the shell to re-place it under the cursor. Coordinates
- * never cross the bridge — the window slides under the pointer, so the shell
- * reads the cursor from the screen instead. A press that never travels more than
- * a few pixels still counts as a click that opens the card, so the pointer
- * capture is taken on the pill itself: the click then lands on the pill's own
- * handler instead of the wrapper, which would swallow it.
+ * move afterwards tells the shell to move it. Coordinates never cross the
+ * bridge — the shell reads the cursor from the screen. A press that never
+ * travels more than a few pixels still counts as a click that opens the card,
+ * so the pointer capture is taken on the pill itself: the click then lands on
+ * the pill's own handler instead of the wrapper, which would swallow it.
  */
 
-/** The ball plus its 8px margins — the window at rest. */
-const BALL = { width: 100, height: 100 };
+/** The ball's diameter, as DripUI draws it. */
+const BALL = 84;
 
-/** Hover: the ball plus room for "run #7 · …", the event and the counters. */
-const HOVER = { width: 340, height: 100 };
+/** The transparent margin kept along the screen edges. */
+const INSET = 8;
+
+/** The strip's width beside the ball when hovered; longer text is ellipsised. */
+const STRIP = 256;
+
+/** The card's width and tallest height, matching drip.css, plus the gap. */
+const CARD_W = 380;
+const CARD_MAX_H = 430;
+const GAP = 10;
 
 /** A press that travels farther than this is a drag, not a click. */
 const DRAG_SLOP = 4;
 
-/**
- * Hover-out waits this long before collapsing. The strip and the ball are one
- * surface but the pointer crosses their seam, and shrinking the window on the
- * first `mouseleave` makes that crossing flicker. It also gives the strip its
- * 180ms retract (see drip.css) time to finish before the window closes in on
- * the ball, so the outgoing text is never cut off by the window's edge.
- */
-const COLLAPSE_MS = 200;
+/** Slack around the interactive shapes so their edges are not fiddly. */
+const SLACK = 4;
+
+/** One clamp call: hit boxes and the card's place both need it. */
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(value, max));
+}
+
+interface Layout {
+  /** "left" = ball at the widget's left edge, strip grows right. */
+  anchor: "left" | "right";
+  vertical: "down" | "up";
+  /** The strip's width in this position (0 when there is no room at all). */
+  strip: number;
+  /** CSS custom properties that place the widget and the card (see drip.css). */
+  vars: CSSProperties;
+}
 
 /**
- * The shell's rule, restated (see `dripGrowFor` in apps/desktop/main.cjs): the
- * panel unfolds away from the nearer work-area edge and downwards, unless the
- * ball is too close to the bottom for the requested height. Both sides must
- * agree, or the ball would be placed for one direction and drawn for another.
+ * The panel decides where it fits, from where the ball is — not the other way
+ * round. Horizontal: the strip unfolds towards whichever side has more room,
+ * capped so it never runs past the screen edge. Vertical: the card hangs below
+ * the ball when there is room for its tallest size, otherwise above; when
+ * neither side is tall enough it takes the roomier one and shrinks to fit.
  */
-function growFor(
-  geometry: DripGeometry | null,
-  size: { width: number; height: number },
-  fallback: DripGrow,
-): DripGrow {
-  if (!geometry) return fallback;
-  const { ball, area, ballSize, inset } = geometry;
-  const horizontal = ball.x + ballSize / 2 > area.x + area.width / 2 ? "left" : "right";
-  const roomBelow = area.y + area.height - (ball.y + ballSize);
-  const needed = size.height - ballSize - inset;
-  const vertical = size.height <= ballSize + inset * 2 || roomBelow >= needed ? "down" : "up";
-  return { horizontal, vertical };
+function layoutFor(frame: DripFrame): Layout {
+  const { bx, by, width: w, height: h } = frame;
+
+  const roomRight = w - bx - BALL;
+  const roomLeft = bx;
+  const anchor = roomRight >= roomLeft ? "left" : "right";
+  const strip = clamp(anchor === "left" ? roomRight : roomLeft, 0, STRIP);
+
+  const roomBelow = h - by - BALL - GAP;
+  const roomAbove = by - GAP;
+  const vertical =
+    roomBelow >= CARD_MAX_H
+      ? "down"
+      : roomAbove >= CARD_MAX_H
+        ? "up"
+        : roomBelow >= roomAbove
+          ? "down"
+          : "up";
+  const cardH = Math.max(120, Math.min(CARD_MAX_H, vertical === "down" ? roomBelow : roomAbove));
+
+  // The card is centred under the ball but never leaves the screen.
+  const cardLeft = clamp(bx + BALL / 2 - CARD_W / 2, INSET, Math.max(INSET, w - INSET - CARD_W));
+  // Where its left (or right) edge sits relative to the widget, whose own edge
+  // is the ball's; drip.css anchors the card from that side.
+  const cardDx = anchor === "left" ? cardLeft - bx : bx + BALL - (cardLeft + CARD_W);
+
+  return {
+    anchor,
+    vertical,
+    strip,
+    vars: {
+      "--drip-ball-x": `${bx}px`,
+      "--drip-ball-y": `${by}px`,
+      "--drip-widget-right": `${w - bx - BALL}px`,
+      "--drip-strip-w": `${strip}px`,
+      "--drip-card-dx": `${cardDx}px`,
+      "--drip-card-max-h": `${cardH}px`,
+    } as CSSProperties,
+  };
+}
+
+/**
+ * Is the pointer on something the face draws?
+ *
+ * Measured from the DOM, not from the last frame the shell sent: the pill's
+ * rect is exactly what is on screen — ball, and the strip once it has stretched
+ * — so a frame that arrives a beat late can never make the sheet swallow clicks
+ * where nothing is drawn. The card is its own rect.
+ */
+function onShapes(x: number, y: number) {
+  for (const element of document.querySelectorAll(".drip-pill, .drip-card")) {
+    const box = element.getBoundingClientRect();
+    if (
+      x >= box.left - SLACK &&
+      x <= box.right + SLACK &&
+      y >= box.top - SLACK &&
+      y <= box.bottom + SLACK
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function DripDesktop() {
   const shell = window.absenceDesktop;
-  const openRef = useRef(false);
-  const hoverRef = useRef(false);
-  /** The size currently applied, so the layout can be re-derived later. */
-  const sizeRef = useRef(BALL);
-  /** Where the ball and its work area were when the size was last applied. */
-  const geometryRef = useRef<DripGeometry | null>(null);
-  /** The direction last applied; only rendered state changes when it flips. */
-  const growRef = useRef<DripGrow>({ horizontal: "left", vertical: "down" });
+  /** Where the ball sits inside the sheet; null until the shell answers. */
+  const [frame, setFrame] = useState<DripFrame | null>(null);
+  /** Whether the shell is currently ignoring the mouse (see the effect below). */
+  const ignoreRef = useRef(true);
   /** The press in flight, if any. */
   const pressRef = useRef<{ x: number; y: number; dragging: boolean; pill: HTMLElement } | null>(null);
   /** Set on release so the click that follows a drag can be swallowed. */
   const swallowClickRef = useRef(false);
-  /** The pending hover-out collapse, if any. */
-  const collapseRef = useRef<number | null>(null);
-  /** The pending frame that stretches the strip, if any. */
-  const frameRef = useRef<number | null>(null);
-  /** Whether the strip is stretched (hovered or open); drives the CSS transition. */
-  const [expanded, setExpanded] = useState(false);
-  const [grow, setGrow] = useState<DripGrow>(growRef.current);
+
+  const layout = useMemo(() => (frame ? layoutFor(frame) : null), [frame]);
 
   // The shell's window is transparent, and index.css paints the page dark for
   // every face. The class keeps html, body and #root clear (see drip.css) —
@@ -103,130 +164,54 @@ export function DripDesktop() {
     return () => html.classList.remove("drip-transparent");
   }, []);
 
-  const setGrowIfChanged = useCallback((value: DripGrow) => {
-    const prev = growRef.current;
-    if (prev.horizontal === value.horizontal && prev.vertical === value.vertical) return;
-    growRef.current = value;
-    setGrow(value);
-  }, []);
-
-  /**
-   * Apply a window size: pick the direction first, then tell the shell and the
-   * PiP styles (which size the strip as `window - 100px`, see drip.css).
-   */
-  const apply = useCallback(
-    (size: { width: number; height: number }) => {
-      sizeRef.current = size;
-      setGrowIfChanged(growFor(geometryRef.current, size, growRef.current));
-      document.documentElement.style.setProperty("--drip-pip-w", `${size.width}px`);
-      shell?.resizeDrip(size);
-    },
-    [shell, setGrowIfChanged],
-  );
-
-  /** Re-read the ball's screen position, then re-place for the current size. */
-  const refreshGeometry = useCallback(() => {
-    if (!shell) return;
-    shell
-      .dripGeometry()
-      .then((value) => {
-        if (!value) return;
-        geometryRef.current = value;
-        // Same size, possibly a different side: the shell places the window
-        // from the geometry too, so both end up agreeing.
-        apply(sizeRef.current);
-      })
-      .catch(() => {
-        // A shell that cannot answer keeps the last geometry it reported.
-      });
-  }, [shell, apply]);
-
+  // The ball's place inside the sheet: once on load, then on every drag.
   useEffect(() => {
     if (!shell) return;
-    refreshGeometry();
-    const off = shell.onDripGrow((value) => setGrowIfChanged(value));
-    return off;
-  }, [shell, refreshGeometry, setGrowIfChanged]);
+    let alive = true;
+    shell
+      .dripBall()
+      .then((value) => {
+        if (alive && value) setFrame(value);
+      })
+      .catch(() => {
+        // A shell that cannot answer keeps the sheet empty until a drag moves
+        // the ball and pushes a frame.
+      });
+    const off = shell.onDripBall((value) => setFrame(value));
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [shell]);
 
-  /** Measured by the face: `null` closed, the card's box when open. */
-  const resize = useCallback(
-    (size: { width: number; height: number } | null) => {
-      openRef.current = size !== null;
-      // Closing under the pointer returns to the hover strip, not the bare
-      // ball; the pointer is still there, so the text should still show.
-      apply(size ?? (hoverRef.current ? HOVER : BALL));
-      setExpanded(size !== null || hoverRef.current);
-    },
-    [apply],
-  );
-
-  const clearCollapse = useCallback(() => {
-    if (collapseRef.current === null) return;
-    window.clearTimeout(collapseRef.current);
-    collapseRef.current = null;
-  }, []);
-
-  /** Drop the pending stretch, if the pointer left before it landed. */
-  const clearStretch = useCallback(() => {
-    if (frameRef.current === null) return;
-    window.cancelAnimationFrame(frameRef.current);
-    frameRef.current = null;
-  }, []);
-
-  /**
-   * Stretch the strip on the next frame, not in this tick.
-   *
-   * The shell resizes the window over IPC, so the extra width only exists a
-   * frame later. Stretching into the old, ball-sized window would clip the
-   * text against its edge on the way out; waiting a frame means the strip
-   * always slides into a window that has room for it.
-   */
-  const stretch = useCallback(() => {
-    clearStretch();
-    frameRef.current = window.requestAnimationFrame(() => {
-      frameRef.current = null;
-      setExpanded(true);
-    });
-  }, [clearStretch]);
-
-  useEffect(
-    () => () => {
-      clearCollapse();
-      clearStretch();
-    },
-    [clearCollapse, clearStretch],
-  );
-
-  const hover = useCallback(
-    (on: boolean) => {
-      // A press owns the size until it ends: pointer capture retargets the
-      // boundary events, and a stray "leave" must not shrink the window out
-      // from under a drag.
-      if (pressRef.current) return;
-      if (on) {
-        clearCollapse();
-        hoverRef.current = true;
-        if (!openRef.current) {
-          apply(HOVER);
-          stretch();
-        }
+  // Click-through, decided per pointer move: the sheet covers the whole work
+  // area, so leaving it interactive outside the ball would eat the desktop's
+  // clicks. A press keeps it interactive until the gesture ends.
+  useEffect(() => {
+    if (!shell) return;
+    const apply = (next: boolean) => {
+      if (next === ignoreRef.current) return;
+      ignoreRef.current = next;
+      shell.setDripIgnore(next);
+    };
+    const onMove = (event: MouseEvent) => {
+      if (pressRef.current) {
+        apply(false);
         return;
       }
-      hoverRef.current = false;
-      if (openRef.current) return;
-      clearCollapse();
-      clearStretch();
-      // Retract the strip now, shrink the window once it is back inside the
-      // ball — the other way round would cut the outgoing text in half.
-      setExpanded(false);
-      collapseRef.current = window.setTimeout(() => {
-        collapseRef.current = null;
-        if (hoverRef.current || openRef.current) return;
-        apply(BALL);
-      }, COLLAPSE_MS);
-    },
-    [apply, stretch, clearCollapse, clearStretch],
-  );
+      apply(!onShapes(event.clientX, event.clientY));
+    };
+    // The pointer left the window entirely: nothing of the face is under it.
+    const onLeave = () => apply(true);
+
+    window.addEventListener("mousemove", onMove);
+    document.documentElement.addEventListener("mouseleave", onLeave);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      document.documentElement.removeEventListener("mouseleave", onLeave);
+      apply(true);
+    };
+  }, [shell]);
 
   /** Open Absence: the shell closes this window and brings the main one back. */
   const leave = useCallback(() => shell?.leaveDrip(), [shell]);
@@ -254,10 +239,8 @@ export function DripDesktop() {
       const press = pressRef.current;
       if (!press) return;
       if (!press.dragging) {
-        // The window has not moved yet, so these coordinates are still the
-        // pointer's honest travel. Past the threshold the ball follows and the
-        // renderer's coordinates stop meaning anything — which is why the
-        // shell reads the cursor itself from here on.
+        // These coordinates are the pointer's honest travel only until the ball
+        // starts following; past the threshold the shell reads the cursor itself.
         if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < DRAG_SLOP) return;
         press.dragging = true;
       }
@@ -276,10 +259,8 @@ export function DripDesktop() {
         press.pill.releasePointerCapture(event.pointerId);
       }
       shell?.endDripDrag();
-      // The ball may have moved; the panel's side is decided from where it is.
-      refreshGeometry();
     },
-    [shell, refreshGeometry],
+    [shell],
   );
 
   const onClickCapture = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
@@ -291,35 +272,37 @@ export function DripDesktop() {
   }, []);
 
   /**
-   * Capture lost mid-press (the window was moved out from under Chromium's
-   * capture, or focus went elsewhere): stop following the cursor, otherwise the
-   * floating window would trail it forever.
+   * Capture lost mid-press (focus went elsewhere): stop following the cursor,
+   * otherwise the ball would trail it forever.
    */
   const onLostPointerCapture = useCallback(() => {
     if (!pressRef.current) return;
     pressRef.current = null;
     swallowClickRef.current = true;
     shell?.endDripDrag();
-    refreshGeometry();
-  }, [shell, refreshGeometry]);
+  }, [shell]);
 
-  // Losing focus ends the gesture too — a drag has no business continuing
-  // after the shell has handed the window to another app.
+  // Losing focus ends the gesture too — a drag has no business continuing after
+  // the shell has handed the window to another app.
   useEffect(() => {
     const onBlur = () => {
       if (!pressRef.current) return;
       pressRef.current = null;
       swallowClickRef.current = true;
       shell?.endDripDrag();
-      refreshGeometry();
     };
     window.addEventListener("blur", onBlur);
     return () => window.removeEventListener("blur", onBlur);
-  }, [shell, refreshGeometry]);
+  }, [shell]);
+
+  // Nothing is drawn until the shell has said where the ball is: a ball at
+  // (0, 0) for one frame would flash in the sheet's corner.
+  const style: CSSProperties = { ...layout?.vars, visibility: frame ? "visible" : "hidden" };
 
   return (
     <div
       className="drip-desktop"
+      style={style}
       onPointerDownCapture={onPointerDownCapture}
       onPointerMoveCapture={onPointerMoveCapture}
       onPointerUpCapture={finishPress}
@@ -327,15 +310,14 @@ export function DripDesktop() {
       onLostPointerCapture={onLostPointerCapture}
       onClickCapture={onClickCapture}
     >
-      <DripUI
-        pip
-        anchor={grow.horizontal === "left" ? "right" : "left"}
-        vertical={grow.vertical}
-        expanded={expanded}
-        onHover={hover}
-        onLayout={resize}
-        onOpenAbsence={leave}
-      />
+      {layout ? (
+        <DripUI
+          desktop
+          anchor={layout.anchor}
+          vertical={layout.vertical}
+          onOpenAbsence={leave}
+        />
+      ) : null}
     </div>
   );
 }

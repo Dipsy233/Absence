@@ -139,12 +139,11 @@
   transition: width 0.24s ease;
 }
 
-/* A tab has the whole viewport to grow into. The floating window does not: it
-   is resized by the shell instead, and its strip follows `--expanded` (see the
-   pip rules below), so this rule must not fire there — a hover that widened
-   the strip before the window had grown would clip it for a frame. */
-.drip-root:not(.drip-root--pip) .drip-pill:hover .drip-mid,
-.drip-root:not(.drip-root--pip) .drip-pill.is-open .drip-mid {
+/* A tab has the whole viewport to grow into. The floating builds do not: the
+   browser PiP window is resized by its host, and the desktop sheet is fixed —
+   each lays its strip out below, so this rule must not fire there. */
+.drip-root:not(.drip-root--pip):not(.drip-root--desktop) .drip-pill:hover .drip-mid,
+.drip-root:not(.drip-root--pip):not(.drip-root--desktop) .drip-pill.is-open .drip-mid {
   width: min(320px, calc(100vw - 220px));
 }
 
@@ -504,23 +503,12 @@ html.drip-transparent #root {
    underneath. `--drip-pip-w` is measured from the real window at runtime,
    because the minimum depends on the browser and the display scale. */
 .drip-root--pip .drip-mid {
-  width: 0;
+  width: calc(var(--drip-pip-w, 242px) - 100px);
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
   gap: 1px;
-  /* The window is resized first and is transparent, so the room is already
-     there when the strip starts to stretch into it. Collapsing is the mirror
-     image: the strip retracts while the window is still wide, and only then
-     does the shell shrink it (see COLLAPSE_MS in DripDesktop.tsx). */
   transition: width 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-/* Hovered, or a card is open. DripDesktop flips this a frame *after* the
-   resize, so the stretch always starts inside a window that is already wide
-   enough — otherwise the text would be clipped by the closing edge. */
-.drip-root--pip.drip-root--expanded .drip-mid {
-  width: calc(var(--drip-pip-w, 242px) - 100px);
 }
 
 .drip-root--pip .drip-pill.is-open .drip-mid {
@@ -586,6 +574,94 @@ html.drip-transparent #root {
     opacity: 1;
     transform: none;
   }
+}
+
+/* ── the desktop sheet ──────────────────────────────────────────────────── */
+
+/* The shell's window covers the whole work area and never moves or resizes.
+   The face places the ball at the offset the shell reported, so the panel can
+   unfold whichever way is roomier without the window changing bounds. */
+.drip-root--desktop {
+  background: transparent;
+}
+
+.drip-root--desktop .drip-widget {
+  top: var(--drip-ball-y, 0px);
+  left: var(--drip-ball-x, 0px);
+  right: auto;
+  transform: none;
+  max-width: none;
+}
+
+/* The ball hugs the widget's right edge instead, so the strip unfolds leftwards
+   — and reversing the pill keeps the ball at the right end as it widens. */
+.drip-root--desktop.drip-root--anchor-right .drip-widget {
+  left: auto;
+  right: var(--drip-widget-right, 0px);
+}
+
+.drip-root--desktop .drip-pill {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  user-select: none;
+}
+
+.drip-root--desktop.drip-root--anchor-right .drip-pill {
+  flex-direction: row-reverse;
+}
+
+/* The room beside the ball is already there — the sheet is the work area — so
+   the strip simply slides out towards the side the face chose, as wide as that
+   side allows (`--drip-strip-w`). */
+.drip-root--desktop .drip-mid {
+  width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 1px;
+  transition: width 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.drip-root--desktop .drip-pill:hover .drip-mid,
+.drip-root--desktop .drip-pill.is-open .drip-mid {
+  width: var(--drip-strip-w, 0px);
+}
+
+.drip-root--desktop .drip-mid__now {
+  opacity: 1;
+}
+
+.drip-root--desktop .drip-mid__round,
+.drip-root--desktop .drip-mid__meta {
+  overflow: hidden;
+  padding: 0 4px;
+  font: 10.5px var(--drip-mono);
+  color: var(--drip-t3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The card hangs off the widget edge that is the ball's, at the offset the face
+   measured so it stays on screen; `--drip-card-max-h` is the room it found. */
+.drip-root--desktop .drip-card {
+  left: var(--drip-card-dx, 0px);
+  right: auto;
+  width: 380px;
+  max-width: none;
+  max-height: var(--drip-card-max-h, 430px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  animation: drip-card-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.drip-root--desktop.drip-root--anchor-right .drip-card {
+  left: auto;
+  right: var(--drip-card-dx, 0px);
+}
+
+/* Grown upwards: the card hangs above the ball and arrives from below. */
+.drip-root--desktop.drip-root--grow-up .drip-card {
+  top: auto;
+  bottom: calc(100% + 10px);
+  animation-name: drip-card-in-up;
 }
 
 /* ── The tab while the ball floats ──────────────────────────────────────── */

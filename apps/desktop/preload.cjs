@@ -14,25 +14,24 @@ contextBridge.exposeInMainWorld("absenceDesktop", {
     ipcRenderer.on("desktop:maximizedChanged", listener);
     return () => ipcRenderer.removeListener("desktop:maximizedChanged", listener);
   },
-  // Drip's floating window: the web face measures itself and the shell owns
-  // the real window, so opening, resizing and leaving all go through here.
+  // Drip's floating window: the web face draws the ball inside a fixed,
+  // transparent sheet and the shell owns the real window, so opening, moving
+  // and leaving all go through here.
   openDrip: (sessionId) => ipcRenderer.send("desktop:openDrip", sessionId),
   leaveDrip: () => ipcRenderer.send("desktop:leaveDrip"),
-  resizeDrip: (size) => ipcRenderer.send("desktop:dripResize", size),
+  // The sheet is click-through except under the ball and the open panel.
+  setDripIgnore: (ignore) => ipcRenderer.send("desktop:dripIgnore", ignore),
   // A drag is three signals, never coordinates: the shell reads the cursor
-  // itself, because the window slides under the pointer while it moves.
+  // itself and moves the ball.
   startDripDrag: () => ipcRenderer.send("desktop:dripDragStart"),
   dragDrip: () => ipcRenderer.send("desktop:dripDrag"),
   endDripDrag: () => ipcRenderer.send("desktop:dripDragEnd"),
-  // Which way the window grows from the ball ("left"/"right", "down"/"up").
-  dripGrow: () => ipcRenderer.invoke("desktop:dripGrow"),
-  // Where the ball is on screen, so the face can predict that direction before
-  // it asks for a resize instead of a round trip later.
-  dripGeometry: () => ipcRenderer.invoke("desktop:dripGeometry"),
-  onDripGrow: (callback) => {
-    const listener = (_event, grow) => callback(grow);
-    ipcRenderer.on("desktop:dripGrow", listener);
-    return () => ipcRenderer.removeListener("desktop:dripGrow", listener);
+  // Where the ball sits inside the sheet ("bx"/"by"), plus the sheet's size.
+  dripBall: () => ipcRenderer.invoke("desktop:dripBall"),
+  onDripBall: (callback) => {
+    const listener = (_event, frame) => callback(frame);
+    ipcRenderer.on("desktop:dripBall", listener);
+    return () => ipcRenderer.removeListener("desktop:dripBall", listener);
   },
   onDripClosed: (callback) => {
     const listener = () => callback();

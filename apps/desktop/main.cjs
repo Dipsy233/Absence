@@ -38,18 +38,18 @@ let dripWin = null;
 /**
  * Drip's ball, top-left in the same DIP screen coordinates `setBounds` uses.
  *
- * This is the one fixed point of the floating window: every size is placed by
- * deriving the window from the ball, never by reading a previous window's
- * bounds back. Windows quantizes bounds to whole device pixels, so a chain of
- * read-back-then-resize calls accumulates a pixel of upward creep per hover.
+ * The ball and the panel are independent: the window is a fixed, transparent
+ * sheet the size of the whole work area, so it never moves and never resizes.
+ * The face positions the ball inside it from `ball - area` and decides on its
+ * own which way the panel opens. Windows quantizes bounds to whole device
+ * pixels, and resizing a transparent window on the same frame it moves is what
+ * made the old grow-from-the-ball window flicker.
  */
 let dripBall = null;
-/** The window size the face last asked for, so a drag can reposition it. */
-let dripSize = { width: 100, height: 100 };
+/** The work area Drip's window covers, in DIPs; the ball lives inside it. */
+let dripArea = null;
 /** The pointer's offset inside the ball while a drag gesture is down. */
 let dripGrab = null;
-/** Which way the panel grows from the ball; the page lays the pill out to match. */
-let dripGrow = { horizontal: "left", vertical: "down" };
 /** @type {import("electron").Tray | null} */
 let tray = null;
 let quitting = false;
@@ -281,10 +281,6 @@ function createWindow(url) {
 
 /** The ball's diameter, as the face draws it. */
 const DRIP_BALL = 84;
-/** The transparent margin the face leaves around the ball, on every side. */
-const DRIP_INSET = 8;
-/** The window at rest: the ball plus its two margins. */
-const DRIP_REST = DRIP_BALL + DRIP_INSET * 2;
 
 /** Whole-number clamp; nested `Math.min`/`Math.max` reads poorly inline. */
 function clampDrip(value, min, max) {
@@ -292,13 +288,18 @@ function clampDrip(value, min, max) {
 }
 
 /**
- * Drip's floating window: frameless, transparent, always on top.
+ * Drip's floating window: frameless, transparent, always on top, and exactly
+ * the size of the work area.
  *
- * The face gets a real window instead of a Document Picture-in-Picture one,
- * because the shell can resize it at any time — a PiP window only resizes
- * inside a click's gesture. The web face measures itself and sends the size
- * over IPC; the window grows leftwards from the ball's right edge, so the ball
- * keeps its place on screen while the card unfolds.
+ * It is a sheet, not a widget: it covers the screen once, never moves and never
+ * resizes, and it is click-through by default (`setIgnoreMouseEvents(true,
+ * { forward: true })`, the same trick KoBar uses). The ball is just a shape
+ * drawn inside that sheet, so the panel can open whichever way it likes without
+ * the window ever changing bounds — the cause of the flicker is gone.
+ *
+ * The face reports where the pointer is: over the ball or the open panel it
+ * turns click-through off, anywhere else back on. That is the only state that
+ * crosses the bridge besides the ball's offset.
  *
  * The main window is hidden as soon as the face is up; closing this window
  * (Open Absence, Alt+F4, or a failed load) brings it back and leaves Drip.
@@ -314,8 +315,10 @@ function createDripWindow(sessionId) {
   const area = screen.getDisplayMatching(win ? win.getBounds() : screen.getPrimaryDisplay().workArea).workArea;
 
   dripWin = new BrowserWindow({
-    width: DRIP_REST,
-    height: DRIP_REST,
+    x: area.x,
+    y: area.y,
+    width: area.width,
+    height: area.height,
     useContentSize: true,
     frame: false,
     transparent: true,
@@ -346,16 +349,19 @@ function createDripWindow(sessionId) {
     },
   });
 
-  // The ball is the window's one fixed point: a margin in from the work area's
-  // right edge, vertically centred. Every later size is placed from here.
+  // The ball starts near the work area's right edge, vertically centred, and
+  // that is only a position inside the sheet — the window itself never moves.
+  dripArea = area;
   dripBall = {
-    x: Math.round(area.x + area.width - DRIP_INSET - DRIP_BALL - 40),
+    x: Math.round(area.x + area.width - DRIP_BALL - 40),
     y: Math.round(area.y + (area.height - DRIP_BALL) / 2),
   };
-  dripSize = { width: DRIP_REST, height: DRIP_REST };
   dripGrab = null;
-  dripGrow = { horizontal: "left", vertical: "down" };
-  placeDrip(dripSize);
+
+  // The sheet is transparent almost everywhere, so it must not eat clicks:
+  // ignore the mouse, but keep forwarding moves so the face can tell when the
+  // pointer is over the ball or the panel and turns interaction back on.
+  dripWin.setIgnoreMouseEvents(true, { forward: true });
 
   const restoreMain = () => {
     if (!win || win.isDestroyed()) return;
@@ -375,9 +381,8 @@ function createDripWindow(sessionId) {
   dripWin.on("closed", () => {
     dripWin = null;
     dripBall = null;
+    dripArea = null;
     dripGrab = null;
-    dripSize = { width: DRIP_REST, height: DRIP_REST };
-    dripGrow = { horizontal: "left", vertical: "down" };
     restoreMain();
   });
 
@@ -390,69 +395,34 @@ function createDripWindow(sessionId) {
 }
 
 /**
- * Which way the panel grows from the ball.
+ * Where the ball is inside the sheet, and how big the sheet is.
  *
- * Horizontally it opens away from the nearer work-area edge, so the ball keeps
- * its place and the panel unfolds towards the middle of the screen. Vertically
- * it opens downwards unless the ball sits too close to the bottom for the
- * requested height, in which case it flips up — the ball still does not move.
+ * The face draws the ball at `(bx, by)` and measures the room around it to
+ * decide which way the panel opens. It is a position, not geometry the shell
+ * derives: the window is fixed, so the ball is the only thing that moves.
  */
-function dripGrowFor(ball, area, size) {
-  const horizontal = ball.x + DRIP_BALL / 2 > area.x + area.width / 2 ? "left" : "right";
-  const roomBelow = area.y + area.height - (ball.y + DRIP_BALL);
-  const needed = size.height - DRIP_BALL - DRIP_INSET;
-  const vertical = size.height <= DRIP_BALL + DRIP_INSET * 2 || roomBelow >= needed ? "down" : "up";
-  return { horizontal, vertical };
+function dripFrame() {
+  if (!dripArea || !dripBall) return null;
+  return {
+    bx: dripBall.x - dripArea.x,
+    by: dripBall.y - dripArea.y,
+    width: dripArea.width,
+    height: dripArea.height,
+  };
 }
 
-/**
- * Place Drip's window for a `size` the face asked for, derived from the ball —
- * never from the window's previous bounds.
- *
- * Windows quantizes `setBounds` to whole device pixels, so a chain of
- * read-the-bounds-back-then-resize calls accumulates a pixel of drift per
- * hover. The ball is the only state that survives a resize, and the face lays
- * the pill out to match `dripGrow`, which is announced whenever it changes.
- */
-function placeDrip(size) {
-  if (!dripWin || dripWin.isDestroyed() || !dripBall) return;
-  const area = screen.getDisplayMatching({
-    x: dripBall.x,
-    y: dripBall.y,
-    width: DRIP_BALL,
-    height: DRIP_BALL,
-  }).workArea;
-  const w = Math.min(Math.max(1, Math.round(size.width)), area.width);
-  const h = Math.min(Math.max(1, Math.round(size.height)), area.height);
-
-  const grow = dripGrowFor(dripBall, area, { width: w, height: h });
-  if (grow.horizontal !== dripGrow.horizontal || grow.vertical !== dripGrow.vertical) {
-    dripGrow = grow;
-    if (!dripWin.isDestroyed()) dripWin.webContents.send("desktop:dripGrow", grow);
-  }
-
-  // The ball's margin may hang off the work area by DRIP_INSET, so the ball
-  // itself can sit flush against the screen edge.
-  const x =
-    grow.horizontal === "left" ? dripBall.x + DRIP_INSET + DRIP_BALL - w : dripBall.x - DRIP_INSET;
-  const y =
-    grow.vertical === "down" ? dripBall.y - DRIP_INSET : dripBall.y + DRIP_INSET + DRIP_BALL - h;
-
-  dripWin.setBounds({
-    x: Math.round(clampDrip(x, area.x - DRIP_INSET, area.x + area.width - w + DRIP_INSET)),
-    y: Math.round(clampDrip(y, area.y - DRIP_INSET, area.y + area.height - h + DRIP_INSET)),
-    width: w,
-    height: h,
-  });
+/** Push the ball's place inside the sheet to the face. */
+function sendDripFrame() {
+  if (!dripWin || dripWin.isDestroyed()) return;
+  const frame = dripFrame();
+  if (frame) dripWin.webContents.send("desktop:dripBall", frame);
 }
 
 /**
  * Remember where inside the ball the pointer went down.
  *
- * The cursor is read from the screen, not taken from the renderer: the window
- * moves under the pointer, so the pointer's position inside the window is the
- * one value that stays still. Nothing is moved here — a press that never
- * travels is still a click.
+ * The cursor is read from the screen, not taken from the renderer. Nothing is
+ * moved here — a press that never travels is still a click.
  */
 function dripPress() {
   if (!dripWin || dripWin.isDestroyed() || !dripBall) return;
@@ -460,16 +430,16 @@ function dripPress() {
   dripGrab = { x: cursor.x - dripBall.x, y: cursor.y - dripBall.y };
 }
 
-/** Move the ball so the grabbed point sits under the cursor, then re-place. */
+/** Move the ball so the grabbed point sits under the cursor, then tell the face. */
 function dripMove() {
-  if (!dripWin || dripWin.isDestroyed() || !dripBall || !dripGrab) return;
+  if (!dripWin || dripWin.isDestroyed() || !dripBall || !dripGrab || !dripArea) return;
   const cursor = screen.getCursorScreenPoint();
-  const area = screen.getDisplayMatching({ x: cursor.x, y: cursor.y, width: 1, height: 1 }).workArea;
+  const area = dripArea;
   dripBall = {
     x: Math.round(clampDrip(cursor.x - dripGrab.x, area.x, area.x + area.width - DRIP_BALL)),
     y: Math.round(clampDrip(cursor.y - dripGrab.y, area.y, area.y + area.height - DRIP_BALL)),
   };
-  placeDrip(dripSize);
+  sendDripFrame();
 }
 
 /** Land exactly on the release point, then forget the grab. */
@@ -553,39 +523,20 @@ ipcMain.on("desktop:openDrip", (_event, sessionId) => {
   if (typeof sessionId === "string" && sessionId) createDripWindow(sessionId);
 });
 ipcMain.on("desktop:leaveDrip", () => closeDripWindow());
-ipcMain.on("desktop:dripResize", (_event, size) => {
-  if (!size) return;
-  const width = Math.round(Number(size.width));
-  const height = Math.round(Number(size.height));
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return;
-  dripSize = { width, height };
-  placeDrip(dripSize);
+// Clicks pass through the sheet except where the face says the pointer is on
+// the ball or the panel. `forward` keeps pointer moves coming either way.
+ipcMain.on("desktop:dripIgnore", (_event, ignore) => {
+  if (!dripWin || dripWin.isDestroyed()) return;
+  dripWin.setIgnoreMouseEvents(Boolean(ignore), { forward: true });
 });
 // A press grabs the ball, each move re-places it under the cursor, and a
 // release lands it. The renderer only says when, never where.
 ipcMain.on("desktop:dripDragStart", () => dripPress());
 ipcMain.on("desktop:dripDrag", () => dripMove());
 ipcMain.on("desktop:dripDragEnd", () => dripRelease());
-// The face asks once on load, because the direction may have been decided
-// before it could listen for `desktop:dripGrow`.
-ipcMain.handle("desktop:dripGrow", () => dripGrow);
-// The same numbers the direction is derived from, so the face can predict it
-// and lay the pill out in the same tick as the resize it asks for.
-ipcMain.handle("desktop:dripGeometry", () => {
-  if (!dripBall) return null;
-  const area = screen.getDisplayMatching({
-    x: dripBall.x,
-    y: dripBall.y,
-    width: DRIP_BALL,
-    height: DRIP_BALL,
-  }).workArea;
-  return {
-    ball: { x: dripBall.x, y: dripBall.y },
-    area: { x: area.x, y: area.y, width: area.width, height: area.height },
-    ballSize: DRIP_BALL,
-    inset: DRIP_INSET,
-  };
-});
+// The face asks once on load where the ball sits inside the sheet; after that
+// every drag pushes the same frame at it.
+ipcMain.handle("desktop:dripBall", () => dripFrame());
 
 app.on("second-instance", () => {
   if (win) {

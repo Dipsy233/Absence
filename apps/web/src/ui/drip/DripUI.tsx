@@ -33,50 +33,41 @@ export interface DripProps {
    */
   pip?: boolean;
   /**
+   * Rendered inside the desktop shell's floating window: a fixed, transparent
+   * sheet where the ball is drawn at an offset the shell reports. Hover
+   * stretches the strip and a click opens the card, all inside that sheet, so
+   * nothing here changes the window's bounds.
+   */
+  desktop?: boolean;
+  /**
    * Which edge of the window the widget hugs. The browser build grows a PiP
-   * window rightwards, so it anchors left; the desktop shell grows its window
-   * leftwards from the ball's right edge, so it anchors right and the ball
-   * stays where it was on screen.
+   * window rightwards, so it anchors left; the desktop face anchors whichever
+   * side leaves room on screen so the strip never runs off an edge.
    */
   anchor?: "left" | "right";
   /**
-   * Which way the card opens from the pill. The desktop shell grows its window
-   * downwards unless the ball is too close to the bottom of the screen, in
-   * which case the card unfolds upwards and the widget sits on the floor of
-   * the window instead of its ceiling.
+   * Which way the card opens from the pill: downwards unless the ball sits too
+   * close to the bottom of the screen, in which case it unfolds upwards.
    */
   vertical?: "down" | "up";
-  /**
-   * Desktop only: whether the strip is stretched into the window's full width.
-   * The shell resizes the window first and flips this a frame later, so the
-   * stretch always begins inside a window that is already wide enough. The
-   * browser build leaves it at `true`: its window never shrinks past the strip.
-   */
-  expanded?: boolean;
   /** Leave Drip and bring the last face back. Defaults to the mode store. */
   onOpenAbsence?: () => void;
+
   /**
-   * Desktop only: the floating window grows on hover so the strip can speak
-   * before the card is opened. A Document PiP window cannot do this — it only
-   * resizes during a click's gesture — so the browser build never passes it.
-   */
-  onHover?: (hovered: boolean) => void;
-  /**
-   * Reports the exact window size the face needs: `null` for the ball, or the
-   * card's measured box plus its margins. Called from a layout effect, which
-   * still runs inside the click's user gesture — `resizeTo` refuses to work
-   * after that gesture expires.
+   * Browser PiP only: reports the exact window size the face needs — `null` for
+   * the ball, or the card's measured box plus its margins. Called from a layout
+   * effect, which still runs inside the click's user gesture — `resizeTo`
+   * refuses to work after that gesture expires.
    */
   onLayout?: (size: { width: number; height: number } | null) => void;
 }
 
 export function DripUI({
   pip = false,
+  desktop = false,
   anchor = "left",
   vertical = "down",
-  expanded = true,
   onOpenAbsence,
-  onHover,
   onLayout,
 }: DripProps = {}) {
   const t = useT();
@@ -172,17 +163,15 @@ export function DripUI({
 
   return (
     <div
-      className={`drip-root${pip ? " drip-root--pip" : ""}${
+      className={`drip-root${pip ? " drip-root--pip" : ""}${desktop ? " drip-root--desktop" : ""}${
         anchor === "right" ? " drip-root--anchor-right" : ""
-      }${vertical === "up" ? " drip-root--grow-up" : ""}${expanded ? " drip-root--expanded" : ""}`}
+      }${vertical === "up" ? " drip-root--grow-up" : ""}`}
     >
       <div className="drip-widget">
         <button
           type="button"
           className={`drip-pill drip-pill--${state}${open ? " is-open" : ""}`}
           onClick={() => setOpen((value) => !value)}
-          onMouseEnter={onHover ? () => onHover(true) : undefined}
-          onMouseLeave={onHover ? () => onHover(false) : undefined}
           aria-expanded={open}
           /* No `title`: a tooltip would hang outside the ball's window and read
              as the sentence leaking out of it. */
@@ -195,15 +184,15 @@ export function DripUI({
             {attention.level !== "none" ? (
               <span
                 className={`drip-dot drip-dot--${attention.level}`}
-                title={pip ? undefined : `${t(attention.level)} · ${attention.reasons.length}`}
+                title={pip || desktop ? undefined : `${t(attention.level)} · ${attention.reasons.length}`}
               />
             ) : null}
           </span>
 
           <span className="drip-mid">
-            {pip ? <span className="drip-mid__round">{round}</span> : null}
+            {pip || desktop ? <span className="drip-mid__round">{round}</span> : null}
             <span className="drip-mid__now">{nowText}</span>
-            {pip ? <span className="drip-mid__meta">{counts}</span> : null}
+            {pip || desktop ? <span className="drip-mid__meta">{counts}</span> : null}
           </span>
         </button>
 
