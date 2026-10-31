@@ -52,6 +52,15 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  /**
+   * The card's height at the moment it opened, fixed for the PiP window.
+   *
+   * A PiP window can only be resized during the click's user gesture, so it
+   * cannot grow when later events arrive. Freezing the card at its first
+   * height keeps the composer inside the window; the event list then scrolls
+   * in the body instead of pushing content past the bottom edge.
+   */
+  const [cardH, setCardH] = useState<number | null>(null);
 
   const leave = onOpenAbsence ?? exitDrip;
 
@@ -63,6 +72,7 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
    */
   const cardRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
+    if (!open) setCardH(null);
     if (!onLayout) return;
     if (!open) {
       onLayout(null);
@@ -71,8 +81,10 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
     const card = cardRef.current;
     if (!card) return;
     const box = card.getBoundingClientRect();
-    onLayout({ width: Math.ceil(box.width) + 16, height: Math.ceil(box.height) + 110 });
-  }, [open, onLayout]);
+    const height = Math.ceil(box.height);
+    if (pip) setCardH(height);
+    onLayout({ width: Math.ceil(box.width) + 16, height: height + 110 });
+  }, [open, pip, onLayout]);
 
   const run = data.run;
   const running = run?.status === "running";
@@ -88,6 +100,7 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
   const counts = run
     ? `${elapsed} · R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}`
     : "—";
+  const round = run ? `run #${run.index} · ${run.prompt || "—"}` : "—";
 
   const last = data.rows[data.rows.length - 1];
   const attention = data.attention;
@@ -146,13 +159,20 @@ export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {})
           </span>
 
           <span className="drip-mid">
+            {pip ? <span className="drip-mid__round">{round}</span> : null}
             <span className="drip-mid__now">{nowText}</span>
             {pip ? <span className="drip-mid__meta">{counts}</span> : null}
           </span>
         </button>
 
         {open ? (
-          <div className="drip-card" role="dialog" aria-label={t("Drip")} ref={cardRef}>
+          <div
+            className="drip-card"
+            role="dialog"
+            aria-label={t("Drip")}
+            ref={cardRef}
+            style={pip && cardH ? { height: cardH } : undefined}
+          >
             <div className="drip-card__head">
               <button type="button" className="drip-open" onClick={leave}>
                 {t("Open Absence")}

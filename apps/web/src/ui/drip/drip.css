@@ -425,7 +425,7 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  gap: 2px;
+  gap: 1px;
 }
 
 .drip-root--pip .drip-pill:hover .drip-mid {
@@ -440,8 +440,9 @@
   opacity: 1;
 }
 
-/* Same line as the Monitor's run selector: elapsed, reads, searches, edits,
-   shell runs, spend. */
+/* The round's identity ("run #7 · mock") and the Monitor-style counter line:
+   elapsed, reads, searches, edits, shell runs, spend. */
+.drip-root--pip .drip-mid__round,
 .drip-root--pip .drip-mid__meta {
   overflow: hidden;
   padding: 0 4px;
