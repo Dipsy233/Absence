@@ -426,7 +426,8 @@
   width: 248px;
 }
 
-.drip-root--pip .drip-mid__now {
+.drip-root--pip .drip-mid__now,
+.drip-root--pip .drip-pill:hover .drip-mid__now {
   opacity: 0;
 }
 
@@ -434,11 +435,13 @@
   opacity: 1;
 }
 
+/* The card must measure the same while the window is still ball-sized, so its
+   width cannot depend on `vw`; the host sizes the window from the card's box. */
 .drip-root--pip .drip-card {
   right: auto;
   left: 0;
   width: 380px;
-  max-width: calc(100vw - 16px);
+  max-width: none;
   max-height: 430px;
 }
 

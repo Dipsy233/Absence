@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMonitorData } from "../monitor/useMonitorData";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useViewModeStore } from "../../stores/viewModeStore";
@@ -33,14 +33,15 @@ export interface DripProps {
   /** Leave Drip and bring the last face back. Defaults to the mode store. */
   onOpenAbsence?: () => void;
   /**
-   * Opens or closes the card. The PiP host resizes its window here, inside the
-   * click, because `resizeTo` only works while the click's user gesture is
-   * alive — an effect or a hover cannot resize a PiP window.
+   * Reports the exact window size the face needs: `null` for the ball, or the
+   * card's measured box plus its margins. Called from a layout effect, which
+   * still runs inside the click's user gesture — `resizeTo` refuses to work
+   * after that gesture expires.
    */
-  onExpand?: (open: boolean) => void;
+  onLayout?: (size: { width: number; height: number } | null) => void;
 }
 
-export function DripUI({ pip = false, onOpenAbsence, onExpand }: DripProps = {}) {
+export function DripUI({ pip = false, onOpenAbsence, onLayout }: DripProps = {}) {
   const t = useT();
   const data = useMonitorData();
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
@@ -51,6 +52,25 @@ export function DripUI({ pip = false, onOpenAbsence, onExpand }: DripProps = {})
   const [sending, setSending] = useState(false);
 
   const leave = onOpenAbsence ?? exitDrip;
+
+  /**
+   * The window is fitted to the card, not to a guessed size: a short reply
+   * gets a short window, a long event list gets one tall enough for all 430px.
+   * The window has 8px above the pill, the 84px pill, a 10px gap and 8px
+   * below.
+   */
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!onLayout) return;
+    if (!open) {
+      onLayout(null);
+      return;
+    }
+    const card = cardRef.current;
+    if (!card) return;
+    const box = card.getBoundingClientRect();
+    onLayout({ width: Math.ceil(box.width) + 16, height: Math.ceil(box.height) + 110 });
+  }, [open, onLayout]);
 
   const run = data.run;
   const running = run?.status === "running";
@@ -94,13 +114,11 @@ export function DripUI({ pip = false, onOpenAbsence, onExpand }: DripProps = {})
         <button
           type="button"
           className={`drip-pill drip-pill--${state}${open ? " is-open" : ""}`}
-          onClick={() => {
-            const next = !open;
-            setOpen(next);
-            onExpand?.(next);
-          }}
+          onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          title={nowText}
+          /* No `title`: a tooltip would hang outside the ball's window and read
+             as the sentence leaking out of it. */
+          aria-label={nowText}
         >
           <span className="drip-cap drip-cap--left">
             <span className="drip-orb drip-orb--state">
@@ -109,7 +127,7 @@ export function DripUI({ pip = false, onOpenAbsence, onExpand }: DripProps = {})
             {attention.level !== "none" ? (
               <span
                 className={`drip-dot drip-dot--${attention.level}`}
-                title={`${t(attention.level)} · ${attention.reasons.length}`}
+                title={pip ? undefined : `${t(attention.level)} · ${attention.reasons.length}`}
               />
             ) : null}
           </span>
@@ -120,7 +138,7 @@ export function DripUI({ pip = false, onOpenAbsence, onExpand }: DripProps = {})
         </button>
 
         {open ? (
-          <div className="drip-card" role="dialog" aria-label={t("Drip")}>
+          <div className="drip-card" role="dialog" aria-label={t("Drip")} ref={cardRef}>
             <div className="drip-card__head">
               <button type="button" className="drip-open" onClick={leave}>
                 {t("Open Absence")}

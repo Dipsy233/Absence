@@ -24,14 +24,11 @@ import "./drip.css";
  */
 
 /**
- * The two window sizes.
- *
- * While resting the window is the ball alone; opening grows it to the card.
- * Both calls happen inside the pill's click, because `resizeTo` only works
- * while a user gesture is alive. Hover is not a gesture, so it cannot resize.
+ * The resting size. The open size is measured from the card itself — see
+ * DripUI's layout effect — so a short reply gets a short window instead of a
+ * guessed 548px box.
  */
 const BALL: [number, number] = [100, 100];
-const OPENED: [number, number] = [400, 548];
 
 interface PipApi {
   window: Window | null;
@@ -106,11 +103,11 @@ export function DripPipHost() {
   const winRef = useRef<Window | undefined>(undefined);
   const rootRef = useRef<Root | undefined>(undefined);
 
-  /** Called from the pill's click, so the gesture is still live. */
-  const resize = useCallback((open: boolean) => {
+  /** Measured by the face, applied while the click's gesture is still live. */
+  const resize = useCallback((size: { width: number; height: number } | null) => {
     const win = winRef.current;
     if (!win) return;
-    const [width, height] = open ? OPENED : BALL;
+    const [width, height] = size ? [size.width, size.height] : BALL;
     try {
       win.resizeTo(width, height);
     } catch {
@@ -181,7 +178,7 @@ export function DripPipHost() {
     if (!host) return;
     const root = createRoot(host);
     rootRef.current = root;
-    root.render(<DripUI pip onOpenAbsence={leave} onExpand={resize} />);
+    root.render(<DripUI pip onOpenAbsence={leave} onLayout={resize} />);
     return () => {
       // `onHide` may already have unmounted this root while the PiP document
       // was going away; unmounting twice would throw.
