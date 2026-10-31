@@ -46,6 +46,13 @@ export interface DripProps {
    * the window instead of its ceiling.
    */
   vertical?: "down" | "up";
+  /**
+   * Desktop only: whether the strip is stretched into the window's full width.
+   * The shell resizes the window first and flips this a frame later, so the
+   * stretch always begins inside a window that is already wide enough. The
+   * browser build leaves it at `true`: its window never shrinks past the strip.
+   */
+  expanded?: boolean;
   /** Leave Drip and bring the last face back. Defaults to the mode store. */
   onOpenAbsence?: () => void;
   /**
@@ -67,6 +74,7 @@ export function DripUI({
   pip = false,
   anchor = "left",
   vertical = "down",
+  expanded = true,
   onOpenAbsence,
   onHover,
   onLayout,
@@ -166,7 +174,7 @@ export function DripUI({
     <div
       className={`drip-root${pip ? " drip-root--pip" : ""}${
         anchor === "right" ? " drip-root--anchor-right" : ""
-      }${vertical === "up" ? " drip-root--grow-up" : ""}`}
+      }${vertical === "up" ? " drip-root--grow-up" : ""}${expanded ? " drip-root--expanded" : ""}`}
     >
       <div className="drip-widget">
         <button

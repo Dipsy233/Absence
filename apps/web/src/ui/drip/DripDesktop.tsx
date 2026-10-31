@@ -46,9 +46,11 @@ const DRAG_SLOP = 4;
 /**
  * Hover-out waits this long before collapsing. The strip and the ball are one
  * surface but the pointer crosses their seam, and shrinking the window on the
- * first `mouseleave` makes that crossing flicker.
+ * first `mouseleave` makes that crossing flicker. It also gives the strip its
+ * 180ms retract (see drip.css) time to finish before the window closes in on
+ * the ball, so the outgoing text is never cut off by the window's edge.
  */
-const COLLAPSE_MS = 180;
+const COLLAPSE_MS = 200;
 
 /**
  * The shell's rule, restated (see `dripGrowFor` in apps/desktop/main.cjs): the
@@ -86,6 +88,10 @@ export function DripDesktop() {
   const swallowClickRef = useRef(false);
   /** The pending hover-out collapse, if any. */
   const collapseRef = useRef<number | null>(null);
+  /** The pending frame that stretches the strip, if any. */
+  const frameRef = useRef<number | null>(null);
+  /** Whether the strip is stretched (hovered or open); drives the CSS transition. */
+  const [expanded, setExpanded] = useState(false);
   const [grow, setGrow] = useState<DripGrow>(growRef.current);
 
   // The shell's window is transparent, and index.css paints the page dark for
@@ -149,6 +155,7 @@ export function DripDesktop() {
       // Closing under the pointer returns to the hover strip, not the bare
       // ball; the pointer is still there, so the text should still show.
       apply(size ?? (hoverRef.current ? HOVER : BALL));
+      setExpanded(size !== null || hoverRef.current);
     },
     [apply],
   );
@@ -159,7 +166,36 @@ export function DripDesktop() {
     collapseRef.current = null;
   }, []);
 
-  useEffect(() => clearCollapse, [clearCollapse]);
+  /** Drop the pending stretch, if the pointer left before it landed. */
+  const clearStretch = useCallback(() => {
+    if (frameRef.current === null) return;
+    window.cancelAnimationFrame(frameRef.current);
+    frameRef.current = null;
+  }, []);
+
+  /**
+   * Stretch the strip on the next frame, not in this tick.
+   *
+   * The shell resizes the window over IPC, so the extra width only exists a
+   * frame later. Stretching into the old, ball-sized window would clip the
+   * text against its edge on the way out; waiting a frame means the strip
+   * always slides into a window that has room for it.
+   */
+  const stretch = useCallback(() => {
+    clearStretch();
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      setExpanded(true);
+    });
+  }, [clearStretch]);
+
+  useEffect(
+    () => () => {
+      clearCollapse();
+      clearStretch();
+    },
+    [clearCollapse, clearStretch],
+  );
 
   const hover = useCallback(
     (on: boolean) => {
@@ -170,19 +206,26 @@ export function DripDesktop() {
       if (on) {
         clearCollapse();
         hoverRef.current = true;
-        if (!openRef.current) apply(HOVER);
+        if (!openRef.current) {
+          apply(HOVER);
+          stretch();
+        }
         return;
       }
       hoverRef.current = false;
       if (openRef.current) return;
       clearCollapse();
+      clearStretch();
+      // Retract the strip now, shrink the window once it is back inside the
+      // ball — the other way round would cut the outgoing text in half.
+      setExpanded(false);
       collapseRef.current = window.setTimeout(() => {
         collapseRef.current = null;
         if (hoverRef.current || openRef.current) return;
         apply(BALL);
       }, COLLAPSE_MS);
     },
-    [apply, clearCollapse],
+    [apply, stretch, clearCollapse, clearStretch],
   );
 
   /** Open Absence: the shell closes this window and brings the main one back. */
@@ -288,6 +331,7 @@ export function DripDesktop() {
         pip
         anchor={grow.horizontal === "left" ? "right" : "left"}
         vertical={grow.vertical}
+        expanded={expanded}
         onHover={hover}
         onLayout={resize}
         onOpenAbsence={leave}

@@ -318,9 +318,17 @@ function createDripWindow(sessionId) {
     height: DRIP_REST,
     useContentSize: true,
     frame: false,
-    // No `backgroundColor`: on Windows an explicitly coloured surface is the
-    // one thing that can still paint over a transparent window.
     transparent: true,
+    // Borrowed from KoBar (electron/main/windows/mainWindow.cts): a transparent
+    // window still needs the zero-alpha surface stated outright. Without it
+    // Windows' DWM composites its own backdrop behind the window, which shows
+    // up as a faintly opaque dark rectangle around the ball.
+    backgroundColor: "#00000000",
+    // Windows only: `toolbar` makes it a tool window, which DWM composites
+    // without the throttle it applies to ordinary top-level windows. The usual
+    // side effects (no taskbar entry, no Alt+Tab entry) are what a floating
+    // ball wants anyway. `skipTaskbar` below keeps the rest of it quiet.
+    ...(process.platform === "win32" ? { type: "toolbar", roundedCorners: false } : {}),
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,

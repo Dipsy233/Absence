@@ -139,8 +139,12 @@
   transition: width 0.24s ease;
 }
 
-.drip-pill:hover .drip-mid,
-.drip-pill.is-open .drip-mid {
+/* A tab has the whole viewport to grow into. The floating window does not: it
+   is resized by the shell instead, and its strip follows `--expanded` (see the
+   pip rules below), so this rule must not fire there — a hover that widened
+   the strip before the window had grown would clip it for a frame. */
+.drip-root:not(.drip-root--pip) .drip-pill:hover .drip-mid,
+.drip-root:not(.drip-root--pip) .drip-pill.is-open .drip-mid {
   width: min(320px, calc(100vw - 220px));
 }
 
@@ -495,17 +499,22 @@ html.drip-transparent #root {
    underneath. `--drip-pip-w` is measured from the real window at runtime,
    because the minimum depends on the browser and the display scale. */
 .drip-root--pip .drip-mid {
-  width: calc(var(--drip-pip-w, 242px) - 100px);
+  width: 0;
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
   gap: 1px;
-  /* The window itself changes width in the same tick, so an animated strip
-     would slide inside a window that has already jumped — read as a flicker. */
-  transition: none;
+  /* The window is resized first and is transparent, so the room is already
+     there when the strip starts to stretch into it. Collapsing is the mirror
+     image: the strip retracts while the window is still wide, and only then
+     does the shell shrink it (see COLLAPSE_MS in DripDesktop.tsx). */
+  transition: width 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.drip-root--pip .drip-pill:hover .drip-mid {
+/* Hovered, or a card is open. DripDesktop flips this a frame *after* the
+   resize, so the stretch always starts inside a window that is already wide
+   enough — otherwise the text would be clipped by the closing edge. */
+.drip-root--pip.drip-root--expanded .drip-mid {
   width: calc(var(--drip-pip-w, 242px) - 100px);
 }
 
@@ -530,13 +539,44 @@ html.drip-transparent #root {
 }
 
 /* The card must measure the same while the window is still ball-sized, so its
-   width cannot depend on `vw`; the host sizes the window from the card's box. */
+   width cannot depend on `vw`; the host sizes the window from the card's box.
+   The window has already grown by the time it appears, and the card cannot
+   grow into a box that was measured before it was shown — so it fades and
+   slides in instead of unfolding. */
 .drip-root--pip .drip-card {
   right: auto;
   left: 0;
   width: 380px;
   max-width: none;
   max-height: 430px;
+  animation: drip-card-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes drip-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Grown upwards the card hangs above the ball, so it arrives from below. */
+.drip-root--pip.drip-root--grow-up .drip-card {
+  animation-name: drip-card-in-up;
+}
+
+@keyframes drip-card-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ── The tab while the ball floats ──────────────────────────────────────── */
