@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useMonitorData } from "../monitor/useMonitorData";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useViewModeStore } from "../../stores/viewModeStore";
@@ -32,8 +32,12 @@ export interface DripProps {
   pip?: boolean;
   /** Leave Drip and bring the last face back. Defaults to the mode store. */
   onOpenAbsence?: () => void;
-  /** Tells the PiP host how big the window has to be (hover expands, click opens). */
-  onExpand?: (expanded: boolean, open: boolean) => void;
+  /**
+   * Opens or closes the card. The PiP host resizes its window here, inside the
+   * click, because `resizeTo` only works while the click's user gesture is
+   * alive — an effect or a hover cannot resize a PiP window.
+   */
+  onExpand?: (open: boolean) => void;
 }
 
 export function DripUI({ pip = false, onOpenAbsence, onExpand }: DripProps = {}) {
@@ -43,13 +47,8 @@ export function DripUI({ pip = false, onOpenAbsence, onExpand }: DripProps = {})
   const exitDrip = useViewModeStore((s) => s.exitDrip);
 
   const [open, setOpen] = useState(false);
-  const [hover, setHover] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-
-  useEffect(() => {
-    onExpand?.(hover || open, open);
-  }, [hover, open, onExpand]);
 
   const leave = onOpenAbsence ?? exitDrip;
 
@@ -91,11 +90,15 @@ export function DripUI({ pip = false, onOpenAbsence, onExpand }: DripProps = {})
 
   return (
     <div className={`drip-root${pip ? " drip-root--pip" : ""}`}>
-      <div className="drip-widget" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <div className="drip-widget">
         <button
           type="button"
           className={`drip-pill drip-pill--${state}${open ? " is-open" : ""}`}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => {
+            const next = !open;
+            setOpen(next);
+            onExpand?.(next);
+          }}
           aria-expanded={open}
           title={nowText}
         >

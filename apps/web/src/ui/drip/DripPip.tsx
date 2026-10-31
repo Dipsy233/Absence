@@ -17,15 +17,21 @@ import "./drip.css";
  * with the document that opened it, so `window.close()` would take the ball
  * down with the tab. Emptying the tab is the closest a page can get.
  *
- * The PiP window is resized instead of being drawn large and transparent:
- * at rest it is exactly the ball, hovering stretches it to fit the sentence,
- * and opening the card grows it downwards. The widget is pinned to the
- * window's top-left so growing never moves the ball.
+ * The window is drawn as a bar rather than a ball: a PiP window cannot be
+ * circular, and it cannot be resized by a hover, so it keeps the width the pill
+ * needs and grows downwards only when the card is opened. The widget is pinned
+ * to the window's top-left so growing never moves the ball.
  */
 
-/** The three window sizes the pill asks for. */
-const BALL: [number, number] = [100, 100];
-const EXPANDED: [number, number] = [352, 100];
+/**
+ * The two window sizes.
+ *
+ * There is no ball-sized state: `resizeTo` needs a user gesture, and a hover
+ * is not one, so the window cannot grow when the pointer enters. It therefore
+ * stays at the full bar — ball plus the current event — and only the click
+ * (which *is* a gesture) opens the card and grows the window downwards.
+ */
+const BAR: [number, number] = [352, 100];
 const OPENED: [number, number] = [400, 548];
 
 interface PipApi {
@@ -57,7 +63,7 @@ function requestPipWindow(): Promise<Window> | null {
   if (api.window) return Promise.resolve(api.window);
   if (!pipPromise) {
     pipPromise = api
-      .requestWindow({ width: BALL[0], height: BALL[1], disallowReturnToOpener: true })
+      .requestWindow({ width: BAR[0], height: BAR[1], disallowReturnToOpener: true })
       .finally(() => {
         pipPromise = null;
       });
@@ -101,11 +107,11 @@ export function DripPipHost() {
   const winRef = useRef<Window | undefined>(undefined);
   const rootRef = useRef<Root | undefined>(undefined);
 
-  /** Resize the PiP window to what the pill currently needs. */
-  const resize = useCallback((expanded: boolean, open: boolean) => {
+  /** Called from the pill's click, so the gesture is still live. */
+  const resize = useCallback((open: boolean) => {
     const win = winRef.current;
     if (!win) return;
-    const [width, height] = open ? OPENED : expanded ? EXPANDED : BALL;
+    const [width, height] = open ? OPENED : BAR;
     try {
       win.resizeTo(width, height);
     } catch {
@@ -155,6 +161,9 @@ export function DripPipHost() {
 
       winRef.current = win;
       copyStyles(win.document);
+      // Without a title the PiP window's title bar shows the page's origin
+      // ("localhost:5173"); the app's own name replaces it.
+      win.document.title = document.title || "Absence";
       win.document.documentElement.style.height = "100%";
       win.document.body.style.cssText = "margin:0;height:100%;overflow:hidden;background:#121212";
       const el = win.document.createElement("div");

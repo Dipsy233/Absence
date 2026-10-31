@@ -414,11 +414,18 @@
   max-width: none;
 }
 
-/* `100vw` inside a 352px PiP window would leave a sliver of text; the window
-   is already sized for this sentence, so the width is stated outright. */
+/* The PiP window cannot resize on hover — `resizeTo` needs a click's gesture —
+   so it keeps the width of an expanded pill and the sentence is always on show.
+   `100vw` inside a 352px window would leave only a sliver, hence the fixed
+   width, which the host's window size is derived from. */
+.drip-root--pip .drip-mid,
 .drip-root--pip .drip-pill:hover .drip-mid,
 .drip-root--pip .drip-pill.is-open .drip-mid {
   width: 248px;
+}
+
+.drip-root--pip .drip-mid__now {
+  opacity: 1;
 }
 
 .drip-root--pip .drip-card {
