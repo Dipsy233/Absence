@@ -411,6 +411,14 @@
   opacity: 0.4;
 }
 
+/* While the agent runs, the send slot becomes the way to stop it, the same as
+   on every other face: outlined in the error tone instead of filled. */
+.drip-form__stop {
+  border-color: rgba(233, 115, 102, 0.5);
+  background: transparent;
+  color: var(--drip-err);
+}
+
 /* ── Document Picture-in-Picture ────────────────────────────────────────── */
 
 /* The PiP window is sized to the pill and grows as it expands, so the widget

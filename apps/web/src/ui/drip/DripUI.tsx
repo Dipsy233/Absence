@@ -75,6 +75,7 @@ export function DripUI({
   const t = useT();
   const data = useMonitorData();
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
+  const abort = useSessionStore((s) => s.abort);
   const runtime = useSessionStore((s) => s.session?.agentRuntime);
   const agentStatus = useSessionStore((s) => s.agent.status);
   const exitDrip = useViewModeStore((s) => s.exitDrip);
@@ -252,9 +253,20 @@ export function DripUI({
                 placeholder={t("Send a task…")}
                 aria-label={t("Send a task…")}
               />
-              <button type="submit" className="drip-form__send" disabled={!draft.trim() || sending}>
-                {t("Send")}
-              </button>
+              {running ? (
+                <button
+                  type="button"
+                  className="drip-form__send drip-form__stop"
+                  onClick={() => void abort()}
+                  aria-label={t("Stop")}
+                >
+                  ■ {t("Stop")}
+                </button>
+              ) : (
+                <button type="submit" className="drip-form__send" disabled={!draft.trim() || sending}>
+                  {t("Send")}
+                </button>
+              )}
             </form>
           </div>
         ) : null}
