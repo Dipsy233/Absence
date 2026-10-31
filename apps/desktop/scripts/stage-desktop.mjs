@@ -28,10 +28,12 @@ execFileSync(process.execPath, [path.join(here, "bundle-server.mjs")], { stdio: 
 
 // 2. Install the server's production dependencies into a scratch package, then
 //    move them under build/node_modules for electron-builder to copy.
-console.log("[stage] installing production dependencies ...");
-fs.rmSync(stageDir, { recursive: true, force: true });
-fs.mkdirSync(stageDir, { recursive: true });
-
+//
+//    This is the slowest part of a build (~200 MB installed from scratch), and
+//    the .bat's step 3 plus `pack`/`dist`'s own `npm run stage` both land here.
+//    A fingerprint stamp under build/node_modules records what was installed;
+//    when the server's dependency list has not changed, the install - and the
+//    wipe of the old tree - is skipped entirely.
 const serverPkg = JSON.parse(
   fs.readFileSync(path.join(repoRoot, "apps", "server", "package.json"), "utf8"),
 );
@@ -40,25 +42,44 @@ const serverPkg = JSON.parse(
 const deps = { ...serverPkg.dependencies };
 delete deps["@absence/core"];
 
-fs.writeFileSync(
-  path.join(stageDir, "package.json"),
-  JSON.stringify({ name: "absence-server-deps", private: true, dependencies: deps }, null, 2),
-);
-
-// npm is a shell script on POSIX and a batch file on Windows. Run it through
-// the system shell explicitly on Windows rather than passing `shell: true`
-// (which concatenates arguments without escaping).
-const npmCmd =
-  process.platform === "win32"
-    ? { file: process.env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", "npm", "install", "--omit=dev", "--no-audit", "--no-fund", "--ignore-scripts"] }
-    : { file: "npm", args: ["install", "--omit=dev", "--no-audit", "--no-fund", "--ignore-scripts"] };
-execFileSync(npmCmd.file, npmCmd.args, { cwd: stageDir, stdio: "inherit" });
-
-// 3. Move node_modules into place and drop the scratch files.
 const target = path.join(buildDir, "node_modules");
-fs.rmSync(target, { recursive: true, force: true });
-fs.renameSync(path.join(stageDir, "node_modules"), target);
-fs.rmSync(stageDir, { recursive: true, force: true });
+const stampPath = path.join(target, ".absence-stage.json");
+const fingerprint = JSON.stringify({
+  deps,
+  platform: process.platform,
+  arch: process.arch,
+});
+
+const upToDate =
+  fs.existsSync(stampPath) && fs.readFileSync(stampPath, "utf8") === fingerprint;
+
+if (upToDate) {
+  console.log("[stage] production dependencies unchanged - reusing build/node_modules");
+} else {
+  console.log("[stage] installing production dependencies ...");
+  fs.rmSync(stageDir, { recursive: true, force: true });
+  fs.mkdirSync(stageDir, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(stageDir, "package.json"),
+    JSON.stringify({ name: "absence-server-deps", private: true, dependencies: deps }, null, 2),
+  );
+
+  // npm is a shell script on POSIX and a batch file on Windows. Run it through
+  // the system shell explicitly on Windows rather than passing `shell: true`
+  // (which concatenates arguments without escaping).
+  const npmCmd =
+    process.platform === "win32"
+      ? { file: process.env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", "npm", "install", "--omit=dev", "--no-audit", "--no-fund", "--ignore-scripts"] }
+      : { file: "npm", args: ["install", "--omit=dev", "--no-audit", "--no-fund", "--ignore-scripts"] };
+  execFileSync(npmCmd.file, npmCmd.args, { cwd: stageDir, stdio: "inherit" });
+
+  // 3. Move node_modules into place and drop the scratch files.
+  fs.rmSync(target, { recursive: true, force: true });
+  fs.renameSync(path.join(stageDir, "node_modules"), target);
+  fs.writeFileSync(stampPath, fingerprint);
+  fs.rmSync(stageDir, { recursive: true, force: true });
+}
 
 // 4. Make sure the native helpers actually exist before electron-builder looks
 //    for them, so a missing one is a clear message here rather than a confusing

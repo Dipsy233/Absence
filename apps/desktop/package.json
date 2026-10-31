@@ -46,7 +46,7 @@
       {
         "from": "../../dist/desktop/build/node_modules",
         "to": "node_modules",
-        "filter": ["**/*"]
+        "filter": ["**/*", "!**/.absence-stage.json"]
       },
       {
         "from": "../../dist/web",

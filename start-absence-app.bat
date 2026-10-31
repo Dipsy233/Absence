@@ -33,6 +33,10 @@ rem                                still dist\desktop\release\win-unpacked)
 rem
 rem  Env:
 rem    ABSENCE_SKIP_WEB=1   reuse the existing dist\web build (faster iteration)
+rem
+rem  Repeat runs are incremental: the web build, the server bundle and the
+rem  staged production dependencies are all skipped when their inputs have not
+rem  changed since the last run.
 rem ===========================================================================
 
 rem This script is at the repo root; resolve the absolute path.

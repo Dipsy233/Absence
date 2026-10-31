@@ -37,34 +37,63 @@ if (platformPkg) {
   }
 }
 
-const { build } = await import("esbuild");
-
 const outfile = path.join(repoRoot, "dist", "desktop", "build", "server.cjs");
 
-await build({
-  entryPoints: [path.join(repoRoot, "apps", "server", "src", "desktop-entry.ts")],
-  outfile,
-  bundle: true,
-  platform: "node",
-  target: "node20",
-  format: "cjs",
-  sourcemap: false,
-  logLevel: "info",
-  // Everything that is not ABSENCE's own source: resolved at runtime from the
-  // shipped node_modules / the package manager's hoisted tree. `@absence/core`
-  // is our own TypeScript workspace package, so it is bundled, not external.
-  packages: "external",
-  alias: { "@absence/core": path.join(repoRoot, "packages", "core", "src", "index.ts") },
-  // `import.meta.url` is used by config.ts and the native-helper path lookups;
-  // a CJS bundle has no import.meta, so point it at the bundle file.
-  define: {
-    "import.meta.url": "__ABSENCE_BUNDLE_URL__",
-  },
-  banner: {
-    js: [
-      'const __ABSENCE_BUNDLE_URL__ = require("node:url").pathToFileURL(__filename).href;',
-    ].join("\n"),
-  },
-});
+// Only ABSENCE's own source goes into the bundle (third-party packages stay
+// external), so the bundle is up to date when no source file is newer than it.
+// `stage` runs this script again after the .bat already ran it, and `pack`/
+// `dist` run `stage` too - this check turns those repeat passes into no-ops.
+const newerThan = (p, time) => {
+  const st = fs.statSync(p);
+  if (st.isFile()) return st.mtimeMs > time;
+  for (const entry of fs.readdirSync(p)) {
+    if (newerThan(path.join(p, entry), time)) return true;
+  }
+  return false;
+};
 
-console.log(`[bundle-server] wrote ${path.relative(repoRoot, outfile)}`);
+const bundleUpToDate = () => {
+  if (!fs.existsSync(outfile)) return false;
+  const outTime = fs.statSync(outfile).mtimeMs;
+  const roots = [
+    path.join(repoRoot, "apps", "server", "src"),
+    path.join(repoRoot, "packages", "core", "src"),
+    // A change to this script changes the output, so it counts as a source.
+    path.join(here, "bundle-server.mjs"),
+  ];
+  return !roots.some((root) => newerThan(root, outTime));
+};
+
+if (bundleUpToDate()) {
+  console.log("[bundle-server] server.cjs is up to date - skipping esbuild");
+} else {
+  const { build } = await import("esbuild");
+
+  await build({
+    entryPoints: [path.join(repoRoot, "apps", "server", "src", "desktop-entry.ts")],
+    outfile,
+    bundle: true,
+    platform: "node",
+    target: "node20",
+    format: "cjs",
+    sourcemap: false,
+    logLevel: "info",
+    // Everything that is not ABSENCE's own source: resolved at runtime from the
+    // shipped node_modules / the package manager's hoisted tree. `@absence/core`
+    // is our own TypeScript workspace package, so it is bundled, not external.
+    packages: "external",
+    alias: { "@absence/core": path.join(repoRoot, "packages", "core", "src", "index.ts") },
+    // `import.meta.url` is used by config.ts and the native-helper path lookups;
+    // a CJS bundle has no import.meta, so point it at the bundle file.
+    define: {
+      "import.meta.url": "__ABSENCE_BUNDLE_URL__",
+    },
+    banner: {
+      js: [
+        'const __ABSENCE_BUNDLE_URL__ = require("node:url").pathToFileURL(__filename).href;',
+      ].join("\n"),
+    },
+  });
+
+  console.log(`[bundle-server] wrote ${path.relative(repoRoot, outfile)}`);
+}
