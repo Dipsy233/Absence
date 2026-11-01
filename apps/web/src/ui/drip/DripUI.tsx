@@ -7,6 +7,7 @@ import { Avatar } from "../../components/agent/Avatar";
 import { useT } from "../../lib/i18n";
 import { formatOffset } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
+import { Nixie } from "../shared/Nixie";
 import "./drip.css";
 
 /**
@@ -126,9 +127,6 @@ export function DripUI({
    */
   const now = useNow(1000);
   const elapsed = run ? formatOffset((run.endedAt ?? now) - run.startedAt) : "—";
-  const counts = run
-    ? `${elapsed} · R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}`
-    : "—";
   const round = run ? `run #${run.index} · ${runtime ?? "—"}` : "—";
 
   const last = data.rows[data.rows.length - 1];
@@ -202,7 +200,21 @@ export function DripUI({
           <span className="drip-mid">
             {pip || desktop ? <span className="drip-mid__round">{round}</span> : null}
             <span className="drip-mid__now">{nowText}</span>
-            {pip || desktop ? <span className="drip-mid__meta">{counts}</span> : null}
+            {pip || desktop ? (
+              <span className="drip-mid__meta">
+                {run ? (
+                  <>
+                    {elapsed} ·{" "}
+                    <Nixie
+                      value={`R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}`}
+                      variant="plain"
+                    />
+                  </>
+                ) : (
+                  "—"
+                )}
+              </span>
+            ) : null}
           </span>
         </button>
 

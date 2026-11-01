@@ -452,6 +452,145 @@
   color: var(--mon-acc);
 }
 
+/* ── Ambient light ─────────────────────────────────────────────────────────
+   Two very slow, very faint color glows behind every face (Rounds / Monitor /
+   Chart share .mon-root). Fixed, pointer-transparent, and painted below the
+   face content: the direct children are lifted one layer. 44s/57s — from the
+   surface samples: drift must be much slower than instinct for it to read as
+   atmosphere rather than a slideshow. */
+.mon-root::before,
+.mon-root::after {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.mon-root::before {
+  background:
+    radial-gradient(560px 380px at 18% -6%, rgb(94 159 232 / 0.09), transparent 65%),
+    radial-gradient(480px 340px at 108% 112%, rgb(191 142 218 / 0.07), transparent 65%);
+  animation: mon-ambient-a 44s ease-in-out infinite alternate;
+}
+
+.mon-root::after {
+  background: radial-gradient(520px 360px at 85% -10%, rgb(79 185 201 / 0.06), transparent 65%);
+  animation: mon-ambient-b 57s ease-in-out infinite alternate;
+}
+
+@keyframes mon-ambient-a {
+  to {
+    transform: translate(60px, 40px) scale(1.08);
+  }
+}
+
+@keyframes mon-ambient-b {
+  to {
+    transform: translate(-50px, 60px) scale(1.1);
+  }
+}
+
+.mon-root > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mon-root::before,
+  .mon-root::after {
+    animation: none;
+  }
+}
+
+/* ── Nixie (arrival effect for fixed-width fields) ─────────────────────────
+   Every cell scrambles fast and truly randomly, the tail eases off, then the
+   whole field snaps to its value with one flash. Width is the final value's
+   width — it never types in. Rendered by ui/shared/Nixie.tsx. */
+.mon-nix {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.mon-nix__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.mon-nix__cell {
+  white-space: pre;
+}
+
+/* While scrambling the plain variant reads slightly lifted, like the field is
+   still arriving; the settled cells are exactly the surrounding text. */
+.mon-nix--plain .mon-nix__cell:not(.mon-nix__cell--settled) {
+  opacity: 0.72;
+}
+
+.mon-nix__cell--flash {
+  color: var(--mon-t, currentColor);
+}
+
+/* The tube variant: each character in a glowing vacuum-tube cell. Sizes are
+   em-based, so a tube line scales with whatever font-size renders it. */
+.mon-nix--tube .mon-nix__cell {
+  display: inline-flex;
+  min-width: 1.32em;
+  height: 1.45em;
+  margin: 0 1px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.28em;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.05), rgb(0 0 0 / 0.5) 55%, rgb(255 255 255 / 0.03));
+  box-shadow:
+    inset 0 0 0.5em rgb(0 0 0 / 0.85),
+    inset 0 1px 0 rgb(255 179 71 / 0.1),
+    0 0 0 1px rgb(255 170 60 / 0.1);
+  color: #ffc873;
+  font-family: var(--mon-mono, ui-monospace, Menlo, Consolas, monospace);
+  font-weight: 600;
+  text-shadow: 0 0 0.4em rgb(255 166 48 / 0.9), 0 0 1.1em rgb(255 120 20 / 0.5);
+  vertical-align: -0.12em;
+}
+
+.mon-nix--tube .mon-nix__cell--settled {
+  animation: mon-nix-filament 3.7s linear infinite;
+}
+
+.mon-nix--tube .mon-nix__cell--flash {
+  animation: mon-nix-flash 0.5s ease-out both;
+}
+
+@keyframes mon-nix-flash {
+  from {
+    filter: brightness(2.4);
+  }
+  to {
+    filter: brightness(1);
+  }
+}
+
+@keyframes mon-nix-filament {
+  0%,
+  88%,
+  100% {
+    filter: brightness(1);
+  }
+  91% {
+    filter: brightness(0.82);
+  }
+  93% {
+    filter: brightness(1.06);
+  }
+  96% {
+    filter: brightness(0.9);
+  }
+}
+
 /* ── Health: focus, motion, scrollbars ──────────────────────────────────── */
 
 .mon-root :focus-visible {

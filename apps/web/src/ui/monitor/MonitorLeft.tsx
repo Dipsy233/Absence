@@ -13,6 +13,7 @@ import { attentionRecords, type AttentionNotice } from "../../hooks/useAttention
 import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { useChatStore } from "../../stores/chatStore";
 import { eventContext } from "../../lib/context";
+import { Nixie } from "../shared/Nixie";
 import { feedAnchors, groupFeedRows, replayRowAt, stripFeedAnchors } from "../../lib/history";
 import type { ActivityRow } from "../../types/stage";
 import {
@@ -281,7 +282,16 @@ export function MonitorLeft({
               {run ? `#${run.index} · ${t(RUN_WORD[run.status])} — ${run.prompt || t("(observed activity)")}` : t("No run yet")}
             </span>
             <span className="mon-runsel__c">
-              {run ? `R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}` : "—"}
+              {/* The count line arrives rather than changes: the live run's
+                  numbers scramble in place for half a second, then land. */}
+              {run ? (
+                <Nixie
+                  value={`R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}`}
+                  variant="plain"
+                />
+              ) : (
+                "—"
+              )}
             </span>
             <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden>
               <path d="M2 4l4 4 4-4" stroke="currentColor" fill="none" strokeWidth="1.6" />
