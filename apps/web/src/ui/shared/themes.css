@@ -250,6 +250,52 @@
   }
 }
 
+/* 铆钉装饰角：panel 四角各一颗小铆钉——background-image 的四个 radial
+   点位，不占布局、不碰内容（panel 自带 overflow-hidden，pseudo 不外溢）。 */
+.theme-nixie .panel {
+  position: relative;
+}
+.theme-nixie .panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      4.5px 4.5px at 9px 9px,
+      rgb(255 214 140 / 0.55) 0%,
+      rgb(110 78 26 / 0.9) 55%,
+      transparent 62%
+    ),
+    radial-gradient(
+      4.5px 4.5px at calc(100% - 9px) 9px,
+      rgb(255 214 140 / 0.55) 0%,
+      rgb(110 78 26 / 0.9) 55%,
+      transparent 62%
+    ),
+    radial-gradient(
+      4.5px 4.5px at 9px calc(100% - 9px),
+      rgb(255 214 140 / 0.55) 0%,
+      rgb(110 78 26 / 0.9) 55%,
+      transparent 62%
+    ),
+    radial-gradient(
+      4.5px 4.5px at calc(100% - 9px) calc(100% - 9px),
+      rgb(255 214 140 / 0.55) 0%,
+      rgb(110 78 26 / 0.9) 55%,
+      transparent 62%
+    );
+}
+
+/* 刻录纸带：时间轴的车道块从圆角条变成方齿——卷纸记录仪的刻度，
+   每块带一圈琥珀蚀刻线和一点辉光，时长信息不动。 */
+.theme-nixie .chart-blk {
+  border-radius: 0;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 170 60 / 0.28),
+    0 0 7px -2px rgb(255 150 40 / 0.5);
+}
+
 /* Rounds 的气泡与输入条是硬编码暗面——light 色系下翻成各自的亮面。 */
 /* Rounds 的房间与 dock 条在 light 色系下也要跟着翻面。 */
 .theme-nixie.scheme-light .rounds-root::before {
@@ -549,6 +595,77 @@
   pointer-events: none;
 }
 
+/* 撕纸边：报告页是从速写本上撕下来的——hero 顶缘一条锯齿纸带
+   （clip-path 生成，纸带色是 s1，页面底是 bg）。chart-wrap 有 18px 顶
+   padding，锯齿有地方落。 */
+.theme-ink .chart-hero {
+  position: relative;
+}
+.theme-ink .chart-hero::before {
+  content: "";
+  position: absolute;
+  top: -14px;
+  left: -6px;
+  right: -6px;
+  height: 12px;
+  background: var(--ch-s1);
+  clip-path: polygon(
+    0 100%, 2% 30%, 4% 85%, 6% 15%, 8% 70%, 10% 25%, 12% 90%, 14% 40%,
+    16% 75%, 18% 10%, 20% 60%, 22% 30%, 24% 95%, 26% 20%, 28% 70%, 30% 35%,
+    32% 85%, 34% 15%, 36% 65%, 38% 30%, 40% 90%, 42% 25%, 44% 75%, 46% 40%,
+    48% 95%, 50% 15%, 52% 70%, 54% 35%, 56% 85%, 58% 20%, 60% 60%, 62% 30%,
+    64% 90%, 66% 25%, 68% 75%, 70% 10%, 72% 65%, 74% 35%, 76% 85%, 78% 20%,
+    80% 70%, 82% 30%, 84% 95%, 86% 15%, 88% 65%, 90% 40%, 92% 90%, 94% 25%,
+    96% 75%, 98% 30%, 100% 100%
+  );
+  pointer-events: none;
+}
+
+/* 墨水扩散：按钮 hover 不是换底色——一滴 acc 墨从按钮中心向四周洇开
+   （background-size 0 → 260%），移开就渗回去。盖过上面 hover 简写规则
+   对 background-image 的重置，所以这里重申一遍渐变。 */
+.theme-ink .mon-btn {
+  background-image: radial-gradient(circle at 50% 50%, rgb(200 104 32 / 0.18), transparent 55%);
+  background-size: 0% 0%;
+  background-repeat: no-repeat;
+  background-position: 50% 50%;
+  transition:
+    background-size 0.4s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+.theme-ink .mon-btn:hover:not(:disabled) {
+  background-image: radial-gradient(circle at 50% 50%, rgb(200 104 32 / 0.18), transparent 55%);
+  background-size: 260% 260%;
+}
+
+/* 钢笔光标：墨水皮的输入光标落 acc 色——笔尖是蘸了墨的。 */
+.theme-ink input,
+.theme-ink textarea {
+  caret-color: var(--mon-acc);
+}
+
+/* 便利贴折角：Drip 卡右下角折了一角——纸色三角盖住卡角，旁边一条
+   折痕带。卡自带 overflow-hidden，伪元素不出界。 */
+.theme-ink .drip-card::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  background:
+    linear-gradient(315deg, var(--mon-room) 47%, transparent 50%),
+    linear-gradient(
+      315deg,
+      transparent 47%,
+      color-mix(in srgb, var(--mon-bd) 55%, var(--mon-paper-2)) 50%,
+      var(--mon-paper-2) 58%,
+      transparent 62%
+    );
+  pointer-events: none;
+}
+
 /* Rounds 的窗口体（活动窗口、dock 窗口）在纸上重新上纸。 */
 /* Rounds 的硬编码暗面在纸上重新上纸。 */
 .theme-ink .rounds-root::before {
@@ -734,6 +851,93 @@
 }
 .theme-glass .mon-btn:hover:not(:disabled) {
   background-position: 0% 0;
+}
+
+/* 棱镜光晕：panel 悬停时边缘透出一道彩虹折射——静态 conic 渐变从中心
+   缩放淡入（panel 自带 overflow-hidden，光晕不出界）。 */
+.theme-glass .panel {
+  position: relative;
+}
+.theme-glass .panel::before {
+  content: "";
+  position: absolute;
+  inset: -60%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgb(138 184 245 / 0.1) 40deg,
+    rgb(160 80 255 / 0.08) 80deg,
+    rgb(0 200 240 / 0.1) 120deg,
+    transparent 160deg
+  );
+  opacity: 0;
+  transform: scale(0.7);
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
+  pointer-events: none;
+}
+.theme-glass .panel:hover::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* 折射线：阳光穿过玻璃打到桌面的焦散——两道极淡的斜向光束叠进
+   环境光层（::after 原有的青色光斑保留），静置不动画，是背景的一部分。 */
+.theme-glass .mon-root::after {
+  background:
+    radial-gradient(600px 420px at 72% -15%, rgb(0 200 240 / 0.1), transparent 60%),
+    linear-gradient(
+      75deg,
+      transparent 22%,
+      rgb(180 220 255 / 0.05) 25%,
+      rgb(180 220 255 / 0.02) 28%,
+      transparent 31%,
+      transparent 42%,
+      rgb(200 180 255 / 0.04) 45%,
+      transparent 48%
+    );
+}
+.theme-glass.scheme-light .mon-root::after {
+  background:
+    radial-gradient(560px 400px at 72% -12%, rgb(85 193 211 / 0.2), transparent 62%),
+    linear-gradient(
+      75deg,
+      transparent 22%,
+      rgb(120 160 255 / 0.09) 25%,
+      rgb(120 160 255 / 0.04) 28%,
+      transparent 31%,
+      transparent 42%,
+      rgb(150 120 255 / 0.06) 45%,
+      transparent 48%
+    );
+}
+
+/* 水银球：Drip 球是一滴液态金属——顶部高光弧、底部内阴影，
+   hover 表面张力鼓起一点（弹簧曲线）。伪元素画光，avatar 画在其上。 */
+.theme-glass .drip-pill {
+  position: relative;
+  border: 1px solid rgb(255 255 255 / 0.32);
+  box-shadow:
+    inset 0 1.5px 0 rgb(255 255 255 / 0.4),
+    inset 0 -3px 5px rgb(0 0 0 / 0.28),
+    0 4px 22px rgb(80 120 220 / 0.4);
+  transition:
+    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.25s ease;
+}
+.theme-glass .drip-pill:hover {
+  transform: scale(1.05);
+}
+.theme-glass .drip-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(ellipse 55% 38% at 34% 26%, rgb(255 255 255 / 0.4), transparent 70%),
+    radial-gradient(ellipse 90% 80% at 55% 60%, rgb(140 180 255 / 0.1), rgb(80 120 220 / 0.16));
+  pointer-events: none;
 }
 
 .theme-glass .mon-bar {
