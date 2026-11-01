@@ -632,9 +632,10 @@
 
 /* The tube variant: each character in a glowing vacuum-tube cell. Sizes are
    em-based, so a tube line scales with whatever font-size renders it. The
-   tube's glass is a SOLID dark gradient on purpose — a translucent one
-   inherits whatever surface it lands on (paper included) and the amber
-   digits stop reading. Dark tube, bright digits, in both schemes. */
+   tube's glass is a SOLID gradient on purpose — a translucent one inherits
+   whatever surface it lands on (paper included) and the digits stop reading.
+   The base here is the dark scheme: solid dark glass, orange-amber digits;
+   the light scheme re-points glass and digits at brass (themes.css). */
 .mon-nix--tube .mon-nix__cell {
   display: inline-flex;
   min-width: 1.32em;
@@ -648,15 +649,15 @@
     inset 0 0 0.5em rgb(0 0 0 / 0.85),
     inset 0 1px 0 rgb(255 179 71 / 0.14),
     0 0 0 1px rgb(255 170 60 / 0.14);
-  color: #f7ecd8;
+  color: #f2b04e;
   font-family: var(--mon-mono, ui-monospace, Menlo, Consolas, monospace);
   font-weight: 600;
-  text-shadow: 0 0 0.35em rgb(255 166 48 / 0.45);
+  text-shadow: 0 0 0.4em rgb(255 166 48 / 0.6);
   vertical-align: -0.12em;
 }
 
 .mon-nix--tube .mon-nix__cell--flash {
-  color: #fff3da;
+  color: #ffd98a;
 }
 
 .mon-nix--tube .mon-nix__cell--settled {
