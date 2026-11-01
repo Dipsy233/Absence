@@ -233,18 +233,6 @@
   line-height: 1.6;
 }
 
-.picker__paths summary {
-  font: 600 10px var(--mon-mono);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--mon-t3);
-  cursor: pointer;
-}
-
-.picker__paths summary:hover {
-  color: var(--mon-t2);
-}
-
 .picker__pathlist {
   display: flex;
   flex-direction: column;
@@ -302,18 +290,17 @@
   color: var(--mon-acc);
 }
 
-.picker__histoggle {
+/* History's header row: the label and the live count. The list below it is
+   permanently open — it filters with the selected runtime and the typed
+   path instead of folding. */
+.picker__hhead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
 }
 
-.picker__histoggle span {
+.picker__hhead span {
   font: 10.5px var(--mon-mono);
   color: var(--mon-t3);
 }

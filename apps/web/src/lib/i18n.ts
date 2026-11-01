@@ -341,6 +341,8 @@ const ZH: Record<string, string> = {
   Open: "打开",
   "{n} sessions": "{n} 个会话",
   "No saved sessions for this path.": "此路径没有已保存的会话。",
+  "No saved sessions for this runtime yet — open a project to start one.":
+    "该 runtime 还没有历史——打开一个项目开始第一轮。",
   "No saved sessions yet — open a project to start one.": "还没有保存的会话——打开一个项目就开始。",
   "Resume {id}": "恢复 {id}",
   "· {n} msgs": "· {n} 条消息",
