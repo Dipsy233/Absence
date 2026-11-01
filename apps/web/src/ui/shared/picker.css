@@ -16,13 +16,13 @@
 }
 
 .picker {
-  display: grid;
-  width: min(880px, 100%);
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
   /* A stable height: the history area fills the space that remains, so the
      card is the same size before and after the sessions arrive — nothing
      jumps and nothing is pushed off screen. */
-  height: min(660px, calc(100vh - 48px));
-  grid-template-columns: 1.15fr 1fr;
+  height: min(700px, calc(100vh - 48px));
   overflow: hidden;
   border: 1px solid var(--mon-bd2);
   border-radius: 16px;
@@ -32,18 +32,19 @@
 
 .picker__brand {
   display: flex;
-  flex-direction: column;
+  flex: none;
+  align-items: baseline;
   gap: 14px;
-  padding: 30px 30px 26px;
-  border-right: 1px solid var(--mon-bd);
-  background: linear-gradient(180deg, var(--mon-s2), transparent 70%);
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--mon-bd);
+  background: linear-gradient(180deg, var(--mon-s2), transparent);
 }
 
 .picker__brand h1 {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  font: 600 26px/1 var(--mon-mono);
+  font: 600 20px/1 var(--mon-mono);
   letter-spacing: 0.04em;
   color: var(--mon-t);
 }
@@ -55,16 +56,41 @@
 }
 
 .picker__brand > p {
-  color: var(--mon-t2);
-  font-size: 13px;
-  line-height: 1.7;
+  overflow: hidden;
+  color: var(--mon-t3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.picker__open {
+/* The single column's scroll-free body: every block natural, history fills. */
+.picker__body {
   display: flex;
+  flex: 1;
   flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  padding: 20px 24px 22px;
+  overflow: hidden;
+}
+
+.picker__block--fill {
+  flex: 1;
+  min-height: 0;
+}
+
+.picker__openrow {
+  display: flex;
   gap: 8px;
-  margin-top: 8px;
+}
+
+.picker__openrow input {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker__openrow button {
+  flex: none;
 }
 
 .picker__label {
@@ -74,7 +100,8 @@
   color: var(--mon-t3);
 }
 
-.picker__open input {
+.picker__openrow input,
+.picker__openrow button {
   height: 38px;
   padding: 0 12px;
   border: 1px solid var(--mon-bd2);
@@ -86,12 +113,12 @@
   transition: border-color 0.15s;
 }
 
-.picker__open input:focus {
+.picker__openrow input:focus {
   border-color: var(--mon-acc);
 }
 
-.picker__open button {
-  height: 38px;
+.picker__openrow button {
+  padding: 0 22px;
   border: 0;
   border-radius: 9px;
   background: var(--mon-acc);
@@ -101,11 +128,11 @@
   transition: filter 0.15s;
 }
 
-.picker__open button:hover:not(:disabled) {
+.picker__openrow button:hover:not(:disabled) {
   filter: brightness(1.12);
 }
 
-.picker__open button:disabled {
+.picker__openrow button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -130,8 +157,11 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 210px;
   overflow: auto;
+}
+
+.picker__projects {
+  max-height: 140px;
 }
 
 .picker__list button {
@@ -170,22 +200,6 @@
   color: var(--mon-t3);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.picker__side {
-  display: flex;
-  flex-direction: column;
-  gap: 26px;
-  min-height: 0;
-  padding: 30px 26px 26px;
-  overflow: hidden;
-}
-
-/* The history block takes the side column's remaining height; the runtime
-   block above it keeps its natural size. */
-.picker__side > .picker__block:last-child {
-  flex: 1;
-  min-height: 0;
 }
 
 .picker__block {

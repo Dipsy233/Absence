@@ -139,35 +139,41 @@ export function ProjectPicker() {
       ) : null}
 
       <div className="picker">
-        {/* Left: the door. */}
-        <aside className="picker__brand">
+        {/* One column, top to bottom: the path, the runtime, the history, the
+            runtime's own path. The history takes the space that is left and
+            scrolls, so the card never changes size. */}
+        <header className="picker__brand">
           <h1>
             ABSENCE
             <span>发呆症</span>
           </h1>
           <p>{t("AI moves fast. Humans watch. Choose a project and let the agent work.")}</p>
+        </header>
 
-          <div className="picker__open">
+        <div className="picker__body">
+          <section className="picker__block">
             <label className="picker__label">{t("project path")}</label>
-            <input
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder="E:/path/to/project"
-              spellCheck={false}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && path.trim() && !busy) void start(path);
-              }}
-            />
-            <button type="button" disabled={busy || !path.trim()} onClick={() => void start(path)}>
-              {busy ? t("opening…") : t("Open")}
-            </button>
+            <div className="picker__openrow">
+              <input
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                placeholder="E:/path/to/project"
+                spellCheck={false}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && path.trim() && !busy) void start(path);
+                }}
+              />
+              <button type="button" disabled={busy || !path.trim()} onClick={() => void start(path)}>
+                {busy ? t("opening…") : t("Open")}
+              </button>
+            </div>
             {error ? <div className="picker__error">{error}</div> : null}
-          </div>
+          </section>
 
           {projects.length > 0 ? (
-            <div className="picker__projects">
+            <section className="picker__block">
               <label className="picker__label">{t("recent")}</label>
-              <div className="picker__list">
+              <div className="picker__list picker__projects">
                 {projects.map((project) => (
                   <button
                     key={project.path}
@@ -181,13 +187,10 @@ export function ProjectPicker() {
                   </button>
                 ))}
               </div>
-            </div>
+            </section>
           ) : null}
-        </aside>
 
-        {/* Right: runtime + history. */}
-        <aside className="picker__side">
-          <div className="picker__block">
+          <section className="picker__block">
             <label className="picker__label">{t("runtime")}</label>
             <div className="picker__runtimes">
               {runtimes.map((rt) => (
@@ -208,40 +211,9 @@ export function ProjectPicker() {
                 "A green dot means the runtime was found. A red dot means it is not installed (or the path is wrong) — fix it below before opening.",
               )}
             </p>
-            {/* The selected runtime's path, permanently open: switching the
-                runtime switches the row, so what you edit is always what you
-                will open with. */}
-            <div className="picker__paths">
-              <label className="picker__label">{t("runtime paths")}</label>
-              <div className="picker__pathlist">
-                {runtimes
-                  .filter((rt) => rt.configurable && rt.kind === agent)
-                  .map((rt) => {
-                    const key = rt.kind as "pi" | "codex" | "dsh";
-                    return (
-                      <div key={rt.kind}>
-                        <div className="picker__pathrow">
-                          <i data-ok={rt.available ? "true" : undefined} />
-                          <span>{rt.label}</span>
-                          <em>{rt.available ? t("found") : t("not found")}</em>
-                        </div>
-                        <input
-                          value={pathEdits[key] ?? ""}
-                          onChange={(e) => setPathEdits((prev) => ({ ...prev, [key]: e.target.value }))}
-                          placeholder={rt.note}
-                          spellCheck={false}
-                        />
-                      </div>
-                    );
-                  })}
-                <button type="button" className="picker__save" disabled={savingPaths} onClick={() => void savePaths()}>
-                  {savingPaths ? t("saving…") : t("save paths")}
-                </button>
-              </div>
-            </div>
-          </div>
+          </section>
 
-          <div className="picker__block">
+          <section className="picker__block picker__block--fill">
             <div className="picker__hhead">
               <label className="picker__label">{t("History")}</label>
               <span>{t("{n} sessions", { n: visibleSessions.length })}</span>
@@ -277,8 +249,39 @@ export function ProjectPicker() {
                 ))
               )}
             </div>
-          </div>
-        </aside>
+          </section>
+
+          <section className="picker__block">
+            {/* The selected runtime's path: switching the runtime switches the
+                row, so what you edit is always what you will open with. */}
+            <label className="picker__label">{t("runtime paths")}</label>
+            <div className="picker__pathlist">
+              {runtimes
+                .filter((rt) => rt.configurable && rt.kind === agent)
+                .map((rt) => {
+                  const key = rt.kind as "pi" | "codex" | "dsh";
+                  return (
+                    <div key={rt.kind} className="picker__pathedit">
+                      <div className="picker__pathrow">
+                        <i data-ok={rt.available ? "true" : undefined} />
+                        <span>{rt.label}</span>
+                        <em>{rt.available ? t("found") : t("not found")}</em>
+                      </div>
+                      <input
+                        value={pathEdits[key] ?? ""}
+                        onChange={(e) => setPathEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+                        placeholder={rt.note}
+                        spellCheck={false}
+                      />
+                    </div>
+                  );
+                })}
+              <button type="button" className="picker__save" disabled={savingPaths} onClick={() => void savePaths()}>
+                {savingPaths ? t("saving…") : t("save paths")}
+              </button>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );
