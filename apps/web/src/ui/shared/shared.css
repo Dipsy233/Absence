@@ -333,10 +333,10 @@
 /* Drip's switch: a small IV bag, not a tab. On means the floating window is up
    over this face; off means it is not. It never changes which face you are on.
 
-   26px, the height of the bar's other controls: the bag is drawn inside it at
-   17px, where its outline is still a pixel of stroke. The bag is hollow when
-   off and holds fluid when on, and the drop under it is the one moving pixel in
-   the bar — the switch's state is legible without reading a colour. */
+   26px, the height of the bar's other controls. The bag is ported from the
+   standalone page at E:/dd/1.html: hollow when off, and when on the liquid
+   rises to its fill line, the surface keeps waving and bubbles keep leaving
+   the outlet — the switch's state is legible without reading a colour. */
 .mon-drip {
   display: inline-flex;
   width: 26px;
@@ -355,27 +355,88 @@
     background-color 0.15s ease;
 }
 
+/* The bag drawing itself (DripBagIcon.tsx): the viewBox is cropped to the bag,
+   so it fills the box's height and the button gets a tall icon. 22px inside
+   the 26px control — the bag is meant to read as a hanging bag, not a stamp. */
 .mon-drip__icon {
-  width: 17px;
-  height: 17px;
+  width: 22px;
+  height: 22px;
   overflow: visible;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.4;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.mon-drip__bag {
-  transition: fill 0.15s ease;
+/* The liquid parks 440 user units below the bag — past the interior clip, so
+   "off" is an empty bag — and rises to the fill line when the switch turns on.
+   SVG user units, not CSS px: the whole drawing is squeezed out of a 550-unit
+   viewBox, and a transform's px is one unit here. 1.8s is the source page's
+   fill; draining takes the same road back. */
+.mon-drip__liquid {
+  transform: translateY(440px);
+  transition: transform 1.8s ease-in-out;
 }
 
-/* The falling drop is drawn only while the switch is on, so "off" is a still,
-   hollow bag rather than a bag with something moving in it. Filled, because a
-   1.4px circle left as an outline is a speck, not a drop. */
-.mon-drip__drop {
-  fill: currentColor;
+.mon-drip[aria-pressed="true"] .mon-drip__liquid {
+  transform: translateY(0);
+}
+
+/* The surface wave slides left by one full period (an up bump and a down bump
+   are 30 units each), so the loop is seamless. */
+.mon-drip__wave {
+  animation: mon-drip-wave 5s linear infinite;
+}
+
+@keyframes mon-drip-wave {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-60px);
+  }
+}
+
+/* Bubbles leave the outlet only while the bag is filled; each on its own
+   clock, so they never move in step. */
+.mon-drip__bubbles {
   opacity: 0;
+  transition: opacity 0.5s;
+}
+
+.mon-drip__bubbles circle {
+  animation: mon-drip-bubble 3s ease-in infinite;
+}
+
+.mon-drip__bubbles circle:nth-child(2) {
+  animation-duration: 2.6s;
+  animation-delay: 0.7s;
+}
+
+.mon-drip__bubbles circle:nth-child(3) {
+  animation-duration: 3.4s;
+  animation-delay: 1.4s;
+}
+
+.mon-drip[aria-pressed="true"] .mon-drip__bubbles {
+  opacity: 1;
+}
+
+@keyframes mon-drip-bubble {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.9;
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-330px);
+    opacity: 0;
+  }
 }
 
 .mon-drip:hover {
@@ -387,34 +448,6 @@
   border-color: var(--mon-acc);
   background: rgb(94 159 232 / 0.12);
   color: var(--mon-acc);
-}
-
-.mon-drip[aria-pressed="true"] .mon-drip__bag {
-  fill: rgb(94 159 232 / 0.22);
-}
-
-.mon-drip[aria-pressed="true"] .mon-drip__drop {
-  animation: mon-drip-fall 2.4s ease-in infinite;
-}
-
-/* SVG user units, not CSS px: in a 24-unit box drawn at 17px a 4-unit fall is
-   about 2.8px on screen — the drip travels a little, it does not blink. */
-@keyframes mon-drip-fall {
-  0% {
-    transform: translateY(0);
-    opacity: 0;
-  }
-  12% {
-    opacity: 1;
-  }
-  60% {
-    transform: translateY(2.4px);
-    opacity: 0.85;
-  }
-  100% {
-    transform: translateY(4px);
-    opacity: 0;
-  }
 }
 
 /* ── Health: focus, motion, scrollbars ──────────────────────────────────── */

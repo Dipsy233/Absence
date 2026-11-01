@@ -8,6 +8,7 @@ import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import { leaveSession } from "../../stores/reset";
 import { WindowControls } from "../common/WindowControls";
 import { SettingsDialog } from "../common/SettingsDialog";
+import { DripBagIcon } from "../common/DripBagIcon";
 import { Chip, Dot } from "../../ui/shared/atoms";
 import "../../ui/shared/shared.css";
 
@@ -83,16 +84,12 @@ export function FaceBar() {
         className="mon-drip mon-nodrag"
         title={drip ? t("Drip is on — click to hide it") : t("Drip is off — click to float it")}
       >
-        {/* The IV bag itself. Drawn rather than typed, because "a bottle hanging
-            over a line" is the one shape that reads as Drip at 17px; a coloured
-            dot read as a status light, not as the widget. */}
-        <svg viewBox="0 0 24 24" aria-hidden className="mon-drip__icon">
-          <path d="M12 2.6v2.2" />
-          <rect className="mon-drip__bag" x="6.2" y="4.8" width="11.6" height="8.4" rx="2.4" />
-          <path d="M12 13.2v2.5" />
-          <circle cx="12" cy="16.9" r="1.3" />
-          <circle className="mon-drip__drop" cx="12" cy="20.6" r="1" />
-        </svg>
+        {/* The IV bag itself, ported whole from the standalone page
+            (E:/dd/1.html): on fills it — liquid rises, the surface waves,
+            bubbles leave the outlet — off drains it. The drawing lives in
+            DripBagIcon; the animation, keyed off this button's aria-pressed,
+            in shared.css. */}
+        <DripBagIcon />
       </button>
 
       <div className="mon-modes" role="group" aria-label={t("Interface mode")}>
