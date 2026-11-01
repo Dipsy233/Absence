@@ -30,7 +30,10 @@ export function FaceRise({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div ref={ref} style={{ minHeight: 0 }}>
+    /* height: 100% keeps the face's own height chain intact — Rounds' root,
+       for one, is `height: 100%` (not 100vh) and collapses to its content
+       otherwise. */
+    <div ref={ref} style={{ minHeight: 0, height: "100%" }}>
       {children}
     </div>
   );

@@ -453,28 +453,35 @@
 }
 
 /* ── Ambient light ─────────────────────────────────────────────────────────
-   Two very slow, very faint color glows behind every face (Rounds / Monitor /
-   Chart share .mon-root). Fixed, pointer-transparent, and painted below the
-   face content: the direct children are lifted one layer. 44s/57s — from the
-   surface samples: drift must be much slower than instinct for it to read as
-   atmosphere rather than a slideshow. */
-.mon-root::before,
-.mon-root::after {
+   Two very slow, very faint color glows behind Monitor and Chart (Rounds is
+   excluded: it has its own three-pool ambience in rounds.css). Fixed,
+   pointer-transparent, and painted below the face content: `.mon-root` gets
+   `isolation: isolate` — a stacking context without touching any child's
+   positioning — so the glows sit at z-index -1, above the face's own
+   background and below everything else. 44s/57s — from the surface samples:
+   drift must be much slower than instinct for it to read as atmosphere
+   rather than a slideshow. */
+.mon-root {
+  isolation: isolate;
+}
+
+.mon-root:not(.rounds-root)::before,
+.mon-root:not(.rounds-root)::after {
   content: "";
   position: fixed;
   inset: -20%;
-  z-index: 0;
+  z-index: -1;
   pointer-events: none;
 }
 
-.mon-root::before {
+.mon-root:not(.rounds-root)::before {
   background:
     radial-gradient(560px 380px at 18% -6%, rgb(94 159 232 / 0.09), transparent 65%),
     radial-gradient(480px 340px at 108% 112%, rgb(191 142 218 / 0.07), transparent 65%);
   animation: mon-ambient-a 44s ease-in-out infinite alternate;
 }
 
-.mon-root::after {
+.mon-root:not(.rounds-root)::after {
   background: radial-gradient(520px 360px at 85% -10%, rgb(79 185 201 / 0.06), transparent 65%);
   animation: mon-ambient-b 57s ease-in-out infinite alternate;
 }
@@ -491,14 +498,11 @@
   }
 }
 
-.mon-root > * {
-  position: relative;
-  z-index: 1;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .mon-root::before,
-  .mon-root::after {
+  .mon-root::after,
+  .mon-root:not(.rounds-root)::before,
+  .mon-root:not(.rounds-root)::after {
     animation: none;
   }
 }

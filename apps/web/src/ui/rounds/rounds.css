@@ -17,7 +17,11 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
+  /* `clip`, not `hidden`: a hidden box can still be scrolled programmatically
+     (a focus landing on a transient element is enough), and a stuck
+     scrollLeft then shoves the whole face sideways. Clip forbids scrolling
+     entirely. */
+  overflow: clip;
   background: #101318;
   color: var(--mon-t);
 }
@@ -60,7 +64,9 @@
   position: relative;
   min-height: 0;
   flex: 1;
-  overflow: hidden;
+  /* Same reasoning as .rounds-root: the scene's absolute layers must never
+     end up scrolled sideways by a stray focus. */
+  overflow: clip;
 }
 /* The wallpaper: the conversation, floating over the ambience on the right
    and above the story — a lyrics overlay, not a column. */
