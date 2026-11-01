@@ -14,13 +14,14 @@ import { useAttentionOptions } from "../../hooks/useAttentionOptions";
 import { useChatStore } from "../../stores/chatStore";
 import { eventContext } from "../../lib/context";
 import { Nixie } from "../shared/Nixie";
-import { feedAnchors, groupFeedRows, replayRowAt, stripFeedAnchors } from "../../lib/history";
+import { activityPulse, feedAnchors, groupFeedRows, replayRowAt, stripFeedAnchors } from "../../lib/history";
 import type { ActivityRow } from "../../types/stage";
 import {
   Chip,
   Dot,
   RUN_TONE,
   RUN_WORD,
+  Spark,
   TONE_FOR_ROW,
   phaseIntent,
   phaseWord,
@@ -363,6 +364,7 @@ export function MonitorLeft({
         </div>
       ) : (
       <>
+      <ActivityPulse rows={data.rows} />
       {startRow ? (
         <div className="mon-anchor">
           <FeedRow row={startRow} runStart={run?.startedAt} anchor focusEventId={focusedEventId} />
@@ -434,6 +436,32 @@ export function MonitorLeft({
           {t("{n} activities", { n: shownCount })}
         </span>
       </div>
+    </div>
+  );
+}
+
+/* ── The activity pulse ─────────────────────────────────────────────────── */
+
+/**
+ * Events per minute over the last two minutes, read through the decay — each
+ * event kicks the line and the kick settles back to the running rate (the
+ * derivation is `activityPulse` in lib/history, pure math over timestamps).
+ *
+ * It owns its own `useNow` so the pulse's decay is the only thing re-rendering
+ * on the interval, not the feed above it; the row counts live in the tab and
+ * the fold line, so this strip carries no number of its own.
+ */
+function ActivityPulse({ rows }: { rows: ActivityRow[] }) {
+  const t = useT();
+  const now = useNow(1000);
+  const values = useMemo(
+    () => activityPulse(rows.map((row) => row.event.timestamp), now),
+    [rows, now],
+  );
+  return (
+    <div className="mon-pulse" aria-hidden>
+      <span className="mon-pulse__cap">{t("act/min")}</span>
+      <Spark values={values} tone="run" height={16} />
     </div>
   );
 }

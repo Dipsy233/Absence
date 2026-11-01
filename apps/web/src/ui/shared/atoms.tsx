@@ -96,7 +96,17 @@ export function Chip({
 }
 
 export function Dot({ tone }: { tone: MonTone }) {
-  return <span className={`mon-dot mon-chip--${tone}`} style={{ background: "currentColor" }} aria-hidden />;
+  return (
+    /* `key={tone}`: a state change remounts the dot, so a theme's arrival
+       effect replays on every state change (ink's drop lands again) instead
+       of the blob morphing in place. */
+    <span
+      key={tone}
+      className={`mon-dot mon-chip--${tone}`}
+      style={{ background: "currentColor" }}
+      aria-hidden
+    />
+  );
 }
 
 /** A tiny SVG sparkline — no dependency, no axes. */

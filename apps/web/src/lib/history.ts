@@ -536,6 +536,57 @@ export function replayRowAt(rows: ActivityRow[], timestamp: number): ActivityRow
   return found >= 0 ? rows[found] : undefined;
 }
 
+/* ── The activity pulse ────────────────────────────────────────────────────
+   Events are discrete arrivals, but the reader reads them as an intensity —
+   "how hard is it working right now". The pulse is that intensity: each event
+   kicks the line and the kick decays, so a burst reads as a spike that settles
+   back to the running rate instead of a step that only moves when a bucket
+   boundary crosses. Pure math over timestamps; the face only samples it. */
+
+/** A kick loses ~63% of its height every TAU ms (exp(-1)). */
+const PULSE_TAU = 6_000;
+
+/** The pulse's shape: one sample every SAMPLE ms over the last WINDOW ms. */
+const PULSE_SAMPLE = 2_000;
+const PULSE_WINDOW = 120_000;
+
+/**
+ * Events per minute, read through the decay.
+ *
+ * For each sample time `t`, every event within the window contributes
+ * `exp(-(t - t_i) / TAU)`; the sum is scaled by `60_000 / TAU`, which makes a
+ * *steady* stream read as its true rate (one event every TAU reads as
+ * `e/(e-1)` ≈ its own per-minute rate). A historical run therefore shows the
+ * shape it actually had, and a live run's newest event is a spike that decays
+ * into the rate — the "the feed just got hit" feel, from real events only.
+ *
+ * `timestamps` must be ascending (ActivityRows are). The last sample is at
+ * `now`, so a live caller re-derives as the clock moves; a finished run's
+ * samples past its last event just decay towards zero.
+ */
+export function activityPulse(timestamps: number[], now: number): number[] {
+  const samples = Math.floor(PULSE_WINDOW / PULSE_SAMPLE);
+  const values: number[] = new Array(samples);
+  // Events older than ~5 tau contribute under 0.7% each — skip the scan past
+  // them by starting at the first event inside the effective window.
+  const cutoff = now - PULSE_WINDOW - PULSE_TAU * 5;
+  let start = 0;
+  while (start < timestamps.length && timestamps[start]! < cutoff) start++;
+  const scale = 60_000 / PULSE_TAU;
+  for (let i = 0; i < samples; i++) {
+    const t = now - (samples - 1 - i) * PULSE_SAMPLE;
+    let sum = 0;
+    for (let j = start; j < timestamps.length; j++) {
+      const age = t - timestamps[j]!;
+      if (age < 0) break;
+      if (age > PULSE_WINDOW) continue;
+      sum += Math.exp(-age / PULSE_TAU);
+    }
+    values[i] = sum * scale;
+  }
+  return values;
+}
+
 /**
  * LIVE or REPLAY — what a face is doing with the run, in Monitor's words: a
  * walking replay and a pinned moment are the same answer to the reader ("the

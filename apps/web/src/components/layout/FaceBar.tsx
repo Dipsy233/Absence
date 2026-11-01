@@ -48,9 +48,25 @@ export function FaceBar() {
   const total = context?.total ?? null;
   const percent = used !== null && total ? Math.min(100, Math.round((used / total) * 100)) : 0;
 
+  /**
+   * Whether the agent is at work — the one run fact the bar itself consumes.
+   *
+   * It is not displayed: a style reads it off `data-running` for its own
+   * working-state effect (Nixie's power ripple). The bar still says nothing
+   * about the run in words; the face owns that.
+   */
+  const agentStatus = useSessionStore((s) => s.agent.status);
+  const agentWorking =
+    agentStatus === "thinking" ||
+    agentStatus === "speaking" ||
+    agentStatus === "reading" ||
+    agentStatus === "searching" ||
+    agentStatus === "editing" ||
+    agentStatus === "running";
+
   return (
     <>
-      <header className={`mon-bar${desktop ? " mon-drag" : ""}`}>
+      <header className={`mon-bar${desktop ? " mon-drag" : ""}`} data-running={agentWorking ? "true" : undefined}>
       <span className="mon-logo">ABSENCE</span>
       <span className="mon-mono" style={{ fontSize: 12, color: "var(--mon-t3)" }}>
         {/* `now`, not `Date.now()`: the component re-renders once a second

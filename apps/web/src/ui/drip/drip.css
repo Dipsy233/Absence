@@ -552,6 +552,7 @@ html.drip-transparent #root {
 .drip-root--pip.drip-root--grow-up .drip-card {
   top: auto;
   bottom: calc(100% + 10px);
+  border-radius: 12px 12px 0 0;
 }
 
 /* A PiP window cannot shrink below the browser's minimum — about 242×132 CSS
@@ -606,13 +607,31 @@ html.drip-transparent #root {
      black. A hairline shadow keeps the card off the desktop without needing
      room the window does not have. */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  animation: drip-card-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s both;
 }
 
-@keyframes drip-card-in {
+/* ── unfold from the pill ──────────────────────────────────────────────────
+   The card is an extension of the pill it hangs from — square at that seam on
+   the floating hosts — so it arrives the way a panel extends: it unfolds
+   downward from the shared edge (top origin; grow-up mirrors it) and folds
+   back into the pill on the way out (`data-leaving` holds the card mounted
+   for the fold, see DripUI). No flash, no scanline: the pill is already the
+   power light, and a power-on riff would pretend the card is a device of its
+   own when it is the pill that grew. */
+.drip-card {
+  transform-origin: top center;
+  animation: drip-card-unfold 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.drip-root--grow-up .drip-card {
+  transform-origin: bottom center;
+}
+.drip-card[data-leaving] {
+  animation: drip-card-fold 0.14s ease-in both;
+}
+
+@keyframes drip-card-unfold {
   from {
     opacity: 0;
-    transform: translateY(-6px);
+    transform: translateY(-5px) scaleY(0.85);
   }
   to {
     opacity: 1;
@@ -620,22 +639,20 @@ html.drip-transparent #root {
   }
 }
 
-/* Grown upwards the card continues the pill above it, arriving from below. */
-.drip-root--pip.drip-root--grow-up .drip-card {
-  top: auto;
-  bottom: 100%;
-  border-radius: 12px 12px 0 0;
-  animation-name: drip-card-in-up;
-}
-
-@keyframes drip-card-in-up {
+@keyframes drip-card-fold {
   from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
     opacity: 1;
     transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drip-card {
+    animation: none;
   }
 }
 
@@ -778,9 +795,6 @@ html.drip-transparent #root {
   border-radius: 0 0 12px 12px;
   background: var(--drip-card);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  /* Held back until the strip has stretched, so the two never disagree on
-     width for a frame. */
-  animation: drip-card-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s both;
 }
 
 .drip-root--desktop.drip-root--anchor-right .drip-card {
@@ -793,7 +807,6 @@ html.drip-transparent #root {
   top: auto;
   bottom: 100%;
   border-radius: 12px 12px 0 0;
-  animation-name: drip-card-in-up;
 }
 
 /* The browser build's PiP window is its own surface: when it is up, the tab is

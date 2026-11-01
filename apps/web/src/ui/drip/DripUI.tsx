@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMonitorData } from "../../hooks/useMonitorData";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useViewModeStore } from "../../stores/viewModeStore";
@@ -7,6 +7,7 @@ import { Avatar } from "../../components/agent/Avatar";
 import { useT } from "../../lib/i18n";
 import { formatOffset } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
+import { prefersReducedMotion } from "../../lib/anim";
 import { Nixie } from "../shared/Nixie";
 import "./drip.css";
 import "../shared/themes.css";
@@ -82,6 +83,37 @@ export function DripUI({
   const exitDrip = useViewModeStore((s) => s.exitDrip);
 
   const [open, setOpen] = useState(false);
+  /**
+   * The card stays mounted through the fold.
+   *
+   * The exit is an animation the card has to be alive for: `closing` is the
+   * window between the click and the unmount, during which the card folds
+   * back into the pill (`data-leaving`). Reduced motion skips the wait — the
+   * fold would be invisible anyway, so the card just goes.
+   */
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<number | undefined>(undefined);
+
+  const toggleCard = useCallback(() => {
+    window.clearTimeout(closeTimer.current);
+    if (open) {
+      if (prefersReducedMotion()) {
+        setOpen(false);
+        setClosing(false);
+        return;
+      }
+      setClosing(true);
+      closeTimer.current = window.setTimeout(() => {
+        setOpen(false);
+        setClosing(false);
+      }, 160);
+    } else {
+      setClosing(false);
+      setOpen(true);
+    }
+  }, [open]);
+
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   /**
@@ -111,10 +143,15 @@ export function DripUI({
     }
     const card = cardRef.current;
     if (!card) return;
-    const box = card.getBoundingClientRect();
-    const height = Math.ceil(box.height);
+    // offsetWidth/offsetHeight, not getBoundingClientRect: the CRT entrance
+    // has the card mid-transform for its first frames, and the rect measures
+    // the *transformed* box — a squashed line, height ≈ 0 — which froze the
+    // PiP window at the ball's size and the card at zero height. The offset
+    // sizes are the layout box and ignore transforms entirely.
+    const width = Math.ceil(card.offsetWidth);
+    const height = Math.ceil(card.offsetHeight);
     if (pip) setCardH(height);
-    onLayout({ width: Math.ceil(box.width) + 16, height: height + 72 });
+    onLayout({ width: width + 16, height: height + 72 });
   }, [open, pip, onLayout]);
 
   const run = data.run;
@@ -180,7 +217,7 @@ export function DripUI({
         <button
           type="button"
           className={`drip-pill drip-pill--${state}${open ? " is-open" : ""}`}
-          onClick={() => setOpen((value) => !value)}
+          onClick={toggleCard}
           aria-expanded={open}
           /* No `title`: a tooltip would hang outside the ball's window and read
              as the sentence leaking out of it. */
@@ -219,11 +256,12 @@ export function DripUI({
           </span>
         </button>
 
-        {open ? (
+        {open || closing ? (
           <div
             className="drip-card"
             role="dialog"
             aria-label={t("Drip")}
+            data-leaving={closing ? "true" : undefined}
             ref={cardRef}
             style={pip && cardH ? { height: cardH } : undefined}
           >

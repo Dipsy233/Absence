@@ -32,6 +32,27 @@
   overflow-y: auto;
 }
 
+/* The activity pulse strip: events/min, read through the decay. A caption in
+   the shared caps voice, then the spark the whole remaining width belongs to. */
+.mon-pulse {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px 0;
+  color: var(--mon-t3);
+}
+.mon-pulse__cap {
+  flex: none;
+  font: 600 9px/1 var(--mon-sans);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.mon-pulse svg {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ── Atoms ────────────────────────────────────────────────────────────────
    The chip/dot/btn atoms live in ../shared/shared.css; only Monitor's own
    controls stay here. */
@@ -866,7 +887,10 @@
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--mon-edit);
+  /* No colour here: the tone chip class on the same span owns it, so the
+     word changes colour with the state exactly as its dot does. A hardcoded
+     value used to win the cascade and the word stayed one colour while only
+     the dot moved. */
 }
 .mon-agent__line {
   margin-top: 3px;
