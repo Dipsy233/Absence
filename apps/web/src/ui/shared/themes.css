@@ -225,6 +225,19 @@
 /* ═══════════════════════════════ INK ═══════════════════════════════
    手作手绘：纸面、墨线、全部手写字。light（纸）为基调。 */
 
+@font-face {
+  font-family: "Caveat";
+  src: url("/fonts/Caveat-VariableFont_wght.ttf") format("truetype");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "ShouXie851";
+  src: url("/fonts/851ShouXie.ttf") format("truetype");
+  font-display: swap;
+}
+
 .theme-ink {
   --mon-hand: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
   color-scheme: light;
