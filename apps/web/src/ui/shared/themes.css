@@ -288,12 +288,49 @@
 }
 
 /* 刻录纸带：时间轴的车道块从圆角条变成方齿——卷纸记录仪的刻度，
-   每块带一圈琥珀蚀刻线和一点辉光，时长信息不动。 */
+   每块带一圈琥珀蚀刻线和一点辉光，时长信息不动。Monitor 的世界线
+   （mon-tl__blk）与 Chart 的车道（chart-blk）共用这一套。 */
+.theme-nixie .mon-tl__blk,
 .theme-nixie .chart-blk {
   border-radius: 0;
   box-shadow:
     inset 0 0 0 1px rgb(255 170 60 / 0.28),
     0 0 7px -2px rgb(255 150 40 / 0.5);
+}
+
+/* 辉光管在 light 色系下的读数：管的底色是半透明黑，落在浅色纸面上
+   会变成中间调，琥珀数字随之失效——light 下换成实心黄铜管、深棕数字。 */
+.theme-nixie.scheme-light .mon-nix--tube .mon-nix__cell {
+  background: linear-gradient(180deg, #f4e9c8, #e6d6ae 55%, #eeddb8);
+  color: #5f430e;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.35);
+  box-shadow:
+    inset 0 0 0.5em rgb(122 94 40 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.5),
+    0 0 0 1px rgb(122 94 40 / 0.35);
+}
+.theme-nixie.scheme-light .mon-nix--tube .mon-nix__cell--settled {
+  animation-name: mon-nix-filament-light;
+}
+.theme-nixie.scheme-light .mon-nix--tube .mon-nix__cell--flash {
+  color: #3a2a08;
+}
+
+@keyframes mon-nix-filament-light {
+  0%,
+  88%,
+  100% {
+    filter: brightness(1);
+  }
+  91% {
+    filter: brightness(0.86);
+  }
+  93% {
+    filter: brightness(1.05);
+  }
+  96% {
+    filter: brightness(0.92);
+  }
 }
 
 /* Rounds 的气泡与输入条是硬编码暗面——light 色系下翻成各自的亮面。 */
@@ -595,28 +632,34 @@
   pointer-events: none;
 }
 
-/* 撕纸边：报告页是从速写本上撕下来的——hero 顶缘一条锯齿纸带
-   （clip-path 生成，纸带色是 s1，页面底是 bg）。chart-wrap 有 18px 顶
-   padding，锯齿有地方落。 */
+/* 撕纸边：报告页是从速写本上撕下来的——hero 顶缘一排尖齿锯齿
+   （规则三角波，25 齿），纸带色是 s1，页面底是 bg。chart-wrap 有 18px
+   顶 padding，锯齿有地方落。 */
 .theme-ink .chart-hero {
   position: relative;
 }
 .theme-ink .chart-hero::before {
   content: "";
   position: absolute;
-  top: -14px;
+  top: -12px;
   left: -6px;
   right: -6px;
-  height: 12px;
+  height: 10px;
   background: var(--ch-s1);
   clip-path: polygon(
-    0 100%, 2% 30%, 4% 85%, 6% 15%, 8% 70%, 10% 25%, 12% 90%, 14% 40%,
-    16% 75%, 18% 10%, 20% 60%, 22% 30%, 24% 95%, 26% 20%, 28% 70%, 30% 35%,
-    32% 85%, 34% 15%, 36% 65%, 38% 30%, 40% 90%, 42% 25%, 44% 75%, 46% 40%,
-    48% 95%, 50% 15%, 52% 70%, 54% 35%, 56% 85%, 58% 20%, 60% 60%, 62% 30%,
-    64% 90%, 66% 25%, 68% 75%, 70% 10%, 72% 65%, 74% 35%, 76% 85%, 78% 20%,
-    80% 70%, 82% 30%, 84% 95%, 86% 15%, 88% 65%, 90% 40%, 92% 90%, 94% 25%,
-    96% 75%, 98% 30%, 100% 100%
+    0 100%, 1% 0%, 2% 100%, 3% 0%, 4% 100%, 5% 0%, 6% 100%, 7% 0%,
+    8% 100%, 9% 0%, 10% 100%, 11% 0%, 12% 100%, 13% 0%, 14% 100%, 15% 0%,
+    16% 100%, 17% 0%, 18% 100%, 19% 0%, 20% 100%, 21% 0%, 22% 100%, 23% 0%,
+    24% 100%, 25% 0%, 26% 100%, 27% 0%, 28% 100%, 29% 0%, 30% 100%, 31% 0%,
+    32% 100%, 33% 0%, 34% 100%, 35% 0%, 36% 100%, 37% 0%, 38% 100%, 39% 0%,
+    40% 100%, 41% 0%, 42% 100%, 43% 0%, 44% 100%, 45% 0%, 46% 100%, 47% 0%,
+    48% 100%, 49% 0%, 50% 100%, 51% 0%, 52% 100%, 53% 0%, 54% 100%, 55% 0%,
+    56% 100%, 57% 0%, 58% 100%, 59% 0%, 60% 100%, 61% 0%, 62% 100%, 63% 0%,
+    64% 100%, 65% 0%, 66% 100%, 67% 0%, 68% 100%, 69% 0%, 70% 100%, 71% 0%,
+    72% 100%, 73% 0%, 74% 100%, 75% 0%, 76% 100%, 77% 0%, 78% 100%, 79% 0%,
+    80% 100%, 81% 0%, 82% 100%, 83% 0%, 84% 100%, 85% 0%, 86% 100%, 87% 0%,
+    88% 100%, 89% 0%, 90% 100%, 91% 0%, 92% 100%, 93% 0%, 94% 100%, 95% 0%,
+    96% 100%, 97% 0%, 98% 100%, 99% 0%, 100% 100%
   );
   pointer-events: none;
 }
@@ -940,6 +983,51 @@
   pointer-events: none;
 }
 
+/* 玻璃卡体：全部宿主统一（浏览器内嵌 / PiP / 桌面壳）——冷色 hairline、
+   内受光描边、斜向 sheen。backdrop-filter 仍只属于浏览器构建：透明
+   窗口里 backdrop 会采样到空。卡的入场用与水银球同族的弹簧
+   （表面张力），收起仍走 data-leaving 的折回。 */
+.theme-glass .drip-card {
+  border-color: rgb(180 200 255 / 0.28);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    inset 0 -1px 0 rgb(0 0 0 / 0.25),
+    0 20px 50px rgb(0 0 0 / 0.5);
+}
+.theme-glass .drip-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    115deg,
+    rgb(255 255 255 / 0.09) 0%,
+    transparent 28%,
+    transparent 72%,
+    rgb(255 255 255 / 0.05) 100%
+  );
+  pointer-events: none;
+}
+.theme-glass .drip-card:not([data-leaving]) {
+  animation-name: drip-card-spring;
+  animation-duration: 0.32s;
+}
+
+@keyframes drip-card-spring {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.92);
+  }
+  62% {
+    opacity: 1;
+    transform: translateY(0) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .theme-glass .mon-bar {
   background: rgb(255 255 255 / 0.04);
   backdrop-filter: blur(14px) saturate(1.5);
@@ -1061,8 +1149,9 @@
    bubble(3) / inp / dock / drip-pill / drip-card，外加该色系的 drip 全套
    文字 token。rounds.css 与 drip.css 只读这些 token。 */
 
-/* -- nixie dark -- */
-.theme-nixie .mon-root {
+/* -- nixie dark --（drip token 同时挂在 .drip-root 上：悬浮球不在
+   .mon-root 里，PiP / 桌面壳的独立文档更是如此） */
+.theme-nixie :is(.mon-root, .drip-root) {
   --mon-room: #0a1410;
   --mon-win: rgb(15 28 21 / 0.92);
   --mon-card: rgb(17 31 23 / 0.92);
@@ -1092,7 +1181,7 @@
 }
 
 /* -- nixie light -- */
-.theme-nixie.scheme-light .mon-root {
+.theme-nixie.scheme-light :is(.mon-root, .drip-root) {
   --mon-room: #f5ead0;
   --mon-win: rgb(252 244 224 / 0.92);
   --mon-card: rgb(250 240 218 / 0.9);
@@ -1122,7 +1211,7 @@
 }
 
 /* -- ink light (paper, default) -- */
-.theme-ink .mon-root {
+.theme-ink :is(.mon-root, .drip-root) {
   --mon-room: #f7f3e8;
   --mon-win: rgb(255 255 255 / 0.85);
   --mon-card: rgb(255 255 255 / 0.75);
@@ -1149,7 +1238,7 @@
 }
 
 /* -- ink dark (ink-bottle night) -- */
-.theme-ink.scheme-dark .mon-root {
+.theme-ink.scheme-dark :is(.mon-root, .drip-root) {
   --mon-room: #0f1320;
   --mon-win: rgb(24 30 48 / 0.92);
   --mon-card: rgb(29 36 56 / 0.9);
@@ -1175,7 +1264,7 @@
 }
 
 /* -- glass dark -- */
-.theme-glass .mon-root {
+.theme-glass :is(.mon-root, .drip-root) {
   --mon-room: #090b12;
   --mon-win: rgb(255 255 255 / 0.06);
   --mon-card: rgb(255 255 255 / 0.05);
@@ -1216,7 +1305,7 @@
 }
 
 /* -- glass light -- */
-.theme-glass.scheme-light .mon-root {
+.theme-glass.scheme-light :is(.mon-root, .drip-root) {
   --mon-room: #dde4f0;
   --mon-win: rgb(255 255 255 / 0.62);
   --mon-card: rgb(255 255 255 / 0.58);

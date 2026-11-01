@@ -139,6 +139,8 @@ export function DripPipHost() {
   useEffect(() => {
     if (!supported) return;
     let alive = true;
+    /** Mirrors the opener's theme/scheme classes into the PiP document. */
+    let themeObserver: MutationObserver | undefined;
 
     // The browser clamps the window to its own minimum size, so the granted
     // width is only known after a resize: re-publish it every time.
@@ -150,6 +152,8 @@ export function DripPipHost() {
     const onHide = () => {
       // The PiP document is going away: unmount React while its nodes still
       // exist, then flip the switch back off so the bar agrees.
+      themeObserver?.disconnect();
+      themeObserver = undefined;
       const root = rootRef.current;
       rootRef.current = undefined;
       root?.unmount();
@@ -180,6 +184,26 @@ export function DripPipHost() {
 
       winRef.current = win;
       copyStyles(win.document);
+      // The PiP document has a <html> of its own, and every themed rule in the
+      // copied stylesheets hangs off `.theme-<id>` on it — without the class
+      // the copied styles resolve to nothing and the widget renders unthemed.
+      // Mirrored once here, then kept in sync: the style switcher can flip
+      // while the window floats.
+      const syncTheme = () => {
+        win.document.documentElement.className = document.documentElement.className;
+        // The body's base colour follows the scheme; the themed body rules in
+        // the copied sheets would do it, but nixie has none, so state it here.
+        if (win.document.body) {
+          win.document.body.style.background = document.documentElement.classList.contains(
+            "scheme-light",
+          )
+            ? "#f2efe6"
+            : "#121212";
+        }
+      };
+      syncTheme();
+      themeObserver = new MutationObserver(syncTheme);
+      themeObserver.observe(document.documentElement, { attributeFilter: ["class"] });
       // Without a title the PiP window's title bar shows the page's origin
       // ("localhost:5173"); the app's own name replaces it.
       win.document.title = document.title || "Absence";
@@ -192,7 +216,7 @@ export function DripPipHost() {
         // No activation left: the first layout pass will try again.
       }
       win.document.documentElement.style.height = "100%";
-      win.document.body.style.cssText = "margin:0;height:100%;overflow:hidden;background:#121212";
+      win.document.body.style.cssText = "margin:0;height:100%;overflow:hidden";
       syncWidth(win);
       win.addEventListener("resize", onResize);
       const el = win.document.createElement("div");
@@ -204,6 +228,7 @@ export function DripPipHost() {
 
     return () => {
       alive = false;
+      themeObserver?.disconnect();
       winRef.current?.removeEventListener("resize", onResize);
     };
   }, [supported, setDrip]);
