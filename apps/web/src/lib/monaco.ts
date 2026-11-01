@@ -1,5 +1,17 @@
 import * as monaco from "monaco-editor";
-import type { DeskPalette } from "./theme";
+export interface DeskPalette {
+  bg: string; panel: string; panel2: string; deep: string; line: string;
+  ink: string; dim: string; accent: string; ember: string; teal: string;
+  wood: string; woodLit: string;
+}
+
+/** The desk palette the UI boots with (the old color-theme presets are gone;
+    the faces' own UI styles handle looks now). */
+export const DESK_PALETTE: DeskPalette = {
+  bg: "#141210", panel: "#1b1815", panel2: "#211d19", deep: "#0f0d0b",
+  line: "#2e2822", ink: "#efe7db", dim: "#9a8f80", accent: "#e0a458",
+  ember: "#c56b3f", teal: "#5fa8a0", wood: "#3a332c", woodLit: "#4a4139",
+};
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
@@ -39,7 +51,7 @@ function absenceTheme(p: DeskPalette): monaco.editor.IStandaloneThemeData {
 }
 
 /** Re-define the "absence" theme from a palette and refresh open editors. */
-export function applyMonacoTheme(p: DeskPalette): void {
+export function applyMonacoTheme(p: DeskPalette = DESK_PALETTE): void {
   monaco.editor.defineTheme("absence", absenceTheme(p));
   monaco.editor.setTheme("absence");
 }

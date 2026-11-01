@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { THEMES, type ThemeId } from "../../lib/theme";
+import { UI_STYLES, type UiStyleId } from "../../lib/uistyle";
+import { useUiStyleStore } from "../../stores/uistyleStore";
+
+/** One dot per style, for the Settings row. */
+const STYLE_SWATCH: Record<UiStyleId, string> = {
+  glass: "#8ab8f5",
+  nixie: "#ffb347",
+  ink: "#f1ede1",
+  light: "#fafafa",
+  dark: "#17181a",
+};
 import { LANGUAGES, useT } from "../../lib/i18n";
 import { useSettingsStore, type CommandFailLevel } from "../../stores/settingsStore";
 import { AvatarSkinPane } from "./AvatarSkinPane";
@@ -11,8 +21,6 @@ import {
   saveEggFilter,
   type EggFilterProfileMeta,
 } from "../../lib/api";
-
-const THEME_IDS: ThemeId[] = ["amber", "blue", "green"];
 
 const FAIL_LEVELS: CommandFailLevel[] = ["none", "low", "medium", "high"];
 
@@ -113,8 +121,8 @@ function AppearancePane() {
   const t = useT();
   const language = useSettingsStore((s) => s.language);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
-  const theme = useSettingsStore((s) => s.theme);
-  const setTheme = useSettingsStore((s) => s.setTheme);
+  const uiStyle = useUiStyleStore((s) => s.uiStyle);
+  const setUiStyle = useUiStyleStore((s) => s.setUiStyle);
   const chatMarkdown = useSettingsStore((s) => s.chatMarkdown);
   const setChatMarkdown = useSettingsStore((s) => s.setChatMarkdown);
 
@@ -148,22 +156,22 @@ function AppearancePane() {
 
       {/* ── Theme ──────────────────────────────────────────── */}
       <section className="mb-4">
-        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">{t("Color theme")}</h3>
-        <div className="flex gap-1.5">
-          {THEME_IDS.map((id) => (
+        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">{t("Theme")}</h3>
+        <div className="flex flex-wrap gap-1.5">
+          {UI_STYLES.map((id) => (
             <button
               key={id}
               type="button"
-              onClick={() => setTheme(id)}
+              onClick={() => setUiStyle(id as UiStyleId)}
               className={[
                 "flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[11px] transition-colors",
-                theme === id
+                uiStyle === id
                   ? "border-desk-amber/70 bg-desk-amber/10 text-desk-amber"
                   : "border-desk-line bg-desk-panel2 text-desk-dim hover:text-desk-ink",
               ].join(" ")}
             >
-              <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ background: THEMES[id].accent }} />
-              {id}
+              <span aria-hidden className="h-2.5 w-2.5 rounded-full border border-desk-line" style={{ background: STYLE_SWATCH[id] }} />
+              {t(id)}
             </button>
           ))}
         </div>

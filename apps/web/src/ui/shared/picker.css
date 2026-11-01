@@ -1,0 +1,377 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   PICKER — the project picker's own layer. It renders inside .mon-root
+   (ProjectPicker wraps itself), so every UI style dresses it through the
+   tokens; only the layout lives here. Two columns: the door on the left,
+   runtime + history on the right.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.picker-root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 24px;
+  overflow: auto;
+}
+
+.picker {
+  display: grid;
+  width: min(880px, 100%);
+  grid-template-columns: 1.15fr 1fr;
+  overflow: hidden;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 16px;
+  background: var(--mon-s1);
+  box-shadow: 0 30px 70px -30px rgb(0 0 0 / 0.55);
+}
+
+.picker__brand {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 30px 30px 26px;
+  border-right: 1px solid var(--mon-bd);
+  background: linear-gradient(180deg, var(--mon-s2), transparent 70%);
+}
+
+.picker__brand h1 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font: 600 26px/1 var(--mon-mono);
+  letter-spacing: 0.04em;
+  color: var(--mon-t);
+}
+
+.picker__brand h1 span {
+  font: 500 11px var(--mon-sans);
+  letter-spacing: 0.2em;
+  color: var(--mon-t3);
+}
+
+.picker__brand > p {
+  color: var(--mon-t2);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.picker__open {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.picker__label {
+  font: 600 10px var(--mon-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mon-t3);
+}
+
+.picker__open input {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 9px;
+  background: var(--mon-bg);
+  color: var(--mon-t);
+  font: 12px var(--mon-mono);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.picker__open input:focus {
+  border-color: var(--mon-acc);
+}
+
+.picker__open button {
+  height: 38px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--mon-acc);
+  color: var(--mon-bg);
+  font: 600 12.5px var(--mon-sans);
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.picker__open button:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.picker__open button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.picker__error {
+  padding: 8px 10px;
+  border: 1px solid var(--mon-err);
+  border-radius: 8px;
+  background: rgb(233 115 102 / 0.1);
+  color: var(--mon-err);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.picker__projects {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 210px;
+  overflow: auto;
+}
+
+.picker__list button {
+  padding: 8px 10px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--mon-t);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.picker__list button:hover:not(:disabled) {
+  border-color: var(--mon-bd2);
+  background: var(--mon-s2);
+}
+
+.picker__list button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.picker__list b {
+  display: block;
+  overflow: hidden;
+  font: 500 12.5px var(--mon-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__list span {
+  display: block;
+  overflow: hidden;
+  font: 10.5px var(--mon-mono);
+  color: var(--mon-t3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__side {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 30px 26px 26px;
+}
+
+.picker__block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.picker__runtimes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.picker__runtimes button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 8px;
+  background: var(--mon-s2);
+  color: var(--mon-t2);
+  font: 12px var(--mon-sans);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.picker__runtimes button:hover {
+  color: var(--mon-t);
+}
+
+.picker__runtimes button[data-on] {
+  border-color: var(--mon-acc);
+  background: rgb(94 159 232 / 0.1);
+  color: var(--mon-acc);
+  font-weight: 600;
+}
+
+.picker__runtimes i,
+.picker__pathrow i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mon-err);
+  flex: none;
+}
+
+.picker__runtimes i[data-ok],
+.picker__pathrow i[data-ok] {
+  background: var(--mon-edit);
+}
+
+.picker__note {
+  color: var(--mon-t3);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.picker__paths summary {
+  font: 600 10px var(--mon-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mon-t3);
+  cursor: pointer;
+}
+
+.picker__paths summary:hover {
+  color: var(--mon-t2);
+}
+
+.picker__pathlist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.picker__pathrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 10px var(--mon-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mon-t2);
+}
+
+.picker__pathrow em {
+  margin-left: auto;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--mon-t3);
+}
+
+.picker__pathlist input {
+  width: 100%;
+  height: 30px;
+  margin-top: 4px;
+  padding: 0 9px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 7px;
+  background: var(--mon-bg);
+  color: var(--mon-t);
+  font: 11px var(--mon-mono);
+  outline: none;
+}
+
+.picker__pathlist input:focus {
+  border-color: var(--mon-acc);
+}
+
+.picker__save {
+  align-self: flex-end;
+  padding: 5px 12px;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--mon-t2);
+  font: 11px var(--mon-mono);
+  cursor: pointer;
+}
+
+.picker__save:hover {
+  border-color: var(--mon-acc);
+  color: var(--mon-acc);
+}
+
+.picker__histoggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.picker__histoggle span {
+  font: 10.5px var(--mon-mono);
+  color: var(--mon-t3);
+}
+
+.picker__history {
+  max-height: 260px;
+}
+
+.picker__hrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.picker__hrow b {
+  overflow: hidden;
+  font: 500 12.5px var(--mon-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__hrow em {
+  flex: none;
+  font: 10px var(--mon-mono);
+  font-style: normal;
+  color: var(--mon-t3);
+}
+
+.picker__hpath {
+  overflow: hidden;
+  font: 10.5px var(--mon-mono);
+  color: var(--mon-t3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__hmeta {
+  display: block;
+  overflow: hidden;
+  font: 10px var(--mon-mono);
+  color: var(--mon-t3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__hmeta i {
+  font-style: normal;
+  color: var(--mon-read);
+}
+
+@media (max-width: 760px) {
+  .picker {
+    grid-template-columns: 1fr;
+  }
+
+  .picker__brand {
+    border-right: 0;
+    border-bottom: 1px solid var(--mon-bd);
+  }
+}

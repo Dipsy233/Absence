@@ -24,8 +24,8 @@
   --mon-bd: rgb(255 170 60 / 0.14);
   --mon-bd2: rgb(255 170 60 / 0.3);
   --mon-t: #f5e9cf;
-  --mon-t2: #c9b088;
-  --mon-t3: #8a744f;
+  --mon-t2: #d6bd91;
+  --mon-t3: #a68d5f;
   --mon-think: #d8a86f;
   --mon-read: #e8c07a;
   --mon-search: #c9c07a;
@@ -58,6 +58,39 @@
 
 .theme-nixie .mon-root::after {
   background: radial-gradient(520px 360px at 85% -10%, rgb(255 120 20 / 0.06), transparent 65%);
+}
+
+/* Machine-punk chrome: plates with riveted borders, engraved caps, glow on
+   everything that carries a number. */
+.theme-nixie .mon-btn,
+.theme-nixie .mon-themes > button,
+.theme-nixie .mon-modes > button {
+  background: linear-gradient(180deg, #241a0c, #150f08 55%, #1c1207);
+  border: 1px solid rgb(255 170 60 / 0.35);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgb(255 179 71 / 0.12), inset 0 -1px 0 rgb(0 0 0 / 0.6);
+}
+
+.theme-nixie .mon-btn:hover,
+.theme-nixie .mon-themes > button:hover,
+.theme-nixie .mon-modes > button:hover {
+  border-color: rgb(255 179 71 / 0.7);
+  box-shadow: inset 0 1px 0 rgb(255 179 71 / 0.2), 0 0 14px -4px rgb(255 150 40 / 0.5);
+}
+
+.theme-nixie .mon-cap,
+.theme-nixie .mon-sec span,
+.theme-nixie .phead {
+  color: #c9a25f;
+  letter-spacing: 0.26em;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 0.8);
+}
+
+.theme-nixie .mon-runsel,
+.theme-nixie .mon-railsec,
+.theme-nixie .panel {
+  border: 1px solid rgb(255 170 60 / 0.22);
+  box-shadow: inset 0 0 18px rgb(0 0 0 / 0.5);
 }
 
 /* Numbers glow like filaments; status words carry a faint halo. */
@@ -163,6 +196,16 @@
 
 .theme-ink .mon-root::after {
   background: radial-gradient(520px 360px at 85% -10%, rgb(198 91 63 / 0.06), transparent 65%);
+}
+
+/* Every word is handwritten: the sans stack itself becomes the hand. The
+   mono stack stays for code sheets and paths, where alignment matters. */
+.theme-ink .mon-root {
+  --mon-sans: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
+}
+
+.theme-ink .mon-root {
+  font-size: 14.5px;
 }
 
 /* The chrome is handwritten; the reading text stays sans for contrast. */
@@ -322,6 +365,18 @@
   background: radial-gradient(560px 400px at 74% -12%, rgb(85 193 211 / 0.12), transparent 62%);
 }
 
+/* Straight lines everywhere: the glass look is architectural, so controls
+   tighten their corners and lose the soft shadows. */
+.theme-glass .mon-btn,
+.theme-glass .mon-chip,
+.theme-glass .mon-themes > button,
+.theme-glass .mon-modes > button,
+.theme-glass .mon-runmenu,
+.theme-glass .rounds-card,
+.theme-glass .rounds-window {
+  border-radius: 6px;
+}
+
 /* The bar and the speech bubble are sheets of glass; the rest stays light
    on purpose — blur on every panel costs more than it shows. */
 .theme-glass .mon-bar {
@@ -377,4 +432,241 @@
 
 .theme-glass .mon-ridesb__thumb {
   background: rgb(255 255 255 / 0.28);
+}
+
+/* == CHART — per-style tokens ==
+   The report face reads its own --ch-* palette; every style remaps it. */
+
+.theme-nixie .chart-root {
+  --ch-bg: #0c0906;
+  --ch-s1: #150f08;
+  --ch-s2: #1e150b;
+  --ch-s3: #2a1e0f;
+  --ch-bd: rgb(255 170 60 / 0.14);
+  --ch-bd2: rgb(255 170 60 / 0.3);
+  --ch-t: #f5e9cf;
+  --ch-t2: #d6bd91;
+  --ch-t3: #a68d5f;
+  --ch-think: #d8a86f;
+  --ch-read: #e8c07a;
+  --ch-search: #c9c07a;
+  --ch-edit: #c9d38a;
+  --ch-run: #ffb347;
+  --ch-egg: #e8a08a;
+  --ch-err: #ff9d7a;
+  --ch-acc: #ffb347;
+}
+
+.theme-ink .chart-root {
+  --ch-bg: #f1ede1;
+  --ch-s1: #e9e4d5;
+  --ch-s2: #e2dcc9;
+  --ch-s3: #d6cfb8;
+  --ch-bd: #c9c2ab;
+  --ch-bd2: #a89f83;
+  --ch-t: #33302a;
+  --ch-t2: #5c574c;
+  --ch-t3: #8d8672;
+  --ch-think: #8a5a9e;
+  --ch-read: #3f6fa8;
+  --ch-search: #3f8a9e;
+  --ch-edit: #4e7d54;
+  --ch-run: #c07a3a;
+  --ch-egg: #b05a78;
+  --ch-err: #b8453a;
+  --ch-acc: #c65b3f;
+  --ch-sans: "Caveat", "ShouXie851", "KaiTi", "STKaiti", cursive;
+}
+
+.theme-glass .chart-root {
+  --ch-bg: #0d0f14;
+  --ch-s1: rgb(255 255 255 / 0.045);
+  --ch-s2: rgb(255 255 255 / 0.07);
+  --ch-s3: rgb(255 255 255 / 0.1);
+  --ch-bd: rgb(255 255 255 / 0.1);
+  --ch-bd2: rgb(255 255 255 / 0.18);
+  --ch-t: #eef1f6;
+  --ch-t2: #b6bec9;
+  --ch-t3: #8b94a2;
+  --ch-think: #c9a0e0;
+  --ch-read: #8ab8f5;
+  --ch-search: #6fc4d4;
+  --ch-edit: #8fd0a5;
+  --ch-run: #f0b070;
+  --ch-egg: #efa8c2;
+  --ch-err: #f2887c;
+  --ch-acc: #8ab8f5;
+}
+
+.theme-light .chart-root {
+  --ch-bg: #fafafa;
+  --ch-s1: #ffffff;
+  --ch-s2: #f2f2f2;
+  --ch-s3: #e8e8e8;
+  --ch-bd: #e4e4e4;
+  --ch-bd2: #cfcfcf;
+  --ch-t: #1c1c1e;
+  --ch-t2: #4c4c50;
+  --ch-t3: #85858a;
+  --ch-think: #8a5a9e;
+  --ch-read: #3671c9;
+  --ch-search: #2e8fa3;
+  --ch-edit: #3f8a54;
+  --ch-run: #c07a3a;
+  --ch-egg: #c05a86;
+  --ch-err: #d0453a;
+  --ch-acc: #3671c9;
+}
+
+.theme-dark .chart-root {
+  --ch-bg: #0e0e10;
+  --ch-s1: #17181a;
+  --ch-s2: #1e1f22;
+  --ch-s3: #292a2e;
+  --ch-bd: rgb(255 255 255 / 0.09);
+  --ch-bd2: rgb(255 255 255 / 0.17);
+  --ch-t: #e8e8ea;
+  --ch-t2: #a8a8ae;
+  --ch-t3: #7c7c82;
+  --ch-think: #b48ccb;
+  --ch-read: #7a9ce8;
+  --ch-search: #55b8c9;
+  --ch-edit: #79c08e;
+  --ch-run: #dd9457;
+  --ch-egg: #dd87a9;
+  --ch-err: #ef7d70;
+  --ch-acc: #8f8ff0;
+}
+
+/* == LIGHT == */
+
+.theme-light {
+  color-scheme: light;
+}
+
+.theme-light body {
+  background: #fafafa;
+}
+
+.theme-light .mon-root {
+  --mon-bg: #fafafa;
+  --mon-s1: #ffffff;
+  --mon-s2: #f2f2f2;
+  --mon-s3: #e8e8e8;
+  --mon-bd: #e4e4e4;
+  --mon-bd2: #cfcfcf;
+  --mon-t: #1c1c1e;
+  --mon-t2: #4c4c50;
+  --mon-t3: #85858a;
+  --mon-think: #8a5a9e;
+  --mon-read: #3671c9;
+  --mon-search: #2e8fa3;
+  --mon-edit: #3f8a54;
+  --mon-run: #c07a3a;
+  --mon-egg: #c05a86;
+  --mon-err: #d0453a;
+  --mon-acc: #3671c9;
+  --desk-bg: 250 250 250;
+  --desk-panel: 255 255 255;
+  --desk-panel2: 242 242 242;
+  --desk-deep: 242 242 242;
+  --desk-line: 228 228 228;
+  --desk-ink: 28 28 30;
+  --desk-dim: 133 133 138;
+  --desk-accent: 54 113 201;
+  --desk-ember: 208 69 58;
+  --desk-teal: 63 138 84;
+  --desk-wood: 242 242 242;
+  --desk-wood-lit: 232 232 232;
+  --desk-lavender: 138 90 158;
+}
+
+.theme-light .mon-root::before,
+.theme-light .mon-root::after {
+  background: none;
+}
+
+.theme-light .drip-root {
+  --drip-s1: #ffffff;
+  --drip-s2: #f2f2f2;
+  --drip-s3: #e8e8e8;
+  --drip-bd: #e4e4e4;
+  --drip-bd2: #cfcfcf;
+  --drip-t: #1c1c1e;
+  --drip-t2: #4c4c50;
+  --drip-t3: #85858a;
+  --drip-ok: #3f8a54;
+  --drip-listen: #3671c9;
+  --drip-run: #c07a3a;
+  --drip-err: #d0453a;
+  background: #fafafa;
+}
+
+/* == DARK == */
+
+.theme-dark body {
+  background: #0e0e10;
+}
+
+.theme-dark .mon-root {
+  --mon-bg: #0e0e10;
+  --mon-s1: #17181a;
+  --mon-s2: #1e1f22;
+  --mon-s3: #292a2e;
+  --mon-bd: rgb(255 255 255 / 0.09);
+  --mon-bd2: rgb(255 255 255 / 0.17);
+  --mon-t: #e8e8ea;
+  --mon-t2: #a8a8ae;
+  --mon-t3: #7c7c82;
+  --mon-think: #b48ccb;
+  --mon-read: #7a9ce8;
+  --mon-search: #55b8c9;
+  --mon-edit: #79c08e;
+  --mon-run: #dd9457;
+  --mon-egg: #dd87a9;
+  --mon-err: #ef7d70;
+  --mon-acc: #8f8ff0;
+  --desk-bg: 14 14 16;
+  --desk-panel: 23 24 26;
+  --desk-panel2: 30 31 34;
+  --desk-deep: 10 10 12;
+  --desk-line: 41 42 46;
+  --desk-ink: 232 232 234;
+  --desk-dim: 124 124 130;
+  --desk-accent: 143 143 240;
+  --desk-ember: 239 125 112;
+  --desk-teal: 121 192 142;
+  --desk-wood: 30 31 34;
+  --desk-wood-lit: 41 42 46;
+  --desk-lavender: 180 140 203;
+}
+
+.theme-dark .mon-root::before,
+.theme-dark .mon-root::after {
+  background: none;
+}
+
+.theme-dark .drip-root {
+  --drip-s1: #17181a;
+  --drip-s2: #1e1f22;
+  --drip-s3: #292a2e;
+  --drip-bd: rgb(255 255 255 / 0.09);
+  --drip-bd2: rgb(255 255 255 / 0.17);
+  --drip-t: #e8e8ea;
+  --drip-t2: #a8a8ae;
+  --drip-t3: #7c7c82;
+  --drip-ok: #79c08e;
+  --drip-listen: #7a9ce8;
+  --drip-run: #dd9457;
+  --drip-err: #ef7d70;
+  background: #0e0e10;
+}
+
+/* == per-style riding-thumb ink == */
+.theme-light .mon-ridesb__thumb {
+  background: rgb(28 28 30 / 0.28);
+}
+
+.theme-dark .mon-ridesb__thumb {
+  background: rgb(255 255 255 / 0.18);
 }

@@ -7,8 +7,8 @@ import { readStoredUiStyle, storeUiStyle, type UiStyleId } from "../lib/uistyle"
  * never touches the session.
  */
 interface UiStyleStore {
-  uiStyle: UiStyleId | null;
-  setUiStyle: (style: UiStyleId | null) => void;
+  uiStyle: UiStyleId;
+  setUiStyle: (style: UiStyleId) => void;
 }
 
 export const useUiStyleStore = create<UiStyleStore>((set) => ({

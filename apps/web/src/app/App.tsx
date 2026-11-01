@@ -12,6 +12,7 @@ import { DripPipHost } from "../ui/drip/DripPip";
 import { DripDesktop } from "../ui/drip/DripDesktop";
 import { FaceRise } from "../ui/shared/FaceRise";
 import { useUiStyleStore } from "../stores/uistyleStore";
+import { UI_STYLES } from "../lib/uistyle";
 
 /**
  * The desktop shell opens Drip as a second window: it loads this same app with
@@ -51,8 +52,8 @@ export default function App() {
   const uiStyle = useUiStyleStore((s) => s.uiStyle);
   useEffect(() => {
     const el = document.documentElement;
-    el.classList.remove("theme-nixie", "theme-ink", "theme-glass");
-    if (uiStyle) el.classList.add(`theme-${uiStyle}`);
+    el.classList.remove(...UI_STYLES.map((id) => `theme-${id}`));
+    el.classList.add(`theme-${uiStyle}`);
   }, [uiStyle]);
 
   // The desktop shell opens Drip as a second always-on-top window. The face

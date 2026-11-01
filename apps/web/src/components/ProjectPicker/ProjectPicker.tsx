@@ -12,6 +12,8 @@ import { WindowControls } from "../common/WindowControls";
 import { useSessionStore } from "../../stores/sessionStore";
 import { resetAllStores } from "../../stores/reset";
 import { useT } from "../../lib/i18n";
+import "../../ui/shared/themes.css";
+import "../../ui/shared/picker.css";
 
 type AgentChoice = RuntimeKind;
 
@@ -24,7 +26,11 @@ function formatWhen(timestamp: number): string {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${time}`;
 }
 
-/** The first screen: pick a local project and start watching (read.md §25). */
+/**
+ * The first screen: pick a local project and start watching. It renders
+ * inside `.mon-root` so the chosen UI style dresses it too — the picker is
+ * the front door, not a separate app.
+ */
 export function ProjectPicker() {
   const t = useT();
   const startSession = useSessionStore((s) => s.startSession);
@@ -126,207 +132,164 @@ export function ProjectPicker() {
   };
 
   return (
-    <div className="relative flex h-full items-center justify-center p-6">
-      {/* Frameless desktop shell: a slim drag strip across the top carries the
-          window controls; a plain browser tab renders neither. */}
+    <div className="mon-root picker-root">
       {window.absenceDesktop ? (
         <div className="absence-drag absolute inset-x-0 top-0 z-10 flex h-8 items-stretch justify-end">
           <WindowControls />
         </div>
       ) : null}
-      <div className="w-full max-w-lg rounded-xl border border-desk-line bg-desk-panel p-6">
-        <div className="flex items-baseline gap-3">
-          <h1 className="font-mono text-3xl tracking-tight text-desk-ink">ABSENCE</h1>
-          <span className="text-xs text-desk-dim">发呆症</span>
-        </div>
-        <p className="mt-2 text-sm text-desk-dim">
-          {t("AI moves fast. Humans watch. Choose a project and let the agent work.")}
-        </p>
 
-        <div className="mt-5">
-          <div className="label mb-1">{t("project path")}</div>
-          <div className="flex gap-2">
+      <div className="picker">
+        {/* Left: the door. */}
+        <aside className="picker__brand">
+          <h1>
+            ABSENCE
+            <span>发呆症</span>
+          </h1>
+          <p>{t("AI moves fast. Humans watch. Choose a project and let the agent work.")}</p>
+
+          <div className="picker__open">
+            <label className="picker__label">{t("project path")}</label>
             <input
               value={path}
               onChange={(e) => setPath(e.target.value)}
               placeholder="E:/path/to/project"
               spellCheck={false}
-              className="min-w-0 flex-1 rounded border border-desk-line bg-desk-panel2 px-2 py-2 font-mono text-xs text-desk-ink outline-none placeholder:text-desk-dim/60 focus:border-desk-amber/70"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && path.trim() && !busy) void start(path);
+              }}
             />
-            <button
-              type="button"
-              disabled={busy || !path.trim()}
-              onClick={() => void start(path)}
-              className="shrink-0 rounded border border-desk-amber/60 bg-desk-amber/10 px-4 py-2 text-xs text-desk-amber hover:bg-desk-amber/20 disabled:opacity-40"
-            >
+            <button type="button" disabled={busy || !path.trim()} onClick={() => void start(path)}>
               {busy ? t("opening…") : t("Open")}
             </button>
+            {error ? <div className="picker__error">{error}</div> : null}
           </div>
-        </div>
 
-        {/* History: persisted sessions (ABSENCE archives + Pi sessions), newest first */}
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => {
-              setHistoryOpen((value) => !value);
-              refreshSessions();
-            }}
-            className="flex w-full items-center justify-between rounded border border-transparent px-1 py-1 text-left hover:border-desk-line hover:bg-desk-panel2"
-          >
-            <span className="label">{t("History")}</span>
-            <span className="font-mono text-[10px] text-desk-dim">
-              {t("{n} sessions", { n: visibleSessions.length })} {historyOpen ? "▾" : "▸"}
-            </span>
-          </button>
-
-          {historyOpen ? (
-            <div className="mt-1 max-h-56 space-y-1 overflow-auto">
-              {visibleSessions.length === 0 ? (
-                <p className="px-2 py-1.5 text-[11px] text-desk-dim">
-                  {query
-                    ? t("No saved sessions for this path.")
-                    : t("No saved sessions yet — open a project to start one.")}
-                </p>
-              ) : (
-                visibleSessions.map((session) => (
+          {projects.length > 0 ? (
+            <div className="picker__projects">
+              <label className="picker__label">{t("recent")}</label>
+              <div className="picker__list">
+                {projects.map((project) => (
                   <button
-                    key={session.id}
+                    key={project.path}
                     type="button"
                     disabled={busy}
-                    onClick={() => void resume(session)}
-                    title={t("Resume {id}", { id: session.piSessionFile ?? session.absenceSessionId ?? session.id })}
-                    className="block w-full rounded border border-transparent px-2 py-1.5 text-left hover:border-desk-line hover:bg-desk-panel2 disabled:opacity-40"
+                    onClick={() => void start(project.path)}
+                    title={project.path}
                   >
-                    <div className="flex items-baseline gap-2">
-                      <span className="truncate font-mono text-xs text-desk-ink/85">
-                        {session.name ?? session.projectName}
-                      </span>
-                      <span className="ml-auto shrink-0 font-mono text-[10px] text-desk-dim">
-                        {formatWhen(session.updatedAt)}
-                      </span>
-                    </div>
-                    <div className="truncate font-mono text-[10px] text-desk-dim" title={session.projectPath}>
-                      {session.projectPath}
-                    </div>
-                    <div className="flex items-center gap-1.5 font-mono text-[10px] text-desk-dim">
-                      <span className={session.runtime === "pi" ? "text-desk-teal" : "text-desk-dim"}>
-                        {session.runtime}
-                      </span>
-                      <span>
-                        {t("· {n} msgs", { n: session.messageCount })}
-                      </span>
-                      {session.firstPrompt ? (
-                        <span className="truncate text-desk-dim/80">· {session.firstPrompt}</span>
-                      ) : null}
-                    </div>
+                    <b>{project.name}</b>
+                    <span>{project.path}</span>
                   </button>
-                ))
-              )}
+                ))}
+              </div>
             </div>
           ) : null}
-        </div>
+        </aside>
 
-        <div className="mt-4">
-          <div className="label mb-1">{t("runtime")}</div>
-          <div className="flex flex-wrap gap-1">
-            {runtimes.map((rt) => (
-              <button
-                key={rt.kind}
-                type="button"
-                onClick={() => setAgent(rt.kind)}
-                title={rt.note}
-                className={[
-                  "flex items-center gap-1.5 rounded border px-3 py-1 text-xs",
-                  agent === rt.kind
-                    ? "border-desk-amber/70 bg-desk-amber/10 text-desk-amber"
-                    : "border-desk-line bg-desk-panel2 text-desk-dim hover:text-desk-ink",
-                ].join(" ")}
-              >
-                <span
-                  aria-hidden
-                  className={["h-1.5 w-1.5 rounded-full", rt.available ? "bg-desk-teal" : "bg-desk-ember"].join(" ")}
-                />
-                {rt.label}
-              </button>
-            ))}
-          </div>
-          <p className="mt-1 text-[11px] text-desk-dim/80">
-            {t(
-              "A green dot means the runtime was found. A red dot means it is not installed (or the path is wrong) — fix it below before opening.",
-            )}
-          </p>
-        </div>
-
-        {/* Runtime paths: point codex / dsh at their binary when the probe misses. */}
-        {runtimes.some((rt) => rt.configurable) ? (
-          <div className="mt-3">
-            <div className="label mb-1">{t("runtime paths")}</div>
-            <div className="space-y-2">
-              {runtimes
-                .filter((rt) => rt.configurable)
-                .map((rt) => {
-                  const key = rt.kind as "pi" | "codex" | "dsh";
-                  return (
-                    <div key={rt.kind}>
-                      <div className="mb-0.5 flex items-center gap-1.5 text-[10px]">
-                        <span
-                          aria-hidden
-                          className={["h-1.5 w-1.5 rounded-full", rt.available ? "bg-desk-teal" : "bg-desk-ember"].join(" ")}
-                        />
-                        <span className="font-mono uppercase tracking-wide text-desk-ink">{t("{label} path", { label: rt.label })}</span>
-                        <span className="truncate text-desk-dim/80">{rt.available ? t("found") : t("not found")}</span>
-                      </div>
-                      <input
-                        value={pathEdits[key] ?? ""}
-                        onChange={(e) => setPathEdits((prev) => ({ ...prev, [key]: e.target.value }))}
-                        placeholder={rt.note}
-                        spellCheck={false}
-                        className="w-full rounded border border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[11px] text-desk-ink outline-none placeholder:text-desk-dim/50 focus:border-desk-amber/70"
-                      />
-                    </div>
-                  );
-                })}
-            </div>
-            <div className="mt-2 flex items-center justify-end">
-              <button
-                type="button"
-                disabled={savingPaths}
-                onClick={() => void savePaths()}
-                className="rounded border border-desk-line px-3 py-1 font-mono text-[11px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber disabled:opacity-40"
-              >
-                {savingPaths ? t("saving…") : t("save paths")}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="mt-4 rounded border border-desk-ember/50 bg-desk-ember/10 px-3 py-2 text-xs text-desk-ember">
-            {error}
-          </div>
-        ) : null}
-
-        {projects.length > 0 ? (
-          <div className="mt-5">
-            <div className="label mb-1">{t("recent")}</div>
-            <div className="max-h-48 space-y-1 overflow-auto">
-              {projects.map((project) => (
+        {/* Right: runtime + history. */}
+        <aside className="picker__side">
+          <div className="picker__block">
+            <label className="picker__label">{t("runtime")}</label>
+            <div className="picker__runtimes">
+              {runtimes.map((rt) => (
                 <button
-                  key={project.path}
+                  key={rt.kind}
                   type="button"
-                  disabled={busy}
-                  onClick={() => void start(project.path)}
-                  className="block w-full truncate rounded border border-transparent px-2 py-1.5 text-left font-mono text-xs text-desk-ink/80 hover:border-desk-line hover:bg-desk-panel2 hover:text-desk-ink disabled:opacity-40"
-                  title={project.path}
+                  onClick={() => setAgent(rt.kind)}
+                  title={rt.note}
+                  data-on={agent === rt.kind ? "true" : undefined}
                 >
-                  {project.name}
-                  <span className="ml-2 text-desk-dim/70">{project.path}</span>
+                  <i data-ok={rt.available ? "true" : undefined} />
+                  {rt.label}
                 </button>
               ))}
             </div>
+            <p className="picker__note">
+              {t(
+                "A green dot means the runtime was found. A red dot means it is not installed (or the path is wrong) — fix it below before opening.",
+              )}
+            </p>
+            {runtimes.some((rt) => rt.configurable) ? (
+              <details className="picker__paths">
+                <summary>{t("runtime paths")}</summary>
+                <div className="picker__pathlist">
+                  {runtimes
+                    .filter((rt) => rt.configurable)
+                    .map((rt) => {
+                      const key = rt.kind as "pi" | "codex" | "dsh";
+                      return (
+                        <div key={rt.kind}>
+                          <div className="picker__pathrow">
+                            <i data-ok={rt.available ? "true" : undefined} />
+                            <span>{rt.label}</span>
+                            <em>{rt.available ? t("found") : t("not found")}</em>
+                          </div>
+                          <input
+                            value={pathEdits[key] ?? ""}
+                            onChange={(e) => setPathEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+                            placeholder={rt.note}
+                            spellCheck={false}
+                          />
+                        </div>
+                      );
+                    })}
+                  <button type="button" className="picker__save" disabled={savingPaths} onClick={() => void savePaths()}>
+                    {savingPaths ? t("saving…") : t("save paths")}
+                  </button>
+                </div>
+              </details>
+            ) : null}
           </div>
-        ) : null}
+
+          <div className="picker__block">
+            <button
+              type="button"
+              className="picker__histoggle"
+              onClick={() => {
+                setHistoryOpen((value) => !value);
+                refreshSessions();
+              }}
+            >
+              <label className="picker__label">{t("History")}</label>
+              <span>
+                {t("{n} sessions", { n: visibleSessions.length })} {historyOpen ? "▾" : "▸"}
+              </span>
+            </button>
+            {historyOpen ? (
+              <div className="picker__list picker__history">
+                {visibleSessions.length === 0 ? (
+                  <p className="picker__note">
+                    {query
+                      ? t("No saved sessions for this path.")
+                      : t("No saved sessions yet — open a project to start one.")}
+                  </p>
+                ) : (
+                  visibleSessions.map((session) => (
+                    <button
+                      key={session.id}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void resume(session)}
+                      title={t("Resume {id}", { id: session.piSessionFile ?? session.absenceSessionId ?? session.id })}
+                    >
+                      <span className="picker__hrow">
+                        <b>{session.name ?? session.projectName}</b>
+                        <em>{formatWhen(session.updatedAt)}</em>
+                      </span>
+                      <span className="picker__hpath">{session.projectPath}</span>
+                      <span className="picker__hmeta">
+                        <i data-runtime={session.runtime}>{session.runtime}</i>
+                        {"· "}
+                        {t("{n} msgs", { n: session.messageCount })}
+                        {session.firstPrompt ? ` · ${session.firstPrompt}` : null}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
+        </aside>
       </div>
     </div>
   );

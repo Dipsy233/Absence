@@ -23,7 +23,6 @@ export type CommandFailLevel = "none" | "low" | "medium" | "high";
 export interface Settings {
   /** UI language: English or Chinese (see lib/i18n.ts). */
   language: "en" | "zh";
-  theme: "amber" | "blue" | "green";
   /**
    * Show the LAID/DIED process rows (Agent Eggs) in the activity feed. Off
    * (the default) hides them so the feed reads as actions only; the eggs
@@ -84,7 +83,6 @@ export interface Settings {
 
 const DEFAULTS: Settings = {
   language: "en",
-  theme: "amber",
   displayInActivity: false,
   chatMarkdown: true,
   commandFailThreshold: 5,
@@ -118,7 +116,6 @@ const DEFAULTS: Settings = {
 export function normalizeSettings(parsed: Partial<Settings>): Settings {
   return {
     language: parsed.language === "zh" ? "zh" : "en",
-    theme: parsed.theme ?? DEFAULTS.theme,
     displayInActivity: parsed.displayInActivity ?? DEFAULTS.displayInActivity,
     chatMarkdown: parsed.chatMarkdown ?? DEFAULTS.chatMarkdown,
     commandFailThreshold: normalizeThreshold(parsed.commandFailThreshold, DEFAULTS.commandFailThreshold),
@@ -212,7 +209,6 @@ function persist(settings: Settings): void {
 
 interface SettingsStore extends Settings {
   setLanguage: (language: Settings["language"]) => void;
-  setTheme: (theme: Settings["theme"]) => void;
   setDisplayInActivity: (value: boolean) => void;
   setChatMarkdown: (value: boolean) => void;
   setCommandFailThreshold: (value: number) => void;
@@ -241,7 +237,6 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   ...load(),
 
   setLanguage: (language) => set((s) => persistIt(s, { language })),
-  setTheme: (theme) => set((s) => persistIt(s, { theme })),
   setDisplayInActivity: (value) => set((s) => persistIt(s, { displayInActivity: value })),
   setChatMarkdown: (value) => set((s) => persistIt(s, { chatMarkdown: value })),
   setCommandFailThreshold: (value) =>
