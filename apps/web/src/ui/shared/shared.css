@@ -596,34 +596,60 @@
 }
 
 /* ── Scroll: the scrollbar rides the frame line ────────────────────────────
-   A native scrollbar takes its gutter out of the content box when overflow
-   starts, squeezing everything inside — one more source of layout shift.
-   `.mon-vscroll` reserves the gutter always (`scrollbar-gutter: stable`) and
-   pulls it out over the container's right edge with a negative margin: the
-   content keeps the same width whether or not it scrolls, and the slim thumb
-   floats on the hairline between columns instead of eating content. The
-   track is transparent; the thumb follows `scrollbar-color` in the standard
-   thin spec, so all engines render it the same.
-   `.mon-hscroll` is the horizontal twin (thumb on the bottom hairline).
-   `.mon-slimscroll` keeps the scrollbar inside a bordered floating panel
-   (dropdown menus) — thin, transparent track, no repositioning. */
-.mon-root {
-  --mon-sb: 8px;
+   A native scrollbar takes a gutter out of its container when overflow
+   starts — squeezing the content and nudging every divider by a bar's
+   width. `useRideScroll` (ui/shared/rideScroll.ts) hides the native bar and
+   draws a slim thumb in a fixed rail whose box is the scroller's own rect,
+   refreshed whenever it could have moved: scroll, resize, and content
+   mutations (feed rows stream in). The thumb straddles the container's
+   right edge — exactly on the divider between panels — and the content
+   keeps its width whether or not it scrolls. The rail lives on <body>
+   (outside any face's clip and stacking context), so its colours are
+   literal, not tokens. `.mon-slimscroll` keeps a thin native bar inside
+   bordered floating panels (dropdown menus), where an outside rail would
+   hang off the panel. */
+.mon-ridesb {
+  scrollbar-width: none;
 }
 
-.mon-vscroll {
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  margin-right: calc(-1 * var(--mon-sb));
-  scrollbar-width: thin;
-  scrollbar-color: var(--mon-bd2) transparent;
+.mon-ridesb::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
-.mon-hscroll {
-  scrollbar-gutter: stable;
-  margin-bottom: calc(-1 * var(--mon-sb));
-  scrollbar-width: thin;
-  scrollbar-color: var(--mon-bd2) transparent;
+.mon-ridesb__rail {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.mon-ridesb__thumb {
+  position: absolute;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.16);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.mon-ridesb__rail[data-side="right"] .mon-ridesb__thumb {
+  top: 0;
+  right: -3px;
+  width: 5px;
+}
+
+.mon-ridesb__rail[data-side="bottom"] {
+  left: 0;
+  height: 7px;
+}
+
+.mon-ridesb__rail[data-side="bottom"] .mon-ridesb__thumb {
+  left: 0;
+  bottom: -3px;
+  height: 5px;
+}
+
+.mon-ridesb__rail[data-scrollable="true"] .mon-ridesb__thumb {
+  opacity: 1;
 }
 
 .mon-slimscroll {

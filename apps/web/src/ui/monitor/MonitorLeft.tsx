@@ -27,6 +27,7 @@ import {
   type MonTone,
 } from "../shared/atoms";
 import type { MonitorData } from "../../hooks/useMonitorData";
+import { useRideScroll } from "../shared/rideScroll";
 
 
 /**
@@ -118,6 +119,11 @@ export function MonitorLeft({
   );
   const feedRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  /* The one border-riding scrollbar for now — the Activity feed's thumb
+     sits on the divider between this column and the Stage. */
+  useRideScroll("right", feedRef);
+  const filesFeedRef = useRideScroll<HTMLDivElement>();
+  const attentionFeedRef = useRideScroll<HTMLDivElement>();
 
   // A snapshot carries the run list, but a resumed session can mount before it
   // arrives. The guarded fetch lives in the store (`ensureLoaded`) — idempotent
@@ -226,7 +232,7 @@ export function MonitorLeft({
   };
 
   return (
-    <div className="mon-col mon-col--left mon-vscroll">
+    <div className="mon-col mon-col--left">
       <div className="mon-lefthead">
         {/* Three views of one column: what the agent did, the project it did it
             to, and what it is asking a human to look at. The right rail is the
@@ -346,11 +352,11 @@ export function MonitorLeft({
       </div>
 
       {view === "files" ? (
-        <div className="mon-feed mon-vscroll" style={{ padding: 8 }}>
+        <div className="mon-feed" ref={filesFeedRef} style={{ padding: 8 }}>
           <FilePanel />
         </div>
       ) : view === "attention" ? (
-        <div className="mon-feed mon-vscroll" style={{ padding: 8 }}>
+        <div className="mon-feed" ref={attentionFeedRef} style={{ padding: 8 }}>
           <AttentionList notices={notices} onOpen={openNotice} />
         </div>
       ) : (
@@ -361,7 +367,7 @@ export function MonitorLeft({
         </div>
       ) : null}
 
-      <div className="mon-feed mon-vscroll" ref={feedRef}>
+      <div className="mon-feed" ref={feedRef}>
         {data.loading && data.rows.length === 0 ? (
           <p className="mon-empty">{t("loading…")}</p>
         ) : data.rows.length === 0 ? (

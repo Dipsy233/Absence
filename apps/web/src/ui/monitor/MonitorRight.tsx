@@ -21,6 +21,7 @@ import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 import { Dot, attentionTone, toneForStatus } from "../shared/atoms";
 import { Nixie } from "../shared/Nixie";
 import type { MonitorData } from "../../hooks/useMonitorData";
+import { useRideScroll } from "../shared/rideScroll";
 
 /**
  * Right column: who is working, what it is worth in resources, what it knows,
@@ -40,7 +41,7 @@ import type { MonitorData } from "../../hooks/useMonitorData";
  */
 export function MonitorRight({ data }: { data: MonitorData }) {
   return (
-    <div className="mon-col mon-col--right mon-vscroll">
+    <div className="mon-col mon-col--right">
       <AgentHead data={data} />
       <Usage />
       {/*
@@ -204,6 +205,7 @@ function KnownFiles() {
   const activeId = useStageStore((s) => s.activeItem?.id);
   const agentFile = useStageStore((s) => s.agentFile);
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
+  const filesRailRef = useRideScroll<HTMLDivElement>();
 
   const rows = useMemo(
     () =>
@@ -228,7 +230,7 @@ function KnownFiles() {
       {rows.length === 0 ? (
         <p className="mon-fold">{t("The agent has not touched anything yet. Files appear here as it reads and edits them.")}</p>
       ) : (
-        <div className="mon-raillist mon-vscroll">
+        <div className="mon-raillist" ref={filesRailRef}>
           {rows.map((file) => {
             const open = expanded === file.path;
             const current = shownPath === file.path;
@@ -326,6 +328,7 @@ const EGG_FILTERS: EggFilter[] = ["running", "dead", "all"];
 function Eggs() {
   const t = useT();
   const { eggs, tools, counts, retired } = useEggs();
+  const eggsRailRef = useRideScroll<HTMLDivElement>();
   const selectEgg = useMetricsStore((s) => s.selectEgg);
   const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
   const goMetrics = useStageStore((s) => s.goMetrics);
@@ -408,7 +411,7 @@ function Eggs() {
               {query.trim() ? t("No eggs match \"{q}\".", { q: query.trim() }) : t("Nothing here. Try another filter.")}
             </p>
           ) : (
-            <div className="mon-raillist mon-vscroll">
+            <div className="mon-raillist" ref={eggsRailRef}>
               {shown.map((egg) => {
                 const alive = egg.status === "running";
                 const lived = (egg.exitedAt ?? now) - egg.startedAt;

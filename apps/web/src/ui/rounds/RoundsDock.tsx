@@ -16,6 +16,7 @@ import { Usage } from "../../components/metrics/Usage";
 import { TONE_FOR_ROW, RUN_TONE, RUN_WORD } from "../shared/atoms";
 import type { RoundsData } from "./useRoundsData";
 import type { StageItem } from "../../types/stage";
+import { useRideScroll } from "../shared/rideScroll";
 
 /**
  * The dock: desktop shortcuts on the right edge.
@@ -192,6 +193,7 @@ function FolderPanel({ onOpenVersion }: { onOpenVersion: (path: string, version?
   const t = useT();
   const files = useFileStore((s) => s.files);
   const [expanded, setExpanded] = useState<string[]>([]);
+  const folderRef = useRideScroll<HTMLDivElement>();
 
   const toggleVersions = (path: string) =>
     setExpanded((cur) => (cur.includes(path) ? cur.filter((p) => p !== path) : [...cur, path]));
@@ -209,7 +211,7 @@ function FolderPanel({ onOpenVersion }: { onOpenVersion: (path: string, version?
   }
 
   return (
-    <div className="rounds-folder mon-vscroll">
+    <div className="rounds-folder" ref={folderRef}>
       {rows.map((file) => {
         const open = expanded.includes(file.path);
         const latest = file.history.at(-1);
@@ -289,6 +291,7 @@ function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: 
   // One derivation, shared with Monitor's rail (the dock badge reads it too):
   // sorted → primary (helpers folded) → list.
   const { eggs } = useEggs();
+  const eggsListRef = useRideScroll<HTMLUListElement>();
   return (
     <div className="rounds-eggsbody">
       <div className="rounds-eggsbody__cost">
@@ -299,7 +302,7 @@ function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: 
           {t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")}
         </p>
       ) : (
-        <ul className="rounds-eggs mon-vscroll">
+        <ul className="rounds-eggs" ref={eggsListRef}>
           {eggs.map((egg) => {
             const alive = egg.status === "running";
             return (

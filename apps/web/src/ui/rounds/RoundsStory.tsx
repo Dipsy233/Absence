@@ -8,6 +8,7 @@ import { playingState, replayRowAt } from "../../lib/history";
 import { Dot, TONE_FOR_ROW } from "../shared/atoms";
 import type { RoundsData } from "./useRoundsData";
 import { RUN_TONE, RUN_WORD } from "../shared/atoms";
+import { useRideScroll } from "../shared/rideScroll";
 
 /**
  * The story: the run's steps as a chain of cards, oldest first.
@@ -90,6 +91,7 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
    * widget does.
    */
   const cardsRef = useRef<HTMLDivElement>(null);
+  useRideScroll("bottom", cardsRef);
   useEffect(() => {
     const el = cardsRef.current;
     if (!el) return;
@@ -138,7 +140,7 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
           {t("Back to live")}
         </button>
       </div>
-      <div className="rounds-cards mon-hscroll" ref={cardsRef}>
+      <div className="rounds-cards" ref={cardsRef}>
         {shown.length === 0 ? (
           <span className="rounds-story__empty">{t("Nothing yet. Send the agent a task.")}</span>
         ) : (

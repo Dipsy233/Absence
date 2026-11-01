@@ -29,6 +29,7 @@ import type { HistoryRun } from "../../types/history";
 import { ChartTimeline, type TimelinePick } from "./ChartTimeline";
 import { ChartChat } from "./ChartChat";
 import "./chart.css";
+import { useRideScroll } from "../shared/rideScroll";
 
 /**
  * CHART (病历报告) — the run, after the fact, as a record.
@@ -88,6 +89,8 @@ export function ChartUI() {
   // derivation, not a second `renderRun` per face.
   const report = data.report;
 
+  const ioARef = useRideScroll<HTMLElement>();
+  const ioBRef = useRideScroll<HTMLElement>();
   const [tab, setTab] = useState<Tab>("changes");
   const [pick, setPick] = useState<TimelinePick | undefined>(undefined);
   const [attOpen, setAttOpen] = useState(false);
@@ -632,11 +635,11 @@ export function ChartUI() {
               <span className="chart-pt__meta">{formatClock(run.startedAt)}</span>
             </div>
             <div className="chart-body chart-io">
-              <section className="chart-io__sec mon-vscroll">
+              <section className="chart-io__sec" ref={ioARef}>
                 <div className="chart-io__cap">{t("Request")}</div>
                 <p className="chart-io__text">{run.prompt || t("(observed activity)")}</p>
               </section>
-              <section className="chart-io__sec mon-vscroll">
+              <section className="chart-io__sec" ref={ioBRef}>
                 <div className="chart-io__cap">{t("Response")}</div>
                 {report.response ? (
                   <p className="chart-io__text">{report.response}</p>
