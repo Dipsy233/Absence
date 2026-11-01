@@ -19,6 +19,7 @@ import { Avatar } from "../../components/agent/Avatar";
 import { MediaAvatar } from "../../components/agent/MediaAvatar";
 import { skinMediaFor, useAvatarSkinCoverage } from "../../lib/avatarSkin";
 import { Dot, attentionTone, toneForStatus } from "../shared/atoms";
+import { Nixie } from "../shared/Nixie";
 import type { MonitorData } from "../../hooks/useMonitorData";
 
 /**
@@ -361,7 +362,13 @@ function Eggs() {
     <section className="mon-railsec">
       <div className="mon-sec">
         <span className="mon-cap">{t("Agent Eggs")}</span>
-        <span>{counts.all > 0 ? t("{r}/{a} running", { r: counts.running, a: counts.all }) : t("none")}</span>
+        <span>
+          {counts.all > 0 ? (
+            <Nixie value={t("{r}/{a} running", { r: counts.running, a: counts.all })} variant="plain" />
+          ) : (
+            t("none")
+          )}
+        </span>
       </div>
 
       {eggs.length === 0 ? (

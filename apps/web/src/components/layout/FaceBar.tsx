@@ -10,6 +10,7 @@ import { WindowControls } from "../common/WindowControls";
 import { SettingsDialog } from "../common/SettingsDialog";
 import { DripBagIcon } from "../common/DripBagIcon";
 import { Chip, Dot } from "../../ui/shared/atoms";
+import { Nixie } from "../../ui/shared/Nixie";
 import "../../ui/shared/shared.css";
 
 /**
@@ -110,8 +111,10 @@ export function FaceBar() {
       {observed ? <Chip tone="read">{t("OBSERVING")}</Chip> : null}
 
       <div className="mon-nodrag" style={{ display: "flex", alignItems: "center", gap: 7 }} title={t("context usage")}>
+        {/* The used-tokens figure arrives whenever the streaming run spends
+            more context: the digits land, the meter is structure. */}
         <span className="mon-mono" style={{ fontSize: 11, color: "var(--mon-t3)" }}>
-          {formatContext(used, total)}
+          <Nixie value={formatContext(used, total)} variant="plain" />
         </span>
         <span style={{ width: 72, height: 5, borderRadius: 3, background: "var(--mon-s3)", overflow: "hidden" }}>
           <span style={{ display: "block", height: "100%", width: `${percent}%`, background: "var(--mon-acc)" }} />
