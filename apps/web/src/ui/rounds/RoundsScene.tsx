@@ -38,22 +38,32 @@ export function RoundsScene({ data, onLive }: { data: RoundsData; onLive: () => 
   const visual = { status, mood: moodFor(status) };
   const media = skinMediaFor(coverage, status);
   const holding = !data.following;
+  /** The big line exists only when there is a moment to speak about. */
+  const line = data.item ? what(data.item, t) : null;
 
   return (
     <div className="rounds-scene" role="img" aria-label={t(statusLabel(status))}>
-      {data.item ? (
-        <div className="rounds-bubble" data-holding={holding ? "true" : undefined}>
-          <span className="rounds-bubble__s">
-            <i className="rounds-dot" data-tone={status} aria-hidden />
-            {t(statusLabel(status)).toUpperCase()}
-          </span>
-          <span className="rounds-bubble__l">{what(data.item, t)}</span>
-        </div>
-      ) : (
-        <div className="rounds-bubble rounds-bubble--empty">
-          <span className="rounds-bubble__s">{t("Waiting for the first activity…")}</span>
-        </div>
-      )}
+      <div
+        className={`rounds-bubble${line ? "" : " rounds-bubble--empty"}`}
+        data-holding={holding ? "true" : undefined}
+      >
+        <span className="rounds-bubble__s">
+          {line ? (
+            <>
+              <i className="rounds-dot" data-tone={status} aria-hidden />
+              {t(statusLabel(status)).toUpperCase()}
+            </>
+          ) : (
+            t("Waiting for the first activity…")
+          )}
+        </span>
+        {/* The second row is permanent: a moment arriving or leaving must not
+            change the bubble's height, or the centred column re-centres and
+            the character below it — and the whole scene — shifts. */}
+        <span className="rounds-bubble__l" aria-hidden={!line}>
+          {line ?? "\u00a0"}
+        </span>
+      </div>
 
       <button
         type="button"
