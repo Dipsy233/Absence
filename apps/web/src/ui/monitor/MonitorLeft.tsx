@@ -62,8 +62,8 @@ export function MonitorLeft({
   /**
    * In replay the highlighted row is the one the cursor has passed — the
    * activity the Stage is showing right now — not a pinned item (replay pins
-   * its own view) and not the live tail. This is the same rule Classic's
-   * Activity panel applies (`replayCurrent`), and it is why the feed's highlight
+   * its own view) and not the live tail. This is the replay highlight's rule,
+   * and it is why the feed's highlight
    * walks down the run while a replay plays.
    *
    * Rows are chronological, so the answer is the last row at or before the
@@ -151,8 +151,8 @@ export function MonitorLeft({
 
   /**
    * In replay the highlighted row must stay on screen as the cursor walks down
-   * the run — that is the whole point of the highlight. Classic's Activity panel
-   * gets this for free by virtualising to the cursor; the feed is a plain
+   * the run — that is the whole point of the highlight. A virtualised list
+   * would get this by scrolling to the cursor; the feed is a plain
    * scroll container, so it scrolls itself. `block: "nearest"` means a row
    * already in view is not moved, so this does not fight a reader who scrolled
    * to read around the cursor.
@@ -452,8 +452,8 @@ function FeedRow({
   const tone = TONE_FOR_ROW[row.tone];
   const openable = row.stageItem !== undefined;
   /**
-   * In replay a click is a scrub, not a pin — Classic's rule (ActivityItem
-   * does the same). Pinning inside a replay would fight the clock: the reader
+   * In replay a click is a scrub, not a pin. Pinning inside a replay would
+   * fight the clock: the reader
    * would open a moment while the cursor kept moving past it.
    */
   const activate = () => {

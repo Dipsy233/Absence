@@ -194,7 +194,7 @@ export function RoundsUI() {
 
   /**
    * The live activity window: while the agent is actually working, its newest
-   * event gets its own page, the way Classic's Stage and Monitor's centre pop
+   * event gets its own page, the way Monitor's centre column pops
    * the current event. One window is kept and its content replaced — never one
    * per event — and only events that have something to show move it: a tool
    * row or a run boundary leaves the last page standing.

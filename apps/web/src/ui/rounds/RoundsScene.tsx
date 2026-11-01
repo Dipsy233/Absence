@@ -17,8 +17,8 @@ import type { RoundsData } from "./useRoundsData";
  * no amount of text can slide under the character. The bubble says what it is
  * doing *now* (the status word, then the one thing in its hands).
  *
- * The pose follows *what is on screen*, not the socket — Classic's `Stage` and
- * Monitor's `AgentHead` rule, reused rather than re-derived: in replay it
+ * The pose follows *what is on screen*, not the socket — Monitor's
+ * `AgentHead` rule, reused rather than re-derived: in replay it
  * re-enacts the reconstructed run's status, on a pinned moment it re-enacts
  * the action that produced that moment, and only while following does it read
  * the live status. Otherwise the figure would be listening while the stage

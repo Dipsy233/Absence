@@ -143,9 +143,8 @@ export function DripUI({
   const state = run?.status === "error" ? "error" : running ? "running" : "idle";
 
   /**
-   * The ball shows the agent itself, in the same animated pose the classic
-   * Agent panel uses: the status drives the character, the run only drives the
-   * ring around it.
+   * The ball shows the agent itself, in the avatar's own animated pose: the
+   * status drives the character, the run only drives the ring around it.
    */
   const visual: AgentVisualState = { status: agentStatus, mood: moodFor(agentStatus) };
 

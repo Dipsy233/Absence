@@ -16,9 +16,9 @@ import { useT } from "../../lib/i18n";
 /**
  * Level 1: the project tree (read02 §7).
  *
- * `onOpen` is how a host decides what a click *means*. Classic opens the file
- * on the Stage (the default); Rounds opens it in a floating window of its own,
- * so the Stage is never pinned from here.
+ * `onOpen` is how a host decides what a click *means*. The default opens the
+ * file on the Stage; Rounds passes its own handler that opens it in a floating
+ * window of its own, so the Stage is never pinned from there.
  */
 export function FileTree({ onOpen = (rel) => void openUserFile(rel) }: { onOpen?: (rel: string) => void }) {
   const t = useT();

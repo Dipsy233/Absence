@@ -52,20 +52,9 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   check("failed tool without a command event counts as a failed command", facts.commands.failed === 1);
   check("failed tool has no `command` but is still detected", facts.commandFacts.length === 1);
   check("unresolved failure → outcome failed", facts.outcome === "failed");
-  check("unresolved failure → attention high", facts.attention.level === "high");
-  // Silencing `command_failed` never silences an unresolved failure at rest:
-  // that one stays high and reports itself as `unresolved_error`.
-  const silenced = buildRunFacts(events, runOf(events, 0), {
-    commandFailThreshold: 1,
-    commandFailLevel: "none",
-  });
-  check("unresolved failure stays high when command_failed is silenced", silenced.attention.level === "high");
-  check(
-    "and reports unresolved_error, not command_failed",
-    silenced.attention.reasons.includes("unresolved_error") &&
-      !silenced.attention.reasons.includes("command_failed"),
-    silenced.attention.reasons.join(","),
-  );
+  // The at-rest unresolved-failure reminder was removed: the outcome records
+  // the failure, and no attention reason fires for it once the run has ended.
+  check("unresolved failure at rest → no attention", facts.attention.level === "none", facts.attention.level);
   check("report says exactly one command failed", renderRun(facts).execution.failed === 1);
 }
 
@@ -153,20 +142,21 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
 }
 
 // B2. failure streak: back-to-back failures fire the streak warning.
+// Distinct command texts, so the retry-loop rule stays out of the picture.
 {
   const events = [
-    bashStart("s1", "npm test"),
+    bashStart("s1", "a"),
     bashEnd("s1"),
-    cmd("s1", "npm test", 1),
-    bashStart("s2", "npm test"),
+    cmd("s1", "a", 1),
+    bashStart("s2", "b"),
     bashEnd("s2"),
-    cmd("s2", "npm test", 1),
-    bashStart("s3", "npm test"),
+    cmd("s2", "b", 1),
+    bashStart("s3", "c"),
     bashEnd("s3"),
-    cmd("s3", "npm test", 1),
-    bashStart("s4", "npm test"),
+    cmd("s3", "c", 1),
+    bashStart("s4", "d"),
     bashEnd("s4"),
-    cmd("s4", "npm test", 0),
+    cmd("s4", "d", 0),
   ];
   // Three consecutive failures: under the default total threshold (5) but at
   // the default streak threshold (3).
@@ -175,7 +165,9 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   check("streak: count is 3", facts.failureStreak?.count === 3);
   check("streak: fires at default threshold", facts.attention.reasons.includes("command_failure_streak"));
   // The run also ends with unresolved failures (no edit between them, so no
-  // recovery), which keeps the level high — the streak reason rides along.
+  // recovery). The at-rest reminder for those was removed, so silencing the
+  // streak and failure levels leaves nothing raising attention at all —
+  // and a silent streak level drops the streak's own reason regardless.
   check(
     "streak: silent level drops the streak's own contribution",
     buildRunFacts(events, runOf(events, 0), {
@@ -183,7 +175,7 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
       commandStreakThreshold: 99, // silence everything the streak would add
       commandFailLevel: "none",
       commandFailThreshold: 99,
-    }).attention.level === "high" &&
+    }).attention.level === "none" &&
       !buildRunFacts(events, runOf(events, 0), { commandStreakLevel: "none" }).attention.reasons.includes(
         "command_failure_streak",
       ),
@@ -587,37 +579,13 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   );
 }
 
-// P. every reason that used to be hard-coded now honours a configured level.
+// P. a run that ended in error raises no notice of its own: the outcome says
+// "failed", and no attention reason exists for the terminal state itself.
 {
-  // agent_stopped: a run that ended in error.
   const died = [stamp(ev("agent_start", { model: "p/m" })), stamp(ev("agent_end", { reason: "error" }))];
   const stopped = buildRunFacts(died, { ...runOf(died, 0, "error") });
-  check("agent_stopped fires by default at high", stopped.attention.level === "high");
-  check(
-    "agent_stopped can be raised to a chosen level",
-    buildRunFacts(died, { ...runOf(died, 0, "error") }, { agentStoppedLevel: "low" }).attention.level === "low",
-  );
-  check(
-    "agent_stopped can be silenced",
-    !buildRunFacts(died, { ...runOf(died, 0, "error") }, { agentStoppedLevel: "none" }).attention.reasons.includes(
-      "agent_stopped",
-    ),
-  );
-
-  // unresolved_error at rest: high by default, the user's level when chosen.
-  const failed = [bashStart("b1", "npm test"), bashEnd("b1", true)];
-  const unresolved = (options?: Parameters<typeof buildRunFacts>[2]) =>
-    buildRunFacts(failed, runOf(failed, 0), { commandFailThreshold: 1, ...options });
-  check("unresolved error is high by default", unresolved().attention.level === "high");
-  check(
-    "unresolved error takes a chosen level",
-    unresolved({ unresolvedErrorLevel: "low" }).attention.level === "low",
-    unresolved({ unresolvedErrorLevel: "low" }).attention.level,
-  );
-  check(
-    "unresolved error can be silenced",
-    !unresolved({ unresolvedErrorLevel: "none" }).attention.reasons.includes("unresolved_error"),
-  );
+  check("a run that died outright → outcome failed", stopped.outcome === "failed");
+  check("a run that died outright → no attention", stopped.attention.level === "none", stopped.attention.level);
 }
 
 // Q. a leftover egg: level, minimum lifetime, and the ignore list.

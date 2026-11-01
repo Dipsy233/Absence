@@ -16,9 +16,7 @@ export type AttentionReason =
   | "command_failed"
   | "command_failure_streak"
   | "activity_stalled"
-  | "unresolved_error"
   | "agent_waiting"
-  | "agent_stopped"
   | "no_progress"
   | "external_change"
   | "process_left_running"
@@ -331,12 +329,12 @@ export interface RenderLiveOptions {
 /**
  * How loudly the report should ring the human-attention bell.
  *
- * Every reason the report can raise is tunable: the six that started out
- * hard-coded (`agent_stopped`, `unresolved_error`, `process_left_running`,
- * `outside_change`, `file_version_loop`, `command_retry_loop`) each take a
- * level, and the ones that can be noisy in normal work take a filter too.
- * Defaults live in the settings store; an absent field falls back to the
- * engine's own default, so a partial object is always safe.
+ * Every reason the report can raise is tunable: the four that started out
+ * hard-coded (`process_left_running`, `outside_change`, `file_version_loop`,
+ * `command_retry_loop`) each take a level, and the ones that can be noisy in
+ * normal work take a filter too. Defaults live in the settings store; an
+ * absent field falls back to the engine's own default, so a partial object is
+ * always safe.
  */
 export interface ReportAttentionOptions {
   commandFailThreshold?: number;
@@ -349,16 +347,6 @@ export interface ReportAttentionOptions {
   activityStallThreshold?: number;
   /** The attention level a stall warning raises. */
   activityStallLevel?: AttentionLevel;
-
-  /** `agent_stopped` — the run ended in error. */
-  agentStoppedLevel?: AttentionLevel;
-  /**
-   * `unresolved_error` — a failure nothing recovered from. Applies both to a
-   * run at rest (default high) and to a plain `error` event with no failed
-   * command behind it, which never rises above medium because it is the weaker
-   * signal of the two.
-   */
-  unresolvedErrorLevel?: AttentionLevel;
 
   /** `process_left_running` — an egg the agent laid is still alive at the end. */
   processLeftRunningLevel?: AttentionLevel;

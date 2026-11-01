@@ -1,7 +1,7 @@
 # 新版 UI 说明 —— 四个 Faces
 
 > 分支 `ui`。这份文档描述重构后的新版界面：四个命名的 face（Rounds / Monitor /
-> Chart / Drip）加上保底的 Classic。它回答三个问题：**每个 face 是什么、为什么
+> Chart / Drip）。它回答三个问题：**每个 face 是什么、为什么
 > 这样切、代码怎么组织**。先读这份，再读代码；交互细节的历史决策见
 > [UI_FACES.md](UI_FACES.md)（Monitor 早期决策）与 [decoupling.md](decoupling.md)
 > （观察器解耦的设计来源）。
@@ -19,10 +19,9 @@ Absence 展示的是同一件事——一个 agent 在干活——但"合适的�
 | **Monitor** | 机器监护 | 盯着、读 trace | 重；信息领路，三列满屏 |
 | **Chart** | 病历报告 | 这轮跑完了 | 报告就是整页，时间线是脊柱 |
 | **Drip** | 输液 | 你在做别的事 | 一张悬浮卡片（浏览器 PiP / 桌面壳置顶窗口），永远在顶 |
-| **Classic** | 旧版 | 切分之前的布局 | 三等分 rail + desk 世界，**已知良好的回退** |
 
-**Drip 不是第五个 face**：它是叠加在当前 face 上的开关（`viewModeStore.drip`），
-不换页、不关底下的界面。所以切换器里只有四个按钮。
+**Drip 不是第四个 face**：它是叠加在当前 face 上的开关（`viewModeStore.drip`），
+不换页、不关底下的界面。所以切换器里只有三个按钮。
 
 ---
 
@@ -31,7 +30,7 @@ Absence 展示的是同一件事——一个 agent 在干活——但"合适的�
 新版 UI 是在这条分支上逐 face 长出来的，历史顺序大致是：
 
 ```
-monitor → rounds → chart → drip → 共享层重构（本说明描述的现状）
+monitor → rounds → chart → drip → 共享层重构（本说明描述的现状）→ 删除 Classic
 ```
 
 - **Monitor 先行**：`feat(monitor): ...` 系列建立了三列布局、`useMonitorData`
@@ -44,9 +43,13 @@ monitor → rounds → chart → drip → 共享层重构（本说明描述的�
 - **Drip 最独立**：`feat(drip)/fix(drip)` 系列约 30 个提交，浏览器 PiP 窗口与
   桌面壳置顶窗口两套宿主，同一个 `DripUI`。
 - **`77d1322`**：Attention 通告、一条顶栏（FaceBar）、Drip 开关进顶栏。
-- **`234ccc4`（当前）**：共享层重构——`ui/shared/`、hooks 上提、派生统一、
+- **`234ccc4`**：共享层重构——`ui/shared/`、hooks 上提、派生统一、
   契约单源（`packages/core` 新增 `ws.ts`/`api.ts`），Chart 加对话条，
   设置入口进 FaceBar。
+- **删除 Classic**：四个新 face 稳定后，切分前的旧布局连同专属组件
+  （SessionBar/LeftRail/Stage/RightRail 等 17 个文件）与 classic 专用设置项
+  （rail 面板排序、collapse-on-content）一起删除；Monitor 成为未知 mode 的
+  兜底 face。
 
 重构的直接动因：三个 face 各自手写同一批派生（eggs 计数、replay 当前行、
 LIVE/REPLAY 判定、run 状态词），且互相从对方的目录里 import（rounds→monitor、
@@ -129,7 +132,7 @@ faces              组件只吃 data prop，不做网络 IO、不碰 getState �
 
 - **socket 在 App.tsx 接线一次**，不 per-face。切换 face 不掉线、chime 不重响。
 - **REST 拉取有守卫**：`runsStore.ensureLoaded(sessionId)` 是唯一的"空则拉一次"，
-  四个调用方（monitor 左列、rounds Run 窗口、chart、Classic HistoryPanel）不再
+  三个调用方（monitor 左列、rounds Run 窗口、chart）不再
   各写一份条件判断。
 - **帧契约受编译器约束**：`useSessionSocket` 的 `message` 标注为 core 的
   `SessionServerMessage`，server 的 `send()` 同样。新增帧两端不同步 = 两端同时
@@ -192,12 +195,15 @@ run 窗口，live 活动页只在 agent 跑的时候自己弹出。
 两者都不含业务数据，全部透传给 `DripUI`。顶栏的 IV-bag 开关只管这个窗口的
 显隐，从不换 face。
 
-### Classic（旧版）
+### Classic（旧版，已删除）
 
-`App.tsx` 的 fallthrough 分支：`SessionBar + LeftRail/Stage/RightRail`。
-它不是死代码——四个新 face 复用它的共享件（StageItemView、Avatar、ChatThread、
-FilePanel、MetricsDashboard、SettingsDialog），而它自己作为"已知良好回退"
-保留（`viewMode.ts:12-13` 的注释是这么写的）。
+Classic 曾是切分前的布局（`SessionBar + LeftRail/Stage/RightRail` 三等分
+rail + desk 世界），在重构期间作为"已知良好的回退"保留。四个新 face 稳定后，
+它连同 17 个专属组件与 classic 专用设置项一起被删除。曾由它承载的共享件
+（StageItemView、Avatar、ChatThread、FilePanel、MetricsDashboard、
+SettingsDialog）在共享层重构时就已上移为真正的共享组件，不随它消失；
+`localStorage` 里的旧 `viewMode=classic` 值会因 `isViewMode()` 校验失败自动
+回落到 Monitor，无需迁移代码。
 
 ---
 
@@ -210,13 +216,14 @@ FilePanel、MetricsDashboard、SettingsDialog），而它自己作为"已知良�
 | 原子/词汇 | `ui/shared/atoms.tsx` | `mon-chip--*` 色调、Chip/Dot/Spark、相位词、RUN_TONE/RUN_WORD |
 | 调色板 | `ui/shared/shared.css` | `--mon-*` 单一来源 + `--desk-*` 桥（见下） |
 | 成本面板 | `components/metrics/Usage.tsx` | monitor 右栏与 rounds eggs 窗口渲染同一个；派生在 `lib/metrics.usageSummary` |
-| 设置 | `components/common/SettingsDialog.tsx` | Classic 传 `portal=true`（弹到 body，desk 配色）；faces 传 `portal={false}`，落在 face 根节点内 |
+| 设置 | `components/common/SettingsDialog.tsx` | 落在 face 根节点内（FaceBar 的兄弟节点），由 face 的 `--desk-*` 桥上皮肤 |
 
-**`--desk-*` 桥**是整个复用策略的支点：Classic 的组件（StageItemView、
-MetricsDashboard、SettingsDialog…）用 tailwind 的 `desk-*` 类书写，而
-`shared.css` 在 `.mon-root` 下把这些 token 重新指向当前 face 的调色板——
-**复用的视图自动穿上 face 的皮肤，不需要 fork**。这也解释了设置弹窗为什么
-必须 `portal={false}`：portal 到 `document.body` 会逃出 `.mon-root`，桥就失效了。
+**`--desk-*` 桥**是整个复用策略的支点：Monitor/Rounds/Chart 复用的 desk 世界
+组件（StageItemView、MetricsDashboard、SettingsDialog…）用 tailwind 的
+`desk-*` 类书写，而 `shared.css` 在 `.mon-root` 下把这些 token 重新指向当前
+face 的调色板——**复用的视图自动穿上 face 的皮肤，不需要 fork**。设置弹窗
+因此必须渲染在 face 根节点内：portal 到 `document.body` 会逃出 `.mon-root`，
+桥就失效了。
 
 **调色板的边界**：monitor.css 只剩 Monitor 自己的 body（三列、feed、时间线、
 chat dock、右栏）；所有跨 face 的类都在 shared.css。rounds.css 引用
@@ -254,7 +261,7 @@ core 是纯类型 + 平台无关纯函数：无 Node API、无 React、无构建
 | 一个 store 一份派生（useEggs、ensureLoaded、refresh） | 重复实现不仅费行数，还会口径分叉（badge 事件） |
 | socket/chime 在 App.tsx 接线一次 | face 是页面，连接是窗口的 |
 | Drip 是开关不是 mode | 它从不替换底下的 face；mode 切换器里没有它 |
-| Classic 保留且 ready | `localStorage` 里的旧值、以及任何新 face 的回归，都有已知良好的去处 |
+| Monitor 是兜底 face | 未知/未就绪的 mode 一律回落到信息最全的一屏；`localStorage` 旧值由 `isViewMode()` 校验自动回落 |
 
 ---
 

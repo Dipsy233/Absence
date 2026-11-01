@@ -25,8 +25,8 @@ interface RunsStore {
   loadRuns: (sessionId: string) => Promise<void>;
   /**
    * Fetch the run list once per session — the "if empty, load" guard every
-   * face's run list used to write for itself (chart, monitor, rounds, Classic's
-   * history panel, and the socket wiring, five copies of the same conditional).
+   * face's run list used to write for itself (chart, monitor, rounds, and the
+   * socket wiring, four copies of the same conditional).
    */
   ensureLoaded: (sessionId: string | undefined) => void;
   loadRunEvents: (sessionId: string, run: RunSummary) => Promise<void>;

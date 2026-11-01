@@ -42,8 +42,7 @@ const EMPTY: ChartSeries = { ts: [], cpuCores: [], rssMiB: [] };
  * What it observes: `eggPid` pins it to one egg (Rounds' metrics windows do
  * this — each window is opened for a process and must keep showing that
  * process while other windows open). Without it the dashboard follows the
- * store's selection, which is how Monitor's METRICS page and Classic's overlay
- * work.
+ * store's selection, which is how Monitor's METRICS page follows it.
  */
 export function MetricsDashboard({ embedded = false, eggPid }: { embedded?: boolean; eggPid?: number }) {
   const t = useT();

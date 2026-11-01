@@ -26,7 +26,6 @@ g.localStorage ??= {
   check("empty input → 5 failed commands", s.commandFailThreshold === 5);
   check("empty input → 3 back-to-back", s.commandStreakThreshold === 3);
   check("empty input → 3600s stall", s.activityStallThreshold === 3600);
-  check("empty input → every rail panel present", s.railOrder.length === 3 && s.leftOrder.length === 3);
 }
 
 // B. the bug: each cleared field restores its OWN default, not the first one's.
@@ -84,8 +83,6 @@ g.localStorage ??= {
   check(
     "every new reason has a level",
     [
-      s.agentStoppedLevel,
-      s.unresolvedErrorLevel,
       s.processLeftRunningLevel,
       s.outsideChangeLevel,
       s.fileVersionLoopLevel,
@@ -102,17 +99,6 @@ g.localStorage ??= {
   });
   check("globs are trimmed and de-duplicated", s.outsideChangeIgnore.join("|") === "*.log|**/dist/**", s.outsideChangeIgnore.join("|"));
   check("a non-array list becomes empty", s.processLeftRunningIgnore.length === 0);
-}
-
-// G. rail orders: unknown ids dropped, missing ones appended, so every panel renders.
-{
-  const s = normalizeSettings({
-    railOrder: ["eggs", "bogus" as never],
-    leftOrder: ["activity", "files", "history", "files"],
-  });
-  check("an unknown rail id is dropped", !s.railOrder.includes("bogus" as never));
-  check("a known rail id is kept and the rest appended", s.railOrder.join(",") === "eggs,agent,folder", s.railOrder.join(","));
-  check("a complete left order is kept", s.leftOrder.join(",") === "activity,files,history", s.leftOrder.join(","));
 }
 
 finish();

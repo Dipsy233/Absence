@@ -4,10 +4,6 @@ import { useSounds } from "../hooks/useSounds";
 import { useSessionStore } from "../stores/sessionStore";
 import { useViewModeStore } from "../stores/viewModeStore";
 import { ContextMenu } from "../components/common/ContextMenu";
-import { LeftRail } from "../components/layout/LeftRail";
-import { RightRail } from "../components/layout/RightRail";
-import { SessionBar } from "../components/layout/SessionBar";
-import { Stage } from "../components/layout/Stage";
 import { ProjectPicker } from "../components/ProjectPicker/ProjectPicker";
 import { MonitorUI } from "../ui/monitor/MonitorUI";
 import { RoundsUI } from "../ui/rounds/RoundsUI";
@@ -27,9 +23,9 @@ const DRIP_SESSION = DRIP_PARAMS.get("session") ?? undefined;
 /**
  * The shell. Three things decide what it renders:
  *
- *   no session      → the project picker
- *   a face is ready → that face (Monitor today; Rounds / Chart / Drip next)
- *   otherwise       → Classic, the pre-split layout
+ *   no session        → the project picker
+ *   a ready face      → that face
+ *   anything else     → Monitor, the default face
  *
  * The socket and the chimes are wired here and not per face, so switching the
  * interface never drops the connection or re-rings a run's chimes.
@@ -39,8 +35,8 @@ export default function App() {
   const mode = useViewModeStore((s) => s.mode);
   /** Drip is a switch over the current face, not a face of its own. */
   const drip = useViewModeStore((s) => s.drip);
-  // Inside the desktop shell the session bar is the frameless window's title
-  // bar, so it must sit flush with the top edge.
+  // Inside the desktop shell the face's top bar is the frameless window's
+  // title bar, so its drag region must sit flush with the top edge.
   const desktop = Boolean(window.absenceDesktop);
 
   useSessionSocket(DRIP_WINDOW ? DRIP_SESSION : session?.id);
@@ -110,16 +106,14 @@ export default function App() {
     );
   }
 
+  // Monitor is the default face — a fresh visit boots into it, and it is the
+  // fallthrough for any mode that has no branch of its own (drip, which is a
+  // toggle and never a stored mode).
   return (
-    <div className={["grid h-full grid-rows-[auto_minmax(0,1fr)] gap-2", desktop ? "px-2 pb-2 pt-0" : "p-2"].join(" ")}>
-      <SessionBar />
-      <div className="grid min-h-0 grid-cols-[320px_minmax(0,1fr)_320px] gap-2">
-        <LeftRail />
-        <Stage />
-        <RightRail />
-      </div>
+    <>
+      <MonitorUI />
       <ContextMenu />
       {pip}
-    </div>
+    </>
   );
 }

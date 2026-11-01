@@ -184,8 +184,8 @@ const SOURCE_TONE = { read: "read", write: "edit", edit: "edit" } as const;
  *
  * Every version is a *recorded* state — the text the agent held at that
  * moment, never the file on disk — so a click opens that content in a Rounds
- * window and nothing else: no pin, no replay, no Stage. The shape is Monitor's
- * rail and Classic's AgentFolder: the caret folds the versions out, the name
+ * window and nothing else: no pin, no replay, no Stage. The shape is the file
+ * rail's: the caret folds the versions out, the name
  * opens the newest one, a row opens that one version.
  */
 function FolderPanel({ onOpenVersion }: { onOpenVersion: (path: string, version?: number) => void }) {
@@ -346,8 +346,8 @@ function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: 
    the same words. */
 
 /**
- * The session's runs, newest first — Classic's History and Monitor's run
- * switcher, in a window of their own.
+ * The session's runs, newest first — this face's run
+ * switcher, in a window of its own.
  *
  * The first level is the run list: `#N`, status, how long it took, when it
  * started and the prompt. Clicking a run card switches the face to that run

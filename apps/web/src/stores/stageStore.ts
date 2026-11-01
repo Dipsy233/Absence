@@ -55,9 +55,9 @@ interface StageStore {
    * The page the reader last chose for the Stage when nothing is pinned
    * (METRICS or CHAT), or undefined for "just follow the work".
    *
-   * Classic's Stage has the same idea: when a run ends, the Stage goes back to
-   * whatever default page the reader had picked — the metrics desk, or the
-   * agent — instead of dumping them on the last activity of a finished run.
+   * The idea: when a run ends, the Stage goes back to
+   * whatever default page the reader had picked — METRICS, or CHAT — instead
+   * of dumping them on the last activity of a finished run.
    */
   restingPage?: "metrics" | "chat";
   /** Go back to the resting page, or to following if the reader never chose one. */

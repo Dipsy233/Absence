@@ -68,6 +68,7 @@ const ZH: Record<string, string> = {
   Refresh: "刷新",
   "Close the metrics dashboard": "关闭指标看板",
   "Open the resource metrics dashboard": "打开资源指标看板",
+  "The whole agent or the selected egg — the metrics dashboard": "整个智能体或选中的蛋——指标仪表盘",
   "whole agent": "整个智能体",
   "no eggs": "没有进程",
   "CPU now": "当前 CPU",
@@ -241,7 +242,6 @@ const ZH: Record<string, string> = {
   "Open Diff in Stage": "在 Stage 打开差异",
 
   // ── Agent panel / folder / eggs ────────────────────────────────────────
-  "Agent (WhaleBun)": "智能体(WhaleBun)",
   "Agent Folder": "智能体文件夹",
   "Agent Eggs": "进程蛋",
   "{n} known": "已知 {n} 个",
@@ -410,9 +410,7 @@ const ZH: Record<string, string> = {
   "A command failed": "有命令失败",
   "Commands failed back-to-back — the agent may be flailing": "命令接连失败——智能体可能在乱撞",
   "No activity for a long time — something may be stuck": "长时间没有活动——可能卡住了",
-  "Unresolved error — no successful recovery detected": "未解决的错误——没有检测到成功恢复",
   "Agent is waiting": "智能体在等待",
-  "Agent stopped": "智能体停了",
   "No progress detected": "没有检测到进展",
   "External file change observed": "观察到外部文件变更",
   "A process the agent started is still running": "智能体启动的进程还在运行",
@@ -542,16 +540,9 @@ const ZH: Record<string, string> = {
   APPEARANCE: "外观",
   "Language · 语言": "Language · 语言",
   "Color theme": "颜色主题",
-  "collapse on content": "内容页自动折叠",
-  "fold the chat history away whenever the Stage shows a file, diff, terminal or the report. Off (the default) keeps the chat exactly as you left it.":
-    "当 Stage 显示文件、差异、终端或报告时,自动收起对话历史。关闭(默认)时对话保持原样。",
   "render markdown": "渲染 Markdown",
   "draw the agent's replies as Markdown — headings, lists, code blocks, tables — instead of raw text. Links and paths open on the Stage.":
     "把智能体的回复按 Markdown 绘制——标题、列表、代码块、表格——而不是纯文本。链接和路径会在 Stage 打开。",
-  "Left rail panel order": "左侧栏面板顺序",
-  "Right rail panel order": "右侧栏面板顺序",
-  "Move up": "上移",
-  "Move down": "下移",
   "REPORT WARN": "报告提醒",
   "command failed per run": "单次运行失败命令数",
   silent: "关闭",
@@ -564,13 +555,6 @@ const ZH: Record<string, string> = {
     "接连失败、中间没有一次成功:智能体可能在乱撞。",
   "No event at all for this long while a run is live: a hung command or a wedged prompt.":
     "运行中超过该秒数没有任何事件:卡住的命令或卡死的提示。",
-  "warn: errors": "错误",
-  "A failure nothing recovered from, and a run that died outright.": "没有任何恢复的失败,以及直接死掉的运行。",
-  "unresolved error": "未解决的错误",
-  "A failure with no later successful command behind it. A bare error event never rises above medium.":
-    "失败后没有随后的成功命令。单纯的错误事件最高只到中等级。",
-  "agent stopped": "智能体中止",
-  "The run ended in error rather than finishing its task.": "运行以错误结束,而不是完成任务。",
   "leftover eggs": "遗留进程",
   "A process the agent started is still alive after the run ended. Ignored names match the process name or its command line.":
     "运行结束后智能体启动的进程仍然活着。忽略名单匹配进程名或其命令行。",
@@ -613,9 +597,9 @@ const ZH: Record<string, string> = {
   "Also filter a listed name when it is the command's declared subject (e.g. node ticker.mjs). A process that outlived its command stays visible either way.":
     "当列出的名字是命令声明的主体时(如 node ticker.mjs)也过滤。活得比命令久的进程无论如何都会显示。",
   "display in activity": "在动态中显示",
-  "show LAID / DIED process events in Activity": "在动态中显示产蛋/退出进程事件",
-  "Show LAID / DIED process events in the Activity panel. Off hides them so the panel reads as actions only; the eggs stay visible in the Agent Eggs panel either way.":
-    "在动态面板显示产蛋/退出进程事件。关闭时隐藏,面板只显示动作;蛋无论如何都在进程蛋面板里可见。",
+  "show LAID / DIED process events in the feed": "在动态中显示产蛋/退出进程事件",
+  "Show LAID / DIED process events in the activity feed. Off hides them so the feed reads as actions only; the eggs stay visible in the Agent Eggs panel either way.":
+    "在动态中显示产蛋/退出进程事件。关闭时隐藏,动态只显示动作;蛋无论如何都在 Agent Eggs 面板里可见。",
   "failed to load profiles": "配置加载失败",
   "select or create a profile first": "请先选择或新建一个配置",
   "saved & applied ✓ ({n} names)": "已保存并启用 ✓({n} 个名字)",

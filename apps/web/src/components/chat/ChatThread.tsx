@@ -9,10 +9,10 @@ import { Markdown } from "../common/Markdown";
 /* ══════════════════════════════════════════════════════════════════════════
    The conversation, as one implementation.
 
-   Classic floats it over the Stage; Monitor reads it as a tab of the Stage.
-   Both show the same messages the same way — role label, bubble, Markdown
-   unless the reader asked for raw text — so the rendering lives here and the
-   two faces only decide where the box goes.
+   Monitor reads it as a tab of the Stage; Rounds floats it as its wallpaper
+   thread. Both show the same messages the same way — role label, bubble,
+   Markdown unless the reader asked for raw text — so the rendering lives here
+   and the faces only decide where the box goes.
 
    `layout="bubbles"` is Rounds' reading: the reader's messages sit on the
    right, the agent's on the left, and consecutive messages of one voice share

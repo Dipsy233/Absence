@@ -8,7 +8,7 @@ import { useChatInput } from "../../components/chat/useChatInput";
 /**
  * The chat input bar one face-independent way.
  *
- * It is the same input as Classic's dock — the same state machine
+ * It is one input shared by every chat face — the same state machine
  * (`useChatInput`), the same `/` palette, the same context chips, the same
  * three-button send/stop/run contract — because a command typed in any face
  * must behave exactly as it does everywhere else. What differs is only chrome,

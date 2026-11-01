@@ -12,8 +12,8 @@ import type { ChatInput } from "./useChatInput";
    session's models / thinking levels fetched from the server), or the skill
    list for `/skill:`.
 
-   Classic and Monitor both draw exactly this, so it is one component rather
-   than two copies. It is written against the desk tokens, which `.mon-root`
+   Every face draws exactly this, so it is one component rather than one copy
+   per face. It is written against the desk tokens, which `.mon-root`
    re-points at Monitor's palette — so the same markup lands in either face's
    colours without a variant flag.
    ══════════════════════════════════════════════════════════════════════════ */

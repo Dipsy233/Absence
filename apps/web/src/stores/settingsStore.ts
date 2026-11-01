@@ -4,7 +4,6 @@ import type { AgentStatus } from "@absence/core";
 /* ══════════════════════════════════════════════════════════════════════════
    User settings — the configurable bits surfaced in the Settings dialog:
      • color theme
-     • right-rail panel order (who sits at the top)
      • egg filter deny-list (names hidden from the Agent Eggs panel)
      • avatar skin (a skin JSON URL; see lib/avatarSkin.ts)
 
@@ -13,15 +12,6 @@ import type { AgentStatus } from "@absence/core";
    ══════════════════════════════════════════════════════════════════════════ */
 
 const SETTINGS_KEY = "absence.settings";
-
-/** The right rail's panels, in the order the user wants them stacked. */
-export type RailPanelId = "agent" | "folder" | "eggs";
-
-/** The left rail's panels, in the order the user wants them stacked. */
-export type LeftPanelId = "files" | "history" | "activity";
-
-const RAIL_PANEL_IDS: RailPanelId[] = ["agent", "folder", "eggs"];
-const LEFT_PANEL_IDS: LeftPanelId[] = ["files", "history", "activity"];
 
 /**
  * How loudly a report reason should ring the human-attention bell. `none`
@@ -34,22 +24,12 @@ export interface Settings {
   /** UI language: English or Chinese (see lib/i18n.ts). */
   language: "en" | "zh";
   theme: "amber" | "blue" | "green";
-  /** Right rail top → bottom. */
-  railOrder: RailPanelId[];
-  /** Left rail top → bottom. */
-  leftOrder: LeftPanelId[];
   /**
-   * Show the LAID/DIED process rows (Agent Eggs) in the Activity panel. Off
-   * (the default) hides them so the panel reads as actions only; the eggs
+   * Show the LAID/DIED process rows (Agent Eggs) in the activity feed. Off
+   * (the default) hides them so the feed reads as actions only; the eggs
    * themselves stay visible in the Agent Eggs panel either way.
    */
   displayInActivity: boolean;
-  /**
-   * Auto-collapse the chat history when the Stage shows a content page (file /
-   * diff / terminal / report). Off (the default) keeps the chat exactly as the
-   * user left it, so switching pages never hides the conversation.
-   */
-  collapseChatOnContent: boolean;
   /**
    * Render the agent's replies as Markdown (headings, lists, code, tables). On
    * by default; off shows the raw text, which is what a reader wants when the
@@ -71,10 +51,6 @@ export interface Settings {
 
   /* ── The reasons that used to be hard-coded ───────────────────────────── */
 
-  /** `agent_stopped` — the run ended in error (default "high"). */
-  agentStoppedLevel: CommandFailLevel;
-  /** `unresolved_error` — a failure nothing recovered from (default "high"). */
-  unresolvedErrorLevel: CommandFailLevel;
   /** `process_left_running` — an egg the agent laid is still alive (default "high"). */
   processLeftRunningLevel: CommandFailLevel;
   /** Only report a leftover egg that lived at least this long, in seconds (0 = any). */
@@ -109,10 +85,7 @@ export interface Settings {
 const DEFAULTS: Settings = {
   language: "en",
   theme: "amber",
-  railOrder: ["agent", "folder", "eggs"],
-  leftOrder: ["files", "history", "activity"],
   displayInActivity: false,
-  collapseChatOnContent: false,
   chatMarkdown: true,
   commandFailThreshold: 5,
   commandFailLevel: "low",
@@ -120,8 +93,6 @@ const DEFAULTS: Settings = {
   commandStreakLevel: "medium",
   activityStallThreshold: 3600,
   activityStallLevel: "medium",
-  agentStoppedLevel: "high",
-  unresolvedErrorLevel: "high",
   processLeftRunningLevel: "high",
   processLeftRunningMinSeconds: 0,
   processLeftRunningIgnore: [],
@@ -148,11 +119,7 @@ export function normalizeSettings(parsed: Partial<Settings>): Settings {
   return {
     language: parsed.language === "zh" ? "zh" : "en",
     theme: parsed.theme ?? DEFAULTS.theme,
-    // Keep only known ids; append anything missing so each rail always renders all panels.
-    railOrder: normalizeIds(parsed.railOrder, RAIL_PANEL_IDS) as RailPanelId[],
-    leftOrder: normalizeIds(parsed.leftOrder, LEFT_PANEL_IDS) as LeftPanelId[],
     displayInActivity: parsed.displayInActivity ?? DEFAULTS.displayInActivity,
-    collapseChatOnContent: parsed.collapseChatOnContent ?? DEFAULTS.collapseChatOnContent,
     chatMarkdown: parsed.chatMarkdown ?? DEFAULTS.chatMarkdown,
     commandFailThreshold: normalizeThreshold(parsed.commandFailThreshold, DEFAULTS.commandFailThreshold),
     commandFailLevel: normalizeLevel(parsed.commandFailLevel, DEFAULTS.commandFailLevel),
@@ -160,8 +127,6 @@ export function normalizeSettings(parsed: Partial<Settings>): Settings {
     commandStreakLevel: normalizeLevel(parsed.commandStreakLevel, DEFAULTS.commandStreakLevel),
     activityStallThreshold: normalizeThreshold(parsed.activityStallThreshold, DEFAULTS.activityStallThreshold),
     activityStallLevel: normalizeLevel(parsed.activityStallLevel, DEFAULTS.activityStallLevel),
-    agentStoppedLevel: normalizeLevel(parsed.agentStoppedLevel, DEFAULTS.agentStoppedLevel),
-    unresolvedErrorLevel: normalizeLevel(parsed.unresolvedErrorLevel, DEFAULTS.unresolvedErrorLevel),
     processLeftRunningLevel: normalizeLevel(parsed.processLeftRunningLevel, DEFAULTS.processLeftRunningLevel),
     processLeftRunningMinSeconds: normalizeCount(parsed.processLeftRunningMinSeconds, DEFAULTS.processLeftRunningMinSeconds),
     processLeftRunningIgnore: normalizeList(parsed.processLeftRunningIgnore),
@@ -237,16 +202,6 @@ function normalizeLevel(value: unknown, fallback: CommandFailLevel): CommandFail
   return FAIL_LEVELS.includes(value as CommandFailLevel) ? (value as CommandFailLevel) : fallback;
 }
 
-function normalizeIds(order: unknown, ids: string[]): string[] {
-  // De-duplicate as well as filter: a repeated id in a stale entry would render
-  // the same panel twice and hide another.
-  const list = Array.isArray(order)
-    ? [...new Set(order.filter((id): id is string => typeof id === "string" && ids.includes(id)))]
-    : [];
-  for (const id of ids) if (!list.includes(id)) list.push(id);
-  return list;
-}
-
 function persist(settings: Settings): void {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -258,12 +213,7 @@ function persist(settings: Settings): void {
 interface SettingsStore extends Settings {
   setLanguage: (language: Settings["language"]) => void;
   setTheme: (theme: Settings["theme"]) => void;
-  setRailOrder: (order: RailPanelId[]) => void;
-  moveRailPanel: (id: RailPanelId, dir: "up" | "down") => void;
-  setLeftOrder: (order: LeftPanelId[]) => void;
-  moveLeftPanel: (id: LeftPanelId, dir: "up" | "down") => void;
   setDisplayInActivity: (value: boolean) => void;
-  setCollapseChatOnContent: (value: boolean) => void;
   setChatMarkdown: (value: boolean) => void;
   setCommandFailThreshold: (value: number) => void;
   setCommandFailLevel: (value: CommandFailLevel) => void;
@@ -271,8 +221,6 @@ interface SettingsStore extends Settings {
   setCommandStreakLevel: (value: CommandFailLevel) => void;
   setActivityStallThreshold: (value: number) => void;
   setActivityStallLevel: (value: CommandFailLevel) => void;
-  setAgentStoppedLevel: (value: CommandFailLevel) => void;
-  setUnresolvedErrorLevel: (value: CommandFailLevel) => void;
   setProcessLeftRunningLevel: (value: CommandFailLevel) => void;
   setProcessLeftRunningMinSeconds: (value: number) => void;
   setProcessLeftRunningIgnore: (value: string[]) => void;
@@ -294,14 +242,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
 
   setLanguage: (language) => set((s) => persistIt(s, { language })),
   setTheme: (theme) => set((s) => persistIt(s, { theme })),
-  setRailOrder: (railOrder) =>
-    set((s) => persistIt(s, { railOrder: normalizeIds(railOrder, RAIL_PANEL_IDS) as RailPanelId[] })),
-  moveRailPanel: (id, dir) => set((s) => persistIt(s, { railOrder: movePanel(s.railOrder, id, dir) })),
-  setLeftOrder: (leftOrder) =>
-    set((s) => persistIt(s, { leftOrder: normalizeIds(leftOrder, LEFT_PANEL_IDS) as LeftPanelId[] })),
-  moveLeftPanel: (id, dir) => set((s) => persistIt(s, { leftOrder: movePanel(s.leftOrder, id, dir) })),
   setDisplayInActivity: (value) => set((s) => persistIt(s, { displayInActivity: value })),
-  setCollapseChatOnContent: (value) => set((s) => persistIt(s, { collapseChatOnContent: value })),
   setChatMarkdown: (value) => set((s) => persistIt(s, { chatMarkdown: value })),
   setCommandFailThreshold: (value) =>
     set((s) => persistIt(s, { commandFailThreshold: normalizeThreshold(value, DEFAULTS.commandFailThreshold) })),
@@ -312,8 +253,6 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   setActivityStallThreshold: (value) =>
     set((s) => persistIt(s, { activityStallThreshold: normalizeThreshold(value, DEFAULTS.activityStallThreshold) })),
   setActivityStallLevel: (value) => set((s) => persistIt(s, { activityStallLevel: normalizeLevel(value, DEFAULTS.activityStallLevel) })),
-  setAgentStoppedLevel: (value) => set((s) => persistIt(s, { agentStoppedLevel: normalizeLevel(value, DEFAULTS.agentStoppedLevel) })),
-  setUnresolvedErrorLevel: (value) => set((s) => persistIt(s, { unresolvedErrorLevel: normalizeLevel(value, DEFAULTS.unresolvedErrorLevel) })),
   setProcessLeftRunningLevel: (value) =>
     set((s) => persistIt(s, { processLeftRunningLevel: normalizeLevel(value, DEFAULTS.processLeftRunningLevel) })),
   setProcessLeftRunningMinSeconds: (value) =>
@@ -340,16 +279,6 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   setSoundApproval: (value) => set((s) => persistIt(s, { soundApproval: value })),
   reset: () => set((s) => persistIt(s, DEFAULTS)),
 }));
-
-/** Swap `id` with its neighbour in `order`. */
-function movePanel<T>(order: T[], id: T, dir: "up" | "down"): T[] {
-  const next = [...order];
-  const i = next.indexOf(id);
-  const j = dir === "up" ? i - 1 : i + 1;
-  if (i < 0 || j < 0 || j >= next.length) return order;
-  [next[i], next[j]] = [next[j]!, next[i]!];
-  return next;
-}
 
 /** The persisted keys — everything in Settings except the store's actions. */
 const SETTING_KEYS = Object.keys(DEFAULTS) as (keyof Settings)[];

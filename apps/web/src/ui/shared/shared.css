@@ -5,8 +5,10 @@
    This file is the single home of the --mon-* tokens and of every class more
    than one face uses. A face must not reach into another face's stylesheet:
    import this file (directly or through FaceBar) instead. The `.mon-root`
-   scope keeps the palette from leaking into Classic's --desk-* desk world;
-   both live in the same bundle and the user can switch at any time.
+   scope keeps the palette from leaking into the --desk-* desk world the
+   reused desk components (StageItemView, MetricsDashboard, SettingsDialog)
+   are written against; both live in the same bundle and the user can switch
+   at any time.
 
    Contrast floor: every text token clears 4.5:1 on its own surface (t3 is
    5.9:1 on --mon-s1, t2 is 8.9:1). The kind colours (think/read/search/edit/
@@ -48,12 +50,12 @@
   flex-direction: column;
   overflow: hidden;
 
-  /* ── The bridge to Classic's components ─────────────────────────────────
-     StageItemView, MetricsDashboard and the Markdown renderer are shared with
-     Classic and are written against --desk-* tokens. Re-pointing those tokens
-     at Monitor's palette here means every reused view lands in this face's
-     colours, with no fork of the views themselves. Channel triples keep the
-     `/40` opacity modifiers working. */
+  /* ── The bridge to the shared desk components ──────────────────────────
+     StageItemView, MetricsDashboard and the Markdown renderer are shared
+     across faces and are written against --desk-* tokens. Re-pointing those
+     tokens at Monitor's palette here means every reused view lands in this
+     face's colours, with no fork of the views themselves. Channel triples
+     keep the `/40` opacity modifiers working. */
   --desk-bg: 18 18 18;
   --desk-panel: 25 25 25;
   --desk-panel2: 32 32 32;

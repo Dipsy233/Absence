@@ -29,8 +29,8 @@ export function MonitorUI() {
   const goLive = useStageStore((s) => s.goLive);
   const selectRun = useUiStore((s) => s.selectRun);
 
-  // The keyboard contract: ⏎ back to live. Deliberately absent from Classic,
-  // which has its own toolbar.
+  // The keyboard contract: ⏎ back to live. A shortcut this face adds on top
+  // of the pin bar's button, which says the same thing.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;

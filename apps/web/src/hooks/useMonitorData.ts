@@ -59,7 +59,7 @@ export function useMonitorData(): MonitorData {
   const observed = useIsObserved();
   const status = useSessionStore((s) => s.agent.status);
 
-  // Classic's rule (`settings || observed`): an observed session always shows
+  // The rule (`settings || observed`): an observed session always shows
   // its process rows, because for a watched agent they are the whole story.
   const showProcessRows = displayInActivity || observed;
 
@@ -78,7 +78,7 @@ export function useMonitorData(): MonitorData {
    * What the Stage follows while it is live: the agent's *current action*, not
    * the tail of the feed.
    *
-   * This is Classic's rule, and it is the one that makes a finished run rest on
+   * This is the rule that makes a finished run rest on
    * a page instead of the last thing it happened to do. `currentAction` is
    * cleared the moment the agent speaks or the run ends (`clearsStage`), so
    * "there is nothing to follow right now" is a state this hook can report — a
@@ -86,7 +86,7 @@ export function useMonitorData(): MonitorData {
    * row. Deriving from the tail is what pinned the centre column to the last
    * activity of every run that had ended.
    *
-   * `useLiveItem` is the same derivation Classic's Stage uses, so the two faces
+   * `useLiveItem` is the one shared derivation, so the faces
    * cannot disagree about what "the agent is doing now" means.
    */
   const liveItem = useLiveItem();

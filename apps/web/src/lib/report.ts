@@ -529,13 +529,10 @@ export function buildRunFacts(
   const attention = computeAttention({
     unresolved: unresolvedIds.length,
     failed: counts.failed,
-    errorCount: errorEvidence.length,
     ended: run.status !== "running",
-    runError: run.status === "error",
     busy: undefined,
     unresolvedIds,
     failedIds,
-    errorIds: errorEvidence,
     runningProcessIds: leftoverIds,
     loopAttention,
     outsideChangeIds: outsideFacts.flatMap((fact) => fact.evidence),
@@ -918,8 +915,6 @@ export const DEFAULT_FILE_VERSION_LOOP_THRESHOLD = 1;
 export const DEFAULT_COMMAND_RETRY_LOOP_THRESHOLD = 2;
 
 /** The level each reason raises when the user has not chosen one. */
-export const DEFAULT_AGENT_STOPPED_LEVEL: AttentionLevel = "high";
-export const DEFAULT_UNRESOLVED_ERROR_LEVEL: AttentionLevel = "high";
 export const DEFAULT_PROCESS_LEFT_RUNNING_LEVEL: AttentionLevel = "high";
 export const DEFAULT_OUTSIDE_CHANGE_LEVEL: AttentionLevel = "low";
 export const DEFAULT_FILE_VERSION_LOOP_LEVEL: AttentionLevel = "medium";
@@ -933,10 +928,6 @@ export const DEFAULT_COMMAND_RETRY_LOOP_LEVEL: AttentionLevel = "medium";
  */
 export function reasonLevel(reason: AttentionReason, options: ReportAttentionOptions): AttentionLevel {
   switch (reason) {
-    case "agent_stopped":
-      return options.agentStoppedLevel ?? DEFAULT_AGENT_STOPPED_LEVEL;
-    case "unresolved_error":
-      return options.unresolvedErrorLevel ?? DEFAULT_UNRESOLVED_ERROR_LEVEL;
     case "command_failed":
       return options.commandFailLevel ?? "low";
     case "command_failure_streak":
@@ -1005,13 +996,10 @@ function normalizeFailLevel(level: AttentionLevel | undefined): AttentionLevel {
 function computeAttention(input: {
   unresolved: number;
   failed: number;
-  errorCount: number;
   ended: boolean;
-  runError: boolean;
   busy?: boolean;
   unresolvedIds: string[];
   failedIds: string[];
-  errorIds: string[];
   /**
    * Evidence for eggs the agent left running. Only a settled run reports these:
    * while the agent is working, running things is the whole point.
@@ -1034,39 +1022,13 @@ function computeAttention(input: {
 
   const options = input.attentionOptions;
 
-  if (input.ended && input.runError) {
-    const stoppedLevel = levelOr(options?.agentStoppedLevel, DEFAULT_AGENT_STOPPED_LEVEL);
-    if (stoppedLevel !== "none") {
-      if (level === "none" || rank(stoppedLevel) > rank(level)) level = stoppedLevel;
-      reasons.push("agent_stopped");
-    }
-  }
-  if (input.unresolved > 0) {
-    const needsYou = input.ended || input.busy === false;
-    // Unresolved failures honour the user's own thresholds: a run whose
-    // failure count stays under the configured per-run threshold (or whose
-    // attention level is set to "none") is not worth interrupting for — the
-    // total-count branch below would not have fired either, so neither does
-    // this one. The one exception is a run that has already ended (or is
-    // waiting on the user): an unresolved failure at rest always needs a
-    // look, regardless of thresholds.
+  // An unresolved failure while the agent is still working speaks as
+  // `command_failed`, at the level and threshold the user chose in the
+  // "failed commands" section. A failure still standing once the run is at
+  // rest raises no notice — the run's outcome records it instead.
+  if (input.unresolved > 0 && !(input.ended || input.busy === false)) {
     const failLevel = normalizeFailLevel(options?.commandFailLevel);
-    const underThreshold = !failedOverThreshold(input);
-    if (!needsYou && (failLevel === "none" || underThreshold)) {
-      // below the user's bar: no attention from this branch (the streak and
-      // stall checks below still apply on their own terms)
-    } else if (needsYou) {
-      // An unresolved failure at rest is the loudest everyday signal, but even
-      // this one is the user's to quieten — the default stays high.
-      const restLevel = levelOr(options?.unresolvedErrorLevel, DEFAULT_UNRESOLVED_ERROR_LEVEL);
-      if (restLevel !== "none") {
-        if (level === "none" || rank(restLevel) > rank(level)) level = restLevel;
-        reasons.push("unresolved_error");
-        evidence = input.unresolvedIds;
-      }
-    } else {
-      // `failLevel` cannot be "none" here (that is the silenced case above),
-      // so the reason and its level always agree.
+    if (failLevel !== "none" && failedOverThreshold(input)) {
       if (level === "none" || rank(failLevel) > rank(level)) level = failLevel;
       reasons.push("command_failed");
       evidence = input.unresolvedIds;
@@ -1079,16 +1041,6 @@ function computeAttention(input: {
       if (level === "none" || rank(failLevel) > rank(level)) level = failLevel;
       reasons.push("command_failed");
       evidence = input.failedIds;
-    }
-  } else if (input.errorCount > 0) {
-    // A bare `error` event has no failed command behind it, so it is the weaker
-    // signal: its own level, but capped at medium unless the user raised it.
-    const errorLevel = levelOr(options?.unresolvedErrorLevel, DEFAULT_UNRESOLVED_ERROR_LEVEL);
-    const capped: AttentionLevel = rank(errorLevel) > rank("medium") ? "medium" : errorLevel;
-    if (capped !== "none") {
-      if (level === "none" || rank(capped) > rank(level)) level = capped;
-      reasons.push("unresolved_error");
-      evidence = input.errorIds;
     }
   }
 
@@ -1301,13 +1253,10 @@ export function renderLive(
     attention: computeAttention({
       unresolved: unresolvedIds.length,
       failed: facts.commands.failed,
-      errorCount: facts.errors.total,
       ended: false,
-      runError: false,
       busy: options.busy,
       unresolvedIds,
       failedIds,
-      errorIds: facts.errors.evidence,
       loopAttention,
       outsideChangeIds: facts.outsideChanges.flatMap((fact) => fact.evidence),
       attentionOptions,

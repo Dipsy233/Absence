@@ -42,8 +42,8 @@ const TAB_ORDER: Array<Exclude<Page, "activity">> = ["metrics", "chat"];
  * Centre column: what the selected moment *is*, plus the run's world line and
  * the input row.
  *
- * Live, the page *follows* the agent: it is the newest activity of the run, the
- * same thing Classic's Stage shows (read02 §14). Clicking a row pins that
+ * Live, the page *follows* the agent: it is the newest activity of the run
+ * (read02 §14). Clicking a row pins that
  * moment instead — the pin bar then states which activity everything is looking
  * at and offers the way back — so the screen never silently changes under a
  * reader who has chosen to stop and look. ⏎, the pin bar and the LIVE tab all
@@ -59,15 +59,14 @@ export function MonitorStage({ data }: { data: MonitorData }) {
   const goChat = useStageStore((s) => s.goChat);
 
   /**
-   * What the Stage is a page *of* — Classic's rule, verbatim.
+   * What the Stage is a page *of*.
    *
    * `useStageView` returns `following ? liveItem : activeItem`, and `liveItem`
    * is `sessionStore.currentAction`, which `clearsStage` empties on `agent_end`
    * and on the agent's own message. So "the agent is not doing anything right
    * now" arrives as `item === undefined`, and the column falls through to its
-   * default page (METRICS / CHAT). That is exactly how Classic's Stage decides
-   * between a sheet and the desk, and it is why a finished run rests on a page
-   * there instead of showing its last activity.
+   * default page (METRICS / CHAT) instead of an empty sheet — which is why a
+   * finished run rests on a page rather than on its last activity.
    *
    * Monitor previously took the *tail of the feed* as what to follow. A tail
    * never disappears — the last row of a finished run is still a row — so the
@@ -79,8 +78,8 @@ export function MonitorStage({ data }: { data: MonitorData }) {
    * Replay is a third clock, and the page has to follow it.
    *
    * `useStageView` answers for live and for a pin; in replay the store's
-   * `currentTime` decides what is on screen (`useReplayItem`, the same hook
-   * Classic's Stage uses), so a playing replay walks the Stage through the run
+   * `currentTime` decides what is on screen (the shared `useReplayItem`), so a
+   * playing replay walks the Stage through the run
    * activity by activity, in the run's own real timing. Without this the Stage
    * kept showing whatever was pinned when the replay started while the feed's
    * cursor moved on.
@@ -89,14 +88,14 @@ export function MonitorStage({ data }: { data: MonitorData }) {
   const replayTime = useReplayStore((s) => s.currentTime);
 
   /**
-   * Resting, the way Classic rests.
+   * Resting.
    *
    * The store's `mode` has to agree with what is on screen, because the tab
    * strip, the pin bar and the rail's LIVE/REPLAY chip all read it. So when
    * following has nothing to follow — the run ended, or there is no run yet —
    * the store is moved to the resting page rather than the render quietly
    * substituting one. The effect keeps the two in step; the *rendering* rule
-   * above is still Classic's, so a reader who pins a row or opens METRICS gets
+   * above still holds, so a reader who pins a row or opens METRICS gets
    * what they asked for.
    *
    *   a new run starts  → follow the work again
@@ -162,9 +161,8 @@ export function MonitorStage({ data }: { data: MonitorData }) {
    *
    * METRICS and CHAT are pages the reader picked. `activity` is the moment the
    * feed is on — and when there is no moment, `activity` has nothing to draw.
-   * Classic answers that with its default page (the metrics desk, or the agent
-   * itself) instead of an empty sheet, and this face has to answer it the same
-   * way: an "activity" page with no activity is not a page, it is a blank
+   * The resting default page answers that instead of an empty sheet: an
+   * "activity" page with no activity is not a page, it is a blank
    * column with a caption explaining that it is blank.
    *
    * So a live/pinned mode that has no item falls through to the resting page.
@@ -210,7 +208,7 @@ export function MonitorStage({ data }: { data: MonitorData }) {
           chip: <Chip tone="read">{t("METRICS")}</Chip>,
           chipText: t("METRICS"),
           title: t("Resource metrics"),
-          sub: t("The whole agent or the selected egg — Classic's dashboard"),
+          sub: t("The whole agent or the selected egg — the metrics dashboard"),
           time: "—",
         }
       : tab === "chat"
@@ -296,19 +294,19 @@ export function MonitorStage({ data }: { data: MonitorData }) {
         <div className="mon-sheet">
           {tab === "metrics" ? (
             // METRICS is the one tab that is not a view of the activity: it is
-            // Classic's dashboard, the Stage's own default page, and it is what
-            // you look at when the question is "what is this costing" rather
-            // than "what did it do".
+            // the metrics dashboard, the Stage's own default page, and it is
+            // what you look at when the question is "what is this costing"
+            // rather than "what did it do".
             <MetricsDashboard embedded />
           ) : tab === "chat" ? (
-            // CHAT is Classic's conversation, given the whole sheet: reading
+            // CHAT is the conversation, given the whole sheet: reading
             // what was said is a page, not a strip over the trace.
             <ChatThread stamp />
           ) : shownItem ? (
             <StageItemView key={shownItem.id} item={shownItem} />
           ) : (
             // Only replay can reach this: a live or pinned mode with no item
-            // falls through to the resting page above (Classic's rule), so the
+            // falls through to the resting page above, so the
             // column is never an empty sheet with a caption explaining itself.
             // A replay before the run's first stage event genuinely has nothing
             // to show, and saying so is the honest page.

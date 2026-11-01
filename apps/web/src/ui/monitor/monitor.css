@@ -452,9 +452,9 @@
   text-align: center;
 }
 
-/* Reuse Classic's stage views inside the sheet: they already answer "what does
-   this activity look like". Only the chrome is softened so they sit on the
-   Monitor surface instead of the desk. */
+/* Reuse the shared stage views inside the sheet: they already answer "what
+   does this activity look like". Only the chrome is softened so they sit on
+   the Monitor surface instead of the desk. */
 .mon-sheet .bg-desk-deep\/50,
 .mon-sheet .bg-desk-deep\/60,
 .mon-sheet .bg-desk-deep\/40 {
@@ -789,8 +789,8 @@
 /* The agent block: a square tile beside the status, the way the proposal draws
    it - the character is a status light in the corner, not a banner.
 
-   The tile does NOT rescale the character. Classic's Agent panel renders the
-   WhaleBun into an `h-[184px]` box, and that is the size it was authored for:
+   The tile does NOT rescale the character. The WhaleBun is rendered into an
+   `h-[184px]` box, and that is the size it was authored for:
    the fit, the pose, the props and the idle animations all assume it. So the
    inner box stays exactly 184x184 and the tile scales *that whole box* down to
    88px with a plain CSS transform. A transform scales the animations with it,
@@ -911,7 +911,7 @@
 /* ── The rail's sections ────────────────────────────────────────────────────
    Every block in this column is a section of one column, separated by a
    hairline — not a boxed card with its own border, header bar and inner
-   padding. Classic's rails are stacks of cards because they sit in a dashboard
+   padding. Rails drawn as stacks of cards belong in a dashboard
    of cards; here a rule is enough, and the space the boxes' chrome was eating
    goes back to the content.
 

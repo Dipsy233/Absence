@@ -106,8 +106,8 @@
   transition: border-color 0.18s ease;
 }
 
-/* The ball's icon is the agent itself — the same compact WhaleBun avatar the
-   classic Agent panel draws — cropped to the ring's circle. */
+/* The ball's icon is the agent itself — the compact WhaleBun avatar,
+   cropped to the ring's circle. */
 .drip-orb--state > .whalebun-root {
   width: 100%;
   height: 100%;

@@ -10,11 +10,11 @@ import type { ChatContext } from "../../types/chat";
 /* ══════════════════════════════════════════════════════════════════════════
    The chat input, as one implementation.
 
-   Two faces use it — Classic's dock and Monitor's input row — and the `/`
-   command palette has to behave the same in both: type `/`, the overlay opens
-   above the input, arrows move, Enter runs. Duplicating that derivation per
-   face is how the two drift apart, so the state machine lives here and the
-   faces only supply their own chrome.
+   Every chat face uses it — Monitor's input row, Rounds' and Chart's bars —
+   and the `/` command palette has to behave the same in all of them: type `/`,
+   the overlay opens above the input, arrows move, Enter runs. Duplicating that
+   derivation per face is how the faces drift apart, so the state machine lives
+   here and the faces only supply their own chrome.
 
    The overlay itself is `ChatCommandPalette` (its own file): it is markup, and
    both faces want exactly the same markup.

@@ -2,7 +2,7 @@
 
 Absence shows one thing — an agent at work — but the right *shape* for that
 depends on why you are looking. This branch splits the interface into four
-named faces plus the pre-split one.
+named faces.
 
 | Face | 中文 | For | Shape |
 |---|---|---|---|
@@ -10,11 +10,10 @@ named faces plus the pre-split one.
 | **Monitor** | 机器监护 | supervising, reading traces | heavy; information leads |
 | **Chart** | 病历报告 | the run is over | the report is the whole page |
 | **Drip** | 输液 | you are doing something else | a floating card, always on top |
-| **Classic** | 旧版 | the pre-split layout | three equal rails + the desk world |
 
-`Monitor` is built. The others are declared and their buttons are disabled, so a
-stale `localStorage` value can never leave the app blank (see
-`lib/viewMode.ts` — `viewModeSpec(mode).ready`).
+All of them are ready today. A face still being built would be declared with
+`ready: false`, so a stale `localStorage` value can never leave the app blank
+(see `lib/viewMode.ts` — `viewModeSpec(mode).ready`).
 
 ## Where things live
 
@@ -46,7 +45,7 @@ most 500 ms.
 
 **Live follows, a pin stays.** While nothing is pinned the Stage *follows the
 agent*: the page is the newest activity of the run (`MonitorData.liveItem`, the
-tail of the feed), exactly what Classic's Stage shows. Clicking a row pins that
+tail of the feed). Clicking a row pins that
 moment — the pin bar names it and ⏎ (or the pin bar, or a view tab) returns to
 following. So the screen moves with the agent until the reader chooses to stop,
 and then never changes under them. `currentAction` in the store is deliberately
@@ -64,20 +63,20 @@ METRICS and CHAT are not views of one moment at all: they are pages of their own
 they never raise a pin bar, and leaving them for a view tab returns to following.
 
 **The avatar is a status light.** An 88px tile beside the status, not a banner —
-and the tile does not rescale the character. Classic renders the WhaleBun into
+and the tile does not rescale the character. The WhaleBun fit was authored into
 an `h-[184px]` box, which is the size the fit, the pose, the props and the idle
-animations were authored for; the tile keeps that box and scales the whole thing
+animations were made for; the tile keeps that box and scales the whole thing
 with a plain CSS transform, so the animation keeps playing. The earlier version
 overrode the fit's own `transform` with `!important` and hid the props and fx,
 which is exactly why the character froze and lost its props.
 
-**The rail is sections, not cards.** Agent Folder and Agent Eggs borrow Classic's
-*logic* — the version expansion with the v0/v1/v2 chips, the running/dead/all
+**The rail is sections, not cards.** Agent Folder and Agent Eggs carry the whole
+interaction — the version expansion with the v0/v1/v2 chips, the running/dead/all
 filter, the query, "open that version on the Stage", "show that egg's metrics" —
-but not its markup: each is a section of this column separated by a hairline
+but each is a section of this column separated by a hairline
 (`.mon-railsec`), with a heading, a scrolling body and no box, header bar or
-inner padding. Classic's rails are stacks of cards because they sit in a
-dashboard of cards; here the chrome's space belongs to the content.
+inner padding. A dashboard of cards stacks boxes because every panel needs its
+own chrome; here the chrome's space belongs to the content.
 
 Two behaviour fixes came out of doing it: the egg filter opens on `running`
 *only when something is running* (a session whose only egg exited used to open
@@ -92,16 +91,15 @@ is what that looks like unfiltered (a real session produced 94 rows from what
 reads as 19 acts). Consecutive identical actions collapse to `RUN ×17`, with the
 count saying so. Activity's own list and the Report keep every event.
 
-**Classic's components are reused, not forked.** `StageItemView`,
-`MetricsDashboard`, `AgentFolder`, `AgentEggsPanel`, the Markdown renderer and
-the chat pieces are written against `--desk-*` tokens; `.mon-root` re-points
-those tokens at Monitor's palette, so every reused view lands in this face's
-colours with no second implementation.
+**Desk components are reused, not forked.** `StageItemView`, `MetricsDashboard`,
+`FilePanel`, the Markdown renderer and the chat pieces are written against
+`--desk-*` tokens; `.mon-root` re-points those tokens at Monitor's palette, so
+every reused view lands in this face's colours with no second implementation.
 
-**One chat input, two faces.** `components/chat/useChatInput.ts` owns the `/`
+**One chat input, many faces.** `components/chat/useChatInput.ts` owns the `/`
 command state machine (name phase, argument phase, skills, the server-backed
-choice lists) and `ChatCommandPalette` / `ChatThread` own the markup; Classic's
-dock and Monitor's input row both render those. Monitor's bar has no expand
+choice lists) and `ChatCommandPalette` / `ChatThread` own the markup;
+`ui/shared/FaceChat` skins it per face. Monitor's bar has no expand
 toggle — the conversation is the Stage's CHAT tab instead — but typing `/` opens
 the same overlay above the line, because a command must behave the same wherever
 it is typed.
@@ -135,7 +133,8 @@ Written into `monitor.css`, not left to each component:
 1. `lib/viewMode.ts`: flip `ready: true` and write the intent line.
 2. `ui/<face>/`: build it against `useMonitorData` (or a sibling hook) — the
    stores, the socket and the sounds are already wired.
-3. `App.tsx`: add the branch before the Classic fallback.
+3. `App.tsx`: add the branch; Monitor stays the fallthrough default.
 4. Give it a `base` in `index.html`-level CSS only if it needs its own palette;
    scoping under one root class is what keeps the faces from leaking into each
-   other. Monitor's bridge shows how to reuse Classic's views without that.
+   other. Monitor's bridge shows how to reuse the desk-token views without
+   forking them.

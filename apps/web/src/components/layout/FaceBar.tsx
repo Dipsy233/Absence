@@ -128,10 +128,10 @@ export function FaceBar() {
         {connected ? t("online") : t("offline")}
       </Chip>
 
-      {/* Settings: Classic's dialog, worn by this face. Rendered as the
-          header's sibling, inside the face root — the face's `--desk-*` bridge
-          re-points the dialog's classes at this face's palette, and being
-          outside the bar keeps it clear of the drag region. */}
+      {/* Settings. The dialog renders as the header's sibling, inside the
+          face root — the face's `--desk-*` bridge re-points the dialog's
+          classes at this face's palette, and being outside the bar keeps it
+          clear of the drag region. */}
       <button
         type="button"
         className="mon-btn mon-btn--ghost mon-nodrag"
@@ -152,7 +152,7 @@ export function FaceBar() {
       <WindowControls />
     </header>
 
-    <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} portal={false} />
+    <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
   </>
   );
 }

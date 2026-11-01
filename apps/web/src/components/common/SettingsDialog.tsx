@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { THEMES, type ThemeId } from "../../lib/theme";
 import { LANGUAGES, useT } from "../../lib/i18n";
-import {
-  useSettingsStore,
-  type CommandFailLevel,
-  type LeftPanelId,
-  type RailPanelId,
-} from "../../stores/settingsStore";
+import { useSettingsStore, type CommandFailLevel } from "../../stores/settingsStore";
 import { AvatarSkinPane } from "./AvatarSkinPane";
 import { SoundPane } from "./SoundPane";
 import {
@@ -17,18 +11,6 @@ import {
   saveEggFilter,
   type EggFilterProfileMeta,
 } from "../../lib/api";
-
-const RAIL_LABELS: Record<RailPanelId, string> = {
-  agent: "Agent (WhaleBun)",
-  folder: "Agent Folder",
-  eggs: "Agent Eggs",
-};
-
-const LEFT_LABELS: Record<LeftPanelId, string> = {
-  files: "Files",
-  history: "History",
-  activity: "Activity",
-};
 
 const THEME_IDS: ThemeId[] = ["amber", "blue", "green"];
 
@@ -42,10 +24,9 @@ const FAIL_LEVEL_TEXT: Record<CommandFailLevel, string> = {
 };
 
 /**
- * The Settings dialog, opened from the gear button in the session bar. Four
- * panes:
+ * The Settings dialog, opened from the gear button in the top bar. Four panes:
  *
- *   p1      — appearance & layout (language, theme, rail orders, chat)
+ *   p1      — appearance (language, theme, chat)
  *   p2      — report: failed-command warning threshold & level
  *   p3      — personalization: avatar skin + sound sets stacked in one pane
  *   p4      — Agent Eggs filter profiles: a small file manager over the
@@ -54,25 +35,15 @@ const FAIL_LEVEL_TEXT: Record<CommandFailLevel, string> = {
  * Skills and MCP are not here: they are chat commands (`/skill`, `/mcp`), the
  * same place Pi and Codex put them, so they sit next to the prompt they act on.
  *
- * Rendered through a portal so the session bar's overflow/drag rules cannot
- * clip or swallow it — except when `portal={false}`: the faces' top bar mounts
- * the dialog inside the face root instead, where the face's own `--desk-*`
- * bridge re-points every `bg-desk-*` class at that face's palette (a portal to
- * `document.body` would escape the face and fall back to Classic's colours).
+ * Rendered in place, as the top bar's sibling inside the face root: the face's
+ * own `--desk-*` bridge re-points every `bg-desk-*` class at that face's
+ * palette (a portal to `document.body` would escape the face and lose the
+ * skin). Being outside the bar also keeps it clear of the drag region.
  */
-export function SettingsDialog({
-  open,
-  onClose,
-  portal = true,
-}: {
-  open: boolean;
-  onClose: () => void;
-  /** Portal to document.body (Classic). The faces render in place instead. */
-  portal?: boolean;
-}) {
+export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open || typeof document === "undefined") return null;
 
-  const dialog = (
+  return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onMouseDown={(e) => {
@@ -100,8 +71,6 @@ export function SettingsDialog({
       </div>
     </div>
   );
-
-  return portal ? createPortal(dialog, document.body) : dialog;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -138,8 +107,7 @@ function ReportPane() {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   Appearance & layout (the left pane): language, theme and the two rails'
-   panel order. Same sections the dialog had when it was a single column.
+   Appearance (the left pane): language, theme and chat.
    ════════════════════════════════════════════════════════════════════════ */
 function AppearancePane() {
   const t = useT();
@@ -147,12 +115,6 @@ function AppearancePane() {
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
-  const railOrder = useSettingsStore((s) => s.railOrder);
-  const moveRailPanel = useSettingsStore((s) => s.moveRailPanel);
-  const leftOrder = useSettingsStore((s) => s.leftOrder);
-  const moveLeftPanel = useSettingsStore((s) => s.moveLeftPanel);
-  const collapseChatOnContent = useSettingsStore((s) => s.collapseChatOnContent);
-  const setCollapseChatOnContent = useSettingsStore((s) => s.setCollapseChatOnContent);
   const chatMarkdown = useSettingsStore((s) => s.chatMarkdown);
   const setChatMarkdown = useSettingsStore((s) => s.setChatMarkdown);
 
@@ -213,23 +175,6 @@ function AppearancePane() {
         <label className="flex items-start gap-1.5 text-[11px] leading-snug text-desk-dim">
           <input
             type="checkbox"
-            checked={collapseChatOnContent}
-            onChange={(e) => setCollapseChatOnContent(e.target.checked)}
-            className="mt-0.5 accent-[rgb(var(--desk-accent))]"
-          />
-          <span>
-            <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">
-              {t("collapse on content")}
-            </span>
-            {" — "}
-            {t(
-              "fold the chat history away whenever the Stage shows a file, diff, terminal or the report. Off (the default) keeps the chat exactly as you left it.",
-            )}
-          </span>
-        </label>
-        <label className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-desk-dim">
-          <input
-            type="checkbox"
             checked={chatMarkdown}
             onChange={(e) => setChatMarkdown(e.target.checked)}
             className="mt-0.5 accent-[rgb(var(--desk-accent))]"
@@ -244,74 +189,6 @@ function AppearancePane() {
             )}
           </span>
         </label>
-      </section>
-
-      {/* ── Left rail order ───────────────────────────────── */}
-      <section className="mb-4">
-        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">
-          {t("Left rail panel order")}
-        </h3>
-        <ul className="space-y-1">
-          {leftOrder.map((id, i) => (
-            <li key={id} className="flex items-center gap-2 rounded border border-desk-line bg-desk-panel2 px-2 py-1">
-              <span className="flex-1 font-mono text-[11px] text-desk-ink">
-                {i + 1}. {t(LEFT_LABELS[id])}
-              </span>
-              <button
-                type="button"
-                disabled={i === 0}
-                onClick={() => moveLeftPanel(id, "up")}
-                className="rounded px-1 font-mono text-[11px] text-desk-dim hover:text-desk-amber disabled:opacity-30"
-                title={t("Move up")}
-              >
-                ▲
-              </button>
-              <button
-                type="button"
-                disabled={i === leftOrder.length - 1}
-                onClick={() => moveLeftPanel(id, "down")}
-                className="rounded px-1 font-mono text-[11px] text-desk-dim hover:text-desk-amber disabled:opacity-30"
-                title={t("Move down")}
-              >
-                ▼
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* ── Right rail order ─────────────────────────────── */}
-      <section>
-        <h3 className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-desk-dim">
-          {t("Right rail panel order")}
-        </h3>
-        <ul className="space-y-1">
-          {railOrder.map((id, i) => (
-            <li key={id} className="flex items-center gap-2 rounded border border-desk-line bg-desk-panel2 px-2 py-1">
-              <span className="flex-1 font-mono text-[11px] text-desk-ink">
-                {i + 1}. {t(RAIL_LABELS[id])}
-              </span>
-              <button
-                type="button"
-                disabled={i === 0}
-                onClick={() => moveRailPanel(id, "up")}
-                className="rounded px-1 font-mono text-[11px] text-desk-dim hover:text-desk-amber disabled:opacity-30"
-                title={t("Move up")}
-              >
-                ▲
-              </button>
-              <button
-                type="button"
-                disabled={i === railOrder.length - 1}
-                onClick={() => moveRailPanel(id, "down")}
-                className="rounded px-1 font-mono text-[11px] text-desk-dim hover:text-desk-amber disabled:opacity-30"
-                title={t("Move down")}
-              >
-                ▼
-              </button>
-            </li>
-          ))}
-        </ul>
       </section>
     </div>
   );
@@ -531,21 +408,6 @@ function CommandFailSettings() {
           onCount={s.setActivityStallThreshold}
           level={s.activityStallLevel}
           onLevel={s.setActivityStallLevel}
-        />
-      </WarnSection>
-
-      <WarnSection title="warn: errors" hint="A failure nothing recovered from, and a run that died outright.">
-        <LevelRow
-          label="unresolved error"
-          hint="A failure with no later successful command behind it. A bare error event never rises above medium."
-          value={s.unresolvedErrorLevel}
-          onChange={s.setUnresolvedErrorLevel}
-        />
-        <LevelRow
-          label="agent stopped"
-          hint="The run ended in error rather than finishing its task."
-          value={s.agentStoppedLevel}
-          onChange={s.setAgentStoppedLevel}
         />
       </WarnSection>
 
@@ -869,7 +731,7 @@ function EggFilterPane() {
         <label
           className="flex items-center gap-1.5 text-[11px] text-desk-dim"
           title={t(
-            "Show LAID / DIED process events in the Activity panel. Off hides them so the panel reads as actions only; the eggs stay visible in the Agent Eggs panel either way.",
+            "Show LAID / DIED process events in the activity feed. Off hides them so the feed reads as actions only; the eggs stay visible in the Agent Eggs panel either way.",
           )}
         >
           <input
@@ -881,7 +743,7 @@ function EggFilterPane() {
           <span className="font-mono text-[10px] uppercase tracking-wide text-desk-ink">
             {t("display in activity")}
           </span>
-          <span className="hidden text-[10px] 2xl:inline">{" — "}{t("show LAID / DIED process events in Activity")}</span>
+          <span className="hidden text-[10px] 2xl:inline">{" — "}{t("show LAID / DIED process events in the feed")}</span>
         </label>
 
         <div className="ml-auto flex items-center gap-2">

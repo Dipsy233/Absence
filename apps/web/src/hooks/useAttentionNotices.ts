@@ -126,8 +126,6 @@ function reasonEvidence(reason: AttentionReason, facts: RunFacts): string[] {
       return facts.loops.filter((loop) => loop.kind === "command_retry_loop").flatMap((loop) => loop.evidence);
     case "file_version_loop":
       return facts.loops.filter((loop) => loop.kind === "file_version_loop").flatMap((loop) => loop.evidence);
-    case "unresolved_error":
-      return facts.errors.evidence;
     case "process_left_running":
       return Object.values(facts.processes.byPid)
         .filter((fact) => fact.running)
@@ -139,7 +137,7 @@ function reasonEvidence(reason: AttentionReason, facts: RunFacts): string[] {
         .filter((fact) => fact.externalChange)
         .flatMap((fact) => fact.evidence);
     default:
-      // `activity_stalled` / `agent_stopped` / `agent_waiting` / `no_progress`
+      // `activity_stalled` / `agent_waiting` / `no_progress`
       // have no event of their own: they are about the run as a whole.
       return [];
   }

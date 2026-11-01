@@ -27,15 +27,15 @@ import type { MonitorData } from "../../hooks/useMonitorData";
  * wants within one glance, in that order of urgency.
  *
  * Every block is a *section of this column*, separated by a hairline, not a
- * boxed panel with its own border, header bar and padding. Classic's rails are
- * stacks of cards because they sit in a dashboard of cards; Monitor's rail is
+ * boxed panel with its own border, header bar and padding. Rails drawn as
+ * stacks of cards belong in a dashboard of cards; Monitor's rail is
  * one column of one face, so a rule between sections is enough — and it buys
  * back the vertical space the boxes' chrome was eating.
  *
- * The two long sections reuse Classic's *logic* rather than its markup:
- * Agent Folder keeps the version expansion and the v-chip reading, Agent Eggs
- * keeps the running/dead/all filter, the query and the per-egg actions — all
- * re-drawn against `.mon-*` so they read as this face.
+ * The two long sections reuse the desk *logic* rather than its markup:
+ * the files section keeps the version expansion and the v-chip reading, the
+ * eggs section keeps the running/dead/all filter, the query and the per-egg
+ * actions — all re-drawn against `.mon-*` so they read as this face.
  */
 export function MonitorRight({ data }: { data: MonitorData }) {
   return (
@@ -107,7 +107,7 @@ function AgentHead({ data }: { data: MonitorData }) {
   /**
    * The status the reader is looking at, which is not always the live one.
    *
-   * Classic does the same thing (see `Stage.tsx`): in replay the avatar re-enacts
+   * In replay the avatar re-enacts
    * the reconstructed run, and on a pinned page it re-enacts the action that
    * produced that moment — otherwise the rail would say LISTENING next to a
    * Stage that is clearly showing the agent mid-edit. METRICS and CHAT are
@@ -138,8 +138,9 @@ function AgentHead({ data }: { data: MonitorData }) {
       {/*
         The character, framed the way the proposal frames it: a square tile on
         the left, the status beside it. The tile is a fixed 88px box and the
-        avatar inside is Classic's own `h-[184px]` block — the size the fit,
-        the pose, the props and the idle animations were authored for — scaled
+        avatar inside is the `h-[184px]` block the avatar is authored at — the
+        size the fit,
+        the pose, the props and the idle animations assume — scaled
         down as a whole, so the animation keeps playing.
       */}
       <div className="mon-agent__tile" aria-hidden>
@@ -193,8 +194,8 @@ function AgentHead({ data }: { data: MonitorData }) {
  *
  * The version chips are the point: `v0 read → v1 write → v2 edit` says at a
  * glance whether the agent has been back to a file, and which state is current.
- * Expanding a row lists every version, and a click opens that one on the Stage —
- * Classic's behaviour, drawn as this face's rows.
+ * Expanding a row lists every version, and a click opens that one on the Stage,
+ * drawn as this face's rows.
  */
 function KnownFiles() {
   const t = useT();
@@ -318,7 +319,7 @@ const EGG_FILTERS: EggFilter[] = ["running", "dead", "all"];
  * Read-only on purpose — Absence reports what is running, it never kills an egg.
  * Helpers (`cat`, `grep`, `sleep`) are folded into a count: the classifier
  * decides that from what a process *is*, so one daemon cannot be buried under a
- * command's tools. Classic's filter and query are kept, because a session that
+ * command's tools. The filter and query are kept, because a session that
  * lays a process per step needs them; the rows are this face's.
  */
 function Eggs() {
@@ -330,8 +331,8 @@ function Eggs() {
   const openStage = useStageStore((s) => s.openStage);
   const now = useNow(1000);
 
-  // Classic opens on "running" because what is alive now is the urgent answer.
-  // The same rule, applied to what actually exists: a session whose only egg
+  // The default filter is "running" because what is alive now is the urgent
+  // answer — applied to what actually exists: a session whose only egg
   // has exited would open on an empty list under a heading that says "0/1
   // running", which reads as a broken section rather than as a filter.
   const [filter, setFilter] = useState<EggFilter | undefined>(undefined);
@@ -367,7 +368,7 @@ function Eggs() {
         <p className="mon-fold">{t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")}</p>
       ) : (
         <>
-          {/* Classic's filter and query, as this face's controls: a segmented
+          {/* The filter and query, as this face's controls: a segmented
               row of counts, then a search line. */}
           <div className="mon-eggbar">
             <div className="mon-seg mon-seg--tiny" role="tablist" aria-label={t("Agent Eggs")}>
@@ -433,8 +434,8 @@ function Eggs() {
                       onClick={() => {
                         selectEgg(selectedEggPid === egg.pid ? undefined : egg.pid);
                         // Monitor's METRICS is the Stage's own page (`stageStore`),
-                        // not Classic's overlay flag — a button that set the other
-                        // one would look like it did nothing here.
+                        // not a metrics overlay flag — a button that only set the
+                        // selection would look like it did nothing here.
                         goMetrics();
                       }}
                       aria-pressed={selectedEggPid === egg.pid}

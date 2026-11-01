@@ -512,7 +512,7 @@ export function resetEventCaches(): void {
 /**
  * The row the replay cursor is on: the last row at or before `timestamp`.
  *
- * Classic's `replayCurrent` rule, and the reason the feed's highlight walks
+ * The replay highlight's rule, and the reason the feed's highlight walks
  * down the run while a replay plays. Rows are chronological, so a binary
  * search keeps it cheap on the 80ms replay tick — both faces (Monitor's feed
  * and Rounds' story) used to implement this scan themselves.

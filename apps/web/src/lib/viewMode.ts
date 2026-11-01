@@ -8,11 +8,8 @@
  *   Monitor 机器监护 — heavy, information leads; you read the traces.
  *   Chart   病历报告 — the run is over; you read what it amounted to.
  *   Drip    输液     — almost nothing; a floating card while you do other work.
- *
- * Classic is not one of them: it is the pre-split UI, kept so the branch can
- * always fall back to a known-good layout.
  */
-export type ViewMode = "classic" | "rounds" | "monitor" | "chart" | "drip";
+export type ViewMode = "rounds" | "monitor" | "chart" | "drip";
 
 export interface ViewModeSpec {
   id: ViewMode;
@@ -35,13 +32,12 @@ export const VIEW_MODES: ViewModeSpec[] = [
   { id: "rounds", name: "Rounds", zh: "查房陪诊", intent: "Light — the agent leads, you follow", ready: true },
   { id: "monitor", name: "Monitor", zh: "机器监护", intent: "Heavy — every trace on one screen", ready: true },
   { id: "chart", name: "Chart", zh: "病历报告", intent: "The run is over — read what it amounted to", ready: true },
-  { id: "classic", name: "Classic", zh: "旧版", intent: "The pre-split layout", ready: true },
 ];
 
 const STORAGE_KEY = "absence.viewMode";
 
 /** Every mode the store accepts; `drip` survives only as a stale stored value. */
-export const SWITCHABLE_MODES: ViewMode[] = ["rounds", "monitor", "chart", "drip", "classic"];
+export const SWITCHABLE_MODES: ViewMode[] = ["rounds", "monitor", "chart", "drip"];
 
 export function isViewMode(value: unknown): value is ViewMode {
   return SWITCHABLE_MODES.includes(value as ViewMode);
