@@ -214,6 +214,10 @@
   src: url("/fonts/Caveat-VariableFont_wght.ttf") format("truetype");
   font-weight: 400 700;
   font-display: swap;
+  /* Caveat 的小 x-height 比中文字体矮一截：拉丁/数字整体放大 40%，
+     让英文与手写中文在同一行里读起来是同一个量级。只影响 Caveat
+     渲染的字符，中文（ShouXie851）不变。 */
+  size-adjust: 140%;
 }
 
 @font-face {
