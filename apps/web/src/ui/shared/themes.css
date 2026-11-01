@@ -205,11 +205,8 @@
   text-shadow: 0 1px 0 rgb(0 0 0 / 0.8);
 }
 
-.theme-nixie .mon-runsel,
-.theme-nixie .mon-railsec,
 .theme-nixie .panel {
   border: 1px solid rgb(255 170 60 / 0.3);
-  box-shadow: inset 0 0 18px rgb(0 0 0 / 0.5);
 }
 
 .theme-nixie .mon-runsel__c {
@@ -220,6 +217,63 @@
 .theme-nixie .mon-chip--run,
 .theme-nixie .mon-chip--edit {
   text-shadow: 0 0 7px rgb(255 166 48 / 0.4);
+}
+
+/* Rounds 的气泡与输入条是硬编码暗面——light 色系下翻成各自的亮面。 */
+.theme-nixie.scheme-light .rounds-bubble {
+  background: rgb(255 250 235 / 0.88);
+  border-color: #9a8858;
+  color: #2b2312;
+  box-shadow: 0 8px 20px rgb(43 35 18 / 0.15);
+}
+
+.theme-nixie.scheme-light .rounds-inp {
+  background: rgb(255 250 235 / 0.85);
+  border-color: #9a8858;
+  box-shadow: 0 8px 20px rgb(43 35 18 / 0.15);
+}
+
+.theme-glass.scheme-light .rounds-bubble,
+.theme-glass.scheme-light .rounds-inp {
+  background: rgb(255 255 255 / 0.7);
+  border-color: rgb(30 45 70 / 0.2);
+  color: #1a2233;
+}
+
+/* Rounds 的房间与 dock 条在 light 色系下也要跟着翻面。 */
+.theme-nixie.scheme-light .rounds-root {
+  background: #f2ead8;
+}
+
+.theme-nixie.scheme-light .rounds-root::before {
+  background:
+    radial-gradient(900px 620px at 24% 38%, rgb(255 250 235 / 0.85), transparent 65%),
+    radial-gradient(760px 540px at 72% 64%, rgb(226 208 165 / 0.5), transparent 65%);
+}
+
+.theme-nixie.scheme-light .rounds-dock {
+  background: rgb(242 234 216 / 0.78);
+  border-left-color: #c2b28a;
+}
+
+.theme-glass.scheme-light .rounds-root {
+  background: #e8ecf3;
+}
+
+.theme-glass.scheme-light .rounds-root::before {
+  background:
+    radial-gradient(900px 620px at 24% 38%, rgb(255 255 255 / 0.9), transparent 65%),
+    radial-gradient(760px 540px at 72% 64%, rgb(196 210 232 / 0.6), transparent 65%);
+}
+
+.theme-glass.scheme-light .rounds-dock {
+  background: rgb(255 255 255 / 0.6);
+  border-left-color: rgb(30 45 70 / 0.14);
+}
+
+.theme-ink .rounds-dock {
+  background: rgb(241 237 225 / 0.85);
+  border-left-color: #b3aa8e;
 }
 
 /* ═══════════════════════════════ INK ═══════════════════════════════
@@ -277,8 +331,10 @@
   --mon-egg: #a34f6e;
   --mon-err: #b03e33;
   --mon-acc: #b5532f;
-  /* 全部正文文字都是手写（等宽栈保留给代码与路径）。 */
+  /* 全部文字都是手写：sans 与 mono 两个栈都换成手写族。代码纸单里的
+     Monaco 编辑器与 tailwind 的 font-mono 走自己的栈，不受影响。 */
   --mon-sans: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
+  --mon-mono: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
   --desk-bg: 241 237 225;
   --desk-panel: 246 243 233;
   --desk-panel2: 238 233 219;
@@ -340,6 +396,7 @@
   --ch-err: #b03e33;
   --ch-acc: #b5532f;
   --ch-sans: var(--mon-hand);
+  --ch-mono: var(--mon-hand);
 }
 
 /* ink · dark：黑板与粉笔——同一个手，换一块板。 */
