@@ -5,8 +5,11 @@ export interface DeskPalette {
   wood: string; woodLit: string;
 }
 
-/** The desk palette the UI boots with (the old color-theme presets are gone;
-    the faces' own UI styles handle looks now). */
+/**
+ * The boot palette, used until the UI style's own paper tokens are read (see
+ * applyMonacoTheme — App re-applies from `--mon-paper-*` on every style and
+ * scheme change, so this only covers the first frames).
+ */
 export const DESK_PALETTE: DeskPalette = {
   bg: "#141210", panel: "#1b1815", panel2: "#211d19", deep: "#0f0d0b",
   line: "#2e2822", ink: "#efe7db", dim: "#9a8f80", accent: "#e0a458",
@@ -30,29 +33,39 @@ import { loader } from "@monaco-editor/react";
   },
 };
 
-// A low-contrast theme that follows the desk's palette. Not defined at module
-// load — main.tsx applies the stored theme, which defines "absence" before any
-// editor mounts. Switching color themes re-defines and re-selects it.
-function absenceTheme(p: DeskPalette): monaco.editor.IStandaloneThemeData {
+// The code paper follows the face's `--mon-paper-*` tokens, and the *base*
+// theme follows the colour scheme: the vs-dark token colours are designed for
+// dark paper and are unreadable on light, so a light scheme re-bases on "vs".
+// Not defined at module load — main.tsx applies the boot palette, and App
+// re-defines and re-selects on every style and scheme change.
+function absenceTheme(p: DeskPalette, dark: boolean): monaco.editor.IStandaloneThemeData {
   return {
-    base: "vs-dark",
+    base: dark ? "vs-dark" : "vs",
     inherit: true,
     rules: [],
     colors: {
       "editor.background": p.panel,
       "editorGutter.background": p.panel,
+      "editor.foreground": p.ink,
       "editorLineNumber.foreground": p.woodLit,
       "editorLineNumber.activeForeground": p.accent,
       "editor.lineHighlightBackground": p.panel2,
-      "diffEditor.insertedTextBackground": "#2f5d4a55",
-      "diffEditor.removedTextBackground": "#6b3a3555",
+      "diffEditor.insertedTextBackground": dark ? "#2f5d4a55" : "#2f8a5a3d",
+      "diffEditor.removedTextBackground": dark ? "#6b3a3555" : "#c050403d",
     },
   };
 }
 
-/** Re-define the "absence" theme from a palette and refresh open editors. */
-export function applyMonacoTheme(p: DeskPalette = DESK_PALETTE): void {
-  monaco.editor.defineTheme("absence", absenceTheme(p));
+/**
+ * Re-define the "absence" theme and refresh open editors.
+ *
+ * Every field is optional: the boot call passes nothing and gets the fixed
+ * desk palette; App passes the four `--mon-paper-*` values it read off the
+ * mounted face, plus `--mon-acc` for the active line number.
+ */
+export function applyMonacoTheme(p: Partial<DeskPalette> = {}, dark = true): void {
+  const full: DeskPalette = { ...DESK_PALETTE, ...p };
+  monaco.editor.defineTheme("absence", absenceTheme(full, dark));
   monaco.editor.setTheme("absence");
 }
 

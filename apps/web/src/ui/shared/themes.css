@@ -38,6 +38,10 @@
   --mon-egg: #f0a0d0;
   --mon-err: #ff6060;
   --mon-acc: #40e8d0;
+  --mon-paper: #081009;
+  --mon-paper-2: #0e1a12;
+  --mon-paper-t: #c8e8d4;
+  --mon-paper-dim: #4e7a60;
   --desk-bg: 6 13 11;
   --desk-panel: 12 22 16;
   --desk-panel2: 24 43 29;
@@ -103,6 +107,10 @@
   --mon-egg: #a8365e;
   --mon-err: #c03020;
   --mon-acc: #a86018;
+  --mon-paper: #f3e8cc;
+  --mon-paper-2: #eaddba;
+  --mon-paper-t: #2a2010;
+  --mon-paper-dim: #8a7848;
   --desk-bg: 245 234 208;
   --desk-panel: 237 224 192;
   --desk-panel2: 227 211 168;
@@ -315,6 +323,10 @@
   --mon-egg: #b8386e;
   --mon-err: #c0302a;
   --mon-acc: #c86820;
+  --mon-paper: #faf6ea;
+  --mon-paper-2: #efe9d5;
+  --mon-paper-t: #2b2820;
+  --mon-paper-dim: #8d8672;
   /* 全部文字都是手写：sans 与 mono 两个栈都换成手写族。代码纸单里的
      Monaco 编辑器与 tailwind 的 font-mono 走自己的栈，不受影响。 */
   --mon-sans: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
@@ -394,6 +406,10 @@
   --mon-egg: #f8a0c8;
   --mon-err: #ff7070;
   --mon-acc: #f0ede0;
+  --mon-paper: #101627;
+  --mon-paper-2: #182034;
+  --mon-paper-t: #d8d8c8;
+  --mon-paper-dim: #5a6478;
   --desk-bg: 15 19 32;
   --desk-panel: 22 28 46;
   --desk-panel2: 29 36 56;
@@ -562,6 +578,10 @@
   --mon-egg: #ff60a8;
   --mon-err: #ff4060;
   --mon-acc: #40a0ff;
+  --mon-paper: #0b0e16;
+  --mon-paper-2: #141927;
+  --mon-paper-t: #dce4f8;
+  --mon-paper-dim: #5a6884;
   --desk-bg: 9 11 18;
   --desk-panel: 26 30 42;
   --desk-panel2: 36 42 58;
@@ -634,6 +654,10 @@
   --mon-egg: #b82878;
   --mon-err: #c82830;
   --mon-acc: #1848c8;
+  --mon-paper: #f2f5fb;
+  --mon-paper-2: #e8edf7;
+  --mon-paper-t: #1a2440;
+  --mon-paper-dim: #6a7898;
   --desk-bg: 221 228 240;
   --desk-panel: 244 248 253;
   --desk-panel2: 250 252 255;

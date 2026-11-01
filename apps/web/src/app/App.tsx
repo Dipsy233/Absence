@@ -13,6 +13,7 @@ import { DripDesktop } from "../ui/drip/DripDesktop";
 import { FaceRise } from "../ui/shared/FaceRise";
 import { InkBoil } from "../ui/shared/InkBoil";
 import { defaultScheme, UI_STYLES } from "../lib/uistyle";
+import { applyMonacoTheme, DESK_PALETTE } from "../lib/monaco";
 import { useUiStyleStore } from "../stores/uistyleStore";
 
 /**
@@ -62,6 +63,33 @@ export default function App() {
     const scheme = schemeOverride ?? defaultScheme(uiStyle);
     el.classList.add(`scheme-${scheme}`);
   }, [uiStyle, schemeOverride]);
+
+  // The text paper (Monaco's editor surface) cannot read CSS variables, so
+  // the four --mon-paper-* values are read off the mounted face and fed to
+  // the editor's theme here — on every style, scheme and face change. The
+  // syntax colours follow the scheme's base theme (vs vs vs-dark); only the
+  // paper is ours. `session` and `mode` are dependencies because the face
+  // (and with it a .mon-root to read the tokens from) may not exist yet when
+  // the style changes over the project picker.
+  useEffect(() => {
+    const scheme = schemeOverride ?? defaultScheme(uiStyle);
+    const host = document.querySelector(".mon-root") ?? document.body;
+    const cs = getComputedStyle(host);
+    const read = (name: string, fallback: string) => (cs.getPropertyValue(name) || fallback).trim();
+    applyMonacoTheme(
+      {
+        bg: read("--mon-paper", DESK_PALETTE.panel),
+        panel: read("--mon-paper", DESK_PALETTE.panel),
+        panel2: read("--mon-paper-2", DESK_PALETTE.panel2),
+        line: read("--mon-paper-2", DESK_PALETTE.line),
+        ink: read("--mon-paper-t", DESK_PALETTE.ink),
+        dim: read("--mon-paper-dim", DESK_PALETTE.dim),
+        accent: read("--mon-acc", DESK_PALETTE.accent),
+        woodLit: read("--mon-paper-dim", DESK_PALETTE.woodLit),
+      },
+      scheme === "dark",
+    );
+  }, [uiStyle, schemeOverride, session, mode]);
 
   // The desktop shell opens Drip as a second always-on-top window. The face
   // underneath stays open and live — turning the switch off closes only the

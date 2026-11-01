@@ -100,7 +100,19 @@
 | `--mon-bubble-system` | 系统气泡 |
 | `--mon-inp` | 底部输入条 |
 | `--mon-dock` | Rounds 右缘 dock 条 |
+| `--mon-paper` | **文本视图纸面**：代码 / 文件内容（Monaco 编辑器底与行号槽） |
+| `--mon-paper-2` | 纸面次级面（当前行高亮） |
+| `--mon-paper-t` | 纸面默认文字（语法色跟随色系基座，不由 token 决定） |
+| `--mon-paper-dim` | 纸面弱文字（行号） |
 | `--drip-pill` / `--drip-card` | Drip 球 / 卡 |
+
+**文本视图纸面的特殊性**：Monaco 不能读 CSS 变量，所以这四个 token 由
+`app/App.tsx` 的 effect 在每次风格 / 色系 / face 变化时 `getComputedStyle`
+从挂载的 `.mon-root` 读出，喂给 `lib/monaco.ts` 的
+`applyMonacoTheme(partial, dark)` 重定义编辑器主题。**基座跟随色系**
+（dark → `vs-dark`，light → `vs`）——语法配色是基座自带的，token 只决定
+纸面。若编辑器需要新颜色，必须同步扩 `applyMonacoTheme` 的读取列表，
+并在六个 风格×色系 块里各给一行。
 
 ### 4.4 其他派生面
 | 组 | Token |

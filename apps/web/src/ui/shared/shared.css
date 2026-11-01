@@ -83,6 +83,16 @@
   --mon-bubble-system: rgb(22 26 33 / 0.62);
   --mon-inp: rgb(20 24 31 / 0.78);
   --mon-dock: rgb(16 19 24 / 0.72);
+
+  /* ── Text paper: the code/text view (Monaco's editor surface) ──
+     The editor cannot read CSS variables, so App reads these four computed
+     values and re-defines Monaco's "absence" theme from them (lib/monaco) —
+     on every style and scheme change. Syntax colours follow the scheme's
+     base theme (vs vs vs-dark); only the paper is ours. */
+  --mon-paper: #121212;
+  --mon-paper-2: #1c1c1c;
+  --mon-paper-t: #e8e8e4;
+  --mon-paper-dim: #6a6a66;
 }
 
 /* ── Shell ──────────────────────────────────────────────────────────────── */
