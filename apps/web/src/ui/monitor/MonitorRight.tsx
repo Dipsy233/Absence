@@ -40,7 +40,7 @@ import type { MonitorData } from "../../hooks/useMonitorData";
  */
 export function MonitorRight({ data }: { data: MonitorData }) {
   return (
-    <div className="mon-col mon-col--right">
+    <div className="mon-col mon-col--right mon-vscroll">
       <AgentHead data={data} />
       <Usage />
       {/*
@@ -228,7 +228,7 @@ function KnownFiles() {
       {rows.length === 0 ? (
         <p className="mon-fold">{t("The agent has not touched anything yet. Files appear here as it reads and edits them.")}</p>
       ) : (
-        <div className="mon-raillist">
+        <div className="mon-raillist mon-vscroll">
           {rows.map((file) => {
             const open = expanded === file.path;
             const current = shownPath === file.path;
@@ -408,7 +408,7 @@ function Eggs() {
               {query.trim() ? t("No eggs match \"{q}\".", { q: query.trim() }) : t("Nothing here. Try another filter.")}
             </p>
           ) : (
-            <div className="mon-raillist">
+            <div className="mon-raillist mon-vscroll">
               {shown.map((egg) => {
                 const alive = egg.status === "running";
                 const lived = (egg.exitedAt ?? now) - egg.startedAt;

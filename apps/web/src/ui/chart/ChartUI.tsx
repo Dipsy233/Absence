@@ -268,7 +268,7 @@ export function ChartUI() {
             </button>
 
             {runMenu ? (
-              <ul className="chart-runmenu" role="listbox" aria-label={t("Runs")}>
+              <ul className="chart-runmenu mon-slimscroll" role="listbox" aria-label={t("Runs")}>
                 {[...runs].reverse().map((entry) => (
                   <li key={entry.id}>
                     <button
@@ -632,11 +632,11 @@ export function ChartUI() {
               <span className="chart-pt__meta">{formatClock(run.startedAt)}</span>
             </div>
             <div className="chart-body chart-io">
-              <section className="chart-io__sec">
+              <section className="chart-io__sec mon-vscroll">
                 <div className="chart-io__cap">{t("Request")}</div>
                 <p className="chart-io__text">{run.prompt || t("(observed activity)")}</p>
               </section>
-              <section className="chart-io__sec">
+              <section className="chart-io__sec mon-vscroll">
                 <div className="chart-io__cap">{t("Response")}</div>
                 {report.response ? (
                   <p className="chart-io__text">{report.response}</p>

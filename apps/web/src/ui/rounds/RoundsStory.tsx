@@ -124,13 +124,21 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
           </span>
         ) : null}
         <span style={{ flex: 1 }} />
-        {!data.following ? (
-          <button type="button" className="rounds-ghostbtn" onClick={onLive}>
-            {t("Back to live")}
-          </button>
-        ) : null}
+        {/* Always mounted: appearing and disappearing here would shove the
+            whole header around on every live↔replay switch. Between states
+            the button only fades, keeping its slot. */}
+        <button
+          type="button"
+          className="rounds-ghostbtn"
+          onClick={onLive}
+          data-off={data.following ? "true" : undefined}
+          tabIndex={data.following ? -1 : 0}
+          aria-hidden={data.following}
+        >
+          {t("Back to live")}
+        </button>
       </div>
-      <div className="rounds-cards" ref={cardsRef}>
+      <div className="rounds-cards mon-hscroll" ref={cardsRef}>
         {shown.length === 0 ? (
           <span className="rounds-story__empty">{t("Nothing yet. Send the agent a task.")}</span>
         ) : (

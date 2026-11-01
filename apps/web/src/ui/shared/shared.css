@@ -591,6 +591,42 @@
   }
 }
 
+/* ── Scroll: the scrollbar rides the frame line ────────────────────────────
+   A native scrollbar takes its gutter out of the content box when overflow
+   starts, squeezing everything inside — one more source of layout shift.
+   `.mon-vscroll` reserves the gutter always (`scrollbar-gutter: stable`) and
+   pulls it out over the container's right edge with a negative margin: the
+   content keeps the same width whether or not it scrolls, and the slim thumb
+   floats on the hairline between columns instead of eating content. The
+   track is transparent; the thumb follows `scrollbar-color` in the standard
+   thin spec, so all engines render it the same.
+   `.mon-hscroll` is the horizontal twin (thumb on the bottom hairline).
+   `.mon-slimscroll` keeps the scrollbar inside a bordered floating panel
+   (dropdown menus) — thin, transparent track, no repositioning. */
+.mon-root {
+  --mon-sb: 8px;
+}
+
+.mon-vscroll {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  margin-right: calc(-1 * var(--mon-sb));
+  scrollbar-width: thin;
+  scrollbar-color: var(--mon-bd2) transparent;
+}
+
+.mon-hscroll {
+  scrollbar-gutter: stable;
+  margin-bottom: calc(-1 * var(--mon-sb));
+  scrollbar-width: thin;
+  scrollbar-color: var(--mon-bd2) transparent;
+}
+
+.mon-slimscroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--mon-bd2) transparent;
+}
+
 /* ── Health: focus, motion, scrollbars ──────────────────────────────────── */
 
 .mon-root :focus-visible {

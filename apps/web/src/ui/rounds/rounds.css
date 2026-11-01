@@ -451,6 +451,9 @@
 .rounds-story__hint {
   font-size: 11.5px;
   color: var(--mon-t3);
+  /* Digits change width as steps accumulate; tabular figures keep the header
+     from breathing. */
+  font-variant-numeric: tabular-nums;
 }
 /* The run this story belongs to: `#6 · done`, then how many steps it has and
    the R/S/E/$ counts — one line, read left to right. */
@@ -467,10 +470,13 @@
   color: var(--mon-t3);
 }
 /* LIVE / REPLAY: what the story is doing with the run, at the header's right
-   edge. No chip chrome — the dot and the colour are the whole message. */
+   edge. No chip chrome — the dot and the colour are the whole message. The
+   min-width is the widest state's width: LIVE→REPLAY must not resize the
+   chip, or everything after it shoves sideways on every switch. */
 .rounds-story__play {
   display: inline-flex;
   flex: none;
+  min-width: 6.4em;
   align-items: center;
   gap: 5px;
   font-size: 9.5px;
@@ -490,6 +496,13 @@
   background: transparent;
   font-size: 11.5px;
   color: var(--mon-t2);
+  /* The slot is permanent (see RoundsStory): between live and replay the
+     button only fades, so the header never reflows. */
+  transition: opacity 0.18s ease;
+}
+.rounds-ghostbtn[data-off] {
+  pointer-events: none;
+  opacity: 0;
 }
 .rounds-ghostbtn:hover {
   border-color: rgb(94 159 232 / 0.55);

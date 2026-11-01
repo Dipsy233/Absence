@@ -10,6 +10,7 @@ import { RoundsUI } from "../ui/rounds/RoundsUI";
 import { ChartUI } from "../ui/chart/ChartUI";
 import { DripPipHost } from "../ui/drip/DripPip";
 import { DripDesktop } from "../ui/drip/DripDesktop";
+import { FaceRise } from "../ui/shared/FaceRise";
 
 /**
  * The desktop shell opens Drip as a second window: it loads this same app with
@@ -79,7 +80,9 @@ export default function App() {
   if (mode === "monitor") {
     return (
       <>
-        <MonitorUI />
+        <FaceRise>
+          <MonitorUI />
+        </FaceRise>
         <ContextMenu />
         {pip}
       </>
@@ -89,7 +92,9 @@ export default function App() {
   if (mode === "rounds") {
     return (
       <>
-        <RoundsUI />
+        <FaceRise>
+          <RoundsUI />
+        </FaceRise>
         <ContextMenu />
         {pip}
       </>
@@ -99,7 +104,9 @@ export default function App() {
   if (mode === "chart") {
     return (
       <>
-        <ChartUI />
+        <FaceRise>
+          <ChartUI />
+        </FaceRise>
         <ContextMenu />
         {pip}
       </>
@@ -111,7 +118,9 @@ export default function App() {
   // toggle and never a stored mode).
   return (
     <>
-      <MonitorUI />
+      <FaceRise>
+          <MonitorUI />
+        </FaceRise>
       <ContextMenu />
       {pip}
     </>

@@ -209,7 +209,7 @@ function FolderPanel({ onOpenVersion }: { onOpenVersion: (path: string, version?
   }
 
   return (
-    <div className="rounds-folder">
+    <div className="rounds-folder mon-vscroll">
       {rows.map((file) => {
         const open = expanded.includes(file.path);
         const latest = file.history.at(-1);
@@ -299,7 +299,7 @@ function EggsBody({ onOpenEggMetrics }: { onOpenEggMetrics: (pid: number, name: 
           {t("No eggs yet. An egg is a process the agent left running — a dev server, a watcher.")}
         </p>
       ) : (
-        <ul className="rounds-eggs">
+        <ul className="rounds-eggs mon-vscroll">
           {eggs.map((egg) => {
             const alive = egg.status === "running";
             return (
