@@ -194,8 +194,8 @@
 }
 
 .theme-nixie .mon-runsel__c {
-  color: #ffc873;
-  text-shadow: 0 0 6px rgb(255 166 48 / 0.45);
+  color: #f7ecd8;
+  text-shadow: 0 0 6px rgb(255 166 48 / 0.3);
 }
 
 .theme-nixie .mon-chip--run,
