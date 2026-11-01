@@ -367,7 +367,7 @@ function Eggs() {
         <span className="mon-cap">{t("Agent Eggs")}</span>
         <span>
           {counts.all > 0 ? (
-            <Nixie value={t("{r}/{a} running", { r: counts.running, a: counts.all })} variant="plain" />
+            <Nixie value={t("{r}/{a} running", { r: counts.running, a: counts.all })} />
           ) : (
             t("none")
           )}

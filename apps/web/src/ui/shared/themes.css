@@ -1,0 +1,380 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   UI STYLES — the three complete looks. Each is a class on <html>
+   (`theme-nixie` / `theme-ink` / `theme-glass`, applied by App from
+   stores/uistyleStore). A style never changes layout: it remaps the tokens
+   shared.css defines on .mon-root (and the drip tokens on .drip-root), then
+   adds its own surface features — the Nixie glow, the paper handwriting,
+   the frosted panels.
+
+   These rules must load after shared.css (FaceBar imports both in order).
+   The desk bridge (--desk-*) is remapped per style too, so the reused desk
+   components (StageItemView, MetricsDashboard, SettingsDialog) dress for
+   the style as well — scoped to .mon-root, so the inline palette the
+   Settings color-theme applies on <html> still wins for anything outside.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════ NIXIE — 琥珀真空管 ═══════════════════════
+   Warm near-black, amber everything, glow where data arrives. */
+
+.theme-nixie .mon-root {
+  --mon-bg: #0c0906;
+  --mon-s1: #150f08;
+  --mon-s2: #1e150b;
+  --mon-s3: #2a1e0f;
+  --mon-bd: rgb(255 170 60 / 0.14);
+  --mon-bd2: rgb(255 170 60 / 0.3);
+  --mon-t: #f5e9cf;
+  --mon-t2: #c9b088;
+  --mon-t3: #8a744f;
+  --mon-think: #d8a86f;
+  --mon-read: #e8c07a;
+  --mon-search: #c9c07a;
+  --mon-edit: #c9d38a;
+  --mon-run: #ffb347;
+  --mon-egg: #e8a08a;
+  --mon-err: #ff9d7a;
+  --mon-acc: #ffb347;
+  /* the desk bridge, warmed */
+  --desk-bg: 12 9 6;
+  --desk-panel: 21 15 8;
+  --desk-panel2: 30 21 11;
+  --desk-deep: 10 7 4;
+  --desk-line: 58 42 20;
+  --desk-ink: 245 233 207;
+  --desk-dim: 138 116 79;
+  --desk-accent: 255 179 71;
+  --desk-ember: 255 157 122;
+  --desk-teal: 201 211 138;
+  --desk-wood: 30 21 11;
+  --desk-wood-lit: 46 33 16;
+  --desk-lavender: 216 168 111;
+}
+
+.theme-nixie .mon-root::before {
+  background:
+    radial-gradient(560px 380px at 18% -6%, rgb(255 150 40 / 0.08), transparent 65%),
+    radial-gradient(480px 340px at 108% 112%, rgb(216 168 111 / 0.08), transparent 65%);
+}
+
+.theme-nixie .mon-root::after {
+  background: radial-gradient(520px 360px at 85% -10%, rgb(255 120 20 / 0.06), transparent 65%);
+}
+
+/* Numbers glow like filaments; status words carry a faint halo. */
+.theme-nixie .mon-runsel__c {
+  color: #ffc873;
+  text-shadow: 0 0 6px rgb(255 166 48 / 0.45);
+}
+
+.theme-nixie .mon-chip--run,
+.theme-nixie .mon-chip--edit {
+  text-shadow: 0 0 7px rgb(255 166 48 / 0.4);
+}
+
+.theme-nixie .drip-root {
+  --drip-s1: #150f08;
+  --drip-s2: #1e150b;
+  --drip-s3: #2a1e0f;
+  --drip-bd: rgb(255 170 60 / 0.14);
+  --drip-bd2: rgb(255 170 60 / 0.3);
+  --drip-t: #f5e9cf;
+  --drip-t2: #c9b088;
+  --drip-t3: #8a744f;
+  --drip-ok: #c9d38a;
+  --drip-listen: #ffb347;
+}
+
+/* Rounds paints its own room — each style re-paints it. */
+.theme-nixie .rounds-root {
+  background: radial-gradient(120% 90% at 50% 0%, #191007, #0c0906 70%);
+}
+
+.theme-nixie .rounds-root::before {
+  background:
+    radial-gradient(900px 620px at 24% 38%, rgb(255 150 40 / 0.07), transparent 65%),
+    radial-gradient(760px 540px at 72% 64%, rgb(216 168 111 / 0.06), transparent 65%);
+}
+
+/* ═══════════════════════ INK — 纸上手绘 ═══════════════════════
+   Paper instead of a void: warm paper, ink strokes, handwriting for the
+   chrome (Caveat for latin, 851手写杂书体 for CJK). */
+
+@font-face {
+  font-family: "Caveat";
+  src: url("/fonts/Caveat-VariableFont_wght.ttf") format("truetype");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "ShouXie851";
+  src: url("/fonts/851ShouXie.ttf") format("truetype");
+  font-display: swap;
+}
+
+.theme-ink {
+  --mon-hand: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
+  color-scheme: light;
+}
+
+.theme-ink body {
+  background: #f1ede1;
+}
+
+.theme-ink .mon-root {
+  --mon-bg: #f1ede1;
+  --mon-s1: #e9e4d5;
+  --mon-s2: #e2dcc9;
+  --mon-s3: #d6cfb8;
+  --mon-bd: #c9c2ab;
+  --mon-bd2: #a89f83;
+  --mon-t: #33302a;
+  --mon-t2: #5c574c;
+  --mon-t3: #8d8672;
+  --mon-think: #8a5a9e;
+  --mon-read: #3f6fa8;
+  --mon-search: #3f8a9e;
+  --mon-edit: #4e7d54;
+  --mon-run: #c07a3a;
+  --mon-egg: #b05a78;
+  --mon-err: #b8453a;
+  --mon-acc: #c65b3f;
+  --desk-bg: 241 237 225;
+  --desk-panel: 233 228 213;
+  --desk-panel2: 226 220 201;
+  --desk-deep: 233 228 213;
+  --desk-line: 180 172 148;
+  --desk-ink: 51 48 42;
+  --desk-dim: 141 134 114;
+  --desk-accent: 63 111 168;
+  --desk-ember: 184 69 58;
+  --desk-teal: 78 125 84;
+  --desk-wood: 216 209 188;
+  --desk-wood-lit: 200 192 170;
+  --desk-lavender: 138 90 158;
+}
+
+/* Paper ambience: warm light pools, a shade brighter than the sheet. */
+.theme-ink .mon-root::before {
+  background:
+    radial-gradient(560px 380px at 18% -6%, rgb(255 252 240 / 0.8), transparent 65%),
+    radial-gradient(480px 340px at 108% 112%, rgb(226 216 190 / 0.5), transparent 65%);
+}
+
+.theme-ink .mon-root::after {
+  background: radial-gradient(520px 360px at 85% -10%, rgb(198 91 63 / 0.06), transparent 65%);
+}
+
+/* The chrome is handwritten; the reading text stays sans for contrast. */
+.theme-ink .mon-chip,
+.theme-ink .mon-btn,
+.theme-ink .mon-cap,
+.theme-ink .mon-sec,
+.theme-ink .mon-fold,
+.theme-ink .mon-runsel,
+.theme-ink .mon-runmenu,
+.theme-ink .mon-feed,
+.theme-ink .rounds-bubble,
+.theme-ink .rounds-card,
+.theme-ink .rounds-dock,
+.theme-ink .drip-card,
+.theme-ink .drip-pill {
+  font-family: var(--mon-hand);
+}
+
+.theme-ink .mon-feed {
+  font-size: 13px;
+}
+
+/* Buttons and chips are drawn, not machined: thicker ink strokes, organic
+   corners, no fills. */
+.theme-ink .mon-btn {
+  border: 1.5px solid #4a463c;
+  border-radius: 8px 11px 7px 10px;
+  background: transparent;
+}
+
+.theme-ink .mon-chip {
+  border: 1.5px solid rgb(51 48 42 / 0.55);
+  background: transparent;
+}
+
+/* The story cards sit on the desk like paper scraps, very slightly askew. */
+.theme-ink .rounds-card:nth-child(odd) {
+  transform: rotate(0.45deg);
+}
+
+.theme-ink .rounds-card:nth-child(even) {
+  transform: rotate(-0.35deg);
+}
+
+.theme-ink .drip-root {
+  --drip-s1: #e9e4d5;
+  --drip-s2: #e2dcc9;
+  --drip-s3: #d6cfb8;
+  --drip-bd: #c9c2ab;
+  --drip-bd2: #a89f83;
+  --drip-t: #33302a;
+  --drip-t2: #5c574c;
+  --drip-t3: #8d8672;
+  --drip-ok: #4e7d54;
+  --drip-listen: #3f6fa8;
+  --drip-run: #c07a3a;
+  --drip-err: #b8453a;
+  background: #f1ede1;
+}
+
+.theme-ink .rounds-root {
+  background: #f1ede1;
+}
+
+.theme-ink .rounds-root::before {
+  background:
+    radial-gradient(900px 620px at 24% 38%, rgb(255 252 240 / 0.9), transparent 65%),
+    radial-gradient(760px 540px at 72% 64%, rgb(226 216 190 / 0.55), transparent 65%);
+}
+
+/* Rounds' hardcoded dark sheets go back to paper: the status bubble, the
+   wallpaper chat bubbles, the story cards and the composer. */
+.theme-ink .rounds-bubble {
+  background: rgb(255 255 255 / 0.8);
+  border-color: #6b6350;
+  box-shadow: 0 8px 20px rgb(51 48 42 / 0.18);
+}
+
+.theme-ink .rounds-bubble--empty {
+  border-style: dashed;
+}
+
+.theme-ink .rounds-bubblewrap--user .rounds-bubble {
+  border-color: rgb(192 122 58 / 0.5);
+  background: rgb(222 146 85 / 0.16);
+}
+
+.theme-ink .rounds-bubblewrap--system .rounds-bubble {
+  background: rgb(255 255 255 / 0.55);
+}
+
+.theme-ink .rounds-card {
+  background: rgb(255 255 255 / 0.75);
+  border-color: #a89f83;
+  box-shadow: 0 6px 16px rgb(51 48 42 / 0.14);
+}
+
+.theme-ink .rounds-inp {
+  background: rgb(255 255 255 / 0.72);
+  border-color: #a89f83;
+  box-shadow: 0 8px 20px rgb(51 48 42 / 0.14);
+}
+
+/* The desk sheet stays a light sheet with dark writing (it is the paper the
+   code is written on) — do not follow the dark-panel remaps. */
+.theme-ink .mon-root {
+  --desk-ink: 246 243 233;
+  --desk-deep: 238 233 219;
+  --desk-dim: 90 85 75;
+}
+
+/* ═══════════════════════ GLASS — 磨砂玻璃 ═══════════════════════
+   Cool dark, translucent panels over bright diffuse light. */
+
+.theme-glass .mon-root {
+  --mon-bg: #0d0f14;
+  --mon-s1: rgb(255 255 255 / 0.045);
+  --mon-s2: rgb(255 255 255 / 0.07);
+  --mon-s3: rgb(255 255 255 / 0.1);
+  --mon-bd: rgb(255 255 255 / 0.1);
+  --mon-bd2: rgb(255 255 255 / 0.18);
+  --mon-t: #eef1f6;
+  --mon-t2: #b6bec9;
+  --mon-t3: #8b94a2;
+  --mon-think: #c9a0e0;
+  --mon-read: #8ab8f5;
+  --mon-search: #6fc4d4;
+  --mon-edit: #8fd0a5;
+  --mon-run: #f0b070;
+  --mon-egg: #efa8c2;
+  --mon-err: #f2887c;
+  --mon-acc: #8ab8f5;
+  --desk-bg: 13 15 20;
+  --desk-panel: 26 30 40;
+  --desk-panel2: 34 39 52;
+  --desk-deep: 9 11 15;
+  --desk-line: 52 60 76;
+  --desk-ink: 238 241 246;
+  --desk-dim: 139 148 162;
+  --desk-accent: 138 184 245;
+  --desk-ember: 242 136 124;
+  --desk-teal: 111 196 212;
+  --desk-wood: 30 35 46;
+  --desk-wood-lit: 44 51 66;
+  --desk-lavender: 201 160 224;
+}
+
+/* Brighter, three-pool ambience: the blur needs something to refract. */
+.theme-glass .mon-root::before {
+  background:
+    radial-gradient(620px 420px at 14% -8%, rgb(106 168 240 / 0.2), transparent 62%),
+    radial-gradient(540px 400px at 108% 114%, rgb(196 149 221 / 0.16), transparent 62%);
+}
+
+.theme-glass .mon-root::after {
+  background: radial-gradient(560px 400px at 74% -12%, rgb(85 193 211 / 0.12), transparent 62%);
+}
+
+/* The bar and the speech bubble are sheets of glass; the rest stays light
+   on purpose — blur on every panel costs more than it shows. */
+.theme-glass .mon-bar {
+  background: rgb(255 255 255 / 0.04);
+  backdrop-filter: blur(14px) saturate(1.5);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  border-bottom-color: rgb(255 255 255 / 0.12);
+}
+
+.theme-glass .rounds-bubble {
+  background: rgb(255 255 255 / 0.06);
+  backdrop-filter: blur(10px) saturate(1.6);
+  -webkit-backdrop-filter: blur(10px) saturate(1.6);
+  border-color: rgb(255 255 255 / 0.16);
+}
+
+.theme-glass .drip-root {
+  --drip-s1: rgb(255 255 255 / 0.05);
+  --drip-s2: rgb(255 255 255 / 0.07);
+  --drip-s3: rgb(255 255 255 / 0.1);
+  --drip-bd: rgb(255 255 255 / 0.1);
+  --drip-bd2: rgb(255 255 255 / 0.18);
+  --drip-t: #eef1f6;
+  --drip-t2: #b6bec9;
+  --drip-t3: #8b94a2;
+  --drip-ok: #8fd0a5;
+  --drip-listen: #8ab8f5;
+  --drip-run: #f0b070;
+  --drip-err: #f2887c;
+}
+
+.theme-glass .rounds-root {
+  background: #0d0f14;
+}
+
+.theme-glass .rounds-root::before {
+  background:
+    radial-gradient(900px 620px at 24% 38%, rgb(106 168 240 / 0.14), transparent 65%),
+    radial-gradient(760px 540px at 72% 64%, rgb(196 149 221 / 0.12), transparent 65%),
+    radial-gradient(560px 420px at 55% 18%, rgb(85 193 211 / 0.08), transparent 70%);
+}
+
+/* ═══════════════════════ shared style features ═══════════════════════ */
+
+/* The riding scrollbar thumb takes the style's ink. */
+.theme-nixie .mon-ridesb__thumb {
+  background: rgb(255 170 60 / 0.32);
+}
+
+.theme-ink .mon-ridesb__thumb {
+  background: rgb(51 48 42 / 0.35);
+}
+
+.theme-glass .mon-ridesb__thumb {
+  background: rgb(255 255 255 / 0.28);
+}

@@ -293,7 +293,7 @@ export function MonitorLeft({
               {run ? (
                 <Nixie
                   value={`R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}`}
-                  variant="plain"
+                 
                 />
               ) : (
                 "—"

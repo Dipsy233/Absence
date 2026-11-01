@@ -12,6 +12,9 @@ import { DripBagIcon } from "../common/DripBagIcon";
 import { Chip, Dot } from "../../ui/shared/atoms";
 import { Nixie } from "../../ui/shared/Nixie";
 import "../../ui/shared/shared.css";
+import "../../ui/shared/themes.css";
+import { UI_STYLES } from "../../lib/uistyle";
+import { useUiStyleStore } from "../../stores/uistyleStore";
 
 /**
  * The one top bar of the faces — Monitor's bar, worn by Rounds and Chart too.
@@ -36,6 +39,8 @@ export function FaceBar() {
   const context = useSessionStore((s) => s.context);
   const observed = useIsObserved();
   const mode = useViewModeStore((s) => s.mode);
+  const uiStyle = useUiStyleStore((s) => s.uiStyle);
+  const setUiStyle = useUiStyleStore((s) => s.setUiStyle);
   const setMode = useViewModeStore((s) => s.setMode);
   const drip = useViewModeStore((s) => s.drip);
   const toggleDrip = useViewModeStore((s) => s.toggleDrip);
@@ -93,6 +98,23 @@ export function FaceBar() {
         <DripBagIcon />
       </button>
 
+      {/* The three complete looks. Clicking the active one returns to the
+          neutral baseline. */}
+      <div className="mon-themes" role="group" aria-label={t("UI style")}>
+        {UI_STYLES.map((id) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={uiStyle === id}
+            data-on={uiStyle === id ? "true" : undefined}
+            onClick={() => setUiStyle(uiStyle === id ? null : id)}
+            title={`${t(id)}${uiStyle === id ? ` — ${t("back to neutral")}` : ""}`}
+          >
+            {t(id)}
+          </button>
+        ))}
+      </div>
+
       <div className="mon-modes" role="group" aria-label={t("Interface mode")}>
         {VIEW_MODES.map((entry) => (
           <button
@@ -114,7 +136,7 @@ export function FaceBar() {
         {/* The used-tokens figure arrives whenever the streaming run spends
             more context: the digits land, the meter is structure. */}
         <span className="mon-mono" style={{ fontSize: 11, color: "var(--mon-t3)" }}>
-          <Nixie value={formatContext(used, total)} variant="plain" />
+          <Nixie value={formatContext(used, total)} />
         </span>
         <span style={{ width: 72, height: 5, borderRadius: 3, background: "var(--mon-s3)", overflow: "hidden" }}>
           <span style={{ display: "block", height: "100%", width: `${percent}%`, background: "var(--mon-acc)" }} />

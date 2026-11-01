@@ -9,6 +9,7 @@ import { formatOffset } from "../../lib/format";
 import { useNow } from "../../hooks/useNow";
 import { Nixie } from "../shared/Nixie";
 import "./drip.css";
+import "../shared/themes.css";
 
 /**
  * Drip — 输液: almost nothing.
@@ -207,7 +208,7 @@ export function DripUI({
                     {elapsed} ·{" "}
                     <Nixie
                       value={`R${run.counts.read} S${run.counts.search} E${run.counts.edit} $${run.counts.run}`}
-                      variant="plain"
+                     
                     />
                   </>
                 ) : (

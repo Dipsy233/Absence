@@ -332,6 +332,45 @@
   opacity: 0.35;
 }
 
+/* The UI-style switcher: same chrome as the mode switcher, sitting beside it.
+   `data-on` (not aria-pressed) marks the active look — clicking it again
+   returns to the neutral baseline, so "pressed" would be a lie half the time
+   a button is clickable. */
+.mon-themes {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 8px;
+  background: var(--mon-bg);
+}
+
+.mon-themes > button {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mon-t3);
+  font: 11.5px/1 var(--mon-sans);
+  white-space: nowrap;
+}
+
+.mon-themes > button:hover {
+  background: var(--mon-s2);
+  color: var(--mon-t);
+}
+
+.mon-themes > button[data-on] {
+  background: var(--mon-s3);
+  color: var(--mon-t);
+  font-weight: 600;
+}
+
 /* Drip's switch: a small IV bag, not a tab. On means the floating window is up
    over this face; off means it is not. It never changes which face you are on.
 

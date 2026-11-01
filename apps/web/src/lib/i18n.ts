@@ -540,6 +540,11 @@ const ZH: Record<string, string> = {
   APPEARANCE: "外观",
   "Language · 语言": "Language · 语言",
   "Color theme": "颜色主题",
+  "UI style": "界面风格",
+  Nixie: "辉光管",
+  Ink: "手绘墨水",
+  Glass: "玻璃弥散",
+  "back to neutral": "回到默认",
   "render markdown": "渲染 Markdown",
   "draw the agent's replies as Markdown — headings, lists, code blocks, tables — instead of raw text. Links and paths open on the Stage.":
     "把智能体的回复按 Markdown 绘制——标题、列表、代码块、表格——而不是纯文本。链接和路径会在 Stage 打开。",

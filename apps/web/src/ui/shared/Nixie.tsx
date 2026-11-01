@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { prefersReducedMotion } from "../../lib/anim";
+import { useUiStyleStore } from "../../stores/uistyleStore";
 
 /* ══════════════════════════════════════════════════════════════════════════
    Nixie — the arrival effect for a fixed-width field (a counter line, a
@@ -30,17 +31,20 @@ const poolFor = (c: string): string =>
 
 export function Nixie({
   value,
-  variant = "tube",
+  variant = "auto",
   ms = 500,
   className,
 }: {
   value: string | number;
-  /** "tube" renders glowing cells; "plain" scrambles in the ambient type. */
-  variant?: "tube" | "plain";
+  /** "tube" renders glowing cells; "plain" scrambles in the ambient type;
+      "auto" follows the UI style (tubes under Nixie, plain elsewhere). */
+  variant?: "tube" | "plain" | "auto";
   /** Total scramble duration in ms. */
   ms?: number;
   className?: string;
 }) {
+  const uiStyle = useUiStyleStore((s) => s.uiStyle);
+  const resolved = variant === "auto" ? (uiStyle === "nixie" ? "tube" : "plain") : variant;
   const ref = useRef<HTMLSpanElement | null>(null);
   const text = String(value);
 
@@ -112,7 +116,7 @@ export function Nixie({
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [text, variant, ms]);
+  }, [text, resolved, ms]);
 
   return (
     <span className={`mon-nix mon-nix--${variant}${className ? ` ${className}` : ""}`}>

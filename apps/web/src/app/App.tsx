@@ -11,6 +11,7 @@ import { ChartUI } from "../ui/chart/ChartUI";
 import { DripPipHost } from "../ui/drip/DripPip";
 import { DripDesktop } from "../ui/drip/DripDesktop";
 import { FaceRise } from "../ui/shared/FaceRise";
+import { useUiStyleStore } from "../stores/uistyleStore";
 
 /**
  * The desktop shell opens Drip as a second window: it loads this same app with
@@ -44,6 +45,15 @@ export default function App() {
   // The floating window has its own session and its own chimes; muting the face
   // underneath keeps every event from ringing twice while Drip is up.
   useSounds(!(desktop && drip));
+
+  // The UI style is a class on <html>: themes.css remaps the face tokens
+  // under it, every face and the drip window read the same palette.
+  const uiStyle = useUiStyleStore((s) => s.uiStyle);
+  useEffect(() => {
+    const el = document.documentElement;
+    el.classList.remove("theme-nixie", "theme-ink", "theme-glass");
+    if (uiStyle) el.classList.add(`theme-${uiStyle}`);
+  }, [uiStyle]);
 
   // The desktop shell opens Drip as a second always-on-top window. The face
   // underneath stays open and live — turning the switch off closes only the
