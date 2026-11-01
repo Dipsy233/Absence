@@ -250,12 +250,16 @@
   }
 }
 
-/* 铆钉装饰角：panel 四角各一颗小铆钉——background-image 的四个 radial
-   点位，不占布局、不碰内容（panel 自带 overflow-hidden，pseudo 不外溢）。 */
-.theme-nixie .panel {
+/* 铆钉装饰角：panel / Stage 内容页 / Rounds 窗口体的四角各一颗小铆钉
+   ——background-image 的四个 radial 点位，不占布局、不碰内容。 */
+.theme-nixie .panel,
+.theme-nixie .mon-stagebody,
+.theme-nixie .rounds-win {
   position: relative;
 }
-.theme-nixie .panel::before {
+.theme-nixie .panel::before,
+.theme-nixie .mon-stagebody::before,
+.theme-nixie .rounds-win::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -896,12 +900,14 @@
   background-position: 0% 0;
 }
 
-/* 棱镜光晕：panel 悬停时边缘透出一道彩虹折射——静态 conic 渐变从中心
-   缩放淡入（panel 自带 overflow-hidden，光晕不出界）。 */
-.theme-glass .panel {
+/* 棱镜光晕：panel / Stage 内容页悬停时边缘透出一道彩虹折射——静态
+   conic 渐变从中心缩放淡入（两者自带 overflow-hidden，光晕不出界）。 */
+.theme-glass .panel,
+.theme-glass .mon-stagebody {
   position: relative;
 }
-.theme-glass .panel::before {
+.theme-glass .panel::before,
+.theme-glass .mon-stagebody::before {
   content: "";
   position: absolute;
   inset: -60%;
@@ -920,9 +926,32 @@
     transform 0.4s ease;
   pointer-events: none;
 }
-.theme-glass .panel:hover::before {
+.theme-glass .panel:hover::before,
+.theme-glass .mon-stagebody:hover::before {
   opacity: 1;
   transform: scale(1);
+}
+
+/* Rounds 窗口体的收敛变体：窗口不裁溢出，光晕收在窗口自己的圆角内。 */
+.theme-glass .rounds-win::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgb(138 184 245 / 0.08) 40deg,
+    rgb(160 80 255 / 0.06) 80deg,
+    rgb(0 200 240 / 0.08) 120deg,
+    transparent 160deg
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.theme-glass .rounds-win:hover::before {
+  opacity: 1;
 }
 
 /* 折射线：阳光穿过玻璃打到桌面的焦散——两道极淡的斜向光束叠进
