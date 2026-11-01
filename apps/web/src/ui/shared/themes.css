@@ -302,40 +302,8 @@
     0 0 7px -2px rgb(255 150 40 / 0.5);
 }
 
-/* 辉光管在 light 色系下的读数：管的底色是半透明黑，落在浅色纸面上
-   会变成中间调，琥珀数字随之失效——light 下换成实心黄铜管、深棕数字。 */
-.theme-nixie.scheme-light .mon-nix--tube .mon-nix__cell {
-  background: linear-gradient(180deg, #f4e9c8, #e6d6ae 55%, #eeddb8);
-  color: #5f430e;
-  text-shadow: 0 1px 0 rgb(255 255 255 / 0.35);
-  box-shadow:
-    inset 0 0 0.5em rgb(122 94 40 / 0.18),
-    inset 0 1px 0 rgb(255 255 255 / 0.5),
-    0 0 0 1px rgb(122 94 40 / 0.35);
-}
-.theme-nixie.scheme-light .mon-nix--tube .mon-nix__cell--settled {
-  animation-name: mon-nix-filament-light;
-}
-.theme-nixie.scheme-light .mon-nix--tube .mon-nix__cell--flash {
-  color: #3a2a08;
-}
-
-@keyframes mon-nix-filament-light {
-  0%,
-  88%,
-  100% {
-    filter: brightness(1);
-  }
-  91% {
-    filter: brightness(0.86);
-  }
-  93% {
-    filter: brightness(1.05);
-  }
-  96% {
-    filter: brightness(0.92);
-  }
-}
+/* 辉光管的读数：管的玻璃现在是实心暗渐变（见 shared.css），落在纸面
+   上也是暗管亮字——两种色系一套外观，数字永远可读。 */
 
 /* Rounds 的气泡与输入条是硬编码暗面——light 色系下翻成各自的亮面。 */
 /* Rounds 的房间与 dock 条在 light 色系下也要跟着翻面。 */
@@ -690,6 +658,21 @@
 .theme-ink input,
 .theme-ink textarea {
   caret-color: var(--mon-acc);
+}
+
+/* 手工涂色：时间线的色块不是实心色票——同色墨线勾一个歪歪扭扭的边，
+   里面用 45° 排线一笔一笔涂出来（彩笔填色的样子）。currentColor 就是
+   各块自己的语义色，egg 的斜纹变体也被这套统一掉。 */
+.theme-ink .mon-tl__blk,
+.theme-ink .chart-blk {
+  background-color: color-mix(in srgb, currentColor 12%, transparent);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 2.5px,
+    color-mix(in srgb, currentColor 70%, transparent) 2.5px 4px
+  );
+  border: 1.2px solid currentColor;
+  border-radius: 3px 5px 3px 5px / 5px 3px 5px 3px;
 }
 
 /* 便利贴折角：Drip 卡右下角折了一角——纸色三角盖住卡角，旁边一条
