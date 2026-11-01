@@ -592,6 +592,34 @@
   color: var(--mon-t, currentColor);
 }
 
+/* ── Panel power-on (the m2 flick) ────────────────────────────────────────
+   A page that mounts does not fade in: it snaps through the 4-frame alpha
+   sequence of a device being switched on ([.7, .1, 1, .45, 1], ~66ms a
+   frame), then holds. Deliberate page swaps only — live-following content
+   remounts on its own cadence and must never flicker. */
+.mon-flick {
+  animation: mon-flick 0.33s linear both;
+}
+
+@keyframes mon-flick {
+  0% {
+    opacity: 0.7;
+  }
+  16% {
+    opacity: 0.1;
+  }
+  33% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+  66%,
+  100% {
+    opacity: 1;
+  }
+}
+
 /* The tube variant: each character in a glowing vacuum-tube cell. Sizes are
    em-based, so a tube line scales with whatever font-size renders it. */
 .mon-nix--tube .mon-nix__cell {

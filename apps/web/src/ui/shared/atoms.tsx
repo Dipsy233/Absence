@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { RunSummary } from "@absence/core";
 import type { Attention, AttentionReason } from "../../types/report";
 import type { ActivityRow } from "../../types/stage";
+import { clamp } from "../../lib/anim";
 import { useT } from "../../lib/i18n";
 import { ATTENTION_REASON_TEXT } from "../../lib/attention";
 
@@ -140,6 +141,74 @@ export function Spark({
       aria-hidden
     >
       <path d={`M${points}`} fill="none" stroke="currentColor" strokeWidth={1.5} className={`mon-chip--${tone}`} />
+    </svg>
+  );
+}
+
+/**
+ * A gauge arc — the instrument reading a sparkline summarises.
+ *
+ * The value is swept onto a 230° dial (lower-left, over the top, lower-right)
+ * against a known ceiling, with a dot riding the arc's end. `pathLength=100`
+ * makes the fill a dasharray fraction, so the sweep eases to each new value
+ * by transition — no per-frame redraw. Drawn in `currentColor`; the caller
+ * sets the colour (the Usage panel passes its metric colour).
+ */
+export function Gauge({
+  fraction,
+  height = 46,
+  tone = "run",
+}: {
+  /** 0–1 against the dial's ceiling (the caller knows what that is). */
+  fraction: number;
+  height?: number;
+  tone?: MonTone;
+}) {
+  const frac = clamp(Number.isFinite(fraction) ? fraction : 0);
+  const CX = 50;
+  const CY = 46;
+  const R = 40;
+  const A0 = 205;
+  const SWEEP = 230;
+  const px = (deg: number, r: number) => +(CX + r * Math.cos((deg * Math.PI) / 180)).toFixed(2);
+  const py = (deg: number, r: number) => +(CY + r * Math.sin((deg * Math.PI) / 180)).toFixed(2);
+  const d = `M ${px(A0, R)} ${py(A0, R)} A ${R} ${R} 0 1 1 ${px(A0 + SWEEP, R)} ${py(A0 + SWEEP, R)}`;
+  const tip = A0 + SWEEP * frac;
+  return (
+    <svg
+      viewBox="0 0 100 48"
+      preserveAspectRatio="xMidYMid meet"
+      style={{ display: "block", width: "100%", height }}
+      aria-hidden
+      className={`mon-chip--${tone}`}
+    >
+      {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+        const deg = A0 + SWEEP * f;
+        return (
+          <line
+            key={f}
+            x1={px(deg, R + 2)}
+            y1={py(deg, R + 2)}
+            x2={px(deg, R + 6.5)}
+            y2={py(deg, R + 6.5)}
+            stroke="currentColor"
+            strokeOpacity={0.35}
+            strokeWidth={1.4}
+          />
+        );
+      })}
+      <path d={d} fill="none" stroke="currentColor" strokeOpacity={0.22} strokeWidth={5} strokeLinecap="round" />
+      <path
+        d={d}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={5}
+        strokeLinecap="round"
+        pathLength={100}
+        strokeDasharray={`${(frac * 100).toFixed(1)} 100`}
+        style={{ transition: "stroke-dasharray 0.6s ease" }}
+      />
+      <circle cx={px(tip, R)} cy={py(tip, R)} r={3} fill="currentColor" />
     </svg>
   );
 }

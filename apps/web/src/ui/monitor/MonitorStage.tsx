@@ -296,12 +296,19 @@ export function MonitorStage({ data }: { data: MonitorData }) {
             // METRICS is the one tab that is not a view of the activity: it is
             // the metrics dashboard, the Stage's own default page, and it is
             // what you look at when the question is "what is this costing"
-            // rather than "what did it do".
-            <MetricsDashboard embedded />
+            // rather than "what did it do". The keyed wrapper is what makes the
+            // page switch a *mount* — and so what powers it on (`.mon-flick`).
+            // The activity view deliberately has no wrapper: it re-renders on
+            // the agent's cadence and must never flicker.
+            <div className="mon-flick mon-sheet__page" key="metrics">
+              <MetricsDashboard embedded />
+            </div>
           ) : tab === "chat" ? (
             // CHAT is the conversation, given the whole sheet: reading
             // what was said is a page, not a strip over the trace.
-            <ChatThread stamp />
+            <div className="mon-flick mon-sheet__page" key="chat">
+              <ChatThread stamp />
+            </div>
           ) : shownItem ? (
             <StageItemView key={shownItem.id} item={shownItem} />
           ) : (

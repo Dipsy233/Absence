@@ -1,11 +1,13 @@
 import { useMemo } from "react";
 import { formatBytes } from "../../lib/metrics";
 import { formatPercent, usageSummary } from "../../lib/metrics";
+import { clamp } from "../../lib/anim";
 import { useNow } from "../../hooks/useNow";
 import { useMetricsStore } from "../../stores/metricsStore";
+import { useUiStyleStore } from "../../stores/uistyleStore";
 import { CPU_COLOR, MEM_COLOR } from "../../lib/metricColors";
 import { useT } from "../../lib/i18n";
-import { Spark } from "../../ui/shared/atoms";
+import { Gauge, Spark } from "../../ui/shared/atoms";
 
 /**
  * The cost panel: CPU and memory for the watched scope, as one row of labels
@@ -34,6 +36,7 @@ export function Usage() {
   const selectedEggPid = useMetricsStore((s) => s.selectedEggPid);
   const frames = useMetricsStore.getState().frames;
   const now = useNow(2000);
+  const uiStyle = useUiStyleStore((s) => s.uiStyle);
 
   const { cores, avgCores, memMiB, peakMiB, cpuSpark, memSpark, cpuCount, scope } = useMemo(
     () => usageSummary(frames, selectedEggPid),
@@ -44,6 +47,14 @@ export function Usage() {
   );
 
   const name = scope ?? t("Agent");
+
+  // The gauge's dial is "against a known ceiling": CPU against the machine's
+  // core count, memory against this session's own peak. Under Nixie the
+  // sparklines become these dials — the instrument reading of the same data;
+  // every other style keeps the spark.
+  const gauge = uiStyle === "nixie";
+  const cpuFrac = clamp(cores / Math.max(1, cpuCount));
+  const memFrac = peakMiB > 0 ? clamp(memMiB / peakMiB) : 0;
 
   return (
     <div className="mon-met">
@@ -67,7 +78,15 @@ export function Usage() {
               {t("avg")} {formatPercent((avgCores / Math.max(1, cpuCount)) * 100)}
             </small>
           )}
-          {frames.length > 0 ? <Spark values={cpuSpark} tone="run" /> : null}
+          {frames.length > 0 ? (
+            gauge ? (
+              <span style={{ color: CPU_COLOR, display: "block" }}>
+                <Gauge fraction={cpuFrac} tone="run" />
+              </span>
+            ) : (
+              <Spark values={cpuSpark} tone="run" />
+            )
+          ) : null}
         </div>
 
         <div className="mon-met__cell mon-met__cell--end">
@@ -75,7 +94,15 @@ export function Usage() {
             {frames.length === 0 ? "—" : formatBytes(memMiB * 1024 * 1024)}
           </b>
           {frames.length === 0 ? <small>&nbsp;</small> : <small>{`${t("peak")} ${Math.round(peakMiB)}`}</small>}
-          {frames.length > 0 ? <Spark values={memSpark} tone="read" /> : null}
+          {frames.length > 0 ? (
+            gauge ? (
+              <span style={{ color: MEM_COLOR, display: "block" }}>
+                <Gauge fraction={memFrac} tone="read" />
+              </span>
+            ) : (
+              <Spark values={memSpark} tone="read" />
+            )
+          ) : null}
         </div>
       </div>
     </div>

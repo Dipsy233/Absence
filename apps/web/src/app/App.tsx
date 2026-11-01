@@ -11,6 +11,7 @@ import { ChartUI } from "../ui/chart/ChartUI";
 import { DripPipHost } from "../ui/drip/DripPip";
 import { DripDesktop } from "../ui/drip/DripDesktop";
 import { FaceRise } from "../ui/shared/FaceRise";
+import { InkBoil } from "../ui/shared/InkBoil";
 import { defaultScheme, UI_STYLES } from "../lib/uistyle";
 import { useUiStyleStore } from "../stores/uistyleStore";
 
@@ -93,6 +94,8 @@ export default function App() {
 
   /** The browser build's Drip: a Document PiP window over the tab's face. */
   const pip = !desktop && drip ? <DripPipHost /> : null;
+  /** The ink theme's line-boil filter source — one hidden SVG for the app. */
+  const boil = <InkBoil />;
 
   if (mode === "monitor") {
     return (
@@ -101,6 +104,7 @@ export default function App() {
           <MonitorUI />
         </FaceRise>
         <ContextMenu />
+        {boil}
         {pip}
       </>
     );
@@ -113,6 +117,7 @@ export default function App() {
           <RoundsUI />
         </FaceRise>
         <ContextMenu />
+        {boil}
         {pip}
       </>
     );
@@ -125,6 +130,7 @@ export default function App() {
           <ChartUI />
         </FaceRise>
         <ContextMenu />
+        {boil}
         {pip}
       </>
     );
@@ -139,6 +145,7 @@ export default function App() {
           <MonitorUI />
         </FaceRise>
       <ContextMenu />
+      {boil}
       {pip}
     </>
   );

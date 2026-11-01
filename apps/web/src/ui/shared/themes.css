@@ -16,103 +16,106 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════ NIXIE ═══════════════════════════════
-   老式机械：琥珀真空管、铆接金属板、刻蚀黄铜字。dark 为基调。 */
+   铜绿仪器台：氧化铜底板、琥珀真空管数字、多色仪表灯。dark 为基调。
+   （dark 不再是纯琥珀暗室——底色带铜锈绿，语义色各自对应一颗独立的
+   仪表灯，与琥珀前景形成互补对比，面板之间可辨。） */
 
 .theme-nixie .mon-root {
-  --mon-bg: #0c0906;
-  --mon-s1: #150f08;
-  --mon-s2: #1e150b;
-  --mon-s3: #2a1e0f;
-  --mon-bd: rgb(255 170 60 / 0.24);
-  --mon-bd2: rgb(255 170 60 / 0.45);
-  --mon-t: #f5e9cf;
-  --mon-t2: #d9c298;
-  --mon-t3: #b09468;
-  --mon-think: #d8a86f;
-  --mon-read: #e8c07a;
-  --mon-search: #c9c07a;
-  --mon-edit: #c9d38a;
+  --mon-bg: #060d0b;
+  --mon-s1: #0c1610;
+  --mon-s2: #111f16;
+  --mon-s3: #182b1d;
+  --mon-bd: rgb(80 200 120 / 0.22);
+  --mon-bd2: rgb(80 200 120 / 0.48);
+  --mon-t: #e8f5ee;
+  --mon-t2: #9ecfb2;
+  --mon-t3: #5e9475;
+  --mon-think: #e8b4ff;
+  --mon-read: #7dd8f8;
+  --mon-search: #40e8d0;
+  --mon-edit: #a8e878;
   --mon-run: #ffb347;
-  --mon-egg: #e8a08a;
-  --mon-err: #ff9d7a;
-  --mon-acc: #ffb347;
-  --desk-bg: 12 9 6;
-  --desk-panel: 21 15 8;
-  --desk-panel2: 30 21 11;
-  --desk-deep: 10 7 4;
-  --desk-line: 62 46 22;
-  --desk-ink: 245 233 207;
-  --desk-dim: 176 148 104;
-  --desk-accent: 255 179 71;
-  --desk-ember: 255 157 122;
-  --desk-teal: 201 211 138;
-  --desk-wood: 30 21 11;
-  --desk-wood-lit: 46 33 16;
-  --desk-lavender: 216 168 111;
+  --mon-egg: #f0a0d0;
+  --mon-err: #ff6060;
+  --mon-acc: #40e8d0;
+  --desk-bg: 6 13 11;
+  --desk-panel: 12 22 16;
+  --desk-panel2: 24 43 29;
+  --desk-deep: 4 8 7;
+  --desk-line: 47 90 68;
+  --desk-ink: 232 245 238;
+  --desk-dim: 94 148 117;
+  --desk-accent: 64 232 208;
+  --desk-ember: 255 96 96;
+  --desk-teal: 168 232 120;
+  --desk-wood: 24 43 29;
+  --desk-wood-lit: 34 60 42;
+  --desk-lavender: 232 180 255;
 }
 
 .theme-nixie .mon-root::before {
   background:
-    radial-gradient(560px 380px at 18% -6%, rgb(255 150 40 / 0.09), transparent 65%),
-    radial-gradient(480px 340px at 108% 112%, rgb(216 168 111 / 0.09), transparent 65%);
+    radial-gradient(600px 400px at 10% -5%, rgb(64 232 180 / 0.12), transparent 60%),
+    radial-gradient(500px 380px at 110% 112%, rgb(255 179 71 / 0.1), transparent 60%);
 }
 
 .theme-nixie .mon-root::after {
-  background: radial-gradient(520px 360px at 85% -10%, rgb(255 120 20 / 0.06), transparent 65%);
+  background: radial-gradient(480px 340px at 80% -8%, rgb(232 100 240 / 0.07), transparent 60%);
 }
 
 .theme-nixie .chart-root {
-  --ch-bg: #0c0906;
-  --ch-s1: #150f08;
-  --ch-s2: #1e150b;
-  --ch-s3: #2a1e0f;
-  --ch-bd: rgb(255 170 60 / 0.24);
-  --ch-bd2: rgb(255 170 60 / 0.45);
-  --ch-t: #f5e9cf;
-  --ch-t2: #d9c298;
-  --ch-t3: #b09468;
-  --ch-think: #d8a86f;
-  --ch-read: #e8c07a;
-  --ch-search: #c9c07a;
-  --ch-edit: #c9d38a;
+  --ch-bg: #060d0b;
+  --ch-s1: #0c1610;
+  --ch-s2: #111f16;
+  --ch-s3: #182b1d;
+  --ch-bd: rgb(80 200 120 / 0.22);
+  --ch-bd2: rgb(80 200 120 / 0.48);
+  --ch-t: #e8f5ee;
+  --ch-t2: #9ecfb2;
+  --ch-t3: #5e9475;
+  --ch-think: #e8b4ff;
+  --ch-read: #7dd8f8;
+  --ch-search: #40e8d0;
+  --ch-edit: #a8e878;
   --ch-run: #ffb347;
-  --ch-egg: #e8a08a;
-  --ch-err: #ff9d7a;
-  --ch-acc: #ffb347;
+  --ch-egg: #f0a0d0;
+  --ch-err: #ff6060;
+  --ch-acc: #40e8d0;
 }
 
-/* nixie · light：老黄铜仪器摆在米纸上。 */
+/* nixie · light：牛皮纸上的黄铜精密仪器——收紧为"牛皮+雕版"，语义色是
+   维多利亚科学插画的彩墨，不再是暗棕。 */
 .theme-nixie.scheme-light .mon-root {
-  --mon-bg: #f2ead8;
-  --mon-s1: #eae1cb;
-  --mon-s2: #e0d5b8;
-  --mon-s3: #d2c4a0;
-  --mon-bd: #c2b28a;
-  --mon-bd2: #9a8858;
-  --mon-t: #2b2312;
-  --mon-t2: #554628;
-  --mon-t3: #77653d;
-  --mon-think: #8a5f28;
-  --mon-read: #7a6414;
-  --mon-search: #5f7a1c;
-  --mon-edit: #47751c;
-  --mon-run: #a5650f;
-  --mon-egg: #a3523a;
-  --mon-err: #ad4226;
-  --mon-acc: #8a5c10;
-  --desk-bg: 242 234 216;
-  --desk-panel: 234 225 203;
-  --desk-panel2: 224 213 184;
-  --desk-deep: 234 225 203;
-  --desk-line: 194 178 138;
-  --desk-ink: 43 35 18;
-  --desk-dim: 119 101 61;
-  --desk-accent: 138 92 16;
-  --desk-ember: 173 66 38;
-  --desk-teal: 71 117 28;
-  --desk-wood: 224 213 184;
-  --desk-wood-lit: 210 198 168;
-  --desk-lavender: 138 95 40;
+  --mon-bg: #f5ead0;
+  --mon-s1: #ede0c0;
+  --mon-s2: #e3d3a8;
+  --mon-s3: #d4c08a;
+  --mon-bd: #a8844a;
+  --mon-bd2: #7a5e28;
+  --mon-t: #1e1508;
+  --mon-t2: #4a3618;
+  --mon-t3: #7a5e30;
+  --mon-think: #8b3a9e;
+  --mon-read: #1e5ea8;
+  --mon-search: #166e78;
+  --mon-edit: #2e7840;
+  --mon-run: #c47010;
+  --mon-egg: #a8365e;
+  --mon-err: #c03020;
+  --mon-acc: #a86018;
+  --desk-bg: 245 234 208;
+  --desk-panel: 237 224 192;
+  --desk-panel2: 227 211 168;
+  --desk-deep: 227 211 168;
+  --desk-line: 168 132 74;
+  --desk-ink: 30 21 8;
+  --desk-dim: 122 94 48;
+  --desk-accent: 168 96 24;
+  --desk-ember: 192 48 32;
+  --desk-teal: 46 120 64;
+  --desk-wood: 227 211 168;
+  --desk-wood-lit: 212 192 138;
+  --desk-lavender: 139 58 158;
 }
 
 .theme-nixie.scheme-light .mon-root::before {
@@ -126,23 +129,23 @@
 }
 
 .theme-nixie.scheme-light .chart-root {
-  --ch-bg: #f2ead8;
-  --ch-s1: #eae1cb;
-  --ch-s2: #e0d5b8;
-  --ch-s3: #d2c4a0;
-  --ch-bd: #c2b28a;
-  --ch-bd2: #9a8858;
-  --ch-t: #2b2312;
-  --ch-t2: #554628;
-  --ch-t3: #77653d;
-  --ch-think: #8a5f28;
-  --ch-read: #7a6414;
-  --ch-search: #5f7a1c;
-  --ch-edit: #47751c;
-  --ch-run: #a5650f;
-  --ch-egg: #a3523a;
-  --ch-err: #ad4226;
-  --ch-acc: #8a5c10;
+  --ch-bg: #f5ead0;
+  --ch-s1: #ede0c0;
+  --ch-s2: #e3d3a8;
+  --ch-s3: #d4c08a;
+  --ch-bd: #a8844a;
+  --ch-bd2: #7a5e28;
+  --ch-t: #1e1508;
+  --ch-t2: #4a3618;
+  --ch-t3: #7a5e30;
+  --ch-think: #8b3a9e;
+  --ch-read: #1e5ea8;
+  --ch-search: #166e78;
+  --ch-edit: #2e7840;
+  --ch-run: #c47010;
+  --ch-egg: #a8365e;
+  --ch-err: #c03020;
+  --ch-acc: #a86018;
 }
 
 /* nixie · 机械朋克控件：铆接板、刻蚀字、辉光数据。 */
@@ -279,7 +282,7 @@
 }
 
 .theme-ink body {
-  background: #f1ede1;
+  background: #f7f3e8;
 }
 
 /* 噪点：纸的纹理，盖在一切之上（含设置面板），纯装饰。 */
@@ -295,40 +298,40 @@
 }
 
 .theme-ink .mon-root {
-  --mon-bg: #f1ede1;
-  --mon-s1: #e9e4d5;
-  --mon-s2: #e2dcc9;
-  --mon-s3: #d6cfb8;
-  --mon-bd: #b3aa8e;
-  --mon-bd2: #877e64;
-  --mon-t: #2f2c26;
-  --mon-t2: #504b40;
-  --mon-t3: #6f6857;
-  --mon-think: #7d4f92;
-  --mon-read: #33639e;
-  --mon-search: #2e7f8f;
-  --mon-edit: #3f7a4c;
-  --mon-run: #b06e30;
-  --mon-egg: #a34f6e;
-  --mon-err: #b03e33;
-  --mon-acc: #b5532f;
+  --mon-bg: #f7f3e8;
+  --mon-s1: #eee8d4;
+  --mon-s2: #e6dfc4;
+  --mon-s3: #d8d0b0;
+  --mon-bd: #b8a882;
+  --mon-bd2: #8a7858;
+  --mon-t: #26231c;
+  --mon-t2: #4e4838;
+  --mon-t3: #7a7060;
+  --mon-think: #9040b8;
+  --mon-read: #2855b8;
+  --mon-search: #0e8a9a;
+  --mon-edit: #2e8a50;
+  --mon-run: #c86820;
+  --mon-egg: #b8386e;
+  --mon-err: #c0302a;
+  --mon-acc: #c86820;
   /* 全部文字都是手写：sans 与 mono 两个栈都换成手写族。代码纸单里的
      Monaco 编辑器与 tailwind 的 font-mono 走自己的栈，不受影响。 */
   --mon-sans: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
   --mon-mono: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
-  --desk-bg: 241 237 225;
-  --desk-panel: 246 243 233;
-  --desk-panel2: 238 233 219;
-  --desk-deep: 238 233 219;
-  --desk-line: 179 170 142;
-  --desk-ink: 47 44 38;
-  --desk-dim: 111 104 87;
-  --desk-accent: 181 83 47;
-  --desk-ember: 176 62 51;
-  --desk-teal: 63 122 76;
-  --desk-wood: 233 228 213;
-  --desk-wood-lit: 219 213 195;
-  --desk-lavender: 125 79 146;
+  --desk-bg: 247 243 232;
+  --desk-panel: 238 232 212;
+  --desk-panel2: 230 223 196;
+  --desk-deep: 230 223 196;
+  --desk-line: 184 168 130;
+  --desk-ink: 38 35 28;
+  --desk-dim: 122 112 96;
+  --desk-accent: 200 104 32;
+  --desk-ember: 192 48 42;
+  --desk-teal: 46 138 80;
+  --desk-wood: 230 223 196;
+  --desk-wood-lit: 216 208 176;
+  --desk-lavender: 144 64 184;
 }
 
 .theme-ink .mon-root::before {
@@ -342,67 +345,68 @@
 }
 
 .theme-ink .chart-root {
-  --ch-bg: #f1ede1;
-  --ch-s1: #e9e4d5;
-  --ch-s2: #e2dcc9;
-  --ch-s3: #d6cfb8;
-  --ch-bd: #b3aa8e;
-  --ch-bd2: #877e64;
-  --ch-t: #2f2c26;
-  --ch-t2: #504b40;
-  --ch-t3: #6f6857;
-  --ch-think: #7d4f92;
-  --ch-read: #33639e;
-  --ch-search: #2e7f8f;
-  --ch-edit: #3f7a4c;
-  --ch-run: #b06e30;
-  --ch-egg: #a34f6e;
-  --ch-err: #b03e33;
-  --ch-acc: #b5532f;
+  --ch-bg: #f7f3e8;
+  --ch-s1: #eee8d4;
+  --ch-s2: #e6dfc4;
+  --ch-s3: #d8d0b0;
+  --ch-bd: #b8a882;
+  --ch-bd2: #8a7858;
+  --ch-t: #26231c;
+  --ch-t2: #4e4838;
+  --ch-t3: #7a7060;
+  --ch-think: #9040b8;
+  --ch-read: #2855b8;
+  --ch-search: #0e8a9a;
+  --ch-edit: #2e8a50;
+  --ch-run: #c86820;
+  --ch-egg: #b8386e;
+  --ch-err: #c0302a;
+  --ch-acc: #c86820;
   --ch-sans: var(--mon-hand);
   --ch-mono: var(--mon-hand);
 }
 
-/* ink · dark：黑板与粉笔——同一个手，换一块板。 */
+/* ink · dark：夜晚的蓝黑墨水瓶——墨水色的底、月白的粉笔、荧光水彩。
+   （不再是冷黑板：深海军蓝底让"夜色书房"的气质回来。） */
 .theme-ink.scheme-dark {
   color-scheme: dark;
 }
 
 .theme-ink.scheme-dark body {
-  background: #191a1c;
+  background: #0f1320;
 }
 
 .theme-ink.scheme-dark .mon-root {
-  --mon-bg: #191a1c;
-  --mon-s1: #212225;
-  --mon-s2: #27292c;
-  --mon-s3: #323438;
-  --mon-bd: #42454b;
-  --mon-bd2: #606369;
-  --mon-t: #eae7dc;
-  --mon-t2: #bab7ab;
-  --mon-t3: #918e82;
-  --mon-think: #c9a0e0;
-  --mon-read: #8ab8f5;
-  --mon-search: #6fc4d4;
-  --mon-edit: #8fd0a5;
-  --mon-run: #f0b070;
-  --mon-egg: #efa8c2;
-  --mon-err: #f2887c;
-  --mon-acc: #d8d5cc;
-  --desk-bg: 25 26 28;
-  --desk-panel: 33 34 37;
-  --desk-panel2: 39 41 44;
-  --desk-deep: 22 23 25;
-  --desk-line: 66 69 75;
-  --desk-ink: 234 231 220;
-  --desk-dim: 145 142 130;
-  --desk-accent: 216 213 204;
-  --desk-ember: 242 136 124;
-  --desk-teal: 143 208 165;
-  --desk-wood: 39 41 44;
-  --desk-wood-lit: 50 52 56;
-  --desk-lavender: 201 160 224;
+  --mon-bg: #0f1320;
+  --mon-s1: #161c2e;
+  --mon-s2: #1d2438;
+  --mon-s3: #263044;
+  --mon-bd: #384a68;
+  --mon-bd2: #506080;
+  --mon-t: #f0ede0;
+  --mon-t2: #c0b898;
+  --mon-t3: #8a8070;
+  --mon-think: #d080f8;
+  --mon-read: #70b8ff;
+  --mon-search: #40d8e8;
+  --mon-edit: #80e8a0;
+  --mon-run: #ffb060;
+  --mon-egg: #f8a0c8;
+  --mon-err: #ff7070;
+  --mon-acc: #f0ede0;
+  --desk-bg: 15 19 32;
+  --desk-panel: 22 28 46;
+  --desk-panel2: 29 36 56;
+  --desk-deep: 11 14 24;
+  --desk-line: 80 95 128;
+  --desk-ink: 240 237 224;
+  --desk-dim: 138 128 112;
+  --desk-accent: 240 237 224;
+  --desk-ember: 255 112 112;
+  --desk-teal: 128 232 160;
+  --desk-wood: 29 36 56;
+  --desk-wood-lit: 38 48 68;
+  --desk-lavender: 208 128 248;
 }
 
 .theme-ink.scheme-dark .mon-root::before {
@@ -412,23 +416,23 @@
 }
 
 .theme-ink.scheme-dark .chart-root {
-  --ch-bg: #191a1c;
-  --ch-s1: #212225;
-  --ch-s2: #27292c;
-  --ch-s3: #323438;
-  --ch-bd: #42454b;
-  --ch-bd2: #606369;
-  --ch-t: #eae7dc;
-  --ch-t2: #bab7ab;
-  --ch-t3: #918e82;
-  --ch-think: #c9a0e0;
-  --ch-read: #8ab8f5;
-  --ch-search: #6fc4d4;
-  --ch-edit: #8fd0a5;
-  --ch-run: #f0b070;
-  --ch-egg: #efa8c2;
-  --ch-err: #f2887c;
-  --ch-acc: #d8d5cc;
+  --ch-bg: #0f1320;
+  --ch-s1: #161c2e;
+  --ch-s2: #1d2438;
+  --ch-s3: #263044;
+  --ch-bd: #384a68;
+  --ch-bd2: #506080;
+  --ch-t: #f0ede0;
+  --ch-t2: #c0b898;
+  --ch-t3: #8a8070;
+  --ch-think: #d080f8;
+  --ch-read: #70b8ff;
+  --ch-search: #40d8e8;
+  --ch-edit: #80e8a0;
+  --ch-run: #ffb060;
+  --ch-egg: #f8a0c8;
+  --ch-err: #ff7070;
+  --ch-acc: #f0ede0;
 }
 
 /* ink · 画上去的控件：手写字、加粗墨线、歪歪扭扭的圆角。 */
@@ -446,7 +450,7 @@
 }
 
 .theme-ink .mon-btn:hover {
-  background: rgb(181 83 47 / 0.08);
+  background: rgb(200 104 32 / 0.08);
 }
 
 .theme-ink .rounds-card:nth-child(odd) {
@@ -513,6 +517,22 @@
   }
 }
 
+/* 沸腾描边：卡片的边框不再是一条死线——元素自己的 border 透明，由伪元素
+   画这条线并过 #mon-ink-boil 过滤器（seed 每 250ms 换一张"原画"，见
+   InkBoil.tsx），线条整体抖动但永不碎裂。内容不在过滤器里，可读性不动。 */
+.theme-ink .rounds-card {
+  border-color: transparent;
+}
+.theme-ink .rounds-card::before {
+  content: "";
+  position: absolute;
+  inset: -1.6px;
+  border: 1.6px solid var(--mon-bd2);
+  border-radius: inherit;
+  filter: url(#mon-ink-boil);
+  pointer-events: none;
+}
+
 /* Rounds 的窗口体（活动窗口、dock 窗口）在纸上重新上纸。 */
 /* Rounds 的硬编码暗面在纸上重新上纸。 */
 .theme-ink .rounds-root::before {
@@ -525,138 +545,138 @@
    现代简约：横平竖直、磨砂玻璃、建筑感的 hairline。dark 为基调。 */
 
 .theme-glass .mon-root {
-  --mon-bg: #0d0f14;
-  --mon-s1: rgb(255 255 255 / 0.05);
-  --mon-s2: rgb(255 255 255 / 0.08);
-  --mon-s3: rgb(255 255 255 / 0.12);
-  --mon-bd: rgb(255 255 255 / 0.14);
-  --mon-bd2: rgb(255 255 255 / 0.26);
-  --mon-t: #f0f3f8;
-  --mon-t2: #bfc7d3;
-  --mon-t3: #98a2b0;
-  --mon-think: #c9a0e0;
-  --mon-read: #8ab8f5;
-  --mon-search: #6fc4d4;
-  --mon-edit: #8fd0a5;
-  --mon-run: #f0b070;
-  --mon-egg: #efa8c2;
-  --mon-err: #f2887c;
-  --mon-acc: #8ab8f5;
-  --desk-bg: 13 15 20;
-  --desk-panel: 30 34 44;
-  --desk-panel2: 38 43 56;
-  --desk-deep: 9 11 15;
-  --desk-line: 62 72 92;
-  --desk-ink: 240 243 248;
-  --desk-dim: 152 162 176;
-  --desk-accent: 138 184 245;
-  --desk-ember: 242 136 124;
-  --desk-teal: 111 196 212;
-  --desk-wood: 34 39 50;
-  --desk-wood-lit: 48 55 70;
-  --desk-lavender: 201 160 224;
+  --mon-bg: #090b12;
+  --mon-s1: rgb(255 255 255 / 0.06);
+  --mon-s2: rgb(255 255 255 / 0.1);
+  --mon-s3: rgb(255 255 255 / 0.15);
+  --mon-bd: rgb(180 200 255 / 0.16);
+  --mon-bd2: rgb(180 200 255 / 0.32);
+  --mon-t: #eef2ff;
+  --mon-t2: #b8c4de;
+  --mon-t3: #8898b8;
+  --mon-think: #b060ff;
+  --mon-read: #40a0ff;
+  --mon-search: #00d4f0;
+  --mon-edit: #40e080;
+  --mon-run: #ff9040;
+  --mon-egg: #ff60a8;
+  --mon-err: #ff4060;
+  --mon-acc: #40a0ff;
+  --desk-bg: 9 11 18;
+  --desk-panel: 26 30 42;
+  --desk-panel2: 36 42 58;
+  --desk-deep: 5 6 10;
+  --desk-line: 58 70 100;
+  --desk-ink: 238 242 255;
+  --desk-dim: 136 152 184;
+  --desk-accent: 64 160 255;
+  --desk-ember: 255 144 96;
+  --desk-teal: 64 224 128;
+  --desk-wood: 34 40 52;
+  --desk-wood-lit: 48 56 74;
+  --desk-lavender: 176 96 255;
 }
 
 .theme-glass .mon-root::before {
   background:
-    radial-gradient(620px 420px at 14% -8%, rgb(106 168 240 / 0.22), transparent 62%),
-    radial-gradient(540px 400px at 108% 114%, rgb(196 149 221 / 0.18), transparent 62%);
+    radial-gradient(700px 500px at 8% -10%, rgb(80 120 255 / 0.18), transparent 60%),
+    radial-gradient(600px 450px at 110% 115%, rgb(160 80 255 / 0.14), transparent 60%);
 }
 
 .theme-glass .mon-root::after {
-  background: radial-gradient(560px 400px at 74% -12%, rgb(85 193 211 / 0.13), transparent 62%);
+  background: radial-gradient(600px 420px at 72% -15%, rgb(0 200 240 / 0.1), transparent 60%);
 }
 
 .theme-glass .chart-root {
-  --ch-bg: #0d0f14;
-  --ch-s1: rgb(255 255 255 / 0.05);
-  --ch-s2: rgb(255 255 255 / 0.08);
-  --ch-s3: rgb(255 255 255 / 0.12);
-  --ch-bd: rgb(255 255 255 / 0.14);
-  --ch-bd2: rgb(255 255 255 / 0.26);
-  --ch-t: #f0f3f8;
-  --ch-t2: #bfc7d3;
-  --ch-t3: #98a2b0;
-  --ch-think: #c9a0e0;
-  --ch-read: #8ab8f5;
-  --ch-search: #6fc4d4;
-  --ch-edit: #8fd0a5;
-  --ch-run: #f0b070;
-  --ch-egg: #efa8c2;
-  --ch-err: #f2887c;
-  --ch-acc: #8ab8f5;
+  --ch-bg: #090b12;
+  --ch-s1: rgb(255 255 255 / 0.06);
+  --ch-s2: rgb(255 255 255 / 0.1);
+  --ch-s3: rgb(255 255 255 / 0.15);
+  --ch-bd: rgb(180 200 255 / 0.16);
+  --ch-bd2: rgb(180 200 255 / 0.32);
+  --ch-t: #eef2ff;
+  --ch-t2: #b8c4de;
+  --ch-t3: #8898b8;
+  --ch-think: #b060ff;
+  --ch-read: #40a0ff;
+  --ch-search: #00d4f0;
+  --ch-edit: #40e080;
+  --ch-run: #ff9040;
+  --ch-egg: #ff60a8;
+  --ch-err: #ff4060;
+  --ch-acc: #40a0ff;
 }
 
-/* glass · light：白昼的磨砂——白玻璃、深墨字。 */
+/* glass · light：白玉磨砂——冰蓝底、更真实的半透白玻璃、深海军蓝字。 */
 .theme-glass.scheme-light {
   color-scheme: light;
 }
 
 .theme-glass.scheme-light body {
-  background: #e8ecf3;
+  background: #dde4f0;
 }
 
 .theme-glass.scheme-light .mon-root {
-  --mon-bg: #e8ecf3;
-  --mon-s1: rgb(255 255 255 / 0.62);
-  --mon-s2: rgb(255 255 255 / 0.78);
-  --mon-s3: rgb(255 255 255 / 0.92);
-  --mon-bd: rgb(30 45 70 / 0.14);
-  --mon-bd2: rgb(30 45 70 / 0.26);
-  --mon-t: #1a2233;
-  --mon-t2: #3d4a61;
-  --mon-t3: #5d6a80;
-  --mon-think: #7d4f92;
-  --mon-read: #2e64b8;
-  --mon-search: #17879c;
-  --mon-edit: #2e7f4c;
-  --mon-run: #b56a20;
-  --mon-egg: #b8437a;
-  --mon-err: #cf4a3a;
-  --mon-acc: #2e64b8;
-  --desk-bg: 232 236 243;
-  --desk-panel: 248 250 253;
-  --desk-panel2: 255 255 255;
-  --desk-deep: 240 244 249;
-  --desk-line: 30 45 70;
-  --desk-ink: 26 34 51;
-  --desk-dim: 93 106 128;
-  --desk-accent: 46 100 184;
-  --desk-ember: 207 74 58;
-  --desk-teal: 46 127 76;
-  --desk-wood: 255 255 255;
-  --desk-wood-lit: 240 244 249;
-  --desk-lavender: 125 79 146;
+  --mon-bg: #dde4f0;
+  --mon-s1: rgb(255 255 255 / 0.52);
+  --mon-s2: rgb(255 255 255 / 0.7);
+  --mon-s3: rgb(255 255 255 / 0.88);
+  --mon-bd: rgb(20 40 100 / 0.12);
+  --mon-bd2: rgb(20 40 100 / 0.24);
+  --mon-t: #0e1a36;
+  --mon-t2: #2e4068;
+  --mon-t3: #506090;
+  --mon-think: #7030c0;
+  --mon-read: #1848c8;
+  --mon-search: #0888a8;
+  --mon-edit: #187858;
+  --mon-run: #c85818;
+  --mon-egg: #b82878;
+  --mon-err: #c82830;
+  --mon-acc: #1848c8;
+  --desk-bg: 221 228 240;
+  --desk-panel: 244 248 253;
+  --desk-panel2: 250 252 255;
+  --desk-deep: 236 241 248;
+  --desk-line: 80 100 150;
+  --desk-ink: 14 26 54;
+  --desk-dim: 80 96 144;
+  --desk-accent: 24 72 200;
+  --desk-ember: 200 88 24;
+  --desk-teal: 24 120 88;
+  --desk-wood: 250 252 255;
+  --desk-wood-lit: 236 241 248;
+  --desk-lavender: 112 48 192;
 }
 
 .theme-glass.scheme-light .mon-root::before {
   background:
-    radial-gradient(620px 420px at 14% -8%, rgb(120 170 240 / 0.35), transparent 62%),
-    radial-gradient(540px 400px at 108% 114%, rgb(196 149 221 / 0.28), transparent 62%);
+    radial-gradient(700px 500px at 8% -10%, rgb(100 160 255 / 0.4), transparent 60%),
+    radial-gradient(600px 450px at 110% 115%, rgb(180 120 255 / 0.25), transparent 60%);
 }
 
 .theme-glass.scheme-light .mon-root::after {
-  background: radial-gradient(560px 400px at 74% -12%, rgb(85 193 211 / 0.2), transparent 62%);
+  background: radial-gradient(560px 400px at 72% -12%, rgb(85 193 211 / 0.2), transparent 62%);
 }
 
 .theme-glass.scheme-light .chart-root {
-  --ch-bg: #e8ecf3;
-  --ch-s1: rgb(255 255 255 / 0.62);
-  --ch-s2: rgb(255 255 255 / 0.78);
-  --ch-s3: rgb(255 255 255 / 0.92);
-  --ch-bd: rgb(30 45 70 / 0.14);
-  --ch-bd2: rgb(30 45 70 / 0.26);
-  --ch-t: #1a2233;
-  --ch-t2: #3d4a61;
-  --ch-t3: #5d6a80;
-  --ch-think: #7d4f92;
-  --ch-read: #2e64b8;
-  --ch-search: #17879c;
-  --ch-edit: #2e7f4c;
-  --ch-run: #b56a20;
-  --ch-egg: #b8437a;
-  --ch-err: #cf4a3a;
-  --ch-acc: #2e64b8;
+  --ch-bg: #dde4f0;
+  --ch-s1: rgb(255 255 255 / 0.52);
+  --ch-s2: rgb(255 255 255 / 0.7);
+  --ch-s3: rgb(255 255 255 / 0.88);
+  --ch-bd: rgb(20 40 100 / 0.12);
+  --ch-bd2: rgb(20 40 100 / 0.24);
+  --ch-t: #0e1a36;
+  --ch-t2: #2e4068;
+  --ch-t3: #506090;
+  --ch-think: #7030c0;
+  --ch-read: #1848c8;
+  --ch-search: #0888a8;
+  --ch-edit: #187858;
+  --ch-run: #c85818;
+  --ch-egg: #b82878;
+  --ch-err: #c82830;
+  --ch-acc: #1848c8;
 }
 
 /* glass · 建筑感：一切控件收直角。 */
@@ -815,139 +835,139 @@
 
 /* -- nixie dark -- */
 .theme-nixie .mon-root {
-  --mon-room: #120c06;
-  --mon-win: rgb(26 18 8 / 0.92);
-  --mon-card: rgb(30 21 11 / 0.92);
-  --mon-card-now: #2a1e0c;
-  --mon-bubble: rgb(34 24 9 / 0.85);
-  --mon-bubble-user: rgb(255 170 60 / 0.1);
-  --mon-bubble-user-border: rgb(255 170 60 / 0.45);
-  --mon-bubble-system: rgb(24 17 8 / 0.7);
-  --mon-inp: rgb(30 21 11 / 0.85);
-  --mon-dock: rgb(21 15 8 / 0.8);
-  --drip-s1: #150f08;
-  --drip-s2: #1e150b;
-  --drip-s3: #2a1e0f;
-  --drip-bd: rgb(255 170 60 / 0.24);
-  --drip-bd2: rgb(255 170 60 / 0.45);
-  --drip-t: #f5e9cf;
-  --drip-t2: #d9c298;
-  --drip-t3: #b09468;
-  --drip-ok: #c9d38a;
-  --drip-listen: #ffb347;
-  --drip-pill: rgb(26 18 8 / 0.96);
-  --drip-card: rgb(30 21 11 / 0.96);
+  --mon-room: #0a1410;
+  --mon-win: rgb(15 28 21 / 0.92);
+  --mon-card: rgb(17 31 23 / 0.92);
+  --mon-card-now: #1a3023;
+  --mon-bubble: rgb(20 38 27 / 0.85);
+  --mon-bubble-user: rgb(80 200 120 / 0.1);
+  --mon-bubble-user-border: rgb(80 200 120 / 0.45);
+  --mon-bubble-system: rgb(13 24 18 / 0.7);
+  --mon-inp: rgb(17 31 23 / 0.85);
+  --mon-dock: rgb(12 22 16 / 0.8);
+  --drip-s1: #0c1610;
+  --drip-s2: #111f16;
+  --drip-s3: #182b1d;
+  --drip-bd: rgb(80 200 120 / 0.22);
+  --drip-bd2: rgb(80 200 120 / 0.48);
+  --drip-t: #e8f5ee;
+  --drip-t2: #9ecfb2;
+  --drip-t3: #5e9475;
+  --drip-ok: #a8e878;
+  --drip-listen: #40e8d0;
+  --drip-pill: rgb(14 26 19 / 0.96);
+  --drip-card: rgb(17 31 23 / 0.96);
 }
 
 .theme-nixie .rounds-root {
-  background: radial-gradient(120% 90% at 50% 0%, #191007, #0c0906 70%);
+  background: radial-gradient(120% 90% at 50% 0%, #0e1c14, #060d0b 70%);
 }
 
 /* -- nixie light -- */
 .theme-nixie.scheme-light .mon-root {
-  --mon-room: #f2ead8;
-  --mon-win: rgb(255 248 235 / 0.92);
-  --mon-card: rgb(255 250 235 / 0.9);
-  --mon-card-now: #f3e6c4;
-  --mon-bubble: rgb(255 248 235 / 0.88);
-  --mon-bubble-user: rgb(165 101 15 / 0.08);
-  --mon-bubble-user-border: rgb(138 92 16 / 0.5);
-  --mon-bubble-system: rgb(245 239 221 / 0.7);
-  --mon-inp: rgb(255 250 235 / 0.85);
-  --mon-dock: rgb(242 234 216 / 0.8);
-  --drip-s1: #eae1cb;
-  --drip-s2: #e0d5b8;
-  --drip-s3: #d2c4a0;
-  --drip-bd: #c2b28a;
-  --drip-bd2: #9a8858;
-  --drip-t: #2b2312;
-  --drip-t2: #554628;
-  --drip-t3: #77653d;
-  --drip-ok: #47751c;
-  --drip-listen: #8a5c10;
-  --drip-pill: rgb(255 248 235 / 0.96);
-  --drip-card: rgb(255 250 235 / 0.96);
+  --mon-room: #f5ead0;
+  --mon-win: rgb(252 244 224 / 0.92);
+  --mon-card: rgb(250 240 218 / 0.9);
+  --mon-card-now: #f6e8c6;
+  --mon-bubble: rgb(252 244 224 / 0.88);
+  --mon-bubble-user: rgb(196 112 16 / 0.08);
+  --mon-bubble-user-border: rgb(168 96 24 / 0.5);
+  --mon-bubble-system: rgb(247 236 210 / 0.7);
+  --mon-inp: rgb(250 240 218 / 0.85);
+  --mon-dock: rgb(245 234 208 / 0.8);
+  --drip-s1: #ede0c0;
+  --drip-s2: #e3d3a8;
+  --drip-s3: #d4c08a;
+  --drip-bd: #a8844a;
+  --drip-bd2: #7a5e28;
+  --drip-t: #1e1508;
+  --drip-t2: #4a3618;
+  --drip-t3: #7a5e30;
+  --drip-ok: #2e7840;
+  --drip-listen: #a86018;
+  --drip-pill: rgb(252 244 224 / 0.96);
+  --drip-card: rgb(250 240 218 / 0.96);
 }
 
 .theme-nixie.scheme-light .rounds-root {
-  background: radial-gradient(120% 90% at 50% 0%, #f7f1e2, #f2ead8 70%);
+  background: radial-gradient(120% 90% at 50% 0%, #f8f0dc, #f5ead0 70%);
 }
 
 /* -- ink light (paper, default) -- */
 .theme-ink .mon-root {
-  --mon-room: #f1ede1;
+  --mon-room: #f7f3e8;
   --mon-win: rgb(255 255 255 / 0.85);
   --mon-card: rgb(255 255 255 / 0.75);
   --mon-card-now: #fffef6;
   --mon-bubble: rgb(255 255 255 / 0.8);
-  --mon-bubble-user: rgb(176 110 48 / 0.14);
-  --mon-bubble-user-border: rgb(176 110 48 / 0.5);
+  --mon-bubble-user: rgb(200 104 32 / 0.14);
+  --mon-bubble-user-border: rgb(200 104 32 / 0.5);
   --mon-bubble-system: rgb(255 255 255 / 0.55);
   --mon-inp: rgb(255 255 255 / 0.72);
-  --mon-dock: rgb(241 237 225 / 0.85);
-  --drip-s1: #e9e4d5;
-  --drip-s2: #e2dcc9;
-  --drip-s3: #d6cfb8;
-  --drip-bd: #b3aa8e;
-  --drip-bd2: #877e64;
-  --drip-t: #2f2c26;
-  --drip-t2: #504b40;
-  --drip-t3: #6f6857;
-  --drip-ok: #3f7a4c;
-  --drip-listen: #33639e;
+  --mon-dock: rgb(247 243 232 / 0.85);
+  --drip-s1: #eee8d4;
+  --drip-s2: #e6dfc4;
+  --drip-s3: #d8d0b0;
+  --drip-bd: #b8a882;
+  --drip-bd2: #8a7858;
+  --drip-t: #26231c;
+  --drip-t2: #4e4838;
+  --drip-t3: #7a7060;
+  --drip-ok: #2e8a50;
+  --drip-listen: #2855b8;
   --drip-sans: var(--mon-hand);
   --drip-pill: rgb(255 255 255 / 0.9);
   --drip-card: rgb(255 255 255 / 0.88);
 }
 
-/* -- ink dark (chalkboard) -- */
+/* -- ink dark (ink-bottle night) -- */
 .theme-ink.scheme-dark .mon-root {
-  --mon-room: #191a1c;
-  --mon-win: rgb(28 29 32 / 0.92);
-  --mon-card: rgb(33 34 37 / 0.9);
-  --mon-card-now: #2e3033;
-  --mon-bubble: rgb(38 40 43 / 0.9);
-  --mon-bubble-user: rgb(240 176 112 / 0.12);
-  --mon-bubble-user-border: rgb(240 176 112 / 0.45);
-  --mon-bubble-system: rgb(30 31 34 / 0.7);
-  --mon-inp: rgb(33 34 37 / 0.85);
-  --mon-dock: rgb(33 34 37 / 0.85);
-  --drip-s1: #212225;
-  --drip-s2: #27292c;
-  --drip-s3: #323438;
-  --drip-bd: #42454b;
-  --drip-bd2: #606369;
-  --drip-t: #eae7dc;
-  --drip-t2: #bab7ab;
-  --drip-t3: #918e82;
-  --drip-ok: #8fd0a5;
-  --drip-listen: #8ab8f5;
-  --drip-pill: rgb(33 34 37 / 0.96);
-  --drip-card: rgb(33 34 37 / 0.96);
+  --mon-room: #0f1320;
+  --mon-win: rgb(24 30 48 / 0.92);
+  --mon-card: rgb(29 36 56 / 0.9);
+  --mon-card-now: #2a3450;
+  --mon-bubble: rgb(34 42 64 / 0.9);
+  --mon-bubble-user: rgb(255 176 96 / 0.12);
+  --mon-bubble-user-border: rgb(255 176 96 / 0.45);
+  --mon-bubble-system: rgb(25 31 50 / 0.7);
+  --mon-inp: rgb(29 36 56 / 0.85);
+  --mon-dock: rgb(29 36 56 / 0.85);
+  --drip-s1: #161c2e;
+  --drip-s2: #1d2438;
+  --drip-s3: #263044;
+  --drip-bd: #384a68;
+  --drip-bd2: #506080;
+  --drip-t: #f0ede0;
+  --drip-t2: #c0b898;
+  --drip-t3: #8a8070;
+  --drip-ok: #80e8a0;
+  --drip-listen: #70b8ff;
+  --drip-pill: rgb(29 36 56 / 0.96);
+  --drip-card: rgb(29 36 56 / 0.96);
 }
 
 /* -- glass dark -- */
 .theme-glass .mon-root {
-  --mon-room: #0d0f14;
+  --mon-room: #090b12;
   --mon-win: rgb(255 255 255 / 0.06);
   --mon-card: rgb(255 255 255 / 0.05);
   --mon-card-now: rgb(255 255 255 / 0.1);
   --mon-bubble: rgb(255 255 255 / 0.07);
-  --mon-bubble-user: rgb(138 184 245 / 0.1);
-  --mon-bubble-user-border: rgb(138 184 245 / 0.4);
+  --mon-bubble-user: rgb(64 160 255 / 0.1);
+  --mon-bubble-user-border: rgb(64 160 255 / 0.4);
   --mon-bubble-system: rgb(255 255 255 / 0.04);
   --mon-inp: rgb(255 255 255 / 0.07);
   --mon-dock: rgb(255 255 255 / 0.05);
-  --drip-s1: rgb(255 255 255 / 0.05);
-  --drip-s2: rgb(255 255 255 / 0.08);
-  --drip-s3: rgb(255 255 255 / 0.12);
-  --drip-bd: rgb(255 255 255 / 0.14);
-  --drip-bd2: rgb(255 255 255 / 0.26);
-  --drip-t: #f0f3f8;
-  --drip-t2: #bfc7d3;
-  --drip-t3: #98a2b0;
-  --drip-ok: #8fd0a5;
-  --drip-listen: #8ab8f5;
+  --drip-s1: rgb(255 255 255 / 0.06);
+  --drip-s2: rgb(255 255 255 / 0.1);
+  --drip-s3: rgb(255 255 255 / 0.15);
+  --drip-bd: rgb(180 200 255 / 0.16);
+  --drip-bd2: rgb(180 200 255 / 0.32);
+  --drip-t: #eef2ff;
+  --drip-t2: #b8c4de;
+  --drip-t3: #8898b8;
+  --drip-ok: #40e080;
+  --drip-listen: #40a0ff;
   --drip-pill: rgb(255 255 255 / 0.07);
   --drip-card: rgb(255 255 255 / 0.06);
 }
@@ -969,26 +989,26 @@
 
 /* -- glass light -- */
 .theme-glass.scheme-light .mon-root {
-  --mon-room: #e8ecf3;
-  --mon-win: rgb(255 255 255 / 0.7);
-  --mon-card: rgb(255 255 255 / 0.65);
+  --mon-room: #dde4f0;
+  --mon-win: rgb(255 255 255 / 0.62);
+  --mon-card: rgb(255 255 255 / 0.58);
   --mon-card-now: #ffffff;
-  --mon-bubble: rgb(255 255 255 / 0.7);
-  --mon-bubble-user: rgb(46 100 184 / 0.08);
-  --mon-bubble-user-border: rgb(46 100 184 / 0.4);
+  --mon-bubble: rgb(255 255 255 / 0.65);
+  --mon-bubble-user: rgb(24 72 200 / 0.08);
+  --mon-bubble-user-border: rgb(24 72 200 / 0.4);
   --mon-bubble-system: rgb(255 255 255 / 0.45);
-  --mon-inp: rgb(255 255 255 / 0.7);
-  --mon-dock: rgb(255 255 255 / 0.55);
-  --drip-s1: rgb(255 255 255 / 0.62);
-  --drip-s2: rgb(255 255 255 / 0.78);
-  --drip-s3: rgb(255 255 255 / 0.92);
-  --drip-bd: rgb(30 45 70 / 0.14);
-  --drip-bd2: rgb(30 45 70 / 0.26);
-  --drip-t: #1a2233;
-  --drip-t2: #3d4a61;
-  --drip-t3: #5d6a80;
-  --drip-ok: #2e7f4c;
-  --drip-listen: #2e64b8;
+  --mon-inp: rgb(255 255 255 / 0.65);
+  --mon-dock: rgb(255 255 255 / 0.5);
+  --drip-s1: rgb(255 255 255 / 0.52);
+  --drip-s2: rgb(255 255 255 / 0.7);
+  --drip-s3: rgb(255 255 255 / 0.88);
+  --drip-bd: rgb(20 40 100 / 0.12);
+  --drip-bd2: rgb(20 40 100 / 0.24);
+  --drip-t: #0e1a36;
+  --drip-t2: #2e4068;
+  --drip-t3: #506090;
+  --drip-ok: #187858;
+  --drip-listen: #1848c8;
   --drip-pill: rgb(255 255 255 / 0.75);
   --drip-card: rgb(255 255 255 / 0.72);
 }

@@ -459,6 +459,12 @@
   overflow: auto;
 }
 
+/* The page wrapper for METRICS / CHAT: preserves the sheet's height chain
+   (the dashboard is h-full) and gives the power-on flick a box to play on. */
+.mon-sheet__page {
+  height: 100%;
+}
+
 /* An empty sheet says one line and stops. The resource page lives on the
    METRICS tab; a summary card here covered the column it stood in for. */
 .mon-sheet-empty {
