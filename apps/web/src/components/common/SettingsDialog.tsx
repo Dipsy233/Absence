@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
-import { UI_STYLES, type UiStyleId } from "../../lib/uistyle";
+import { defaultScheme, SCHEMES, UI_STYLES, type UiStyleId } from "../../lib/uistyle";
 import { useUiStyleStore } from "../../stores/uistyleStore";
 
 /** One dot per style, for the Settings row. */
 const STYLE_SWATCH: Record<UiStyleId, string> = {
-  glass: "#8ab8f5",
   nixie: "#ffb347",
   ink: "#f1ede1",
-  light: "#fafafa",
-  dark: "#17181a",
+  glass: "#8ab8f5",
 };
 import { LANGUAGES, useT } from "../../lib/i18n";
 import { useSettingsStore, type CommandFailLevel } from "../../stores/settingsStore";
@@ -123,6 +121,9 @@ function AppearancePane() {
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const uiStyle = useUiStyleStore((s) => s.uiStyle);
   const setUiStyle = useUiStyleStore((s) => s.setUiStyle);
+  const schemeOverride = useUiStyleStore((s) => s.schemeOverride);
+  const setScheme = useUiStyleStore((s) => s.setScheme);
+  const scheme = schemeOverride ?? defaultScheme(uiStyle);
   const chatMarkdown = useSettingsStore((s) => s.chatMarkdown);
   const setChatMarkdown = useSettingsStore((s) => s.setChatMarkdown);
 
@@ -172,6 +173,24 @@ function AppearancePane() {
             >
               <span aria-hidden className="h-2.5 w-2.5 rounded-full border border-desk-line" style={{ background: STYLE_SWATCH[id] }} />
               {t(id)}
+            </button>
+          ))}
+        </div>
+        {/* 色系是独立的选项：每个风格都各有 dark / light 一套 token。 */}
+        <div className="mt-2 flex gap-1.5">
+          {SCHEMES.map((cs) => (
+            <button
+              key={cs}
+              type="button"
+              onClick={() => setScheme(cs === defaultScheme(uiStyle) ? null : cs)}
+              className={[
+                "rounded border px-2 py-1 font-mono text-[11px] capitalize transition-colors",
+                scheme === cs
+                  ? "border-desk-amber/70 bg-desk-amber/10 text-desk-amber"
+                  : "border-desk-line bg-desk-panel2 text-desk-dim hover:text-desk-ink",
+              ].join(" ")}
+            >
+              {cs}
             </button>
           ))}
         </div>

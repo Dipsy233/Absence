@@ -1,31 +1,33 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   UI STYLES — the three complete looks. Each is a class on <html>
-   (`theme-nixie` / `theme-ink` / `theme-glass`, applied by App from
-   stores/uistyleStore). A style never changes layout: it remaps the tokens
-   shared.css defines on .mon-root (and the drip tokens on .drip-root), then
-   adds its own surface features — the Nixie glow, the paper handwriting,
-   the frosted panels.
+   UI STYLES — three complete looks × two color schemes.
 
-   These rules must load after shared.css (FaceBar imports both in order).
-   The desk bridge (--desk-*) is remapped per style too, so the reused desk
-   components (StageItemView, MetricsDashboard, SettingsDialog) dress for
-   the style as well — scoped to .mon-root, so the inline palette the
-   Settings color-theme applies on <html> still wins for anything outside.
+   <html> carries `theme-<id>` and `scheme-<dark|light>`. A style's default
+   scheme rules live directly under `.theme-<id>`; the other scheme is a
+   `.scheme-light` / `.scheme-dark` override beside it. Every style remaps
+   the face tokens (--mon-*), the drip tokens (--drip-*) and Chart's
+   (--ch-*), plus the desk bridge the reused components read.
+
+   Contrast floor (per the audit): body text ≥ 4.5:1 on its surface,
+   controls and graphics ≥ 3:1, and hover / active / focus must be clearly
+   distinct states. Borders are deliberate — a divider you can't see is not
+   a divider.
+
+   These rules load after shared.css (FaceBar imports both, in order).
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* ═══════════════════════ NIXIE — 琥珀真空管 ═══════════════════════
-   Warm near-black, amber everything, glow where data arrives. */
+/* ═══════════════════════════════ NIXIE ═══════════════════════════════
+   老式机械：琥珀真空管、铆接金属板、刻蚀黄铜字。dark 为基调。 */
 
 .theme-nixie .mon-root {
   --mon-bg: #0c0906;
   --mon-s1: #150f08;
   --mon-s2: #1e150b;
   --mon-s3: #2a1e0f;
-  --mon-bd: rgb(255 170 60 / 0.14);
-  --mon-bd2: rgb(255 170 60 / 0.3);
+  --mon-bd: rgb(255 170 60 / 0.24);
+  --mon-bd2: rgb(255 170 60 / 0.45);
   --mon-t: #f5e9cf;
-  --mon-t2: #d6bd91;
-  --mon-t3: #a68d5f;
+  --mon-t2: #d9c298;
+  --mon-t3: #b09468;
   --mon-think: #d8a86f;
   --mon-read: #e8c07a;
   --mon-search: #c9c07a;
@@ -34,14 +36,13 @@
   --mon-egg: #e8a08a;
   --mon-err: #ff9d7a;
   --mon-acc: #ffb347;
-  /* the desk bridge, warmed */
   --desk-bg: 12 9 6;
   --desk-panel: 21 15 8;
   --desk-panel2: 30 21 11;
   --desk-deep: 10 7 4;
-  --desk-line: 58 42 20;
+  --desk-line: 62 46 22;
   --desk-ink: 245 233 207;
-  --desk-dim: 138 116 79;
+  --desk-dim: 176 148 104;
   --desk-accent: 255 179 71;
   --desk-ember: 255 157 122;
   --desk-teal: 201 211 138;
@@ -52,30 +53,148 @@
 
 .theme-nixie .mon-root::before {
   background:
-    radial-gradient(560px 380px at 18% -6%, rgb(255 150 40 / 0.08), transparent 65%),
-    radial-gradient(480px 340px at 108% 112%, rgb(216 168 111 / 0.08), transparent 65%);
+    radial-gradient(560px 380px at 18% -6%, rgb(255 150 40 / 0.09), transparent 65%),
+    radial-gradient(480px 340px at 108% 112%, rgb(216 168 111 / 0.09), transparent 65%);
 }
 
 .theme-nixie .mon-root::after {
   background: radial-gradient(520px 360px at 85% -10%, rgb(255 120 20 / 0.06), transparent 65%);
 }
 
-/* Machine-punk chrome: plates with riveted borders, engraved caps, glow on
-   everything that carries a number. */
+.theme-nixie .drip-root {
+  --drip-s1: #150f08;
+  --drip-s2: #1e150b;
+  --drip-s3: #2a1e0f;
+  --drip-bd: rgb(255 170 60 / 0.24);
+  --drip-bd2: rgb(255 170 60 / 0.45);
+  --drip-t: #f5e9cf;
+  --drip-t2: #d9c298;
+  --drip-t3: #b09468;
+  --drip-ok: #c9d38a;
+  --drip-listen: #ffb347;
+}
+
+.theme-nixie .chart-root {
+  --ch-bg: #0c0906;
+  --ch-s1: #150f08;
+  --ch-s2: #1e150b;
+  --ch-s3: #2a1e0f;
+  --ch-bd: rgb(255 170 60 / 0.24);
+  --ch-bd2: rgb(255 170 60 / 0.45);
+  --ch-t: #f5e9cf;
+  --ch-t2: #d9c298;
+  --ch-t3: #b09468;
+  --ch-think: #d8a86f;
+  --ch-read: #e8c07a;
+  --ch-search: #c9c07a;
+  --ch-edit: #c9d38a;
+  --ch-run: #ffb347;
+  --ch-egg: #e8a08a;
+  --ch-err: #ff9d7a;
+  --ch-acc: #ffb347;
+}
+
+/* nixie · light：老黄铜仪器摆在米纸上。 */
+.theme-nixie.scheme-light .mon-root {
+  --mon-bg: #f2ead8;
+  --mon-s1: #eae1cb;
+  --mon-s2: #e0d5b8;
+  --mon-s3: #d2c4a0;
+  --mon-bd: #c2b28a;
+  --mon-bd2: #9a8858;
+  --mon-t: #2b2312;
+  --mon-t2: #554628;
+  --mon-t3: #77653d;
+  --mon-think: #8a5f28;
+  --mon-read: #7a6414;
+  --mon-search: #5f7a1c;
+  --mon-edit: #47751c;
+  --mon-run: #a5650f;
+  --mon-egg: #a3523a;
+  --mon-err: #ad4226;
+  --mon-acc: #8a5c10;
+  --desk-bg: 242 234 216;
+  --desk-panel: 234 225 203;
+  --desk-panel2: 224 213 184;
+  --desk-deep: 234 225 203;
+  --desk-line: 194 178 138;
+  --desk-ink: 43 35 18;
+  --desk-dim: 119 101 61;
+  --desk-accent: 138 92 16;
+  --desk-ember: 173 66 38;
+  --desk-teal: 71 117 28;
+  --desk-wood: 224 213 184;
+  --desk-wood-lit: 210 198 168;
+  --desk-lavender: 138 95 40;
+}
+
+.theme-nixie.scheme-light .mon-root::before {
+  background:
+    radial-gradient(560px 380px at 18% -6%, rgb(255 250 235 / 0.85), transparent 65%),
+    radial-gradient(480px 340px at 108% 112%, rgb(226 208 165 / 0.5), transparent 65%);
+}
+
+.theme-nixie.scheme-light .mon-root::after {
+  background: radial-gradient(520px 360px at 85% -10%, rgb(165 101 15 / 0.06), transparent 65%);
+}
+
+.theme-nixie.scheme-light .drip-root {
+  --drip-s1: #eae1cb;
+  --drip-s2: #e0d5b8;
+  --drip-s3: #d2c4a0;
+  --drip-bd: #c2b28a;
+  --drip-bd2: #9a8858;
+  --drip-t: #2b2312;
+  --drip-t2: #554628;
+  --drip-t3: #77653d;
+  --drip-ok: #47751c;
+  --drip-listen: #8a5c10;
+  background: #f2ead8;
+}
+
+.theme-nixie.scheme-light .chart-root {
+  --ch-bg: #f2ead8;
+  --ch-s1: #eae1cb;
+  --ch-s2: #e0d5b8;
+  --ch-s3: #d2c4a0;
+  --ch-bd: #c2b28a;
+  --ch-bd2: #9a8858;
+  --ch-t: #2b2312;
+  --ch-t2: #554628;
+  --ch-t3: #77653d;
+  --ch-think: #8a5f28;
+  --ch-read: #7a6414;
+  --ch-search: #5f7a1c;
+  --ch-edit: #47751c;
+  --ch-run: #a5650f;
+  --ch-egg: #a3523a;
+  --ch-err: #ad4226;
+  --ch-acc: #8a5c10;
+}
+
+/* nixie · 机械朋克控件：铆接板、刻蚀字、辉光数据。 */
 .theme-nixie .mon-btn,
 .theme-nixie .mon-themes > button,
 .theme-nixie .mon-modes > button {
   background: linear-gradient(180deg, #241a0c, #150f08 55%, #1c1207);
-  border: 1px solid rgb(255 170 60 / 0.35);
+  border: 1px solid rgb(255 170 60 / 0.45);
   border-radius: 6px;
-  box-shadow: inset 0 1px 0 rgb(255 179 71 / 0.12), inset 0 -1px 0 rgb(0 0 0 / 0.6);
+  color: #e8d5a8;
+  box-shadow: inset 0 1px 0 rgb(255 179 71 / 0.14), inset 0 -1px 0 rgb(0 0 0 / 0.6);
 }
 
 .theme-nixie .mon-btn:hover,
 .theme-nixie .mon-themes > button:hover,
 .theme-nixie .mon-modes > button:hover {
-  border-color: rgb(255 179 71 / 0.7);
-  box-shadow: inset 0 1px 0 rgb(255 179 71 / 0.2), 0 0 14px -4px rgb(255 150 40 / 0.5);
+  color: #ffd98a;
+  border-color: rgb(255 179 71 / 0.85);
+  box-shadow:
+    inset 0 1px 0 rgb(255 179 71 / 0.25),
+    0 0 16px -4px rgb(255 150 40 / 0.55);
+}
+
+.theme-nixie .mon-btn:active {
+  transform: translateY(1px);
 }
 
 .theme-nixie .mon-cap,
@@ -89,11 +208,10 @@
 .theme-nixie .mon-runsel,
 .theme-nixie .mon-railsec,
 .theme-nixie .panel {
-  border: 1px solid rgb(255 170 60 / 0.22);
+  border: 1px solid rgb(255 170 60 / 0.3);
   box-shadow: inset 0 0 18px rgb(0 0 0 / 0.5);
 }
 
-/* Numbers glow like filaments; status words carry a faint halo. */
 .theme-nixie .mon-runsel__c {
   color: #ffc873;
   text-shadow: 0 0 6px rgb(255 166 48 / 0.45);
@@ -104,46 +222,8 @@
   text-shadow: 0 0 7px rgb(255 166 48 / 0.4);
 }
 
-.theme-nixie .drip-root {
-  --drip-s1: #150f08;
-  --drip-s2: #1e150b;
-  --drip-s3: #2a1e0f;
-  --drip-bd: rgb(255 170 60 / 0.14);
-  --drip-bd2: rgb(255 170 60 / 0.3);
-  --drip-t: #f5e9cf;
-  --drip-t2: #c9b088;
-  --drip-t3: #8a744f;
-  --drip-ok: #c9d38a;
-  --drip-listen: #ffb347;
-}
-
-/* Rounds paints its own room — each style re-paints it. */
-.theme-nixie .rounds-root {
-  background: radial-gradient(120% 90% at 50% 0%, #191007, #0c0906 70%);
-}
-
-.theme-nixie .rounds-root::before {
-  background:
-    radial-gradient(900px 620px at 24% 38%, rgb(255 150 40 / 0.07), transparent 65%),
-    radial-gradient(760px 540px at 72% 64%, rgb(216 168 111 / 0.06), transparent 65%);
-}
-
-/* ═══════════════════════ INK — 纸上手绘 ═══════════════════════
-   Paper instead of a void: warm paper, ink strokes, handwriting for the
-   chrome (Caveat for latin, 851手写杂书体 for CJK). */
-
-@font-face {
-  font-family: "Caveat";
-  src: url("/fonts/Caveat-VariableFont_wght.ttf") format("truetype");
-  font-weight: 400 700;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "ShouXie851";
-  src: url("/fonts/851ShouXie.ttf") format("truetype");
-  font-display: swap;
-}
+/* ═══════════════════════════════ INK ═══════════════════════════════
+   手作手绘：纸面、墨线、全部手写字。light（纸）为基调。 */
 
 .theme-ink {
   --mon-hand: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
@@ -154,95 +234,201 @@
   background: #f1ede1;
 }
 
+/* 噪点：纸的纹理，盖在一切之上（含设置面板），纯装饰。 */
+.theme-ink body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E");
+}
+
 .theme-ink .mon-root {
   --mon-bg: #f1ede1;
   --mon-s1: #e9e4d5;
   --mon-s2: #e2dcc9;
   --mon-s3: #d6cfb8;
-  --mon-bd: #c9c2ab;
-  --mon-bd2: #a89f83;
-  --mon-t: #33302a;
-  --mon-t2: #5c574c;
-  --mon-t3: #8d8672;
-  --mon-think: #8a5a9e;
-  --mon-read: #3f6fa8;
-  --mon-search: #3f8a9e;
-  --mon-edit: #4e7d54;
-  --mon-run: #c07a3a;
-  --mon-egg: #b05a78;
-  --mon-err: #b8453a;
-  --mon-acc: #c65b3f;
+  --mon-bd: #b3aa8e;
+  --mon-bd2: #877e64;
+  --mon-t: #2f2c26;
+  --mon-t2: #504b40;
+  --mon-t3: #6f6857;
+  --mon-think: #7d4f92;
+  --mon-read: #33639e;
+  --mon-search: #2e7f8f;
+  --mon-edit: #3f7a4c;
+  --mon-run: #b06e30;
+  --mon-egg: #a34f6e;
+  --mon-err: #b03e33;
+  --mon-acc: #b5532f;
+  /* 全部正文文字都是手写（等宽栈保留给代码与路径）。 */
+  --mon-sans: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
   --desk-bg: 241 237 225;
-  --desk-panel: 233 228 213;
-  --desk-panel2: 226 220 201;
-  --desk-deep: 233 228 213;
-  --desk-line: 180 172 148;
-  --desk-ink: 51 48 42;
-  --desk-dim: 141 134 114;
-  --desk-accent: 63 111 168;
-  --desk-ember: 184 69 58;
-  --desk-teal: 78 125 84;
-  --desk-wood: 216 209 188;
-  --desk-wood-lit: 200 192 170;
-  --desk-lavender: 138 90 158;
+  --desk-panel: 246 243 233;
+  --desk-panel2: 238 233 219;
+  --desk-deep: 238 233 219;
+  --desk-line: 179 170 142;
+  --desk-ink: 47 44 38;
+  --desk-dim: 111 104 87;
+  --desk-accent: 181 83 47;
+  --desk-ember: 176 62 51;
+  --desk-teal: 63 122 76;
+  --desk-wood: 233 228 213;
+  --desk-wood-lit: 219 213 195;
+  --desk-lavender: 125 79 146;
 }
 
-/* Paper ambience: warm light pools, a shade brighter than the sheet. */
 .theme-ink .mon-root::before {
   background:
-    radial-gradient(560px 380px at 18% -6%, rgb(255 252 240 / 0.8), transparent 65%),
+    radial-gradient(560px 380px at 18% -6%, rgb(255 252 240 / 0.85), transparent 65%),
     radial-gradient(480px 340px at 108% 112%, rgb(226 216 190 / 0.5), transparent 65%);
 }
 
 .theme-ink .mon-root::after {
-  background: radial-gradient(520px 360px at 85% -10%, rgb(198 91 63 / 0.06), transparent 65%);
+  background: radial-gradient(520px 360px at 85% -10%, rgb(181 83 47 / 0.06), transparent 65%);
 }
 
-/* Every word is handwritten: the sans stack itself becomes the hand. The
-   mono stack stays for code sheets and paths, where alignment matters. */
-.theme-ink .mon-root {
-  --mon-sans: "Caveat", "ShouXie851", "KaiTi", "STKaiti", "DFKai-SB", cursive;
+.theme-ink .drip-root {
+  --drip-s1: #e9e4d5;
+  --drip-s2: #e2dcc9;
+  --drip-s3: #d6cfb8;
+  --drip-bd: #b3aa8e;
+  --drip-bd2: #877e64;
+  --drip-t: #2f2c26;
+  --drip-t2: #504b40;
+  --drip-t3: #6f6857;
+  --drip-ok: #3f7a4c;
+  --drip-listen: #33639e;
+  --drip-run: #b06e30;
+  --drip-err: #b03e33;
+  --drip-sans: var(--mon-hand);
+  background: #f1ede1;
 }
 
-.theme-ink .mon-root {
-  font-size: 14.5px;
+.theme-ink .chart-root {
+  --ch-bg: #f1ede1;
+  --ch-s1: #e9e4d5;
+  --ch-s2: #e2dcc9;
+  --ch-s3: #d6cfb8;
+  --ch-bd: #b3aa8e;
+  --ch-bd2: #877e64;
+  --ch-t: #2f2c26;
+  --ch-t2: #504b40;
+  --ch-t3: #6f6857;
+  --ch-think: #7d4f92;
+  --ch-read: #33639e;
+  --ch-search: #2e7f8f;
+  --ch-edit: #3f7a4c;
+  --ch-run: #b06e30;
+  --ch-egg: #a34f6e;
+  --ch-err: #b03e33;
+  --ch-acc: #b5532f;
+  --ch-sans: var(--mon-hand);
 }
 
-/* The chrome is handwritten; the reading text stays sans for contrast. */
-.theme-ink .mon-chip,
+/* ink · dark：黑板与粉笔——同一个手，换一块板。 */
+.theme-ink.scheme-dark {
+  color-scheme: dark;
+}
+
+.theme-ink.scheme-dark body {
+  background: #191a1c;
+}
+
+.theme-ink.scheme-dark .mon-root {
+  --mon-bg: #191a1c;
+  --mon-s1: #212225;
+  --mon-s2: #27292c;
+  --mon-s3: #323438;
+  --mon-bd: #42454b;
+  --mon-bd2: #606369;
+  --mon-t: #eae7dc;
+  --mon-t2: #bab7ab;
+  --mon-t3: #918e82;
+  --mon-think: #c9a0e0;
+  --mon-read: #8ab8f5;
+  --mon-search: #6fc4d4;
+  --mon-edit: #8fd0a5;
+  --mon-run: #f0b070;
+  --mon-egg: #efa8c2;
+  --mon-err: #f2887c;
+  --mon-acc: #d8d5cc;
+  --desk-bg: 25 26 28;
+  --desk-panel: 33 34 37;
+  --desk-panel2: 39 41 44;
+  --desk-deep: 22 23 25;
+  --desk-line: 66 69 75;
+  --desk-ink: 234 231 220;
+  --desk-dim: 145 142 130;
+  --desk-accent: 216 213 204;
+  --desk-ember: 242 136 124;
+  --desk-teal: 143 208 165;
+  --desk-wood: 39 41 44;
+  --desk-wood-lit: 50 52 56;
+  --desk-lavender: 201 160 224;
+}
+
+.theme-ink.scheme-dark .mon-root::before {
+  background:
+    radial-gradient(560px 380px at 18% -6%, rgb(255 252 240 / 0.05), transparent 65%),
+    radial-gradient(480px 340px at 108% 112%, rgb(201 160 224 / 0.05), transparent 65%);
+}
+
+.theme-ink.scheme-dark .drip-root {
+  --drip-s1: #212225;
+  --drip-s2: #27292c;
+  --drip-s3: #323438;
+  --drip-bd: #42454b;
+  --drip-bd2: #606369;
+  --drip-t: #eae7dc;
+  --drip-t2: #bab7ab;
+  --drip-t3: #918e82;
+  --drip-ok: #8fd0a5;
+  --drip-listen: #8ab8f5;
+  background: #191a1c;
+}
+
+.theme-ink.scheme-dark .chart-root {
+  --ch-bg: #191a1c;
+  --ch-s1: #212225;
+  --ch-s2: #27292c;
+  --ch-s3: #323438;
+  --ch-bd: #42454b;
+  --ch-bd2: #606369;
+  --ch-t: #eae7dc;
+  --ch-t2: #bab7ab;
+  --ch-t3: #918e82;
+  --ch-think: #c9a0e0;
+  --ch-read: #8ab8f5;
+  --ch-search: #6fc4d4;
+  --ch-edit: #8fd0a5;
+  --ch-run: #f0b070;
+  --ch-egg: #efa8c2;
+  --ch-err: #f2887c;
+  --ch-acc: #d8d5cc;
+}
+
+/* ink · 画上去的控件：手写字、加粗墨线、歪歪扭扭的圆角。 */
 .theme-ink .mon-btn,
-.theme-ink .mon-cap,
-.theme-ink .mon-sec,
-.theme-ink .mon-fold,
-.theme-ink .mon-runsel,
-.theme-ink .mon-runmenu,
-.theme-ink .mon-feed,
-.theme-ink .rounds-bubble,
+.theme-ink .mon-chip,
 .theme-ink .rounds-card,
-.theme-ink .rounds-dock,
-.theme-ink .drip-card,
-.theme-ink .drip-pill {
-  font-family: var(--mon-hand);
+.theme-ink .rounds-inp,
+.theme-ink .mon-chat__input {
+  border-width: 1.6px;
+  border-radius: 12px 9px 13px 8px / 9px 13px 8px 12px;
 }
 
-.theme-ink .mon-feed {
-  font-size: 13px;
-}
-
-/* Buttons and chips are drawn, not machined: thicker ink strokes, organic
-   corners, no fills. */
 .theme-ink .mon-btn {
-  border: 1.5px solid #4a463c;
-  border-radius: 8px 11px 7px 10px;
   background: transparent;
 }
 
-.theme-ink .mon-chip {
-  border: 1.5px solid rgb(51 48 42 / 0.55);
-  background: transparent;
+.theme-ink .mon-btn:hover {
+  background: rgb(181 83 47 / 0.08);
 }
 
-/* The story cards sit on the desk like paper scraps, very slightly askew. */
 .theme-ink .rounds-card:nth-child(odd) {
   transform: rotate(0.45deg);
 }
@@ -251,22 +437,11 @@
   transform: rotate(-0.35deg);
 }
 
-.theme-ink .drip-root {
-  --drip-s1: #e9e4d5;
-  --drip-s2: #e2dcc9;
-  --drip-s3: #d6cfb8;
-  --drip-bd: #c9c2ab;
-  --drip-bd2: #a89f83;
-  --drip-t: #33302a;
-  --drip-t2: #5c574c;
-  --drip-t3: #8d8672;
-  --drip-ok: #4e7d54;
-  --drip-listen: #3f6fa8;
-  --drip-run: #c07a3a;
-  --drip-err: #b8453a;
-  background: #f1ede1;
+.theme-ink .mon-feed {
+  font-size: 13px;
 }
 
+/* Rounds 的硬编码暗面在纸上重新上纸。 */
 .theme-ink .rounds-root {
   background: #f1ede1;
 }
@@ -277,21 +452,15 @@
     radial-gradient(760px 540px at 72% 64%, rgb(226 216 190 / 0.55), transparent 65%);
 }
 
-/* Rounds' hardcoded dark sheets go back to paper: the status bubble, the
-   wallpaper chat bubbles, the story cards and the composer. */
 .theme-ink .rounds-bubble {
   background: rgb(255 255 255 / 0.8);
   border-color: #6b6350;
-  box-shadow: 0 8px 20px rgb(51 48 42 / 0.18);
-}
-
-.theme-ink .rounds-bubble--empty {
-  border-style: dashed;
+  box-shadow: 0 8px 20px rgb(47 44 38 / 0.18);
 }
 
 .theme-ink .rounds-bubblewrap--user .rounds-bubble {
-  border-color: rgb(192 122 58 / 0.5);
-  background: rgb(222 146 85 / 0.16);
+  border-color: rgb(176 110 48 / 0.5);
+  background: rgb(224 180 130 / 0.2);
 }
 
 .theme-ink .rounds-bubblewrap--system .rounds-bubble {
@@ -300,37 +469,56 @@
 
 .theme-ink .rounds-card {
   background: rgb(255 255 255 / 0.75);
-  border-color: #a89f83;
-  box-shadow: 0 6px 16px rgb(51 48 42 / 0.14);
+  border-color: #877e64;
+  box-shadow: 0 6px 16px rgb(47 44 38 / 0.14);
 }
 
 .theme-ink .rounds-inp {
   background: rgb(255 255 255 / 0.72);
-  border-color: #a89f83;
-  box-shadow: 0 8px 20px rgb(51 48 42 / 0.14);
+  border-color: #877e64;
+  box-shadow: 0 8px 20px rgb(47 44 38 / 0.14);
 }
 
-/* The desk sheet stays a light sheet with dark writing (it is the paper the
-   code is written on) — do not follow the dark-panel remaps. */
-.theme-ink .mon-root {
-  --desk-ink: 246 243 233;
-  --desk-deep: 238 233 219;
-  --desk-dim: 90 85 75;
+.theme-ink.scheme-dark .rounds-root {
+  background: #191a1c;
 }
 
-/* ═══════════════════════ GLASS — 磨砂玻璃 ═══════════════════════
-   Cool dark, translucent panels over bright diffuse light. */
+.theme-ink.scheme-dark .rounds-root::before {
+  background:
+    radial-gradient(900px 620px at 24% 38%, rgb(255 252 240 / 0.05), transparent 65%),
+    radial-gradient(760px 540px at 72% 64%, rgb(201 160 224 / 0.05), transparent 65%);
+}
+
+.theme-ink.scheme-dark .rounds-bubble {
+  background: rgb(38 40 43 / 0.9);
+  border-color: #606369;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.3);
+}
+
+.theme-ink.scheme-dark .rounds-card {
+  background: rgb(33 34 37 / 0.9);
+  border-color: #606369;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 0.3);
+}
+
+.theme-ink.scheme-dark .rounds-inp {
+  background: rgb(33 34 37 / 0.9);
+  border-color: #606369;
+}
+
+/* ═══════════════════════════════ GLASS ═══════════════════════════════
+   现代简约：横平竖直、磨砂玻璃、建筑感的 hairline。dark 为基调。 */
 
 .theme-glass .mon-root {
   --mon-bg: #0d0f14;
-  --mon-s1: rgb(255 255 255 / 0.045);
-  --mon-s2: rgb(255 255 255 / 0.07);
-  --mon-s3: rgb(255 255 255 / 0.1);
-  --mon-bd: rgb(255 255 255 / 0.1);
-  --mon-bd2: rgb(255 255 255 / 0.18);
-  --mon-t: #eef1f6;
-  --mon-t2: #b6bec9;
-  --mon-t3: #8b94a2;
+  --mon-s1: rgb(255 255 255 / 0.05);
+  --mon-s2: rgb(255 255 255 / 0.08);
+  --mon-s3: rgb(255 255 255 / 0.12);
+  --mon-bd: rgb(255 255 255 / 0.14);
+  --mon-bd2: rgb(255 255 255 / 0.26);
+  --mon-t: #f0f3f8;
+  --mon-t2: #bfc7d3;
+  --mon-t3: #98a2b0;
   --mon-think: #c9a0e0;
   --mon-read: #8ab8f5;
   --mon-search: #6fc4d4;
@@ -340,154 +528,53 @@
   --mon-err: #f2887c;
   --mon-acc: #8ab8f5;
   --desk-bg: 13 15 20;
-  --desk-panel: 26 30 40;
-  --desk-panel2: 34 39 52;
+  --desk-panel: 30 34 44;
+  --desk-panel2: 38 43 56;
   --desk-deep: 9 11 15;
-  --desk-line: 52 60 76;
-  --desk-ink: 238 241 246;
-  --desk-dim: 139 148 162;
+  --desk-line: 62 72 92;
+  --desk-ink: 240 243 248;
+  --desk-dim: 152 162 176;
   --desk-accent: 138 184 245;
   --desk-ember: 242 136 124;
   --desk-teal: 111 196 212;
-  --desk-wood: 30 35 46;
-  --desk-wood-lit: 44 51 66;
+  --desk-wood: 34 39 50;
+  --desk-wood-lit: 48 55 70;
   --desk-lavender: 201 160 224;
 }
 
-/* Brighter, three-pool ambience: the blur needs something to refract. */
 .theme-glass .mon-root::before {
   background:
-    radial-gradient(620px 420px at 14% -8%, rgb(106 168 240 / 0.2), transparent 62%),
-    radial-gradient(540px 400px at 108% 114%, rgb(196 149 221 / 0.16), transparent 62%);
+    radial-gradient(620px 420px at 14% -8%, rgb(106 168 240 / 0.22), transparent 62%),
+    radial-gradient(540px 400px at 108% 114%, rgb(196 149 221 / 0.18), transparent 62%);
 }
 
 .theme-glass .mon-root::after {
-  background: radial-gradient(560px 400px at 74% -12%, rgb(85 193 211 / 0.12), transparent 62%);
-}
-
-/* Straight lines everywhere: the glass look is architectural, so controls
-   tighten their corners and lose the soft shadows. */
-.theme-glass .mon-btn,
-.theme-glass .mon-chip,
-.theme-glass .mon-themes > button,
-.theme-glass .mon-modes > button,
-.theme-glass .mon-runmenu,
-.theme-glass .rounds-card,
-.theme-glass .rounds-window {
-  border-radius: 6px;
-}
-
-/* The bar and the speech bubble are sheets of glass; the rest stays light
-   on purpose — blur on every panel costs more than it shows. */
-.theme-glass .mon-bar {
-  background: rgb(255 255 255 / 0.04);
-  backdrop-filter: blur(14px) saturate(1.5);
-  -webkit-backdrop-filter: blur(14px) saturate(1.5);
-  border-bottom-color: rgb(255 255 255 / 0.12);
-}
-
-.theme-glass .rounds-bubble {
-  background: rgb(255 255 255 / 0.06);
-  backdrop-filter: blur(10px) saturate(1.6);
-  -webkit-backdrop-filter: blur(10px) saturate(1.6);
-  border-color: rgb(255 255 255 / 0.16);
+  background: radial-gradient(560px 400px at 74% -12%, rgb(85 193 211 / 0.13), transparent 62%);
 }
 
 .theme-glass .drip-root {
   --drip-s1: rgb(255 255 255 / 0.05);
-  --drip-s2: rgb(255 255 255 / 0.07);
-  --drip-s3: rgb(255 255 255 / 0.1);
-  --drip-bd: rgb(255 255 255 / 0.1);
-  --drip-bd2: rgb(255 255 255 / 0.18);
-  --drip-t: #eef1f6;
-  --drip-t2: #b6bec9;
-  --drip-t3: #8b94a2;
+  --drip-s2: rgb(255 255 255 / 0.08);
+  --drip-s3: rgb(255 255 255 / 0.12);
+  --drip-bd: rgb(255 255 255 / 0.14);
+  --drip-bd2: rgb(255 255 255 / 0.26);
+  --drip-t: #f0f3f8;
+  --drip-t2: #bfc7d3;
+  --drip-t3: #98a2b0;
   --drip-ok: #8fd0a5;
   --drip-listen: #8ab8f5;
-  --drip-run: #f0b070;
-  --drip-err: #f2887c;
-}
-
-.theme-glass .rounds-root {
-  background: #0d0f14;
-}
-
-.theme-glass .rounds-root::before {
-  background:
-    radial-gradient(900px 620px at 24% 38%, rgb(106 168 240 / 0.14), transparent 65%),
-    radial-gradient(760px 540px at 72% 64%, rgb(196 149 221 / 0.12), transparent 65%),
-    radial-gradient(560px 420px at 55% 18%, rgb(85 193 211 / 0.08), transparent 70%);
-}
-
-/* ═══════════════════════ shared style features ═══════════════════════ */
-
-/* The riding scrollbar thumb takes the style's ink. */
-.theme-nixie .mon-ridesb__thumb {
-  background: rgb(255 170 60 / 0.32);
-}
-
-.theme-ink .mon-ridesb__thumb {
-  background: rgb(51 48 42 / 0.35);
-}
-
-.theme-glass .mon-ridesb__thumb {
-  background: rgb(255 255 255 / 0.28);
-}
-
-/* == CHART — per-style tokens ==
-   The report face reads its own --ch-* palette; every style remaps it. */
-
-.theme-nixie .chart-root {
-  --ch-bg: #0c0906;
-  --ch-s1: #150f08;
-  --ch-s2: #1e150b;
-  --ch-s3: #2a1e0f;
-  --ch-bd: rgb(255 170 60 / 0.14);
-  --ch-bd2: rgb(255 170 60 / 0.3);
-  --ch-t: #f5e9cf;
-  --ch-t2: #d6bd91;
-  --ch-t3: #a68d5f;
-  --ch-think: #d8a86f;
-  --ch-read: #e8c07a;
-  --ch-search: #c9c07a;
-  --ch-edit: #c9d38a;
-  --ch-run: #ffb347;
-  --ch-egg: #e8a08a;
-  --ch-err: #ff9d7a;
-  --ch-acc: #ffb347;
-}
-
-.theme-ink .chart-root {
-  --ch-bg: #f1ede1;
-  --ch-s1: #e9e4d5;
-  --ch-s2: #e2dcc9;
-  --ch-s3: #d6cfb8;
-  --ch-bd: #c9c2ab;
-  --ch-bd2: #a89f83;
-  --ch-t: #33302a;
-  --ch-t2: #5c574c;
-  --ch-t3: #8d8672;
-  --ch-think: #8a5a9e;
-  --ch-read: #3f6fa8;
-  --ch-search: #3f8a9e;
-  --ch-edit: #4e7d54;
-  --ch-run: #c07a3a;
-  --ch-egg: #b05a78;
-  --ch-err: #b8453a;
-  --ch-acc: #c65b3f;
-  --ch-sans: "Caveat", "ShouXie851", "KaiTi", "STKaiti", cursive;
 }
 
 .theme-glass .chart-root {
   --ch-bg: #0d0f14;
-  --ch-s1: rgb(255 255 255 / 0.045);
-  --ch-s2: rgb(255 255 255 / 0.07);
-  --ch-s3: rgb(255 255 255 / 0.1);
-  --ch-bd: rgb(255 255 255 / 0.1);
-  --ch-bd2: rgb(255 255 255 / 0.18);
-  --ch-t: #eef1f6;
-  --ch-t2: #b6bec9;
-  --ch-t3: #8b94a2;
+  --ch-s1: rgb(255 255 255 / 0.05);
+  --ch-s2: rgb(255 255 255 / 0.08);
+  --ch-s3: rgb(255 255 255 / 0.12);
+  --ch-bd: rgb(255 255 255 / 0.14);
+  --ch-bd2: rgb(255 255 255 / 0.26);
+  --ch-t: #f0f3f8;
+  --ch-t2: #bfc7d3;
+  --ch-t3: #98a2b0;
   --ch-think: #c9a0e0;
   --ch-read: #8ab8f5;
   --ch-search: #6fc4d4;
@@ -498,175 +585,198 @@
   --ch-acc: #8ab8f5;
 }
 
-.theme-light .chart-root {
-  --ch-bg: #fafafa;
-  --ch-s1: #ffffff;
-  --ch-s2: #f2f2f2;
-  --ch-s3: #e8e8e8;
-  --ch-bd: #e4e4e4;
-  --ch-bd2: #cfcfcf;
-  --ch-t: #1c1c1e;
-  --ch-t2: #4c4c50;
-  --ch-t3: #85858a;
-  --ch-think: #8a5a9e;
-  --ch-read: #3671c9;
-  --ch-search: #2e8fa3;
-  --ch-edit: #3f8a54;
-  --ch-run: #c07a3a;
-  --ch-egg: #c05a86;
-  --ch-err: #d0453a;
-  --ch-acc: #3671c9;
-}
-
-.theme-dark .chart-root {
-  --ch-bg: #0e0e10;
-  --ch-s1: #17181a;
-  --ch-s2: #1e1f22;
-  --ch-s3: #292a2e;
-  --ch-bd: rgb(255 255 255 / 0.09);
-  --ch-bd2: rgb(255 255 255 / 0.17);
-  --ch-t: #e8e8ea;
-  --ch-t2: #a8a8ae;
-  --ch-t3: #7c7c82;
-  --ch-think: #b48ccb;
-  --ch-read: #7a9ce8;
-  --ch-search: #55b8c9;
-  --ch-edit: #79c08e;
-  --ch-run: #dd9457;
-  --ch-egg: #dd87a9;
-  --ch-err: #ef7d70;
-  --ch-acc: #8f8ff0;
-}
-
-/* == LIGHT == */
-
-.theme-light {
+/* glass · light：白昼的磨砂——白玻璃、深墨字。 */
+.theme-glass.scheme-light {
   color-scheme: light;
 }
 
-.theme-light body {
-  background: #fafafa;
+.theme-glass.scheme-light body {
+  background: #e8ecf3;
 }
 
-.theme-light .mon-root {
-  --mon-bg: #fafafa;
-  --mon-s1: #ffffff;
-  --mon-s2: #f2f2f2;
-  --mon-s3: #e8e8e8;
-  --mon-bd: #e4e4e4;
-  --mon-bd2: #cfcfcf;
-  --mon-t: #1c1c1e;
-  --mon-t2: #4c4c50;
-  --mon-t3: #85858a;
-  --mon-think: #8a5a9e;
-  --mon-read: #3671c9;
-  --mon-search: #2e8fa3;
-  --mon-edit: #3f8a54;
-  --mon-run: #c07a3a;
-  --mon-egg: #c05a86;
-  --mon-err: #d0453a;
-  --mon-acc: #3671c9;
-  --desk-bg: 250 250 250;
-  --desk-panel: 255 255 255;
-  --desk-panel2: 242 242 242;
-  --desk-deep: 242 242 242;
-  --desk-line: 228 228 228;
-  --desk-ink: 28 28 30;
-  --desk-dim: 133 133 138;
-  --desk-accent: 54 113 201;
-  --desk-ember: 208 69 58;
-  --desk-teal: 63 138 84;
-  --desk-wood: 242 242 242;
-  --desk-wood-lit: 232 232 232;
-  --desk-lavender: 138 90 158;
+.theme-glass.scheme-light .mon-root {
+  --mon-bg: #e8ecf3;
+  --mon-s1: rgb(255 255 255 / 0.62);
+  --mon-s2: rgb(255 255 255 / 0.78);
+  --mon-s3: rgb(255 255 255 / 0.92);
+  --mon-bd: rgb(30 45 70 / 0.14);
+  --mon-bd2: rgb(30 45 70 / 0.26);
+  --mon-t: #1a2233;
+  --mon-t2: #3d4a61;
+  --mon-t3: #5d6a80;
+  --mon-think: #7d4f92;
+  --mon-read: #2e64b8;
+  --mon-search: #17879c;
+  --mon-edit: #2e7f4c;
+  --mon-run: #b56a20;
+  --mon-egg: #b8437a;
+  --mon-err: #cf4a3a;
+  --mon-acc: #2e64b8;
+  --desk-bg: 232 236 243;
+  --desk-panel: 248 250 253;
+  --desk-panel2: 255 255 255;
+  --desk-deep: 240 244 249;
+  --desk-line: 30 45 70;
+  --desk-ink: 26 34 51;
+  --desk-dim: 93 106 128;
+  --desk-accent: 46 100 184;
+  --desk-ember: 207 74 58;
+  --desk-teal: 46 127 76;
+  --desk-wood: 255 255 255;
+  --desk-wood-lit: 240 244 249;
+  --desk-lavender: 125 79 146;
 }
 
-.theme-light .mon-root::before,
-.theme-light .mon-root::after {
-  background: none;
+.theme-glass.scheme-light .mon-root::before {
+  background:
+    radial-gradient(620px 420px at 14% -8%, rgb(120 170 240 / 0.35), transparent 62%),
+    radial-gradient(540px 400px at 108% 114%, rgb(196 149 221 / 0.28), transparent 62%);
 }
 
-.theme-light .drip-root {
-  --drip-s1: #ffffff;
-  --drip-s2: #f2f2f2;
-  --drip-s3: #e8e8e8;
-  --drip-bd: #e4e4e4;
-  --drip-bd2: #cfcfcf;
-  --drip-t: #1c1c1e;
-  --drip-t2: #4c4c50;
-  --drip-t3: #85858a;
-  --drip-ok: #3f8a54;
-  --drip-listen: #3671c9;
-  --drip-run: #c07a3a;
-  --drip-err: #d0453a;
-  background: #fafafa;
+.theme-glass.scheme-light .mon-root::after {
+  background: radial-gradient(560px 400px at 74% -12%, rgb(85 193 211 / 0.2), transparent 62%);
 }
 
-/* == DARK == */
-
-.theme-dark body {
-  background: #0e0e10;
+.theme-glass.scheme-light .drip-root {
+  --drip-s1: rgb(255 255 255 / 0.62);
+  --drip-s2: rgb(255 255 255 / 0.78);
+  --drip-s3: rgb(255 255 255 / 0.92);
+  --drip-bd: rgb(30 45 70 / 0.14);
+  --drip-bd2: rgb(30 45 70 / 0.26);
+  --drip-t: #1a2233;
+  --drip-t2: #3d4a61;
+  --drip-t3: #5d6a80;
+  --drip-ok: #2e7f4c;
+  --drip-listen: #2e64b8;
+  background: #e8ecf3;
 }
 
-.theme-dark .mon-root {
-  --mon-bg: #0e0e10;
-  --mon-s1: #17181a;
-  --mon-s2: #1e1f22;
-  --mon-s3: #292a2e;
-  --mon-bd: rgb(255 255 255 / 0.09);
-  --mon-bd2: rgb(255 255 255 / 0.17);
-  --mon-t: #e8e8ea;
-  --mon-t2: #a8a8ae;
-  --mon-t3: #7c7c82;
-  --mon-think: #b48ccb;
-  --mon-read: #7a9ce8;
-  --mon-search: #55b8c9;
-  --mon-edit: #79c08e;
-  --mon-run: #dd9457;
-  --mon-egg: #dd87a9;
-  --mon-err: #ef7d70;
-  --mon-acc: #8f8ff0;
-  --desk-bg: 14 14 16;
-  --desk-panel: 23 24 26;
-  --desk-panel2: 30 31 34;
-  --desk-deep: 10 10 12;
-  --desk-line: 41 42 46;
-  --desk-ink: 232 232 234;
-  --desk-dim: 124 124 130;
-  --desk-accent: 143 143 240;
-  --desk-ember: 239 125 112;
-  --desk-teal: 121 192 142;
-  --desk-wood: 30 31 34;
-  --desk-wood-lit: 41 42 46;
-  --desk-lavender: 180 140 203;
+.theme-glass.scheme-light .chart-root {
+  --ch-bg: #e8ecf3;
+  --ch-s1: rgb(255 255 255 / 0.62);
+  --ch-s2: rgb(255 255 255 / 0.78);
+  --ch-s3: rgb(255 255 255 / 0.92);
+  --ch-bd: rgb(30 45 70 / 0.14);
+  --ch-bd2: rgb(30 45 70 / 0.26);
+  --ch-t: #1a2233;
+  --ch-t2: #3d4a61;
+  --ch-t3: #5d6a80;
+  --ch-think: #7d4f92;
+  --ch-read: #2e64b8;
+  --ch-search: #17879c;
+  --ch-edit: #2e7f4c;
+  --ch-run: #b56a20;
+  --ch-egg: #b8437a;
+  --ch-err: #cf4a3a;
+  --ch-acc: #2e64b8;
 }
 
-.theme-dark .mon-root::before,
-.theme-dark .mon-root::after {
-  background: none;
+/* glass · 建筑感：一切控件收直角。 */
+.theme-glass .mon-btn,
+.theme-glass .mon-chip,
+.theme-glass .mon-themes > button,
+.theme-glass .mon-modes > button,
+.theme-glass .mon-runmenu,
+.theme-glass .rounds-card,
+.theme-glass .rounds-window {
+  border-radius: 6px;
 }
 
-.theme-dark .drip-root {
-  --drip-s1: #17181a;
-  --drip-s2: #1e1f22;
-  --drip-s3: #292a2e;
-  --drip-bd: rgb(255 255 255 / 0.09);
-  --drip-bd2: rgb(255 255 255 / 0.17);
-  --drip-t: #e8e8ea;
-  --drip-t2: #a8a8ae;
-  --drip-t3: #7c7c82;
-  --drip-ok: #79c08e;
-  --drip-listen: #7a9ce8;
-  --drip-run: #dd9457;
-  --drip-err: #ef7d70;
-  background: #0e0e10;
+.theme-glass .mon-bar {
+  background: rgb(255 255 255 / 0.04);
+  backdrop-filter: blur(14px) saturate(1.5);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  border-bottom-color: var(--mon-bd2);
 }
 
-/* == per-style riding-thumb ink == */
-.theme-light .mon-ridesb__thumb {
-  background: rgb(28 28 30 / 0.28);
+.theme-glass .rounds-bubble {
+  background: var(--mon-s2);
+  backdrop-filter: blur(10px) saturate(1.6);
+  -webkit-backdrop-filter: blur(10px) saturate(1.6);
+  border-color: var(--mon-bd2);
 }
 
-.theme-dark .mon-ridesb__thumb {
-  background: rgb(255 255 255 / 0.18);
+.theme-glass.scheme-light .mon-bar {
+  background: rgb(255 255 255 / 0.55);
+}
+
+/* ═══════════════════ 控件可见度（所有风格共用，走 token） ═══════════════════
+   十条整改的基线：hover / active / focus / selected 必须可辨，
+   控件与图形 ≥ 3:1，正文 ≥ 4.5:1。 */
+
+/* button：hover 换面，active 下沉。 */
+.mon-root .mon-btn:hover {
+  background: var(--mon-s3);
+  border-color: var(--mon-bd2);
+  color: var(--mon-t);
+}
+
+.mon-root .mon-btn:active {
+  transform: translateY(1px);
+}
+
+/* selected / active：aria-pressed 与 data-on 都给强调边。 */
+.mon-root button[aria-pressed="true"],
+.mon-root button[data-on],
+.mon-root button[data-current] {
+  border-color: var(--mon-acc);
+  color: var(--mon-t);
+  box-shadow: inset 0 0 0 1px var(--mon-acc);
+}
+
+/* input / textarea：清晰边界 + focus ring（不许 outline: none 单独存在）。 */
+.mon-root input,
+.mon-root textarea,
+.mon-root select {
+  border-color: var(--mon-bd2);
+}
+
+.mon-root input:focus-visible,
+.mon-root textarea:focus-visible,
+.mon-root select:focus-visible {
+  border-color: var(--mon-acc);
+  outline: 2px solid color-mix(in srgb, var(--mon-acc) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.mon-root .mon-chat__input:focus-visible,
+.mon-root .rounds-inp__input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--mon-acc) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* checkbox / radio：原生控件染上主题强调色。 */
+.mon-root input[type="checkbox"],
+.mon-root input[type="radio"] {
+  accent-color: var(--mon-acc);
+  width: 14px;
+  height: 14px;
+}
+
+/* divider 与 focus 的兜底。 */
+.mon-root hr,
+.mon-root .mon-railsec {
+  border-color: var(--mon-bd2);
+}
+
+/* ═══════════════════ per-style riding-thumb ink ═══════════════════ */
+
+.theme-nixie .mon-ridesb__thumb {
+  background: rgb(255 170 60 / 0.45);
+}
+
+.theme-ink .mon-ridesb__thumb {
+  background: rgb(47 44 38 / 0.4);
+}
+
+.theme-ink.scheme-dark .mon-ridesb__thumb {
+  background: rgb(234 231 220 / 0.28);
+}
+
+.theme-glass .mon-ridesb__thumb {
+  background: rgb(255 255 255 / 0.35);
+}
+
+.theme-glass.scheme-light .mon-ridesb__thumb {
+  background: rgb(30 45 70 / 0.32);
 }

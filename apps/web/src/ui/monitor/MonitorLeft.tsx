@@ -338,7 +338,9 @@ export function MonitorLeft({
                         </span>
                         <span className="mon-runmenu__clock mon-mono">{formatClock(entry.startedAt)}</span>
                         <span className="mon-runmenu__counts mon-mono">
-                          R{entry.counts.read} S{entry.counts.search} E{entry.counts.edit} ${entry.counts.run}
+                          <Nixie
+                            value={`R${entry.counts.read} S${entry.counts.search} E${entry.counts.edit} $${entry.counts.run}`}
+                          />
                         </span>
                       </span>
                     </span>

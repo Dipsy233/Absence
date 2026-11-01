@@ -11,8 +11,8 @@ import { ChartUI } from "../ui/chart/ChartUI";
 import { DripPipHost } from "../ui/drip/DripPip";
 import { DripDesktop } from "../ui/drip/DripDesktop";
 import { FaceRise } from "../ui/shared/FaceRise";
+import { defaultScheme, UI_STYLES } from "../lib/uistyle";
 import { useUiStyleStore } from "../stores/uistyleStore";
-import { UI_STYLES } from "../lib/uistyle";
 
 /**
  * The desktop shell opens Drip as a second window: it loads this same app with
@@ -50,11 +50,17 @@ export default function App() {
   // The UI style is a class on <html>: themes.css remaps the face tokens
   // under it, every face and the drip window read the same palette.
   const uiStyle = useUiStyleStore((s) => s.uiStyle);
+  const schemeOverride = useUiStyleStore((s) => s.schemeOverride);
   useEffect(() => {
     const el = document.documentElement;
     el.classList.remove(...UI_STYLES.map((id) => `theme-${id}`));
+    el.classList.remove("scheme-light", "scheme-dark");
     el.classList.add(`theme-${uiStyle}`);
-  }, [uiStyle]);
+    // The scheme flips the style's own token set; an override wins over the
+    // scheme the style was designed around.
+    const scheme = schemeOverride ?? defaultScheme(uiStyle);
+    el.classList.add(`scheme-${scheme}`);
+  }, [uiStyle, schemeOverride]);
 
   // The desktop shell opens Drip as a second always-on-top window. The face
   // underneath stays open and live — turning the switch off closes only the

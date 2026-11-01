@@ -86,8 +86,15 @@ export function Nixie({
       );
     };
 
-    if (prefersReducedMotion()) {
-      settle();
+    // The jump is the Nixie style's signature: every other look just sets
+    // the value, quietly.
+    if (resolved !== "tube" || prefersReducedMotion()) {
+      chars.forEach((c, i) => {
+        const cell = cells[i];
+        if (!cell) return;
+        cell.textContent = c === " " ? " " : c;
+        cell.classList.add("mon-nix__cell--settled");
+      });
       return;
     }
 
