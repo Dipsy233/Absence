@@ -18,6 +18,10 @@
 .picker {
   display: grid;
   width: min(880px, 100%);
+  /* A stable height: the history area fills the space that remains, so the
+     card is the same size before and after the sessions arrive — nothing
+     jumps and nothing is pushed off screen. */
+  height: min(660px, calc(100vh - 48px));
   grid-template-columns: 1.15fr 1fr;
   overflow: hidden;
   border: 1px solid var(--mon-bd2);
@@ -172,7 +176,16 @@
   display: flex;
   flex-direction: column;
   gap: 26px;
+  min-height: 0;
   padding: 30px 26px 26px;
+  overflow: hidden;
+}
+
+/* The history block takes the side column's remaining height; the runtime
+   block above it keeps its natural size. */
+.picker__side > .picker__block:last-child {
+  flex: 1;
+  min-height: 0;
 }
 
 .picker__block {
@@ -306,7 +319,8 @@
 }
 
 .picker__history {
-  max-height: 260px;
+  flex: 1;
+  min-height: 0;
 }
 
 .picker__hrow {
