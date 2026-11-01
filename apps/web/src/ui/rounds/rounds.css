@@ -22,7 +22,7 @@
      scrollLeft then shoves the whole face sideways. Clip forbids scrolling
      entirely. */
   overflow: clip;
-  background: #101318;
+  background: var(--mon-room);
   color: var(--mon-t);
 }
 /* The ambience: two slow light pools drifting behind everything. It is one
@@ -126,17 +126,17 @@
   overflow: hidden;
   border: 1px solid var(--mon-bd);
   border-radius: 14px;
-  background: rgb(26 30 38 / 0.8);
+  background: var(--mon-bubble);
   box-shadow: 0 8px 20px rgb(0 0 0 / 0.3);
   backdrop-filter: blur(6px);
 }
 .rounds-bubblewrap--user .rounds-bubble {
-  border-color: rgb(222 146 85 / 0.34);
-  background: rgb(222 146 85 / 0.12);
+  border-color: var(--mon-bubble-user-border);
+  background: var(--mon-bubble-user);
 }
 .rounds-bubblewrap--system .rounds-bubble {
   border-radius: 10px;
-  background: rgb(22 26 33 / 0.62);
+  background: var(--mon-bubble-system);
   box-shadow: none;
 }
 .rounds-bubble__msg {
@@ -178,7 +178,7 @@
   flex-direction: column;
   border: 1px solid var(--mon-bd2);
   border-radius: 12px;
-  background: rgb(18 22 29 / 0.9);
+  background: var(--mon-win);
   backdrop-filter: blur(14px);
   box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
 }
@@ -299,7 +299,7 @@
   padding: 10px 18px;
   border: 1px solid var(--mon-bd2);
   border-radius: 14px;
-  background: rgb(20 24 31 / 0.86);
+  background: var(--mon-bubble);
   box-shadow: 0 16px 36px rgb(0 0 0 / 0.42);
   text-align: center;
   display: flex;
@@ -324,7 +324,7 @@
   left: 50%;
   width: 12px;
   height: 12px;
-  background: rgb(20 24 31 / 0.86);
+  background: var(--mon-bubble);
   border-right: 1px solid var(--mon-bd2);
   border-bottom: 1px solid var(--mon-bd2);
   transform: translateX(-50%) rotate(45deg);
@@ -546,7 +546,7 @@
   padding: 8px 9px;
   border: 1px solid var(--mon-bd);
   border-radius: 8px;
-  background: rgb(20 24 31 / 0.88);
+  background: var(--mon-card);
   box-shadow: 0 8px 18px rgb(0 0 0 / 0.28);
   text-align: left;
   transform-origin: 50% 100%;
@@ -607,7 +607,7 @@
 }
 .rounds-card[data-now="true"] {
   border-color: var(--mon-read);
-  background: #1b2230;
+  background: var(--mon-card-now);
   animation: rounds-nowpulse 2.6s ease-in-out infinite;
 }
 @keyframes rounds-nowpulse {
@@ -657,7 +657,7 @@
   padding: 0 16px;
   border: 1px solid var(--mon-bd2);
   border-radius: 22px;
-  background: rgb(20 24 31 / 0.78);
+  background: var(--mon-inp);
   backdrop-filter: blur(8px);
   box-shadow: 0 10px 24px rgb(0 0 0 / 0.3);
   transition: border-color 0.16s ease;
@@ -845,7 +845,7 @@
   gap: 6px;
   padding: 14px 0 10px;
   border-left: 1px solid var(--mon-bd);
-  background: rgb(16 19 24 / 0.72);
+  background: var(--mon-dock);
   backdrop-filter: blur(10px);
 }
 .rounds-di {
@@ -883,7 +883,7 @@
   margin-top: auto;
 }
 .rounds-di[data-panel="activity"][data-on="true"] {
-  background: rgb(222 146 85 / 0.12);
+  background: var(--mon-bubble-user);
   color: var(--mon-run);
 }
 .rounds-di svg {

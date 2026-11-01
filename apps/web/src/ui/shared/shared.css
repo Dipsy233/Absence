@@ -69,6 +69,20 @@
   --desk-wood: 44 44 43;
   --desk-wood-lit: 59 59 57;
   --desk-lavender: 191 142 218;
+
+  /* ── Surface tokens: the panels that used to be hardcoded per-file ──
+     Every style × scheme declares these in themes.css; the values here are
+     the neutral dark baseline they replace. */
+  --mon-room: #101318;
+  --mon-win: rgb(18 22 29 / 0.9);
+  --mon-card: rgb(20 24 31 / 0.88);
+  --mon-card-now: #1b2230;
+  --mon-bubble: rgb(26 30 38 / 0.8);
+  --mon-bubble-user: rgb(222 146 85 / 0.12);
+  --mon-bubble-user-border: rgb(222 146 85 / 0.34);
+  --mon-bubble-system: rgb(22 26 33 / 0.62);
+  --mon-inp: rgb(20 24 31 / 0.78);
+  --mon-dock: rgb(16 19 24 / 0.72);
 }
 
 /* ── Shell ──────────────────────────────────────────────────────────────── */
