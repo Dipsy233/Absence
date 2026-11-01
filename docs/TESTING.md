@@ -28,6 +28,7 @@ manual and are listed below as *live*.
 ```bash
 node scripts/make-demo.mjs [dir] [--force]   # scaffold a demo project (default: ./absence-demo)
 npm run check:offline                        # every offline check in one go (what CI runs)
+npm run check:group -- affected              # only the checks owning the files you changed
 npm run verify                               # typecheck + web build + every offline check
 ```
 
@@ -37,6 +38,51 @@ command:
 ```bash
 npx tsx scripts/checks/check-<name>.ts
 ```
+
+## Groups — run what changed, not everything
+
+The full sweep is measured in minutes (the session and metrics checks boot real
+servers and sleep through sampling windows), so the checks are grouped by the
+code they exercise. The registry is `scripts/checks/groups.ts`: each group has
+a name, the source paths it owns, and its checks with per-check timeouts.
+`run-offline.ts` derives its list from the same file — a new check script is
+registered in exactly one place, then every runner sees it.
+
+```bash
+npm run check:group -- list                 # what exists, what each group owns
+npm run check:group -- report views         # named groups (overlap is deduped)
+npm run check:group -- affected             # only groups owning changed files
+npm run check:group -- affected --base main # …against a base ref instead of HEAD
+npm run check:group -- eggs --all           # …including the group's platform checks
+```
+
+`affected` maps `git diff --name-only` (plus untracked files; against `--base`
+when given) through the groups' path globs. A script runs when its group's
+paths *or the script's own file* changed. A change that matches no group — a
+README, a screenshot — prints that typecheck and the build cover it and exits 0,
+so the command is safe to wire into a pre-commit hook. The twelve groups:
+
+| Group | Owns | Offline checks |
+|---|---|---|
+| `report` | report engine, markdown, formatters | report, markdown, format |
+| `views` | the faces' shared view model (lib/history, lib/metrics, lib/viewMode, ui/shared) | views |
+| `history` | run rebuild, sliding window, event caches | history, incremental |
+| `settings` | settingsStore normalisation, i18n | settings |
+| `chimes` | attentionChimeFor | chimes |
+| `eggs` | process detection, classification, filters | eggs, classify, outside-attr |
+| `metrics` | sampler, ring, persistence, ranges | metrics, metrics-persist, metrics-ranges, metrics-restart, observed-lifetime |
+| `agent` | runtime adapters, capabilities, MCP, observer contract | codex, codexshell, shellenv, capabilities, capability-commands, mcp-events, observer |
+| `session` | sessions, storage, config, server lifecycle | storage, session-dwell, session-close, lifecycle |
+| `io` | fsdiff engine, exec server | fsdiff, execserver |
+| `pipeline` | everything, end to end | — (e2e is platform-tier) |
+| `docker` | docker eggs | — (both platform-tier) |
+
+`check-views.ts` is the faces' own regression suite (no UI automation — the
+*logic* behind the faces): the replay cursor row, LIVE/REPLAY, the feed's
+grouping/fold/anchors, the cost-panel derivation, the shared vocabularies
+(i18n completeness for run words and attention reasons), and the view-mode
+fallbacks. It runs whenever anything under `ui/shared/` or the shared libs
+changes.
 
 ### Tier 1 — pure (no server, no spawning, no credentials)
 
@@ -158,16 +204,17 @@ const { appendMetricsFrame } = await import(".../storage/metrics");
 
 ### Adding a check
 
-Write `scripts/checks/check-<name>.ts` using the harness, add it to the
-`CHECKS` array in `scripts/checks/run-offline.ts` with a timeout, and add an
-`npm run` alias if it is worth typing. Neither `package.json`'s aliases nor the
-CI workflow need to change for CI to pick it up — the list lives in exactly one
-place, and each entry carries its own timeout because the self-hosting checks
-sleep through real sampling windows.
+Write `scripts/checks/check-<name>.ts` using the harness, register it (with a
+timeout) in the best-matching group in `scripts/checks/groups.ts` — `checks` is
+the offline list, `platform` the manual one — and add an `npm run` alias if it
+is worth typing. Neither `package.json`'s aliases nor the CI workflow need to
+change for CI to pick it up — the list lives in exactly one place, and each
+entry carries its own timeout because the self-hosting checks sleep through
+real sampling windows.
 
 The CI workflow (`.github/workflows/ci.yml`) runs the workspace typechecks and
 `npm run check:offline` on every push and pull request, on Node 22 to match
-`engines.node`. That is 27 scripts and roughly 3 minutes, five of them booting a
+`engines.node`. That is 29 scripts and roughly 3 minutes, five of them booting a
 real server; the four kernel/docker checks stay manual.
 
 A check belongs in the list if it needs nothing but Node: no observer binary, no

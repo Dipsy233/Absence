@@ -22,6 +22,7 @@ CI 跑**第 1–3 层**（`npm run check:offline`）：第 3 层的检查自己�
 ```bash
 node scripts/make-demo.mjs [dir] [--force]   # 搭一个 demo 项目（默认 ./absence-demo）
 npm run check:offline                        # 一次跑完全部离线检查（CI 跑的就是这个）
+npm run check:group -- affected              # 只跑你改动的文件所属的组
 npm run verify                               # 类型检查 + Web 构建 + 全部离线检查
 ```
 
@@ -30,6 +31,46 @@ npm run verify                               # 类型检查 + Web 构建 + 全�
 ```bash
 npx tsx scripts/checks/check-<name>.ts
 ```
+
+## 分组 —— 按需跑，不跑全量
+
+全量清点是分钟级的（session/metrics 检查要起真 server、睡过采样窗口），所以
+检查按代码区域分组。注册表是 `scripts/checks/groups.ts`：每组一个名字、
+归属的源码路径 glob、以及自带超时的检查清单。`run-offline.ts` 的清单也从
+同一个文件推导——新检查脚本只在一处注册，所有 runner 都能看到。
+
+```bash
+npm run check:group -- list                 # 有哪些组、各管什么
+npm run check:group -- report views         # 按名跑（重叠自动去重）
+npm run check:group -- affected             # 只跑改动文件所属的组
+npm run check:group -- affected --base main # 对比某个基线而不是 HEAD
+npm run check:group -- eggs --all           # 连平台级检查一起跑
+```
+
+`affected` 用 `git diff --name-only`（含未跟踪文件；给了 `--base` 则对基线）
+过一遍各组的路径 glob。组内路径**或脚本自身文件**有改动就跑该脚本。改了
+不属于任何组的文件（README、截图）会打印"typecheck 和构建已覆盖"并以 0
+退出——这条命令可以安全地挂进 pre-commit 钩子。十二个组：
+
+| 组 | 管什么 | 离线检查 |
+|---|---|---|
+| `report` | 报告引擎、Markdown、格式化 | report, markdown, format |
+| `views` | 各 face 共享的视图模型（lib/history、lib/metrics、lib/viewMode、ui/shared） | views |
+| `history` | run 重建、滑动窗口、事件缓存 | history, incremental |
+| `settings` | settingsStore 归一化、i18n | settings |
+| `chimes` | attentionChimeFor | chimes |
+| `eggs` | 进程识别、分类、过滤器 | eggs, classify, outside-attr |
+| `metrics` | 采样器、环、持久化、区间 | metrics, metrics-persist, metrics-ranges, metrics-restart, observed-lifetime |
+| `agent` | runtime 适配层、capabilities、MCP、观察器契约 | codex, codexshell, shellenv, capabilities, capability-commands, mcp-events, observer |
+| `session` | 会话、存储、config、服务器生命周期 | storage, session-dwell, session-close, lifecycle |
+| `io` | fsdiff 引擎、exec server | fsdiff, execserver |
+| `pipeline` | 全链路端到端 | —（e2e 属平台级） |
+| `docker` | docker eggs | —（两个都属平台级） |
+
+`check-views.ts` 是 faces 自己的回归套件（不做 UI 自动化——测的是 face 背后的
+*逻辑*）：replay 光标行、LIVE/REPLAY 判定、feed 的分组/折叠/锚点、成本面板
+派生、共享词汇完整性（run 状态词与注意力文案的 i18n 覆盖）、以及 viewMode
+回退。`ui/shared/` 或共享 lib 一变它就跑。
 
 ### 第 1 层 —— 纯函数（无 server、不 spawn、不需凭据）
 
@@ -146,12 +187,13 @@ const { appendMetricsFrame } = await import(".../storage/metrics");
 ### 新增一个检查
 
 写 `scripts/checks/check-<name>.ts` 并用 harness，把它连同超时加进
-`scripts/checks/run-offline.ts` 里的 `CHECKS` 数组，值得手敲的话再加一个
-`npm run` 别名。CI 要跑它不需要改 `package.json` 别名、也不需要改 workflow——
-清单只存在于一处，而每个条目自带超时，因为自起 server 的检查要真的睡过采样窗口。
+`scripts/checks/groups.ts` 里最匹配的一组（`checks` 是离线清单，`platform`
+是手动清单），值得手敲的话再加一个 `npm run` 别名。CI 要跑它不需要改
+`package.json` 别名、也不需要改 workflow——清单只存在于一处，而每个条目自带
+超时，因为自起 server 的检查要真的睡过采样窗口。
 
 CI workflow（`.github/workflows/ci.yml`）在每次 push / PR 上跑 workspace 类型检查
-和 `npm run check:offline`，Node 版本为 22，与 `engines.node` 一致。那是 27 个
+和 `npm run check:offline`，Node 版本为 22，与 `engines.node` 一致。那是 29 个
 脚本、约 3 分钟，其中 5 个会起真 server；四个内核/docker 检查保持手动。
 
 一个检查能不能进这个清单，看它是不是**只依赖 Node**：不需要观察器二进制、不需要
