@@ -4,7 +4,6 @@ import {
   fetchProjects,
   fetchSessionHistory,
   fetchRuntimes,
-  saveRuntimePaths,
   type RuntimeKind,
   type RuntimeStatus,
 } from "../../lib/api";
@@ -16,6 +15,24 @@ import "../../ui/shared/themes.css";
 import "../../ui/shared/picker.css";
 
 type AgentChoice = RuntimeKind;
+
+/**
+ * What /api/runtimes adds on top of the shared DTO: the catalog's profile
+ * facts. The picker never names a product — it renders whatever rows come back.
+ */
+interface ProfileRuntime extends RuntimeStatus {
+  profileId?: string;
+  commandLine?: string;
+  auth?: "none" | "optional" | "required";
+  capabilities?: string;
+  requires?: string[];
+  source?: string;
+}
+
+/** First startable runtime, or the first row the catalog offered. */
+function pickDefault(list: ProfileRuntime[]): AgentChoice {
+  return list.find((runtime) => runtime.available)?.kind ?? list[0]?.kind ?? "";
+}
 
 /** Short, human time for a session row: time only today, date + time otherwise. */
 function formatWhen(timestamp: number): string {
@@ -39,12 +56,13 @@ export function ProjectPicker() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<SessionHistoryEntry[]>([]);
   const [path, setPath] = useState("");
-  const [agent, setAgent] = useState<AgentChoice>("pi");
+  const [agent, setAgent] = useState<AgentChoice>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [runtimes, setRuntimes] = useState<RuntimeStatus[]>([]);
-  // Paths the user is editing in the runtime config panel, keyed by kind.
-  const [pathEdits, setPathEdits] = useState<{ pi?: string; codex?: string; dsh?: string }>({});
+  const [runtimes, setRuntimes] = useState<ProfileRuntime[]>([]);
+  // Launch lines the user is editing, keyed by profile id — never by product.
+  const [pathEdits, setPathEdits] = useState<Record<string, string>>({});
+  const [dirtyPaths, setDirtyPaths] = useState<Record<string, boolean>>({});
   const [savingPaths, setSavingPaths] = useState(false);
 
   const refreshSessions = () => {
@@ -53,16 +71,24 @@ export function ProjectPicker() {
       .catch(() => setSessions([]));
   };
 
+  /** Seed the launch editor from the catalog's rows; keep unlucky edits intact. */
+  const applyRuntimes = (list: ProfileRuntime[]) => {
+    setRuntimes(list);
+    setPathEdits((prev) => {
+      const next = { ...prev };
+      for (const rt of list) {
+        if (rt.configurable && next[rt.kind] === undefined) {
+          next[rt.kind] = rt.commandLine ?? rt.path ?? "";
+        }
+      }
+      return next;
+    });
+    setAgent((current) => current || pickDefault(list));
+  };
+
   const refreshRuntimes = () => {
     fetchRuntimes()
-      .then((list) => {
-        setRuntimes(list);
-        setPathEdits((prev) => ({
-          pi: prev.pi ?? list.find((r) => r.kind === "pi")?.path ?? "",
-          codex: prev.codex ?? list.find((r) => r.kind === "codex")?.path ?? "",
-          dsh: prev.dsh ?? list.find((r) => r.kind === "dsh")?.path ?? "",
-        }));
-      })
+      .then((list) => applyRuntimes(list as ProfileRuntime[]))
       .catch(() => setRuntimes([]));
   };
 
@@ -80,6 +106,9 @@ export function ProjectPicker() {
    * editor shows that runtime's row, the history only its sessions. Typing
    * a path narrows the history further.
    */
+  const selectedRuntime = runtimes.find((runtime) => runtime.kind === agent);
+  const hasDirtyPath = Object.values(dirtyPaths).some(Boolean);
+
   const visibleSessions = useMemo(() => {
     const byRuntime = sessions.filter((s) => s.runtime === agent);
     return query ? byRuntime.filter((s) => s.projectPath.toLowerCase().includes(query)) : byRuntime;
@@ -100,15 +129,36 @@ export function ProjectPicker() {
   };
 
   const savePaths = async () => {
+    const launch: Record<string, string> = {};
+    for (const runtime of runtimes) {
+      if (runtime.configurable && dirtyPaths[runtime.kind]) {
+        launch[runtime.kind] = pathEdits[runtime.kind] ?? "";
+      }
+    }
+    if (Object.keys(launch).length === 0) return;
     setSavingPaths(true);
     setError(undefined);
     try {
-      const list = await saveRuntimePaths({
-        piBin: pathEdits.pi,
-        codexBin: pathEdits.codex,
-        dshBin: pathEdits.dsh,
+      const response = await fetch("/api/runtimes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ launch }),
       });
-      setRuntimes(list);
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        runtimes?: ProfileRuntime[];
+      };
+      if (!response.ok) throw new Error(body.error ?? `${response.status} ${response.statusText}`);
+      const list = body.runtimes ?? [];
+      setDirtyPaths({});
+      setPathEdits((prev) => {
+        const next = { ...prev };
+        for (const runtime of list) {
+          if (runtime.configurable) next[runtime.kind] = runtime.commandLine ?? runtime.path ?? "";
+        }
+        return next;
+      });
+      applyRuntimes(list);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -211,6 +261,7 @@ export function ProjectPicker() {
                 "A green dot means the runtime was found. A red dot means it is not installed (or the path is wrong) — fix it below before opening.",
               )}
             </p>
+            {selectedRuntime?.note ? <p className="picker__note">{selectedRuntime.note}</p> : null}
           </section>
 
           <section className="picker__block picker__block--fill">
@@ -252,31 +303,45 @@ export function ProjectPicker() {
           </section>
 
           <section className="picker__block">
-            {/* The selected runtime's path: switching the runtime switches the
-                row, so what you edit is always what you will open with. */}
+            {/* The selected profile's launch line: switching the runtime
+                switches the row, so what you edit is always what you will
+                open with. Rows come from the catalog, never a product list. */}
             <label className="picker__label">{t("runtime paths")}</label>
             <div className="picker__pathlist">
               {runtimes
                 .filter((rt) => rt.configurable && rt.kind === agent)
-                .map((rt) => {
-                  const key = rt.kind as "pi" | "codex" | "dsh";
-                  return (
-                    <div key={rt.kind} className="picker__pathedit">
-                      <div className="picker__pathrow">
-                        <i data-ok={rt.available ? "true" : undefined} />
-                        <span>{rt.label}</span>
-                        <em>{rt.available ? t("found") : t("not found")}</em>
-                      </div>
-                      <input
-                        value={pathEdits[key] ?? ""}
-                        onChange={(e) => setPathEdits((prev) => ({ ...prev, [key]: e.target.value }))}
-                        placeholder={rt.note}
-                        spellCheck={false}
-                      />
+                .map((rt) => (
+                  <div key={rt.kind} className="picker__pathedit">
+                    <div className="picker__pathrow">
+                      <i data-ok={rt.available ? "true" : undefined} />
+                      <span>{rt.label}</span>
+                      <em>{rt.available ? t("found") : t("not found")}</em>
                     </div>
-                  );
-                })}
-              <button type="button" className="picker__save" disabled={savingPaths} onClick={() => void savePaths()}>
+                    <input
+                      value={pathEdits[rt.kind] ?? ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setPathEdits((prev) => ({ ...prev, [rt.kind]: value }));
+                        setDirtyPaths((prev) => ({ ...prev, [rt.kind]: true }));
+                      }}
+                      placeholder={rt.commandLine ?? rt.note}
+                      spellCheck={false}
+                    />
+                    {rt.auth === "required" ? (
+                      <p className="picker__note">
+                        {t(
+                          "Sign-in required: the agent may refuse to open until its own authenticate method succeeds. Absence shows the agent's methods and forwards the login — it never reads credentials.",
+                        )}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              <button
+                type="button"
+                className="picker__save"
+                disabled={savingPaths || !hasDirtyPath}
+                onClick={() => void savePaths()}
+              >
                 {savingPaths ? t("saving…") : t("save paths")}
               </button>
             </div>

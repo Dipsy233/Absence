@@ -23,6 +23,8 @@ export interface CatalogEntry extends AgentProfile {
 const CATALOG_DIR = path.join(os.homedir(), ".absence");
 const CUSTOM_FILE = path.join(CATALOG_DIR, "agents.json");
 const REGISTRY_CACHE = path.join(CATALOG_DIR, "registry.json");
+/** Launch-line overrides saved from the picker, keyed by profile id. */
+const RUNTIME_FILE = path.join(CATALOG_DIR, "runtimes.json");
 
 /** The ACP registry (see https://agentclientprotocol.com/get-started/registry). */
 export const REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
@@ -39,13 +41,29 @@ export function unregisterProfile(id: string): void {
   registered.delete(id);
 }
 
-/** Every profile Absence can start right now. */
+/**
+ * Every profile Absence can start right now.
+ *
+ * Precedence: shipped data < ~/.absence/agents.json < ACP registry cache <
+ * in-memory registrations. A saved launch-line override applies on top of
+ * whichever entry wins. That is the whole "switch agent without a code branch"
+ * rule: selection is data lookup, not a product-name test.
+ */
 export function listProfiles(): CatalogEntry[] {
   const out = new Map<string, CatalogEntry>();
-  for (const profile of builtinProfiles()) out.set(profile.id, profile);
-  for (const profile of customProfiles()) out.set(profile.id, profile);
+  const overrides = launchOverrides();
+  for (const profile of builtinProfiles()) out.set(profile.id, applyOverride(profile, overrides));
+  for (const profile of customProfiles()) out.set(profile.id, applyOverride(profile, overrides));
+  // Registry entries are additive only: an id (or alias) the catalog already
+  // knows must not duplicate a shipped Pi / Codex row in the picker.
+  const known = new Set<string>();
+  for (const [id, profile] of out) {
+    known.add(id);
+    for (const alias of profile.aliases ?? []) known.add(alias);
+  }
   for (const profile of registryProfiles()) {
-    if (!out.has(profile.id)) out.set(profile.id, profile);
+    if (known.has(profile.id)) continue;
+    out.set(profile.id, applyOverride(profile, overrides));
   }
   // In-memory registrations win (a test fixture must shadow a builtin id only
   // when it deliberately reuses it).
@@ -53,9 +71,152 @@ export function listProfiles(): CatalogEntry[] {
   return [...out.values()];
 }
 
-/** One profile by id. */
+/**
+ * One profile by id, or by an alias (`pi-acp` → the `pi` runtime's profile).
+ *
+ * Exact ids win, so a user entry that deliberately reuses a registry name is
+ * still reachable.
+ */
 export function getProfile(id: string): CatalogEntry | undefined {
-  return listProfiles().find((profile) => profile.id === id);
+  const profiles = listProfiles();
+  return profiles.find((profile) => profile.id === id) ??
+    profiles.find((profile) => (profile.aliases ?? []).includes(id));
+}
+
+/** The launch-line overrides saved from the picker, keyed by profile id. */
+export function launchOverrides(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(RUNTIME_FILE, "utf8")) as {
+      launch?: unknown;
+      /** @deprecated P5 removes the native DSH adapter and this legacy key. */
+      dshBin?: unknown;
+    };
+    const launch: Record<string, string> = {};
+    if (parsed && typeof parsed.launch === "object" && parsed.launch !== null) {
+      for (const [id, value] of Object.entries(parsed.launch as Record<string, unknown>)) {
+        if (typeof value === "string" && value.trim()) launch[id] = value.trim();
+      }
+    }
+    // One-release migration: the old file stored only dsh's binary path. It is
+    // an ACP profile now, so the path can become its launch line unchanged.
+    if (typeof parsed?.dshBin === "string" && parsed.dshBin.trim() && !launch.dsh) {
+      launch.dsh = parsed.dshBin.trim();
+    }
+    return launch;
+  } catch {
+    return {};
+  }
+}
+
+/** Replace the saved launch-line overrides (empty values are dropped). */
+export function writeLaunchOverrides(overrides: Record<string, string>): Record<string, string> {
+  const clean: Record<string, string> = {};
+  for (const [id, value] of Object.entries(overrides)) {
+    if (typeof value === "string" && value.trim()) clean[id] = value.trim();
+  }
+  fs.mkdirSync(CATALOG_DIR, { recursive: true });
+  fs.writeFileSync(RUNTIME_FILE, `${JSON.stringify({ launch: clean }, null, 2)}\n`, "utf8");
+  return clean;
+}
+
+/** The full launch line the picker shows and saves (`command args…`). */
+export function launchLine(profile: AgentProfile): string {
+  return [profile.launch.command, ...(profile.launch.args ?? [])].map(quoteArg).join(" ");
+}
+
+/**
+ * Split a saved launch line into argv. Double or single quotes group an
+ * argument; backslashes are literal (Windows paths must survive unchanged).
+ */
+export function parseLaunchLine(line: string): string[] {
+  const argv: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | undefined;
+  let started = false;
+  for (const char of line) {
+    if (quote) {
+      if (char === quote) quote = undefined;
+      else current += char;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (started) {
+        argv.push(current);
+        current = "";
+        started = false;
+      }
+      continue;
+    }
+    current += char;
+    started = true;
+  }
+  if (started) argv.push(current);
+  return argv;
+}
+
+/**
+ * True when a launch command can be found: an existing absolute path, or a
+ * name on PATH. Deliberately a PATH scan rather than `where`/`which`; the
+ * picker asks this for every profile, and spawning a process per profile made
+ * the first `/api/runtimes` request slower than the UI's 1 s probe timeout.
+ */
+export function commandAvailable(command: string): boolean {
+  if (!command) return false;
+  if (path.isAbsolute(command)) {
+    try {
+      return fs.existsSync(command);
+    } catch {
+      return false;
+    }
+  }
+  const extensions =
+    process.platform === "win32"
+      ? (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)
+      : [""];
+  const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    for (const extension of extensions) {
+      try {
+        if (fs.existsSync(path.join(dir, command + extension))) return true;
+      } catch {
+        // unreadable PATH entry; try the next one
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * The executables a profile still needs, in the order it declares them.
+ *
+ * `launch.command` is the one Absence spawns; `requires` are prerequisites the
+ * agent itself shells out to (Pi needs its own CLI, for example). Returned as
+ * data so both the picker and the launch error can explain the same thing.
+ */
+export function missingProfileCommands(profile: AgentProfile): string[] {
+  const wanted = [...new Set([profile.launch.command, ...(profile.requires ?? [])])].filter(Boolean);
+  return wanted.filter((command) => !commandAvailable(command));
+}
+
+function applyOverride(profile: CatalogEntry, overrides: Record<string, string>): CatalogEntry {
+  const line = overrides[profile.id];
+  if (!line) return profile;
+  const argv = parseLaunchLine(line);
+  const command = argv[0];
+  if (!command) return profile;
+  return {
+    ...profile,
+    launch: { ...profile.launch, command, args: argv.slice(1) },
+  };
+}
+
+function quoteArg(value: string): string {
+  return /[\s"']/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
 }
 
 /** The ids the picker can offer. */
