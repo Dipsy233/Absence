@@ -1,30 +1,38 @@
 import {
   createEvent,
+  type AgentCapabilitiesSnapshot,
   type AgentCommandInfo,
+  type AgentSessionInfo,
+  type AgentSessionPort,
+  type AgentStartContext as CoreAgentStartContext,
   type AuthMethodInfo,
   type CapabilityState,
   type CommandOption,
+  type ConfigOptionSnapshot,
+  type ConfigOptionValue,
   type ContextState,
   type AbsenceEvent,
   type AbsenceEventPayloadMap,
   type AbsenceEventType,
+  type MonitorEvent,
+  type MonitorFidelity,
+  type MonitorSource,
+  type PermissionAnswer,
+  type PromptBlock,
   type SessionStatsInfo,
+  type StopReason,
 } from "@absence/core";
 import type { ProcessWatcher } from "../process/ProcessWatcher";
 
 /**
- * The runtime-agnostic boundary (read.md §7).
+ * The legacy runtime boundary (read.md §7) and its bridge to the new port.
  *
- * Every agent runtime — Pi today, anything later — is reduced to this
- * interface. The rest of Absence only ever sees AbsenceEvent.
+ * New code targets `AgentSessionPort` in `@absence/core`. This module now holds
+ * only the deprecated legacy interface and a temporary compatibility shim; P5
+ * removes both. The rest of Absence only ever sees AbsenceEvent / MonitorEvent.
  */
-export interface AgentStartContext {
-  sessionId: string;
-  cwd: string;
-  model?: string;
-  /** The runtime's own session file to resume, when reopening a conversation. */
-  sessionFile?: string;
-}
+/** Re-exported so existing imports keep working; new code uses `resumeHandle`. */
+export type AgentStartContext = CoreAgentStartContext;
 
 export interface AgentStartResult {
   model: string;
@@ -53,6 +61,17 @@ export interface AdapterOptions {
   onStateChange?: () => void;
 }
 
+/**
+ * @deprecated Temporary legacy adapter surface. Pi / Codex / DSH implement it
+ * only so the migration can land without a rewrite in one step.
+ * **P5 deletes this interface and every implementation behind it** (including
+ * the shell takeover and capability-management code); nothing new may depend
+ * on it. New code targets `AgentSessionPort`.
+ *
+ * An automatic approval policy (for example CodexAdapter's
+ * `approvalAutomatic`) is a UI preference inside a legacy adapter. It is not
+ * part of the agent contract and must never move into `AgentSessionPort`.
+ */
 export interface AgentAdapter {
   readonly runtime: string;
   start(ctx: AgentStartContext): Promise<AgentStartResult>;
@@ -132,6 +151,152 @@ export interface AgentAdapter {
   setPermission?(level: string): Promise<string>;
 
   dispose(): void;
+}
+
+/**
+ * @deprecated Temporary overrides for the legacy compatibility shim.
+ * Removed in P5 with `AgentAdapter` itself.
+ *
+ * Optional overrides for the legacy compatibility shim. Everything the legacy
+ * interface cannot express (arbitrary config selectors, monitor provenance)
+ * is supplied here rather than guessed by the shim.
+ */
+export interface LegacyAgentPortOptions {
+  capabilities?: Partial<AgentCapabilitiesSnapshot>;
+  configOptions?: () => ConfigOptionSnapshot[];
+  setConfigOption?: (id: string, value: ConfigOptionValue) => Promise<void>;
+  monitorSource?: MonitorSource;
+  monitorFidelity?: MonitorFidelity;
+}
+
+/**
+ * @deprecated Temporary bridge; **P5 deletes this shim together with every
+ * legacy adapter**. Nothing new may call it.
+ *
+ * Minimal legacy → `AgentSessionPort` shim.
+ *
+ * Pi / Codex / DSH keep compiling and running unchanged; callers that want the
+ * new contract wrap them here. The shim owns no runtime semantics: it forwards
+ * text prompts, lifecycle calls and permission answers, and maps the legacy
+ * event stream into `MonitorEvent`. It deliberately exposes no automatic
+ * approval path — the UI's `PermissionAnswer` is forwarded verbatim.
+ */
+export function toAgentSessionPort(
+  adapter: AgentAdapter,
+  options: LegacyAgentPortOptions = {},
+): AgentSessionPort {
+  const monitorSource = options.monitorSource ?? "legacy";
+  const monitorFidelity = options.monitorFidelity ?? "reported";
+
+  const capabilities = (): AgentCapabilitiesSnapshot => {
+    const hasSessionHandle = typeof adapter.getSessionFile === "function";
+    const base: AgentCapabilitiesSnapshot = {
+      protocolVersion: 0,
+      loadSession: hasSessionHandle,
+      resumeSession: hasSessionHandle,
+      closeSession: true,
+      prompt: { image: false, audio: false, embeddedContext: false },
+      auth: { logout: false },
+      mcp: { http: false, sse: false },
+      source: "legacy-adapter",
+    };
+    const override = options.capabilities;
+    return {
+      ...base,
+      ...override,
+      prompt: { ...base.prompt, ...(override?.prompt ?? {}) },
+      auth: { ...base.auth, ...(override?.auth ?? {}) },
+      mcp: { ...base.mcp, ...(override?.mcp ?? {}) },
+    };
+  };
+
+  return {
+    runtime: adapter.runtime,
+
+    async start(ctx) {
+      const sessionFile = ctx.resumeHandle ?? ctx.sessionFile;
+      const legacyContext: AgentStartContext = {
+        sessionId: ctx.sessionId,
+        cwd: ctx.cwd,
+        ...(ctx.model !== undefined ? { model: ctx.model } : {}),
+        ...(sessionFile !== undefined ? { sessionFile } : {}),
+      };
+      const result = await adapter.start(legacyContext);
+      const runtimeSessionId = adapter.getRuntimeSessionId?.();
+      const resumeHandle = adapter.getSessionFile?.();
+      return {
+        model: result.model,
+        ...(result.degraded !== undefined ? { degraded: result.degraded } : {}),
+        ...(runtimeSessionId !== undefined ? { runtimeSessionId } : {}),
+        ...(resumeHandle !== undefined ? { resumeHandle } : {}),
+      };
+    },
+
+    async prompt(blocks) {
+      await adapter.prompt(promptText(blocks));
+      // The legacy contract has no StopReason; a resolved prompt is a turn end.
+      return "end_turn";
+    },
+
+    cancel: () => adapter.abort(),
+    close: async () => {
+      adapter.dispose();
+    },
+
+    subscribe(listener) {
+      return adapter.subscribe((event) => {
+        const monitorEvent: MonitorEvent = {
+          sessionId: event.sessionId,
+          at: event.timestamp,
+          source: monitorSource,
+          fidelity: monitorFidelity,
+          event,
+        };
+        listener(monitorEvent);
+      });
+    },
+
+    capabilities,
+    configOptions: () => options.configOptions?.() ?? [],
+    async setConfigOption(id, value) {
+      if (!options.setConfigOption) {
+        throw new Error(
+          `legacy adapter "${adapter.runtime}" cannot set config option "${id}"`,
+        );
+      }
+      await options.setConfigOption(id, value);
+    },
+
+    commands: () => adapter.getAvailableCommands?.() ?? [],
+    auth: () => ({
+      required: adapter.isAuthRequired?.() === true,
+      methods: adapter.getAuthMethods?.() ?? [],
+    }),
+
+    async authenticate(methodId) {
+      if (!adapter.authenticate) {
+        throw new Error(`legacy adapter "${adapter.runtime}" cannot authenticate`);
+      }
+      await adapter.authenticate(methodId);
+    },
+
+    async respondPermission(requestId, answer) {
+      if (!adapter.respondApproval) {
+        throw new Error(`legacy adapter "${adapter.runtime}" has no permission bridge`);
+      }
+      const value: string =
+        answer.outcome === "selected" ? answer.optionId : "cancel";
+      await adapter.respondApproval(requestId, value);
+    },
+  };
+}
+
+/** Legacy adapters only understand text; refuse a block they would silently drop. */
+function promptText(blocks: PromptBlock[]): string {
+  if (blocks.some((block) => block.type !== "text")) {
+    throw new Error("legacy adapters accept text prompts only");
+  }
+  return blocks.map((block) => (block.type === "text" ? block.text : "")).join("\n");
 }
 
 /** Base class with subscriber plumbing shared by adapters. */
