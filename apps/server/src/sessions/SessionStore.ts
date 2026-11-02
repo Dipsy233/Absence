@@ -6,7 +6,6 @@ import {
   MAX_SESSION_EVENTS,
   type AgentStatus,
   type ChatMessage,
-  type CommandOption,
   type ContextState,
   type AbsenceEvent,
   type FileState,
@@ -17,7 +16,6 @@ import {
   type SessionRuntimeState,
   type SessionSnapshot,
   type SessionSource,
-  type SessionStatsInfo,
 } from "@absence/core";
 import { config, type AgentKind } from "../config";
 import {
@@ -38,7 +36,7 @@ import { TerminalMirror } from "./TerminalMirror";
 import { SessionLogTail } from "./SessionLogTail";
 import { OutsideAttribution } from "./OutsideAttribution";
 import { createAdapter } from "../agents/createAdapter";
-import { formatAgentCommand, shouldForwardAgentCommand } from "../agents/slashCommands";
+import { formatAgentCommand } from "../agents/slashCommands";
 import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
 import { ProcessWatcher } from "../process/ProcessWatcher";
@@ -549,181 +547,62 @@ export class AbsenceSession {
     this.scheduleState();
   }
 
-  /** Choice lists for the commands that need one (the palette's submenu). */
-  async commandOptions(name: string): Promise<CommandOption[]> {
-    // An observed agent's model list, thinking levels and MCP servers live in
-    // *its* process, which Absence has no handle on. The palette stays empty
-    // rather than showing stale configuration Absence read off disk.
-    if (!this.adapter) return [];
-    switch (name) {
-      case "model":
-        return (await this.adapter.listModels?.()) ?? [];
-      case "thinking": {
-        const thinking = this.adapter.getThinking?.();
-        if (!thinking) return [];
-        return thinking.available.map((level) => ({
-          value: level,
-          label: level,
-          active: level === thinking.level,
-        }));
-      }
-      case "permission": {
-        const permission = this.adapter.getPermission?.();
-        if (!permission) return [];
-        return permission.available.map((level) => ({
-          value: level,
-          label: level,
-          description: PERMISSION_DESCRIPTIONS[level],
-          active: level === permission.level,
-        }));
-      }
-      case "auth":
-        return (this.adapter.getAuthMethods?.() ?? []).map((method) => ({
-          value: method.id,
-          label: method.name,
-          description: method.description,
-        }));
-      default:
-        return [];
-    }
+  /**
+   * Forward a `/…` line to the agent, verbatim.
+   *
+   * Absence no longer parses or implements `/model`, `/skill`, `/mcp` or any
+   * other product command: the agent owns their meaning. The line is recorded
+   * as a user message and sent as a plain prompt, exactly as typed.
+   */
+  forwardCommand(text: string): void {
+    this.prompt(text);
   }
 
   /**
-   * Run a terminal-box command (`/model …`). Output is emitted as a system
-   * `message` event so it reaches the chat, persists to the archive and comes
-   * back on resume — the HTTP call itself only reports that it ran.
+   * The HTTP command entry point.
+   *
+   * `/auth` is the one command Absence performs, because signing in is an ACP
+   * port action (`authenticate`) rather than a prompt the agent can interpret.
+   * Every other `/…` line is forwarded to the agent untouched.
    */
   async runCommand(name: string, args: string): Promise<void> {
-    const adapter = this.adapter;
-    if (!adapter) {
+    if (!this.adapter) {
       this.handleEvent(createEvent(this.id, "message", { role: "system", content: OBSERVE_NOTICE, streaming: false }));
       return;
     }
+    if (name.trim() !== "auth") {
+      this.forwardCommand(formatAgentCommand(name, args));
+      return;
+    }
+    const adapter = this.adapter;
     const notice = (content: string): void =>
       this.handleEvent(createEvent(this.id, "message", { role: "system", content, streaming: false }));
-    // An agent-advertised `/compact`, `/mcp`, `/skill` or a custom `/…` is the
-    // agent's own command. Forward it as a prompt instead of pretending Absence
-    // implements it.
-    const forward = shouldForwardAgentCommand(name, adapter.getAvailableCommands?.());
-    // A forwarded agent command is a turn, so it is mutating.
-    if (forward && (adapter.isBusy?.() ?? false)) {
-      notice(`Cannot run /${name} while the agent is working — stop it first.`);
-      return;
+    if (!adapter.authenticate) {
+      return notice("This runtime does not support ACP authentication.");
     }
-    if (forward) {
-      // `this.prompt` records the user's line in the chat and lets the run's
-      // normal error handling report a failed command; the agent sees the line
-      // verbatim, including its own spelling and arguments.
-      this.prompt(formatAgentCommand(name, args));
-      return;
+    const methods = adapter.getAuthMethods?.() ?? [];
+    const methodId = args.trim();
+    if (!methodId) {
+      const lines = methods.map(
+        (method) => `  ${method.id}  ${method.name}${method.description ? ` — ${method.description}` : ""}`,
+      );
+      return notice(
+        lines.length > 0
+          ? ["Usage: /auth <methodId>", ...lines].join(NL)
+          : "No authentication methods were advertised.",
+      );
     }
     try {
-      switch (name) {
-        case "model": {
-          if (!adapter.setModel) return notice("This runtime cannot switch models.");
-          const value = args.trim();
-          if (!value) return notice("Usage: /model <provider/id> — or pick from the list.");
-          const active = await adapter.setModel(value);
-          this.session.model = active;
-          this.scheduleState();
-          notice(`Model switched to ${active}.`);
-          break;
-        }
-        case "thinking": {
-          if (!adapter.getThinking || !adapter.setThinking) {
-            return notice("This runtime cannot set the thinking level.");
-          }
-          const level = args.trim();
-          if (!level) {
-            const current = adapter.getThinking();
-            if (!current) return notice("This runtime has no thinking setting.");
-            return notice(`Thinking level: ${current.level}. Options: ${current.available.join(", ")}.`);
-          }
-          const applied = await adapter.setThinking(level);
-          notice(`Thinking level set to ${applied}.`);
-          break;
-        }
-        case "permission": {
-          if (!adapter.getPermission || !adapter.setPermission) {
-            return notice("This runtime has no permission setting.");
-          }
-          const level = args.trim();
-          if (!level) {
-            const current = adapter.getPermission();
-            if (!current) return notice("This runtime has no permission setting.");
-            return notice(`Permission: ${current.level}. Options: ${current.available.join(", ")}.`);
-          }
-          const applied = await adapter.setPermission(level);
-          notice(`Permission set to ${applied}. New turns run with it; the approvals card reflects it.`);
-          break;
-        }
-        case "compact": {
-          if (!adapter.compact) return notice("This runtime cannot compact.");
-          const previous = this.session.status;
-          const result = await adapter.compact(args.trim() || undefined);
-          // compaction_start flips the status to "thinking"; put it back.
-          this.setStatus(previous === "thinking" ? "listening" : previous);
-          notice(
-            result.tokensBefore !== undefined
-              ? `Context compacted (${result.tokensBefore} → ${result.estimatedTokensAfter ?? "?"} tokens).`
-              : "Context compacted.",
-          );
-          break;
-        }
-        case "name": {
-          if (!adapter.setSessionName) return notice("This runtime cannot name sessions.");
-          const value = args.trim();
-          if (!value) {
-            const current = adapter.getSessionName?.();
-            return notice(current ? `Session name: ${current}` : "Usage: /name <name>");
-          }
-          adapter.setSessionName(value);
-          notice(`Session name set to ${value}.`);
-          break;
-        }
-        case "session": {
-          if (!adapter.getSessionStats) return notice("This runtime cannot report stats.");
-          notice(formatSessionStats(adapter.getSessionStats()));
-          break;
-        }
-        case "export": {
-          if (!adapter.exportSession) return notice("This runtime cannot export.");
-          const format = args.trim().toLowerCase() === "jsonl" ? "jsonl" : "html";
-          const file = await adapter.exportSession(format);
-          notice(`Exported session (${format}) to ${file}`);
-          break;
-        }
-        case "auth": {
-          if (!adapter.authenticate) {
-            return notice("This runtime does not support ACP authentication.");
-          }
-          const methods = adapter.getAuthMethods?.() ?? [];
-          const methodId = args.trim();
-          if (!methodId) {
-            const lines = methods.map(
-              (method) => `  ${method.id}  ${method.name}${method.description ? ` — ${method.description}` : ""}`,
-            );
-            return notice(
-              lines.length > 0
-                ? ["Usage: /auth <methodId>", ...lines].join(NL)
-                : "No authentication methods were advertised.",
-            );
-          }
-          await adapter.authenticate(methodId);
-          // The deferred session only exists now; record its id so a later
-          // resume can reopen the same agent conversation.
-          this.piSessionFile = adapter.getSessionFile?.() ?? this.piSessionFile;
-          this.piSessionId = adapter.getRuntimeSessionId?.() ?? this.piSessionId;
-          await this.flushMeta();
-          this.scheduleState();
-          notice(`Authenticated with ${methodId}.`);
-          break;
-        }
-        default:
-          notice(`Unknown command: /${name}`);
-      }
+      await adapter.authenticate(methodId);
+      // The deferred session only exists now; record its id so a later
+      // resume can reopen the same agent conversation.
+      this.piSessionFile = adapter.getSessionFile?.() ?? this.piSessionFile;
+      this.piSessionId = adapter.getRuntimeSessionId?.() ?? this.piSessionId;
+      await this.flushMeta();
+      this.scheduleState();
+      notice(`Authenticated with ${methodId}.`);
     } catch (error) {
-      notice(`/${name} failed: ${error instanceof Error ? error.message : String(error)}`);
+      notice(`/auth failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -1371,29 +1250,6 @@ function statusForTool(toolName: string): AgentStatus {
     default:
       return "running";
   }
-}
-
-/** One-line explanations for the sandbox levels in the `/permission` palette. */
-const PERMISSION_DESCRIPTIONS: Record<string, string> = {
-  "read-only": "the agent may read but never write",
-  "workspace-write": "the agent may edit inside the project",
-  "danger-full-access": "no sandbox — the agent may touch anything",
-};
-
-/** Render the `/session` command output as one system chat message. */
-function formatSessionStats(stats: SessionStatsInfo): string {
-  return [
-    `Session ${stats.sessionId}`,
-    stats.sessionFile ? `File: ${stats.sessionFile}` : undefined,
-    `Messages: ${stats.userMessages} user · ${stats.assistantMessages} assistant · ${stats.toolCalls} tool calls`,
-    `Tokens: ${stats.tokens.input} in · ${stats.tokens.output} out · ${stats.tokens.total} total`,
-    stats.cost ? `Cost: $${stats.cost.toFixed(4)}` : undefined,
-    stats.contextUsed !== undefined && stats.contextTotal
-      ? `Context: ${stats.contextUsed}/${stats.contextTotal}`
-      : undefined,
-  ]
-    .filter((line): line is string => Boolean(line))
-    .join("\n");
 }
 
 /**

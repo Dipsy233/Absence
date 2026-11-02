@@ -292,25 +292,24 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  /** Choice lists for the commands that need one (the terminal box's submenu). */
-  app.get("/api/sessions/:id/commands/:name/options", async (request, reply) => {
-    const { id, name } = request.params as { id: string; name: string };
-    const session = sessionStore.get(id);
-    if (!session) return reply.code(404).send({ error: "session not found" });
-    return { options: await session.commandOptions(name) };
-  });
-
   /**
-   * Run a chat command (`/model`, `/compact`, …). The result streams back over
-   * the WebSocket as a system message; this call only reports that it ran.
+   * Forward a `/…` line (`/model`, `/skill:<name>`, `/mcp`, …). The agent owns
+   * their meaning; Absence only forwards the text as a prompt. `/auth` is the
+   * one ACP-native action Absence performs. The result streams back over the
+   * WebSocket as normal run events; this call only reports that it ran.
    */
   app.post("/api/sessions/:id/command", async (request, reply) => {
     const { id } = request.params as { id: string };
     const session = sessionStore.get(id);
     if (!session) return reply.code(404).send({ error: "session not found" });
-    const body = request.body as { name?: string; args?: string } | undefined;
+    const body = request.body as { text?: string; name?: string; args?: string } | undefined;
+    const text = body?.text?.trim();
+    if (text) {
+      session.forwardCommand(text);
+      return { ok: true };
+    }
     const name = body?.name?.trim();
-    if (!name) return reply.code(400).send({ error: "name is required" });
+    if (!name) return reply.code(400).send({ error: "text or name is required" });
     await session.runCommand(name, body?.args ?? "");
     return { ok: true };
   });

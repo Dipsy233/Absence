@@ -20,13 +20,13 @@ import type { ChatInput } from "./useChatInput";
 
 export function ChatCommandPalette({ input }: { input: ChatInput }) {
   const t = useT();
-  const { command, phase, paletteItems, highlight, setHighlight, chooseItem, loadingOptions } = input;
+  const { command, phase, paletteItems, highlight, setHighlight, chooseItem } = input;
 
   return (
     <div className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-lg border border-desk-line/70 bg-desk-panel/95 p-1 shadow-[0_18px_50px_rgba(0,0,0,.45)] backdrop-blur-[3px]">
       {phase === "name" || command?.kind === "choice" ? (
         paletteItems.length === 0 ? (
-          <div className="px-2 py-1 text-xs text-desk-dim">{loadingOptions ? t("loading…") : t("no options")}</div>
+          <div className="px-2 py-1 text-xs text-desk-dim">{t("no options")}</div>
         ) : (
           paletteItems.map((item: CommandOption, index: number) => (
             <PaletteRow

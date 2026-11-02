@@ -1,13 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { isAgentBusy, type CommandOption } from "@absence/core";
-import * as api from "../../lib/api";
 import { buildPrompt } from "../../lib/context";
-import {
-  findCommand,
-  isSkillInvocation,
-  mergeAgentCommands,
-  type CommandSpec,
-} from "../../lib/commands";
+import { findCommand, mergeAgentCommands, type CommandSpec } from "../../lib/commands";
 import { useChatStore } from "../../stores/chatStore";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import type { ChatContext } from "../../types/chat";
@@ -15,21 +9,21 @@ import type { ChatContext } from "../../types/chat";
 /* ══════════════════════════════════════════════════════════════════════════
    The chat input, as one implementation.
 
-   Every chat face uses it — Monitor's input row, Rounds' and Chart's bars —
-   and the `/` command palette has to behave the same in all of them: type `/`,
-   the overlay opens above the input, arrows move, Enter runs. Duplicating that
-   derivation per face is how the faces drift apart, so the state machine lives
-   here and the faces only supply their own chrome.
+   A line starting with `/` is still a normal prompt: the agent owns what
+   `/model`, `/skill`, `/mcp` or any advertised command means. The palette is
+   only a completer — it suggests the commands the agent advertised and the one
+   ACP action Absence performs (`/auth`). Everything else is forwarded verbatim.
 
-   The overlay itself is `ChatCommandPalette` (its own file): it is markup, and
-   both faces want exactly the same markup.
+   Every chat face uses it — Monitor's input row, Rounds' and Chart's bars — and
+   the `/` palette has to behave the same in all of them: type `/`, the overlay
+   opens above the input, arrows move, Enter sends.
    ══════════════════════════════════════════════════════════════════════════ */
 
 export interface ChatInput {
   text: string;
   setText: (value: string) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
-  /** The line starts with `/`: it is a command, not a prompt. */
+  /** The line starts with `/`: it is a command-shaped prompt, not plain text. */
   commandMode: boolean;
   command?: CommandSpec;
   /** Which half of the command is being typed. */
@@ -40,7 +34,6 @@ export interface ChatInput {
   paletteItems: CommandOption[];
   highlight: number;
   setHighlight: (index: number) => void;
-  loadingOptions: boolean;
   busy: boolean;
   connected: boolean;
   observed: boolean;
@@ -51,7 +44,7 @@ export interface ChatInput {
   /** The `/` button: opens the palette on an empty command. */
   toggleSlash: () => void;
   closePalette: () => void;
-  /** Send the line: prompt, skill invocation, or command. */
+  /** Send the line: plain prompt, forwarded `/` line, or ACP auth. */
   submit: () => Promise<void>;
   /** True when there is something worth sending. */
   canSend: boolean;
@@ -63,8 +56,8 @@ export function useChatInput(): ChatInput {
   const status = useSessionStore((s) => s.agent.status);
   const connected = useSessionStore((s) => s.connected);
   const agentCommands = useSessionStore((s) => s.agentCommands);
+  const authMethods = useSessionStore((s) => s.authMethods);
   const commands = useMemo(() => mergeAgentCommands(agentCommands), [agentCommands]);
-  const sessionId = useSessionStore((s) => s.session?.id);
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
   const runCommand = useSessionStore((s) => s.runCommand);
   const observed = useIsObserved();
@@ -72,8 +65,6 @@ export function useChatInput(): ChatInput {
   const [text, setText] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const [options, setOptions] = useState<CommandOption[]>([]);
-  const [loadingOptions, setLoadingOptions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // --- command-mode derivation ---------------------------------------------
@@ -81,76 +72,41 @@ export function useChatInput(): ChatInput {
   const body = commandMode ? text.slice(1) : "";
   const spaceAt = body.indexOf(" ");
   const cmdName = (spaceAt === -1 ? body : body.slice(0, spaceAt)).toLowerCase();
-  const argText = spaceAt === -1 ? "" : body.slice(spaceAt + 1);
   const phase: "name" | "arg" = spaceAt === -1 ? "name" : "arg";
   const command = commandMode ? findCommand(cmdName, commands) : undefined;
-
-  // `/skill:` completes skill names, not command names: the palette needs the
-  // session's skills, which the server reports with the capability state.
-  const skills = useSessionStore((s) => s.capabilities?.skills);
-  const skillPrefix = commandMode && body.startsWith("skill:") ? body.slice("skill:".length) : undefined;
 
   const nameMatches = useMemo(
     () => (commandMode && phase === "name" ? commands.filter((c) => c.name.startsWith(cmdName)) : []),
     [commandMode, phase, cmdName, commands],
   );
 
-  const skillMatches: CommandOption[] = useMemo(() => {
-    if (skillPrefix === undefined) return [];
-    const q = skillPrefix.toLowerCase();
-    return (skills ?? [])
-      .filter((skill) => skill.name.toLowerCase().includes(q))
-      .map((skill) => ({
-        value: `/skill:${skill.name} `,
-        label: `/skill:${skill.name}`,
-        description: skill.description,
-      }));
-  }, [skillPrefix, skills]);
+  // `/auth` is the one choice list Absence draws: the methods the agent
+  // advertised during its ACP handshake.
+  const authOptions: CommandOption[] = useMemo(
+    () =>
+      command?.name === "auth"
+        ? (authMethods ?? []).map((method) => ({
+            value: method.id,
+            label: method.id,
+            description: method.description ?? method.name,
+          }))
+        : [],
+    [command?.name, authMethods],
+  );
 
-  const activeOptions: CommandOption[] =
-    phase === "arg" && command?.kind === "choice" ? (command.staticOptions ?? options) : [];
+  const activeOptions: CommandOption[] = phase === "arg" && command?.kind === "choice" ? authOptions : [];
 
   const paletteItems: CommandOption[] =
-    skillPrefix !== undefined
-      ? skillMatches
-      : phase === "name"
-        ? nameMatches.map((spec) => ({ value: spec.name, label: `/${spec.name}`, description: spec.description }))
-        : activeOptions;
+    phase === "name"
+      ? nameMatches.map((spec) => ({ value: spec.name, label: `/${spec.name}`, description: spec.description }))
+      : activeOptions;
 
   const showPalette =
     paletteOpen &&
     commandMode &&
-    (skillPrefix !== undefined
-      ? skillMatches.length > 0
-      : phase === "name"
-        ? nameMatches.length > 0
-        : command?.kind === "choice" || command?.kind === "text");
-
-  // Fetch the choice list for server-backed commands (/model, /thinking) when
-  // the argument phase opens.
-  useEffect(() => {
-    if (!commandMode || phase !== "arg") return;
-    if (command?.kind !== "choice" || command.staticOptions) return;
-    if (!sessionId) return;
-    let cancelled = false;
-    setLoadingOptions(true);
-    api
-      .fetchCommandOptions(sessionId, command.name)
-      .then((fetched) => {
-        if (cancelled) return;
-        setOptions(fetched);
-        setHighlight(0);
-      })
-      .catch(() => {
-        if (!cancelled) setOptions([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingOptions(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [commandMode, phase, command?.name, command?.kind, command?.staticOptions, sessionId]);
+    (phase === "name"
+      ? nameMatches.length > 0
+      : command?.kind === "choice" || command?.kind === "text");
 
   // Keep the highlight inside the current list.
   useEffect(() => {
@@ -162,50 +118,47 @@ export function useChatInput(): ChatInput {
   const closePalette = () => {
     setText("");
     setPaletteOpen(false);
-    setOptions([]);
     setHighlight(0);
   };
 
-  const execute = async (name: string, args: string) => {
+  /** Send the line exactly as typed. The agent decides what it means. */
+  const forward = async (line: string) => {
+    const value = line.trim();
+    if (!value) return;
+    setText("");
+    setPaletteOpen(false);
+    await sendPrompt(value);
+  };
+
+  const authenticate = async (methodId: string) => {
     closePalette();
-    await runCommand(name, args);
+    await runCommand("auth", methodId);
   };
 
   const openArgPhase = (spec: CommandSpec) => {
     setText(`/${spec.name} `);
     setPaletteOpen(true);
-    setOptions([]);
     setHighlight(0);
     inputRef.current?.focus();
   };
 
   const chooseItem = (value: string) => {
-    if (value.startsWith("/skill:")) {
-      setText(value);
-      setPaletteOpen(false);
-      inputRef.current?.focus();
-      return;
-    }
     if (phase === "name") {
       const spec = findCommand(value, commands);
       if (!spec) return;
-      if (spec.kind === "none") void execute(spec.name, "");
+      if (spec.kind === "none") void forward(`/${spec.name}`);
       else openArgPhase(spec);
       return;
     }
-    if (command) void execute(command.name, value);
+    if (command?.name === "auth") {
+      void authenticate(value);
+      return;
+    }
+    // A command-shaped line with a chosen argument is still just a prompt.
+    void forward(`/${command?.name ?? ""} ${value}`);
   };
 
   const submit = async () => {
-    // `/skill:<name> [request]` is a skill invocation: it belongs in the prompt,
-    // where the runtime expands it into the skill's instructions.
-    if (isSkillInvocation(text.trim())) {
-      const prompt = text.trim();
-      setText("");
-      closePalette();
-      await sendPrompt(prompt);
-      return;
-    }
     if (!commandMode) {
       const value = text.trim();
       if (!value && pending.length === 0) return;
@@ -215,27 +168,17 @@ export function useChatInput(): ChatInput {
       await sendPrompt(prompt);
       return;
     }
-    if (phase === "name") {
-      if (!command) return closePalette();
-      if (command.kind === "none") return void execute(command.name, "");
-      return openArgPhase(command);
-    }
-    if (!command) return closePalette();
-    if (command.kind === "choice") {
+    // `/auth` without an argument: list the agent's methods in the input's
+    // submenu rather than forwarding a line the agent would not understand.
+    if (phase === "name" && command?.name === "auth") return openArgPhase(command);
+    if (phase === "arg" && command?.name === "auth") {
       const item = activeOptions[highlight];
-      if (!item) return;
-      // `/mcp reconnect` takes an optional server name, so choosing it keeps
-      // the line open instead of running half a command.
-      if (command.name === "mcp" && item.value !== "list") {
-        setText(`/${command.name} ${item.value} `);
-        setPaletteOpen(false);
-        inputRef.current?.focus();
-        return;
-      }
-      void execute(command.name, item.value);
-    } else {
-      void execute(command.name, argText.trim());
+      if (item) return void authenticate(item.value);
     }
+    // Everything else — an advertised command, `/model`, `/skill:<name>`,
+    // `/mcp`, an unknown `/foo` — is sent to the agent verbatim. Absence no
+    // longer drops a line it does not recognise.
+    await forward(text);
   };
 
   const handleChange = (value: string) => {
@@ -286,7 +229,6 @@ export function useChatInput(): ChatInput {
     paletteItems,
     highlight,
     setHighlight,
-    loadingOptions,
     busy: isAgentBusy(status),
     connected,
     observed,

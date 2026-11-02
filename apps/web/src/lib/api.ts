@@ -2,7 +2,6 @@ import type {
   AbsenceEvent,
   AvatarSkinMeta,
   AvatarSkinState,
-  CommandOption,
   EggFilterProfileMeta,
   EggFilterSaveResponse,
   EggFilterState,
@@ -168,15 +167,7 @@ export async function readFile(sessionId: string, path: string): Promise<FileCon
   );
 }
 
-/** Options for a chat command that needs a choice (e.g. the models for /model). */
-export async function fetchCommandOptions(sessionId: string, name: string): Promise<CommandOption[]> {
-  const data = await json<{ options: CommandOption[] }>(
-    await fetch(`/api/sessions/${sessionId}/commands/${encodeURIComponent(name)}/options`),
-  );
-  return data.options;
-}
-
-/** Run a chat command; its output arrives over the socket as a system message. */
+/** Forward a chat command; its output arrives over the socket as run events. */
 export async function runCommand(sessionId: string, name: string, args: string): Promise<void> {
   await json(
     await fetch(`/api/sessions/${sessionId}/command`, {

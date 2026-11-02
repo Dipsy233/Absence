@@ -46,9 +46,7 @@ async function main(): Promise<void> {
   const { AcpAdapter } = await import("../../apps/server/src/agents/acp/AcpAdapter");
   const { AcpToolMapper } = await import("../../apps/server/src/agents/acp/AcpToolMapper");
   const { mergeAgentCommands, findCommand } = await import("../../apps/web/src/lib/commands");
-  const { formatAgentCommand, shouldForwardAgentCommand } = await import(
-    "../../apps/server/src/agents/slashCommands"
-  );
+  const { formatAgentCommand } = await import("../../apps/server/src/agents/slashCommands");
   const { parseRegistryEntries, registryProfiles, syncRegistry } = await import(
     "../../apps/server/src/agents/acp/AgentCatalog"
   );
@@ -177,7 +175,7 @@ async function main(): Promise<void> {
     await fs.rm(dir, { recursive: true, force: true });
   }
 
-  section("slash commands: agent commands forward, Absence commands do not");
+  section("slash commands: forwarded to the agent, never implemented by Absence");
   {
     const commands = [
       { name: "compact", description: "agent compact" },
@@ -185,26 +183,25 @@ async function main(): Promise<void> {
       { name: "mcp", description: "agent mcp" },
       { name: "model", description: "agent model" },
     ];
-    check("an advertised compact forwards", shouldForwardAgentCommand("compact", commands));
-    check("an advertised custom command forwards", shouldForwardAgentCommand("custom-fix", commands));
-    check("an advertised /mcp forwards", shouldForwardAgentCommand("mcp", commands));
-    check(" /model stays Absence-owned", !shouldForwardAgentCommand("model", commands));
-    check("an unadvertised command is not sent blindly", !shouldForwardAgentCommand("nope", commands));
-    check("Pi/Codex (no list) keep their local commands", !shouldForwardAgentCommand("compact", undefined));
-    check("the forwarded line preserves arguments", formatAgentCommand("custom-fix", " --fast ") === "/custom-fix --fast");
+    check(
+      "the line preserves the agent's spelling and arguments",
+      formatAgentCommand("custom-fix", " --fast ") === "/custom-fix --fast",
+    );
 
     const merged = mergeAgentCommands(commands);
-    const custom = findCommand("custom-fix", merged);
-    check("the web palette contains the agent command", custom?.kind === "text", custom?.description);
-    const model = findCommand("model", merged);
+    check("the palette contains every agent-advertised command", ["compact", "custom-fix", "mcp", "model"].every(
+      (name) => findCommand(name, merged) !== undefined,
+    ));
     check(
-      "the palette keeps Absence's /model spec",
-      model?.description === "Switch the model" && model.kind === "choice",
-      model?.description,
+      "an advertised command is a free-text prompt, not a local action",
+      findCommand("switch-model", merged) === undefined &&
+        findCommand("custom-fix", merged)?.kind === "text",
     );
+    check("Absence's only local command is ACP auth", findCommand("auth", merged)?.kind === "choice");
     check(
-      "a Pi/Codex palette has no agent commands",
-      mergeAgentCommands(undefined).length === mergeAgentCommands([]).length,
+      "no product command is hard-coded in the palette",
+      mergeAgentCommands(undefined).map((command) => command.name).join(",") === "auth",
+      mergeAgentCommands(undefined).map((command) => command.name).join(","),
     );
   }
 
