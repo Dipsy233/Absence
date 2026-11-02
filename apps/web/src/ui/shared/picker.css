@@ -390,3 +390,117 @@
     border-bottom: 1px solid var(--mon-bd);
   }
 }
+
+/* ── Discovery state ──────────────────────────────────────────────────────
+   A row's dot says what is actually installed: ready is green, needs-adapter
+   and needs-auth are amber, unavailable is red. */
+.picker__runtimes i[data-state="ready"],
+.picker__pathrow i[data-state="ready"] {
+  background: var(--mon-edit);
+}
+
+.picker__runtimes i[data-state="needs-adapter"],
+.picker__runtimes i[data-state="needs-auth"],
+.picker__pathrow i[data-state="needs-adapter"],
+.picker__pathrow i[data-state="needs-auth"] {
+  background: var(--mon-warn, #e9b349);
+}
+
+.picker__runtimes i[data-state="unavailable"],
+.picker__pathrow i[data-state="unavailable"] {
+  background: var(--mon-err);
+}
+
+.picker__runtimes button small {
+  font: 10px var(--mon-mono);
+  color: var(--mon-t3);
+}
+
+.picker__runtimes button[data-on] small {
+  color: inherit;
+}
+
+.picker__runtimes button[data-state="needs-adapter"],
+.picker__runtimes button[data-state="needs-auth"] {
+  border-color: var(--mon-warn, #e9b349);
+}
+
+.picker__runtimes button[data-state="unavailable"] {
+  opacity: 0.65;
+}
+
+.picker__agentfacts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 8px;
+  background: var(--mon-s2);
+}
+
+.picker__warn {
+  color: var(--mon-warn, #e9b349);
+}
+
+.picker__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--mon-acc);
+  font: 10.5px var(--mon-mono);
+  cursor: pointer;
+}
+
+.picker__link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.picker__link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.picker__customrow em {
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__customrow {
+  gap: 8px;
+}
+
+.picker__custom {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 9px;
+  background: var(--mon-s2);
+}
+
+.picker__custom input,
+.picker__custom textarea {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 7px;
+  background: var(--mon-bg);
+  color: var(--mon-t);
+  font: 11px var(--mon-mono);
+  outline: none;
+  resize: vertical;
+}
+
+.picker__custom input:focus,
+.picker__custom textarea:focus {
+  border-color: var(--mon-acc);
+}
+
+.picker__customactions {
+  display: flex;
+  justify-content: flex-end;
+}

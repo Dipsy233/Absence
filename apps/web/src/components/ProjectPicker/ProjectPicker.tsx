@@ -16,22 +16,51 @@ import "../../ui/shared/picker.css";
 
 type AgentChoice = RuntimeKind;
 
+type Readiness = "ready" | "needs-adapter" | "needs-auth" | "unavailable";
+type LaunchSource = "auto" | "manual" | "override";
+
+interface AgentModels {
+  state: "session" | "declared" | "empty" | "unknown";
+  items: string[];
+  path?: string;
+}
+
 /**
- * What /api/runtimes adds on top of the shared DTO: the catalog's profile
+ * What /api/runtimes adds on top of the shared DTO: the catalog's discovery
  * facts. The picker never names a product — it renders whatever rows come back.
  */
 interface ProfileRuntime extends RuntimeStatus {
   profileId?: string;
   commandLine?: string;
-  auth?: "none" | "optional" | "required";
+  auth?: "configured" | "missing" | "unknown" | "not-required";
+  authReason?: string;
+  authHint?: "none" | "optional" | "required";
   capabilities?: string;
   requires?: string[];
-  source?: string;
+  source?: LaunchSource;
+  state?: Readiness;
+  stateReason?: string;
+  discoveredFrom?: string;
+  models?: AgentModels;
+  willDownload?: boolean;
+  installHint?: string;
+}
+
+interface CustomAgentRow {
+  id: string;
+  label: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  commandLine: string;
+  resolved?: string;
+  available: boolean;
 }
 
 /** First startable runtime, or the first row the catalog offered. */
 function pickDefault(list: ProfileRuntime[]): AgentChoice {
-  return list.find((runtime) => runtime.available)?.kind ?? list[0]?.kind ?? "";
+  return list.find((runtime) => runtime.state === "ready")?.kind ?? list[0]?.kind ?? "";
 }
 
 /** Short, human time for a session row: time only today, date + time otherwise. */
@@ -41,6 +70,82 @@ function formatWhen(timestamp: number): string {
   const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
   if (date.toDateString() === new Date().toDateString()) return time;
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${time}`;
+}
+
+/** Split an argument string into argv; quotes group, backslashes stay literal. */
+function splitArgs(line: string): string[] {
+  const argv: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | undefined;
+  let started = false;
+  for (const char of line) {
+    if (quote) {
+      if (char === quote) quote = undefined;
+      else current += char;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (started) {
+        argv.push(current);
+        current = "";
+        started = false;
+      }
+      continue;
+    }
+    current += char;
+    started = true;
+  }
+  if (started) argv.push(current);
+  return argv;
+}
+
+/** `KEY=VALUE` lines → an env object (blank lines ignored). */
+function parseEnv(text: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const index = trimmed.indexOf("=");
+    if (index <= 0) continue;
+    env[trimmed.slice(0, index).trim()] = trimmed.slice(index + 1).trim();
+  }
+  return env;
+}
+
+function stateLabel(t: (key: string) => string, state: Readiness | undefined): string {
+  switch (state) {
+    case "ready":
+      return t("ready");
+    case "needs-adapter":
+      return t("needs adapter");
+    case "needs-auth":
+      return t("needs sign-in");
+    default:
+      return t("unavailable");
+  }
+}
+
+function sourceLabel(t: (key: string) => string, source: LaunchSource | undefined): string {
+  if (source === "manual") return t("custom entry");
+  if (source === "override") return t("user override");
+  return t("auto-discovered");
+}
+
+function modelsText(t: (key: string) => string, models: AgentModels | undefined): string {
+  if (!models) return t("model list unknown");
+  if (models.state === "session") {
+    return t("models from the ACP session: {list}", { list: models.items.join(", ") });
+  }
+  if (models.state === "declared") {
+    return t("agent-declared models: {list}", { list: models.items.join(", ") });
+  }
+  if (models.state === "empty") return t("the agent has not declared any models");
+  return t("model list unknown (agent config unreadable)");
 }
 
 /**
@@ -64,11 +169,30 @@ export function ProjectPicker() {
   const [pathEdits, setPathEdits] = useState<Record<string, string>>({});
   const [dirtyPaths, setDirtyPaths] = useState<Record<string, boolean>>({});
   const [savingPaths, setSavingPaths] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customRows, setCustomRows] = useState<CustomAgentRow[]>([]);
+  const [customEditId, setCustomEditId] = useState<string | undefined>();
+  const [customLabel, setCustomLabel] = useState("");
+  const [customCommand, setCustomCommand] = useState("");
+  const [customArgs, setCustomArgs] = useState("");
+  const [customEnv, setCustomEnv] = useState("");
+  const [customCwd, setCustomCwd] = useState("");
+  const [customBusy, setCustomBusy] = useState(false);
+  const [customError, setCustomError] = useState<string | undefined>();
 
   const refreshSessions = () => {
     fetchSessionHistory()
       .then(setSessions)
       .catch(() => setSessions([]));
+  };
+
+  const refreshCustomAgents = () => {
+    fetch("/api/agents")
+      .then(async (response) => {
+        const body = (await response.json().catch(() => ({}))) as { agents?: CustomAgentRow[] };
+        setCustomRows(body.agents ?? []);
+      })
+      .catch(() => setCustomRows([]));
   };
 
   /** Seed the launch editor from the catalog's rows; keep unlucky edits intact. */
@@ -98,6 +222,7 @@ export function ProjectPicker() {
       .catch(() => setProjects([]));
     refreshSessions();
     refreshRuntimes();
+    refreshCustomAgents();
   }, []);
 
   const query = path.trim().toLowerCase();
@@ -107,6 +232,7 @@ export function ProjectPicker() {
    * a path narrows the history further.
    */
   const selectedRuntime = runtimes.find((runtime) => runtime.kind === agent);
+  const canStart = selectedRuntime?.state === "ready";
   const hasDirtyPath = Object.values(dirtyPaths).some(Boolean);
 
   const visibleSessions = useMemo(() => {
@@ -116,6 +242,13 @@ export function ProjectPicker() {
 
   const start = async (projectPath: string) => {
     if (!projectPath.trim()) return;
+    if (!canStart) {
+      setError(
+        selectedRuntime?.stateReason ??
+          t("This runtime is not startable. Fix its ACP entry below first."),
+      );
+      return;
+    }
     setBusy(true);
     setError(undefined);
     try {
@@ -166,6 +299,81 @@ export function ProjectPicker() {
     }
   };
 
+  const resetCustomForm = () => {
+    setCustomEditId(undefined);
+    setCustomLabel("");
+    setCustomCommand("");
+    setCustomArgs("");
+    setCustomEnv("");
+    setCustomCwd("");
+    setCustomError(undefined);
+  };
+
+  const saveCustom = async () => {
+    setCustomBusy(true);
+    setCustomError(undefined);
+    try {
+      const payload = {
+        label: customLabel.trim(),
+        command: customCommand.trim(),
+        args: splitArgs(customArgs),
+        env: parseEnv(customEnv),
+        cwd: customCwd.trim(),
+      };
+      const response = await fetch(
+        customEditId ? `/api/agents/${encodeURIComponent(customEditId)}` : "/api/agents",
+        {
+          method: customEditId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? `${response.status} ${response.statusText}`);
+      resetCustomForm();
+      refreshRuntimes();
+      refreshCustomAgents();
+    } catch (err) {
+      setCustomError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCustomBusy(false);
+    }
+  };
+
+  const editCustom = (row: CustomAgentRow) => {
+    setCustomEditId(row.id);
+    setCustomLabel(row.label);
+    setCustomCommand(row.command);
+    setCustomArgs((row.args ?? []).join(" "));
+    setCustomEnv(
+      Object.entries(row.env ?? {})
+        .map(([key, value]) => `${key}=${value}`)
+        .join("\n"),
+    );
+    setCustomCwd(row.cwd ?? "");
+    setCustomError(undefined);
+    setCustomOpen(true);
+  };
+
+  const deleteCustom = async (row: CustomAgentRow) => {
+    setCustomBusy(true);
+    setCustomError(undefined);
+    try {
+      const response = await fetch(`/api/agents/${encodeURIComponent(row.id)}`, {
+        method: "DELETE",
+      });
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? `${response.status} ${response.statusText}`);
+      if (customEditId === row.id) resetCustomForm();
+      refreshRuntimes();
+      refreshCustomAgents();
+    } catch (err) {
+      setCustomError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCustomBusy(false);
+    }
+  };
+
   const resume = async (entry: SessionHistoryEntry) => {
     setBusy(true);
     setError(undefined);
@@ -213,7 +421,11 @@ export function ProjectPicker() {
                   if (e.key === "Enter" && path.trim() && !busy) void start(path);
                 }}
               />
-              <button type="button" disabled={busy || !path.trim()} onClick={() => void start(path)}>
+              <button
+                type="button"
+                disabled={busy || !path.trim() || !canStart}
+                onClick={() => void start(path)}
+              >
                 {busy ? t("opening…") : t("Open")}
               </button>
             </div>
@@ -228,9 +440,9 @@ export function ProjectPicker() {
                   <button
                     key={project.path}
                     type="button"
-                    disabled={busy}
+                    disabled={busy || !canStart}
                     onClick={() => void start(project.path)}
-                    title={project.path}
+                    title={canStart ? project.path : selectedRuntime?.stateReason}
                   >
                     <b>{project.name}</b>
                     <span>{project.path}</span>
@@ -248,20 +460,45 @@ export function ProjectPicker() {
                   key={rt.kind}
                   type="button"
                   onClick={() => setAgent(rt.kind)}
-                  title={rt.note}
+                  title={rt.stateReason ?? rt.note}
                   data-on={agent === rt.kind ? "true" : undefined}
+                  data-state={rt.state ?? "unavailable"}
                 >
-                  <i data-ok={rt.available ? "true" : undefined} />
+                  <i data-state={rt.state ?? "unavailable"} />
                   {rt.label}
+                  <small>{stateLabel(t, rt.state)}</small>
                 </button>
               ))}
             </div>
             <p className="picker__note">
               {t(
-                "A green dot means the runtime was found. A red dot means it is not installed (or the path is wrong) — fix it below before opening.",
+                "Green means the ACP entry was found on this machine. Amber means the agent CLI is installed but its ACP adapter is missing (or sign-in is missing). Red means neither was found.",
               )}
             </p>
-            {selectedRuntime?.note ? <p className="picker__note">{selectedRuntime.note}</p> : null}
+            {selectedRuntime ? (
+              <div className="picker__agentfacts">
+                <p className="picker__note">
+                  <strong>{stateLabel(t, selectedRuntime.state)}</strong>
+                  {" · "}
+                  {sourceLabel(t, selectedRuntime.source)}
+                  {selectedRuntime.discoveredFrom ? ` · ${selectedRuntime.discoveredFrom}` : null}
+                </p>
+                <p className="picker__note">{selectedRuntime.stateReason}</p>
+                {selectedRuntime.willDownload ? (
+                  <p className="picker__note picker__warn">
+                    {t("This launch uses npx and will download a package temporarily.")}
+                  </p>
+                ) : null}
+                {selectedRuntime.installHint ? (
+                  <p className="picker__note">{selectedRuntime.installHint}</p>
+                ) : null}
+                <p className="picker__note">
+                  {t("sign-in")}: {selectedRuntime.auth ?? "unknown"}
+                  {selectedRuntime.authReason ? ` — ${selectedRuntime.authReason}` : null}
+                </p>
+                <p className="picker__note">{modelsText(t, selectedRuntime.models)}</p>
+              </div>
+            ) : null}
           </section>
 
           <section className="picker__block picker__block--fill">
@@ -313,9 +550,9 @@ export function ProjectPicker() {
                 .map((rt) => (
                   <div key={rt.kind} className="picker__pathedit">
                     <div className="picker__pathrow">
-                      <i data-ok={rt.available ? "true" : undefined} />
+                      <i data-state={rt.state ?? "unavailable"} />
                       <span>{rt.label}</span>
-                      <em>{rt.available ? t("found") : t("not found")}</em>
+                      <em>{stateLabel(t, rt.state)}</em>
                     </div>
                     <input
                       value={pathEdits[rt.kind] ?? ""}
@@ -327,10 +564,11 @@ export function ProjectPicker() {
                       placeholder={rt.commandLine ?? rt.note}
                       spellCheck={false}
                     />
-                    {rt.auth === "required" ? (
+                    <p className="picker__note">{rt.stateReason}</p>
+                    {rt.auth === "missing" ? (
                       <p className="picker__note">
                         {t(
-                          "Sign-in required: the agent may refuse to open until its own authenticate method succeeds. Absence shows the agent's methods and forwards the login — it never reads credentials.",
+                          "No credentials were found for this agent. Absence does not read or store them — sign in through the agent's own tools.",
                         )}
                       </p>
                     ) : null}
@@ -345,6 +583,95 @@ export function ProjectPicker() {
                 {savingPaths ? t("saving…") : t("save paths")}
               </button>
             </div>
+          </section>
+
+          <section className="picker__block">
+            <div className="picker__hhead">
+              <label className="picker__label">{t("custom ACP entry")}</label>
+              <button
+                type="button"
+                className="picker__link"
+                onClick={() => {
+                  if (customOpen) resetCustomForm();
+                  setCustomOpen(!customOpen);
+                }}
+              >
+                {customOpen ? t("close") : t("add…")}
+              </button>
+            </div>
+            {customRows.length > 0 ? (
+              <div className="picker__pathlist">
+                {customRows.map((row) => (
+                  <div key={row.id} className="picker__pathrow picker__customrow">
+                    <i data-state={row.available ? "ready" : "unavailable"} />
+                    <span>{row.label}</span>
+                    <em>{row.available ? row.resolved : t("command not found")}</em>
+                    <button type="button" className="picker__link" onClick={() => editCustom(row)}>
+                      {t("edit")}
+                    </button>
+                    <button
+                      type="button"
+                      className="picker__link"
+                      disabled={customBusy}
+                      onClick={() => void deleteCustom(row)}
+                    >
+                      {t("delete")}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {customOpen ? (
+              <div className="picker__custom">
+                <input
+                  value={customLabel}
+                  onChange={(e) => setCustomLabel(e.target.value)}
+                  placeholder={t("display name")}
+                  spellCheck={false}
+                />
+                <input
+                  value={customCommand}
+                  onChange={(e) => setCustomCommand(e.target.value)}
+                  placeholder={t("command (absolute path or PATH name)")}
+                  spellCheck={false}
+                />
+                <input
+                  value={customArgs}
+                  onChange={(e) => setCustomArgs(e.target.value)}
+                  placeholder={t("arguments (optional)")}
+                  spellCheck={false}
+                />
+                <input
+                  value={customCwd}
+                  onChange={(e) => setCustomCwd(e.target.value)}
+                  placeholder={t("working directory (optional)")}
+                  spellCheck={false}
+                />
+                <textarea
+                  value={customEnv}
+                  onChange={(e) => setCustomEnv(e.target.value)}
+                  placeholder={t("environment, one KEY=VALUE per line (optional)")}
+                  spellCheck={false}
+                  rows={3}
+                />
+                {customError ? <div className="picker__error">{customError}</div> : null}
+                <div className="picker__customactions">
+                  <button
+                    type="button"
+                    className="picker__save"
+                    disabled={customBusy || !customCommand.trim()}
+                    onClick={() => void saveCustom()}
+                  >
+                    {customBusy ? t("saving…") : customEditId ? t("update entry") : t("add entry")}
+                  </button>
+                </div>
+                <p className="picker__note">
+                  {t(
+                    "Saved to ~/.absence/agents.json. Absence never changes the agent's own configuration; models and sign-in stay the agent's business.",
+                  )}
+                </p>
+              </div>
+            ) : null}
           </section>
         </div>
       </div>
