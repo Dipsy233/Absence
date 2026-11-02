@@ -35,6 +35,13 @@ npm run verify                               # typecheck + web build + every off
 `npm run verify` is the complete pre-commit gate. A single check is always one
 command:
 
+> **Windows build note.** `npm run build` can fail with `[vite:worker] remove
+> … Access is denied` while esbuild deletes its temporary Monaco worker file.
+> That is an external lock (indexer / security software), not a source error.
+> Retry, or point `TEMP`/`TMP` at a writable repo-adjacent directory; if it
+> still fails, exclude that temp directory from the indexer/AV. Typecheck and
+> the offline checks are unaffected.
+
 ```bash
 npx tsx scripts/checks/check-<name>.ts
 ```

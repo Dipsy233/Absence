@@ -38,6 +38,12 @@ if (platformPkg) {
 }
 
 const outfile = path.join(repoRoot, "dist", "desktop", "build", "server.cjs");
+// `ToolRules.load` resolves `./toolRules.json` beside `import.meta.url`, which
+// the banner above points at server.cjs. A shipped app has no apps/server/src,
+// so the data table must be copied next to the bundle; otherwise it silently
+// falls back to the in-code FALLBACK table.
+const toolRulesSource = path.join(repoRoot, "apps", "server", "src", "agents", "acp", "toolRules.json");
+const toolRulesDest = path.join(repoRoot, "dist", "desktop", "build", "toolRules.json");
 
 // Only ABSENCE's own source goes into the bundle (third-party packages stay
 // external), so the bundle is up to date when no source file is newer than it.
@@ -96,4 +102,14 @@ if (bundleUpToDate()) {
   });
 
   console.log(`[bundle-server] wrote ${path.relative(repoRoot, outfile)}`);
+}
+
+// Copy on every run (including the up-to-date path): it is tiny, and a bundle
+// that predates the rules file would otherwise keep the old/missing table.
+if (fs.existsSync(toolRulesSource)) {
+  fs.mkdirSync(path.dirname(toolRulesDest), { recursive: true });
+  fs.copyFileSync(toolRulesSource, toolRulesDest);
+  console.log(`[bundle-server] staged ${path.relative(repoRoot, toolRulesDest)}`);
+} else {
+  console.warn("[bundle-server] warning: toolRules.json missing; packaged builds will use FALLBACK");
 }
