@@ -4,11 +4,19 @@ import {
   emptyRunCounts,
   isObservedStream,
   OBSERVED_OPENING_EVENT_TYPES,
+  previewText,
   type AbsenceEvent,
   type RunCounts,
   type RunStatus,
   type RunSummary,
 } from "@absence/core";
+
+/**
+ * The stored prompt is an outline field: History shows one line per run, so a
+ * 10 KB paste is kept at 200 characters in the table. The full text remains in
+ * the run's first `message` event.
+ */
+const PROMPT_PREVIEW_LIMIT = 200;
 
 /**
  * The run index.
@@ -291,7 +299,7 @@ export class RunIndex {
       run.index,
       run.fromSeq,
       run.toSeq,
-      run.prompt,
+      previewText(run.prompt, PROMPT_PREVIEW_LIMIT),
       run.startedAt,
       run.endedAt ?? null,
       run.status,
@@ -309,6 +317,8 @@ function rowToSummary(row: SqlRow): RunSummary | undefined {
   } catch {
     counts = emptyRunCounts();
   }
+  const fromSeq = Number(row.from_seq ?? 0);
+  const toSeq = Number(row.to_seq ?? 0);
   return {
     id: `run_${index}`,
     index,
@@ -316,9 +326,13 @@ function rowToSummary(row: SqlRow): RunSummary | undefined {
     startedAt: Number(row.started_at ?? 0),
     endedAt: row.ended_at === null || row.ended_at === undefined ? undefined : Number(row.ended_at),
     status: String(row.status ?? "completed") as RunStatus,
-    fromSeq: Number(row.from_seq ?? 0),
-    toSeq: Number(row.to_seq ?? 0),
+    fromSeq,
+    toSeq,
     counts,
+    // Seqs are contiguous per session, so the span is the count. A gap (an
+    // ignored duplicate write) makes this an upper bound, which is the right
+    // bias for something that sizes a run before it is loaded.
+    eventCount: Math.max(0, toSeq - fromSeq + 1),
   };
 }
 

@@ -4,10 +4,16 @@ import { createRequire } from "node:module";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import {
   isStreamingEvent,
+  previewText,
   type AbsenceEvent,
   type FileVersionInfo,
+  type FileVersionSummary,
   type RunSummary,
+  type SessionEventForwardPage,
   type SessionEventPage,
+  type SessionHistoryEntry,
+  type SessionHistoryPage,
+  type SessionHistoryQuery,
 } from "@absence/core";
 import { toPosix } from "../../util/paths";
 import { eventsFile, sessionsRoot, stateRoot } from "./legacyPaths";
@@ -620,7 +626,7 @@ function flushPending(): void {
           event.id,
           event.timestamp,
           event.type,
-          JSON.stringify(event.payload),
+          storedPayload(event),
           event.source ?? "unknown",
           event.fidelity ?? "unknown",
         );
@@ -653,6 +659,50 @@ export async function drainArchive(): Promise<void> {
   flushPending();
 }
 
+/**
+ * The payload as it is stored: large text fields reduced to a preview.
+ *
+ * The event stream carries whole files (a `file_write`'s content, an edit's
+ * `before`/`after`/`diff`, a command's stdout) and the same values are already
+ * materialised into `file_versions` by the FileIndex — full fidelity, exactly
+ * one copy. Storing them again inside every event row doubles the database for
+ * nothing a reader needs: Activity, the Stage and the replay timeline show the
+ * head of a value, and the full text is fetched from the file-version endpoint
+ * when someone actually opens it.
+ *
+ * The truncation happens at the storage boundary only: the run index, the file
+ * index and the live window all receive the full event. Rows written before
+ * this existed keep their full payloads, and every reader must therefore treat
+ * `previewTruncated` as "may be a preview", never its absence as "complete".
+ */
+const TRUNCATED_TEXT_FIELDS: Partial<Record<AbsenceEvent["type"], string[]>> = {
+  file_read: ["content"],
+  file_write: ["content"],
+  file_edit: ["before", "after", "diff"],
+  command: ["stdout", "stderr"],
+  search: ["output"],
+  mcp: ["args", "result", "structured"],
+};
+
+function storedPayload(event: AbsenceEvent): string {
+  const fields = TRUNCATED_TEXT_FIELDS[event.type];
+  if (!fields) return JSON.stringify(event.payload);
+  const payload = event.payload as unknown as Record<string, unknown>;
+  let truncated = false;
+  const stored = { ...payload };
+  for (const field of fields) {
+    const value = stored[field];
+    if (typeof value !== "string") continue;
+    const preview = previewText(value);
+    if (preview !== value) {
+      stored[field] = preview;
+      truncated = true;
+    }
+  }
+  if (!truncated) return JSON.stringify(event.payload);
+  return JSON.stringify({ ...stored, previewTruncated: true });
+}
+
 /** Rebuild the full AbsenceEvent from the columns + payload JSON. */
 function eventFromRow(sessionId: string, row: SqlRow): AbsenceEvent {
   const timestamp = Number(row.ts);
@@ -670,6 +720,9 @@ function eventFromRow(sessionId: string, row: SqlRow): AbsenceEvent {
     at: timestamp,
     source,
     fidelity,
+    // The persisted position, when the query asked for it (the paging paths
+    // do; the whole-session resume read does not need it).
+    ...(row.seq !== undefined ? { seq: Number(row.seq) } : {}),
   } as AbsenceEvent;
 }
 
@@ -769,6 +822,56 @@ export async function readEventsPage(
   return { events, nextBefore, hasMore };
 }
 
+/**
+ * One forward page of stored events, oldest → newest, for catch-up reads.
+ *
+ * `after` is exclusive (events with `seq > after`), so a client that holds its
+ * last seen seq asks for exactly what it missed instead of re-downloading a
+ * full snapshot on every reconnect. The mirror of `readEventsPage`, which
+ * pages backwards from the newest event.
+ */
+export async function readEventsPageForward(
+  id: string,
+  options: { after?: number; limit?: number } = {},
+): Promise<SessionEventForwardPage> {
+  flushPending();
+  const limit = Math.min(Math.max(Math.trunc(options.limit ?? 500), 1), 2000);
+  const after = options.after;
+  let rows: SqlRow[];
+  try {
+    const db = open();
+    rows = (
+      after === undefined
+        ? db
+            .prepare(
+              "SELECT seq, id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? ORDER BY seq ASC LIMIT ?",
+            )
+            .all(id, limit + 1)
+        : db
+            .prepare(
+              "SELECT seq, id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?",
+            )
+            .all(id, after, limit + 1)
+    ) as SqlRow[];
+  } catch (error) {
+    console.error("[absence] sqlite event forward read failed:", error);
+    return { events: [], hasMore: false };
+  }
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const events: AbsenceEvent[] = [];
+  for (const row of page) {
+    try {
+      events.push(eventFromRow(id, row));
+    } catch {
+      // Skip a row written by an older/broken version.
+    }
+  }
+  const nextAfter = hasMore && events.length > 0 ? Number(page[page.length - 1]!.seq) : undefined;
+  return { events, nextAfter, hasMore };
+}
+
 /** Every archive header for a project, or for all projects when cwd is omitted. */
 export async function listArchives(cwd?: string): Promise<ArchiveMeta[]> {
   flushPending();
@@ -789,6 +892,205 @@ export async function listArchives(cwd?: string): Promise<ArchiveMeta[]> {
     return [];
   }
   return rows.map(rowToMeta).filter((meta): meta is ArchiveMeta => meta !== undefined);
+}
+
+/** Encode a history pagination cursor: sort key + id tie-break, plainly. */
+function historyCursor(updatedAt: number, id: string): string {
+  return `${updatedAt}~${id}`;
+}
+
+function parseHistoryCursor(cursor: string | undefined): { updatedAt: number; id: string } | undefined {
+  if (!cursor) return undefined;
+  const sep = cursor.lastIndexOf("~");
+  if (sep <= 0) return undefined;
+  const updatedAt = Number(cursor.slice(0, sep));
+  const id = cursor.slice(sep + 1);
+  return Number.isSafeInteger(updatedAt) && updatedAt >= 0 && id ? { updatedAt, id } : undefined;
+}
+
+/**
+ * Filtered, paginated history query — the search/filter front end of
+ * `listArchives`. Everything is pushed into SQL so a thousand archived
+ * sessions cost one indexed scan, not one process-side pass over every row.
+ *
+ * The cursor is the `(updated_at, id)` pair of the last row of the previous
+ * page: `updated_at` is the sort key, `id` breaks the (common) ties between
+ * sessions touched in the same second. Order is `updated_at DESC, id DESC`,
+ * matching `listArchives`.
+ */
+export async function queryArchives(
+  query: SessionHistoryQuery,
+): Promise<SessionHistoryPage> {
+  flushPending();
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (query.path?.trim()) {
+    // Stored paths are POSIX absolute; normalise a Windows caller's backslashes.
+    conditions.push("project_path = ? COLLATE NOCASE");
+    params.push(toPosix(path.resolve(query.path.trim())));
+  }
+  if (query.search?.trim()) {
+    // A substring match, not a prefix match: people search "absence", not
+    // "E:/work/absence". LIKE wildcards in the term are literal, so escape them.
+    const term = query.search.trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+    const pattern = `%${term}%`;
+    conditions.push(
+      "(project_name LIKE ? ESCAPE '\\' COLLATE NOCASE OR project_path LIKE ? ESCAPE '\\' COLLATE NOCASE OR first_prompt LIKE ? ESCAPE '\\')",
+    );
+    params.push(pattern, pattern, pattern);
+  }
+  if (query.runtime?.trim()) {
+    conditions.push("runtime = ?");
+    params.push(query.runtime.trim());
+  }
+  if (query.since !== undefined) {
+    conditions.push("updated_at >= ?");
+    params.push(query.since);
+  }
+  if (query.until !== undefined) {
+    conditions.push("updated_at <= ?");
+    params.push(query.until);
+  }
+  const cursor = parseHistoryCursor(query.cursor);
+  if (cursor) {
+    conditions.push("(updated_at < ? OR (updated_at = ? AND id < ?))");
+    params.push(cursor.updatedAt, cursor.updatedAt, cursor.id);
+  }
+
+  const limit = Math.min(Math.max(Math.trunc(query.limit ?? 50), 1), 200);
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  let rows: SqlRow[];
+  try {
+    rows = open()
+      .prepare(
+        `SELECT * FROM sessions ${where} ORDER BY updated_at DESC, id DESC LIMIT ?`,
+      )
+      .all(...params, limit + 1) as SqlRow[];
+  } catch (error) {
+    console.error("[absence] sqlite history query failed:", error);
+    return { entries: [], hasMore: false };
+  }
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const metas = page
+    .map(rowToMeta)
+    .filter((meta): meta is ArchiveMeta => meta !== undefined);
+  const last = metas[metas.length - 1];
+  return {
+    entries: metas.map(metaToHistoryEntry),
+    hasMore,
+    ...(hasMore && last ? { nextCursor: historyCursor(last.updatedAt, last.absenceSessionId) } : {}),
+  };
+}
+
+/** The archive row shaped as the wire history entry (same as the list route). */
+function metaToHistoryEntry(meta: ArchiveMeta): SessionHistoryEntry {
+  return {
+    id: meta.absenceSessionId,
+    absenceSessionId: meta.absenceSessionId,
+    projectPath: meta.projectPath,
+    projectName: meta.projectName,
+    createdAt: meta.startedAt,
+    updatedAt: meta.updatedAt,
+    messageCount: meta.messageCount,
+    firstPrompt: meta.firstPrompt,
+    runtime: meta.runtime,
+    archived: true,
+  };
+}
+
+/**
+ * Delete one archived session's persisted state: its events, runs, file
+ * versions, metrics and the header row. The live session is untouched — the
+ * route refuses to call this while the session is still open, because the
+ * next flush would silently recreate the rows.
+ *
+ * The metric tables are deleted here rather than through `metrics.ts` because
+ * that module imports this one (for `openDatabase`); the schema for all of
+ * them lives in this file's `open()`, so the delete statements belong to the
+ * same place.
+ */
+export async function deleteArchive(id: string): Promise<boolean> {
+  flushPending();
+  const db = open();
+  const row = db.prepare("SELECT id FROM sessions WHERE id = ?").get(id) as SqlRow | undefined;
+  if (!row) return false;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    for (const table of [
+      "events",
+      "runs",
+      "file_versions",
+      "metric_chunks",
+      "egg_metric_summary",
+      "host_metric_chunks",
+    ]) {
+      db.prepare(`DELETE FROM ${table} WHERE session_id = ?`).run(id);
+    }
+    db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+    db.exec("COMMIT");
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // The original error is the useful one.
+    }
+    throw error;
+  }
+  // The writers cache per-session state; drop it so a same-id session created
+  // later does not inherit sequences or run/file state from deleted rows.
+  nextSeq.delete(id);
+  runIndex?.reset();
+  fileIndex?.reset();
+  return true;
+}
+
+/**
+ * Archive retention, opt-in via config (`sessionRetentionDays` /
+ * `maxArchivedSessions`; both default off). Called once at startup and then
+ * daily, next to the metric expiry. Deleting user data is never a default:
+ * until the operator asks for it, the archive grows unbounded.
+ */
+export async function expireArchives(options: {
+  retentionDays?: number;
+  maxSessions?: number;
+}): Promise<number> {
+  const { retentionDays = 0, maxSessions = 0 } = options;
+  if (retentionDays <= 0 && maxSessions <= 0) return 0;
+  let targets: string[] = [];
+  try {
+    const db = open();
+    if (retentionDays > 0) {
+      const cutoff = Date.now() - retentionDays * 24 * 60 * 60_000;
+      const rows = db
+        .prepare("SELECT id FROM sessions WHERE updated_at < ? ORDER BY updated_at DESC")
+        .all(cutoff) as SqlRow[];
+      targets.push(...rows.map((row) => String(row.id)));
+    }
+    if (maxSessions > 0) {
+      const rows = db
+        .prepare("SELECT id FROM sessions ORDER BY updated_at DESC LIMIT -1 OFFSET ?")
+        .all(maxSessions) as SqlRow[];
+      targets.push(...rows.map((row) => String(row.id)));
+    }
+  } catch (error) {
+    console.error("[absence] sqlite retention query failed:", error);
+    return 0;
+  }
+  let deleted = 0;
+  for (const id of new Set(targets)) {
+    try {
+      if (await deleteArchive(id)) deleted += 1;
+    } catch (error) {
+      console.error(`[absence] retention delete failed for ${id}:`, error);
+    }
+  }
+  if (deleted > 0) {
+    console.log(`[absence] retention removed ${deleted} archived session(s)`);
+  }
+  return deleted;
 }
 
 /**
@@ -829,7 +1131,7 @@ export async function readRunEvents(
   try {
     rows = open()
       .prepare(
-        "SELECT id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? AND seq BETWEEN ? AND ? ORDER BY seq ASC",
+        "SELECT seq, id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? AND seq BETWEEN ? AND ? ORDER BY seq ASC",
       )
       .all(id, fromSeq, toSeq) as SqlRow[];
   } catch (error) {
@@ -847,6 +1149,49 @@ export async function readRunEvents(
   return events;
 }
 
+/**
+ * One forward page of a run's events, oldest → newest.
+ *
+ * A long run (an observed session's heuristic boundary can span tens of
+ * thousands of events) is fetched in chunks: the client asks for the page
+ * after its last seq until `hasMore` is false, rendering each page as it
+ * arrives, instead of one unbounded response it must parse whole.
+ */
+export async function readRunEventsPage(
+  id: string,
+  fromSeq: number,
+  toSeq: number,
+  options: { after?: number; limit?: number } = {},
+): Promise<SessionEventForwardPage> {
+  flushPending();
+  const limit = Math.min(Math.max(Math.trunc(options.limit ?? 500), 1), 2000);
+  // `after` is exclusive; before the first page it sits just under the run.
+  const after = Math.max(Math.trunc(options.after ?? fromSeq - 1), fromSeq - 1);
+  let rows: SqlRow[];
+  try {
+    rows = open()
+      .prepare(
+        "SELECT seq, id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? AND seq > ? AND seq <= ? ORDER BY seq ASC LIMIT ?",
+      )
+      .all(id, after, toSeq, limit + 1) as SqlRow[];
+  } catch (error) {
+    console.error("[absence] sqlite run event page read failed:", error);
+    return { events: [], hasMore: false };
+  }
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const events: AbsenceEvent[] = [];
+  for (const row of page) {
+    try {
+      events.push(eventFromRow(id, row));
+    } catch {
+      // Skip a row written by an older/broken version.
+    }
+  }
+  const nextAfter = hasMore && page.length > 0 ? Number(page[page.length - 1]!.seq) : undefined;
+  return { events, nextAfter, hasMore };
+}
+
 /** Every recorded file version for a session, independent of the event window. */
 export async function readFileVersions(id: string): Promise<FileVersionInfo[]> {
   flushPending();
@@ -855,6 +1200,40 @@ export async function readFileVersions(id: string): Promise<FileVersionInfo[]> {
   } catch (error) {
     console.error("[absence] sqlite file version read failed:", error);
     return [];
+  }
+}
+
+/**
+ * The file-version listing without full contents: sizes and a short preview,
+ * so an outline can be sent for a session with thousands of versions and the
+ * text fetched per version on demand. Same order as `readFileVersions`.
+ */
+export async function readFileVersionSummaries(id: string): Promise<FileVersionSummary[]> {
+  flushPending();
+  try {
+    return fileIndex?.listSummaries(id) ?? [];
+  } catch (error) {
+    console.error("[absence] sqlite file version summary read failed:", error);
+    return [];
+  }
+}
+
+/**
+ * One file version's full content, by its exact key. This is the read side of
+ * payload previews: an event row stores the head of a value, and this returns
+ * the whole thing that the FileIndex materialised from the same event.
+ */
+export async function readFileVersionContent(
+  id: string,
+  filePath: string,
+  version: number,
+): Promise<FileVersionInfo | undefined> {
+  flushPending();
+  try {
+    return fileIndex?.content(id, filePath, version);
+  } catch (error) {
+    console.error("[absence] sqlite file version content read failed:", error);
+    return undefined;
   }
 }
 

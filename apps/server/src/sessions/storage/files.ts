@@ -4,6 +4,7 @@ import {
   type AbsenceEvent,
   type FileVersionInfo,
   type FileVersionSource,
+  type FileVersionSummary,
 } from "@absence/core";
 
 /**
@@ -103,6 +104,32 @@ export class FileIndex {
       )
       .all(sessionId) as SqlRow[];
     return rows.map(rowToVersion).filter((version): version is FileVersionInfo => version !== undefined);
+  }
+
+  /**
+   * The same listing without the full text of each version: its size and a
+   * short preview instead, so a session with thousands of versions can send
+   * its outline and fetch the one version someone actually opens.
+   */
+  listSummaries(sessionId: string): FileVersionSummary[] {
+    const rows = this.db
+      .prepare(
+        "SELECT path, version, ts, source, complete, line_offset, start_line, end_line, range_known, caption, length(content) AS content_bytes, substr(content, 1, 240) AS preview FROM file_versions WHERE session_id = ? ORDER BY path ASC, version ASC",
+      )
+      .all(sessionId) as SqlRow[];
+    return rows
+      .map(rowToVersionSummary)
+      .filter((version): version is FileVersionSummary => version !== undefined);
+  }
+
+  /** One version's full record, by its exact (path, version) key. */
+  content(sessionId: string, filePath: string, version: number): FileVersionInfo | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT path, version, ts, source, complete, content, line_offset, start_line, end_line, range_known, caption, known_lines_json FROM file_versions WHERE session_id = ? AND path = ? AND version = ?",
+      )
+      .get(sessionId, filePath, version) as SqlRow | undefined;
+    return row ? rowToVersion(row) : undefined;
   }
 
   /** Rebuild one session from its stored events (migration). */
@@ -298,6 +325,32 @@ function rowToVersion(row: SqlRow): FileVersionInfo | undefined {
     ...(Number(row.range_known ?? 1) === 0 ? { rangeKnown: false as const } : {}),
     caption: typeof row.caption === "string" ? row.caption : undefined,
     knownLines: source === "read" ? parseKnownLines(row.known_lines_json) : undefined,
+  };
+}
+
+function rowToVersionSummary(row: SqlRow): FileVersionSummary | undefined {
+  const path = String(row.path ?? "");
+  if (!path) return undefined;
+  const source = String(row.source ?? "write") as FileVersionSource;
+  return {
+    path,
+    version: Number(row.version ?? 0),
+    timestamp: Number(row.ts ?? 0),
+    source,
+    complete: Number(row.complete ?? 0) === 1,
+    lineOffset: Number(row.line_offset ?? 0),
+    startLine:
+      row.start_line === null || row.start_line === undefined
+        ? undefined
+        : Number(row.start_line),
+    endLine:
+      row.end_line === null || row.end_line === undefined
+        ? undefined
+        : Number(row.end_line),
+    ...(Number(row.range_known ?? 1) === 0 ? { rangeKnown: false as const } : {}),
+    caption: typeof row.caption === "string" ? row.caption : undefined,
+    contentBytes: Number(row.content_bytes ?? 0),
+    preview: String(row.preview ?? ""),
   };
 }
 
