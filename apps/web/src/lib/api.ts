@@ -60,22 +60,6 @@ export async function fetchRuntimes(): Promise<RuntimeStatus[]> {
   return runtimes;
 }
 
-/** Save codex / dsh binary paths; an empty string clears the override. */
-export async function saveRuntimePaths(patch: {
-  piBin?: string;
-  codexBin?: string;
-  dshBin?: string;
-}): Promise<RuntimeStatus[]> {
-  const { runtimes } = await json<{ runtimes: RuntimeStatus[] }>(
-    await fetch("/api/runtimes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    }),
-  );
-  return runtimes;
-}
-
 export async function fetchProjects(root?: string): Promise<Project[]> {
   const query = root ? `?root=${encodeURIComponent(root)}` : "";
   return json<Project[]>(await fetch(`/api/projects${query}`));
@@ -95,7 +79,7 @@ export async function createSession(
   );
 }
 
-/** The persisted history (ABSENCE archives + Pi sessions), newest first. */
+/** The persisted history (Absence's own archives), newest first. */
 export async function fetchSessionHistory(path?: string): Promise<SessionHistoryEntry[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   return json<SessionHistoryEntry[]>(await fetch(`/api/sessions/history${query}`));

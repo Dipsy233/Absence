@@ -60,7 +60,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       | {
           projectPath?: string;
           agent?: string;
-          resume?: { absenceSessionId?: string; piSessionFile?: string; piSessionId?: string };
+          resume?: { absenceSessionId?: string };
         }
       | undefined;
     const projectPath = body?.projectPath?.trim();
@@ -71,15 +71,8 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     if (!(await isDirectory(resolved))) {
       return reply.code(400).send({ error: `not a directory: ${resolved}` });
     }
-    const raw = body?.resume;
-    const resume =
-      raw && (raw.absenceSessionId || raw.piSessionFile)
-        ? {
-            absenceSessionId: raw.absenceSessionId,
-            piSessionFile: raw.piSessionFile,
-            piSessionId: raw.piSessionId,
-          }
-        : undefined;
+    const resumeId = body?.resume?.absenceSessionId?.trim();
+    const resume = resumeId ? { absenceSessionId: resumeId } : undefined;
     const session = await (async () => {
       try {
         return await sessionStore.create(resolved, resolveAgent(body?.agent), resume);
@@ -346,7 +339,8 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 /**
  * The persisted history: Absence's own archives, newest first. `?path=` narrows
  * it to one project. This is what survives a restart; no agent-private session
- * files are read or merged.
+ * files are read or merged. Resuming by `absenceSessionId` reconnects the
+ * agent's own conversation from the ACP handle stored in the archive.
  */
 async function sessionHistory(projectPath?: string): Promise<SessionHistoryEntry[]> {
   const entries: SessionHistoryEntry[] = [];
@@ -354,8 +348,6 @@ async function sessionHistory(projectPath?: string): Promise<SessionHistoryEntry
     entries.push({
       id: meta.absenceSessionId,
       absenceSessionId: meta.absenceSessionId,
-      piSessionFile: meta.piSessionFile,
-      piSessionId: meta.piSessionId,
       projectPath: meta.projectPath,
       projectName: meta.projectName,
       createdAt: meta.startedAt,

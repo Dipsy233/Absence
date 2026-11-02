@@ -122,9 +122,10 @@ const STAGE_TYPES = new Set<AbsenceEvent["type"]>([
 export interface AbsenceResume {
   /** ABSENCE's archive id — its events rebuild the Stage, Activity, files and chat. */
   absenceSessionId?: string;
-  /** Pi's session file — reopens the model's conversation. */
-  piSessionFile?: string;
-  piSessionId?: string;
+  /** The agent's opaque ACP resume handle, from the archive of this session. */
+  resumeHandle?: string;
+  /** The agent's own session id, when it exposes one. */
+  runtimeSessionId?: string;
   startedAt?: number;
   /** Dwell time accrued before this visit (see `Session.dwellMs`). */
   dwellMs?: number;
@@ -216,8 +217,10 @@ export class AbsenceSession {
   private readonly openedAt: number;
   private promptCount = 0;
   private firstPrompt?: string;
-  private piSessionFile?: string;
-  private piSessionId?: string;
+  /** The agent's opaque ACP resume handle (session/load or session/resume). */
+  private resumeHandle?: string;
+  /** The agent's own session id, when it exposes one. */
+  private runtimeSessionId?: string;
   private metaTimer?: NodeJS.Timeout;
   private stateTimer?: NodeJS.Timeout;
   private treeTimer?: NodeJS.Timeout;
@@ -253,10 +256,10 @@ export class AbsenceSession {
       dwellMs: this.dwellBase,
       openedAt: this.openedAt,
     };
-    this.piSessionFile = resume?.piSessionFile;
-    this.piSessionId = resume?.piSessionId;
-    // Pi and its tools run in this very process, so an egg's ancestor chain ends
-    // here — the watcher's default root pid is us.
+    this.resumeHandle = resume?.resumeHandle;
+    this.runtimeSessionId = resume?.runtimeSessionId;
+    // A driven session's egg tree ends at the server process that spawned the
+    // agent; an observed one is rooted at the pid it was handed.
     this.observe = observe;
     this.terminal = observe?.terminal;
     this.processWatcher = new ProcessWatcher({
@@ -434,7 +437,7 @@ export class AbsenceSession {
     const ctx = {
       sessionId: this.id,
       cwd: this.session.projectPath,
-      sessionFile: this.piSessionFile,
+      resumeHandle: this.resumeHandle,
     };
     // No silent fallback: if the requested runtime will not start (not
     // installed, wrong path, missing credentials), the session fails loudly so
@@ -449,9 +452,9 @@ export class AbsenceSession {
       throw new RuntimeUnavailableError(this.session.agentRuntime, error);
     }
 
-    // The adapter may have opened (or created) its own persisted session file.
-    this.piSessionFile = this.adapter?.getSessionFile?.() ?? this.piSessionFile;
-    this.piSessionId = this.adapter?.getRuntimeSessionId?.() ?? this.piSessionId;
+    // The adapter may have opened (or created) its own persisted session.
+    this.resumeHandle = this.adapter?.getSessionFile?.() ?? this.resumeHandle;
+    this.runtimeSessionId = this.adapter?.getRuntimeSessionId?.() ?? this.runtimeSessionId;
 
     this.unsubAdapter = this.adapter?.subscribe((event) => this.handleEvent(event));
 
@@ -596,8 +599,8 @@ export class AbsenceSession {
       await adapter.authenticate(methodId);
       // The deferred session only exists now; record its id so a later
       // resume can reopen the same agent conversation.
-      this.piSessionFile = adapter.getSessionFile?.() ?? this.piSessionFile;
-      this.piSessionId = adapter.getRuntimeSessionId?.() ?? this.piSessionId;
+      this.resumeHandle = adapter.getSessionFile?.() ?? this.resumeHandle;
+      this.runtimeSessionId = adapter.getRuntimeSessionId?.() ?? this.runtimeSessionId;
       await this.flushMeta();
       this.scheduleState();
       notice(`Authenticated with ${methodId}.`);
@@ -778,8 +781,8 @@ export class AbsenceSession {
       updatedAt: this.lastActiveAt,
       model: this.session.model,
       runtime: this.session.agentRuntime,
-      piSessionFile: this.piSessionFile,
-      piSessionId: this.piSessionId,
+      piSessionFile: this.resumeHandle,
+      piSessionId: this.runtimeSessionId,
       messageCount: this.promptCount,
       firstPrompt: this.firstPrompt,
       // Persisted while the visit is open so a crash still keeps the clock, not
@@ -1311,11 +1314,14 @@ export class SessionStore {
     const existing = resumeId !== undefined ? this.sessions.get(resumeId) : undefined;
     if (existing) return existing;
     // A reopen continues the archive's own clock: the original creation time and
-    // the dwell time already accrued. Both are read here rather than trusted from
-    // the request, so a client resuming by id alone gets them too.
+    // the dwell time already accrued. The opaque ACP resume handle is also read
+    // from the archive, so a client resuming by id alone can reconnect the
+    // agent's conversation without naming any agent-private file.
     const restored = resumeId !== undefined ? await readMeta("", resumeId) : undefined;
     const session = new AbsenceSession(projectPath, kind, {
       ...resume,
+      resumeHandle: resume?.resumeHandle ?? restored?.piSessionFile,
+      runtimeSessionId: resume?.runtimeSessionId ?? restored?.piSessionId,
       startedAt: resume?.startedAt ?? restored?.startedAt,
       dwellMs: resume?.dwellMs ?? restored?.dwellMs,
     });

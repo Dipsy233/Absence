@@ -137,14 +137,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   resumeSession: async (entry) => {
     set({ error: undefined });
-    const resume =
-      entry.absenceSessionId || entry.piSessionFile
-        ? {
-            absenceSessionId: entry.absenceSessionId,
-            piSessionFile: entry.piSessionFile,
-            piSessionId: entry.piSessionId,
-          }
-        : undefined;
+    // The archive id is enough: the server reads the agent's ACP resume handle
+    // from its own archive, so the client never names an agent-private file.
+    const resume = entry.absenceSessionId
+      ? { absenceSessionId: entry.absenceSessionId }
+      : undefined;
     const snapshot = await api.createSession(entry.projectPath, entry.runtime, resume);
     get().hydrate(snapshot);
   },

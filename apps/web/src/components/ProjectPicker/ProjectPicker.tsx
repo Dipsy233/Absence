@@ -283,7 +283,7 @@ export function ProjectPicker() {
                     type="button"
                     disabled={busy}
                     onClick={() => void resume(session)}
-                    title={t("Resume {id}", { id: session.piSessionFile ?? session.absenceSessionId ?? session.id })}
+                    title={t("Resume {id}", { id: session.absenceSessionId ?? session.id })}
                   >
                     <span className="picker__hrow">
                       <b>{session.name ?? session.projectName}</b>
