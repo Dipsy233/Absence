@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import type { ProcessPayload } from "@absence/core";
 import { parseCommandIntent, type CommandIntent } from "./CommandIntent";
 import { classifyProcess } from "./classify";
@@ -647,6 +648,74 @@ export class ProcessWatcher {
         const index = this.pending.indexOf(window);
         if (index >= 0) this.pending.splice(index, 1);
       });
+  }
+
+  /**
+   * Terminate the command subtrees this session spawned and tracked.
+   *
+   * Called when Absence closes a session it *drove*: the agent is ours, so
+   * everything under its pid is ours too. An observed session is somebody
+   * else's process and is never touched.
+   *
+   * Only descendants of the runtime Absence started (plus eggs it already
+   * reported) are considered — never the server, a sibling session, or an
+   * unrelated process on the machine. Each subtree root is killed with
+   * `taskkill /T`, so a shell wrapper takes its command children with it.
+   */
+  async terminateCommands(agentPid?: number): Promise<number> {
+    // `disposed` marks "stop watching", not "stop owning": the close path calls
+    // this before `stop()`, and a second call is naturally idempotent because
+    // the snapshot no longer contains the killed pids.
+    if (this.observedRoot) return 0;
+    if (process.platform !== "win32") return this.terminateTrackedPosix(agentPid);
+
+    const table = await this.table();
+    const roots = new Set<number>();
+    for (const egg of this.eggs.values()) {
+      if (egg.status !== "exited") roots.add(egg.info.pid);
+    }
+    if (agentPid !== undefined && agentPid > 0) {
+      for (const info of table.values()) {
+        if (info.pid === agentPid || info.pid === this.rootPid) continue;
+        if (info.ppid === agentPid || ancestorMatches(table, info.pid, agentPid)) {
+          roots.add(info.pid);
+        }
+      }
+    }
+    // Keep only the highest roots: a direct child's /T already covers its
+    // descendants, and the agent itself is never a target.
+    const killable = [...roots].filter(
+      (pid) =>
+        pid !== process.pid &&
+        pid !== this.rootPid &&
+        pid !== agentPid &&
+        !ancestorMatches(table, pid, ...roots),
+    );
+    let killed = 0;
+    for (const pid of killable) {
+      if (killTree(pid)) killed += 1;
+    }
+    return killed;
+  }
+
+  /** POSIX fallback: signal the same roots; a missing pid is not an error. */
+  private terminateTrackedPosix(agentPid?: number): number {
+    const roots = new Set<number>();
+    for (const egg of this.eggs.values()) {
+      if (egg.status !== "exited") roots.add(egg.info.pid);
+    }
+    if (agentPid !== undefined && agentPid > 0) roots.add(agentPid);
+    let killed = 0;
+    for (const pid of roots) {
+      if (pid === process.pid || pid === this.rootPid) continue;
+      try {
+        process.kill(pid, "SIGTERM");
+        killed += 1;
+      } catch {
+        // already gone
+      }
+    }
+    return killed;
   }
 
   /** Stop watching. Never touches the processes themselves. */
@@ -1395,6 +1464,43 @@ export function attributeProcesses(
   const children = new Map<number, number>();
   for (const root of roots) children.set(root.pid, countDescendants(table, root.pid, claimedSet));
   return { roots, children, claimed };
+}
+
+/** True when `pid`'s ancestor chain reaches any of `ancestors` (itself excluded). */
+function ancestorMatches(table: ProcessTable, pid: number, ...ancestors: number[]): boolean {
+  if (ancestors.length === 0) return false;
+  const wanted = new Set(ancestors);
+  const visited = new Set<number>();
+  let current = table.get(pid)?.ppid;
+  while (current !== undefined && current > 0 && !visited.has(current)) {
+    if (wanted.has(current)) return true;
+    visited.add(current);
+    current = table.get(current)?.ppid;
+  }
+  return false;
+}
+
+/**
+ * Kill one subtree. Windows has no portable tree-kill primitive, and a shell
+ * wrapper's children outlive it, so `taskkill /T` is the one that gets the
+ * command's whole tree. A bare `child.kill()` would orphan exactly the process
+ * this exists to reap.
+ */
+function killTree(pid: number): boolean {
+  if (process.platform === "win32") {
+    const result = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 5000,
+    });
+    return result.status === 0;
+  }
+  try {
+    process.kill(pid, "SIGTERM");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** True for the console hosts Windows gives console processes. */

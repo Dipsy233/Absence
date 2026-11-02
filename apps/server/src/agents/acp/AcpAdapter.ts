@@ -235,6 +235,10 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
     return this.session?.sessionId;
   }
 
+  getAgentPid(): number | undefined {
+    return this.session?.pid;
+  }
+
   getAvailableCommands(): AgentCommandInfo[] {
     return this.commands();
   }

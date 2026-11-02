@@ -12,12 +12,14 @@
  *   - abort watchdog for an agent that ignores session/cancel;
  *   - registry sync parsing, temp cache write, and offline failure handling.
  */
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AbsenceEvent } from "@absence/core";
-import { check, finish, section } from "./harness";
+import { snapshotProcesses } from "../../apps/server/src/process/ProcessTable";
+import { check, finish, section, waitFor } from "./harness";
 
 process.env.ABSENCE_ACP_ABORT_TIMEOUT_MS = "300";
 
@@ -344,6 +346,76 @@ async function main(): Promise<void> {
     check("offline is explained, not swallowed", /unreachable/i.test(offline) && /registry/i.test(offline), offline);
     check("the previous cache is still intact after a failure", (await fs.stat(cachePath)).isFile());
     await fs.rm(dir, { recursive: true, force: true });
+  }
+
+  section("close reaps the command subtree of an Absence-started agent");
+  if (process.platform === "win32") {
+    const { ProcessWatcher } = await import("../../apps/server/src/process/ProcessWatcher");
+    const dir = await tempDir();
+    const wrapperPath = path.join(dir, "wrapper.mjs");
+    await fs.writeFile(
+      wrapperPath,
+      [
+        "import { spawn } from 'node:child_process';",
+        "const child = spawn('ping', ['-n', '30', '127.0.0.1'], { stdio: 'ignore', windowsHide: true });",
+        "console.log(child.pid);",
+        "setInterval(() => {}, 1000);",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const wrapper = spawn(process.execPath, [wrapperPath], {
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+    });
+    // An unrelated long-running process started by this check, not the agent.
+    const unrelated = spawn("ping", ["-n", "30", "127.0.0.1"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    try {
+      const childPid = await new Promise<number>((resolve, reject) => {
+        let text = "";
+        wrapper.stdout?.on("data", (chunk) => {
+          text += String(chunk);
+          const match = /\d+/.exec(text);
+          if (match) resolve(Number(match[0]));
+        });
+        wrapper.once("error", reject);
+        setTimeout(() => reject(new Error("wrapper printed no child pid")), 5000);
+      });
+
+      const tableBefore = await snapshotProcesses();
+      const sawChild = await waitFor(() => tableBefore.has(childPid), 2000);
+      check("the command child is visible before close", sawChild, `pid ${childPid}`);
+
+      const watcher = new ProcessWatcher({ onProcess: () => {} });
+      const killed = await watcher.terminateCommands(wrapper.pid);
+      watcher.stop();
+      check("the close path reports how many command roots it terminated", killed >= 1, String(killed));
+
+      let gone = false;
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline) {
+        if (!(await snapshotProcesses()).has(childPid)) {
+          gone = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      check("the command process is gone after close", gone, `pid ${childPid}`);
+      check(
+        "an unrelated process is not killed",
+        unrelated.pid !== undefined && (await snapshotProcesses()).has(unrelated.pid),
+        `pid ${unrelated.pid}`,
+      );
+    } finally {
+      wrapper.kill();
+      unrelated.kill();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  } else {
+    check("the command reaper is Windows-specific; skipped on this platform", true);
   }
 
   finish("acp-lifecycle");

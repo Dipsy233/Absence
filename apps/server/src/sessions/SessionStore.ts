@@ -708,7 +708,18 @@ export class AbsenceSession {
     if (this.stateTimer) clearTimeout(this.stateTimer);
     if (this.treeTimer) clearTimeout(this.treeTimer);
     if (this.metaTimer) clearTimeout(this.metaTimer);
-    // Stops watching only. Eggs the agent left running are not ours to kill.
+    // Closing a session Absence *drove* is the one moment its commands are
+    // ours to stop. An agent watched from the outside is never touched; a
+    // driven agent's subtree is, before the agent itself goes away and its
+    // children are reparented. Eggs the agent left behind are reaped too.
+    const terminated = await this.processWatcher.terminateCommands(
+      this.adapter?.getAgentPid?.(),
+    );
+    if (terminated > 0) {
+      console.log(
+        `[absence] session ${this.id}: terminated ${terminated} command process(es) on close`,
+      );
+    }
     this.processWatcher.stop();
     this.unsubDocker?.();
     this.dockerEggs?.dispose();

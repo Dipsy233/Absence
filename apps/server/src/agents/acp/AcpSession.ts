@@ -58,6 +58,8 @@ export class AcpSession {
   private closed = false;
   private forceAbort?: () => void;
   private abortTimer?: NodeJS.Timeout;
+  /** The spawned agent process, so a close can reap its command subtree. */
+  private agentPid?: number;
 
   constructor(private readonly options: AcpSessionOptions) {}
 
@@ -79,6 +81,9 @@ export class AcpSession {
       },
       onNotification: (method, params) => this.handleNotification(method, params),
       onRequest: (method, params) => this.handleAgentRequest(method, params),
+      onSpawn: (pid) => {
+        this.agentPid = pid;
+      },
       onErrorOutput: () => {
         /* stderr is diagnostics; the ACP stream is the truth */
       },
@@ -98,6 +103,11 @@ export class AcpSession {
 
   get sessionId(): string | undefined {
     return this.acpSessionId;
+  }
+
+  /** The agent child Absence spawned (undefined before `start` / after close). */
+  get pid(): number | undefined {
+    return this.agentPid;
   }
 
   isBusy(): boolean {

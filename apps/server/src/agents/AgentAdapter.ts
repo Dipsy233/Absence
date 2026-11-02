@@ -92,6 +92,8 @@ export interface AgentAdapter {
   getSessionFile?(): string | undefined;
   /** The runtime's own session id, when it has one. */
   getRuntimeSessionId?(): string | undefined;
+  /** The child process Absence spawned for this runtime, when it owns one. */
+  getAgentPid?(): number | undefined;
 
   // --- command surface (the terminal-style chat box) -------------------------
   // All optional: a runtime that cannot do something simply omits it, and the
