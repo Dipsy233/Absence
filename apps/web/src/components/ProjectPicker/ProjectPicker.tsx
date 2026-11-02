@@ -4,19 +4,14 @@ import {
   fetchProjects,
   fetchSessionHistory,
   fetchRuntimes,
-  type RuntimeKind,
-  type RuntimeStatus,
 } from "../../lib/api";
 import { WindowControls } from "../common/WindowControls";
 import { useSessionStore } from "../../stores/sessionStore";
 import { resetAllStores } from "../../stores/reset";
-import { useT } from "../../lib/i18n";
 import "../../ui/shared/themes.css";
 import "../../ui/shared/picker.css";
 
-type AgentChoice = RuntimeKind;
-
-type Readiness = "ready" | "needs-adapter" | "needs-auth" | "unavailable";
+type Readiness = "ready" | "needs-adapter" | "needs-auth";
 type LaunchSource = "auto" | "manual" | "override";
 
 interface AgentModels {
@@ -25,25 +20,29 @@ interface AgentModels {
   path?: string;
 }
 
-/**
- * What /api/runtimes adds on top of the shared DTO: the catalog's discovery
- * facts. The picker never names a product — it renders whatever rows come back.
- */
-interface ProfileRuntime extends RuntimeStatus {
-  profileId?: string;
-  commandLine?: string;
-  auth?: "configured" | "missing" | "unknown" | "not-required";
-  authReason?: string;
-  authHint?: "none" | "optional" | "required";
-  capabilities?: string;
-  requires?: string[];
-  source?: LaunchSource;
-  state?: Readiness;
-  stateReason?: string;
+interface AdapterInfo {
+  packages: string[];
+  bins: string[];
+  command: string;
+  localCommand?: string;
+  note: string;
+  suggestedEntry: { command: string; args: string[] };
+}
+
+/** One row of the probe view (GET /api/runtimes). */
+interface PickerRow {
+  kind: string;
+  label: string;
+  state: Readiness;
+  stateReason: string;
+  source: LaunchSource;
   discoveredFrom?: string;
-  models?: AgentModels;
+  auth: "configured" | "missing" | "unknown" | "not-required";
+  authReason: string;
+  models: AgentModels;
   willDownload?: boolean;
-  installHint?: string;
+  capabilities?: string;
+  adapter?: AdapterInfo;
 }
 
 interface CustomAgentRow {
@@ -58,10 +57,33 @@ interface CustomAgentRow {
   available: boolean;
 }
 
-/** First startable runtime, or the first row the catalog offered. */
-function pickDefault(list: ProfileRuntime[]): AgentChoice {
-  return list.find((runtime) => runtime.state === "ready")?.kind ?? list[0]?.kind ?? "";
+interface CustomPayload {
+  id: string;
+  label: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string;
 }
+
+const STATE_TEXT: Record<Readiness, string> = {
+  ready: "可启动",
+  "needs-adapter": "缺适配器",
+  "needs-auth": "需登录",
+};
+
+const SOURCE_TEXT: Record<LaunchSource, string> = {
+  auto: "自动发现",
+  manual: "手动配置",
+  override: "用户覆盖",
+};
+
+const AUTH_TEXT: Record<PickerRow["auth"], string> = {
+  configured: "已配置",
+  missing: "缺失",
+  unknown: "未知",
+  "not-required": "无需登录",
+};
 
 /** Short, human time for a session row: time only today, date + time otherwise. */
 function formatWhen(timestamp: number): string {
@@ -72,115 +94,78 @@ function formatWhen(timestamp: number): string {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${time}`;
 }
 
-/** Split an argument string into argv; quotes group, backslashes stay literal. */
-function splitArgs(line: string): string[] {
-  const argv: string[] = [];
-  let current = "";
-  let quote: '"' | "'" | undefined;
-  let started = false;
-  for (const char of line) {
-    if (quote) {
-      if (char === quote) quote = undefined;
-      else current += char;
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      started = true;
-      continue;
-    }
-    if (/\s/.test(char)) {
-      if (started) {
-        argv.push(current);
-        current = "";
-        started = false;
-      }
-      continue;
-    }
-    current += char;
-    started = true;
-  }
-  if (started) argv.push(current);
-  return argv;
+/** args: one argument per line, so a path with spaces needs no quoting. */
+function parseArgs(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
-/** `KEY=VALUE` lines → an env object (blank lines ignored). */
-function parseEnv(text: string): Record<string, string> {
+/** env: `KEY=VALUE` lines. Returns undefined when a line is malformed. */
+function parseEnv(text: string): Record<string, string> | undefined {
   const env: Record<string, string> = {};
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     const index = trimmed.indexOf("=");
-    if (index <= 0) continue;
+    if (index <= 0) return undefined;
     env[trimmed.slice(0, index).trim()] = trimmed.slice(index + 1).trim();
   }
   return env;
 }
 
-type TFn = (key: string, params?: Record<string, string | number>) => string;
-
-function stateLabel(t: TFn, state: Readiness | undefined): string {
-  switch (state) {
-    case "ready":
-      return t("ready");
-    case "needs-adapter":
-      return t("needs adapter");
-    case "needs-auth":
-      return t("needs sign-in");
-    default:
-      return t("unavailable");
+function sourceLine(row: PickerRow): string {
+  if (row.source === "manual" || row.source === "override") {
+    return `${SOURCE_TEXT[row.source]} · ~/.absence/agents.json`;
   }
+  if (row.discoveredFrom) {
+    return row.discoveredFrom.includes(`${"node_modules"}`)
+      ? `自动发现 · 本地 node_modules：${row.discoveredFrom}`
+      : `自动发现 · ${row.discoveredFrom}`;
+  }
+  return "自动发现 · PATH";
 }
 
-function sourceLabel(t: TFn, source: LaunchSource | undefined): string {
-  if (source === "manual") return t("custom entry");
-  if (source === "override") return t("user override");
-  return t("auto-discovered");
-}
-
-function modelsText(t: TFn, models: AgentModels | undefined): string {
-  if (!models) return t("model list unknown");
-  if (models.state === "session") {
-    return t("models from the ACP session: {list}", { list: models.items.join(", ") });
-  }
-  if (models.state === "declared") {
-    return t("agent-declared models: {list}", { list: models.items.join(", ") });
-  }
-  if (models.state === "empty") return t("the agent has not declared any models");
-  return t("model list unknown (agent config unreadable)");
+function modelsLabel(models: AgentModels): string {
+  if (models.state === "session") return "ACP 会话";
+  if (models.state === "declared") return `agent 配置 · ${models.path ?? "（未标明文件）"}`;
+  if (models.state === "empty") return "配置已读，agent 未声明模型";
+  return "未知（未读到 agent 配置）";
 }
 
 /**
- * The first screen: pick a local project and start watching. It renders
- * inside `.mon-root` so the chosen UI style dresses it too — the picker is
- * the front door, not a separate app.
+ * The probe view: Absence shows what it found on this machine and never
+ * pretends to install anything. The row list comes pre-filtered by
+ * `/api/runtimes`; an unavailable agent simply has no row.
  */
 export function ProjectPicker() {
-  const t = useT();
   const startSession = useSessionStore((s) => s.startSession);
   const resumeSession = useSessionStore((s) => s.resumeSession);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<SessionHistoryEntry[]>([]);
   const [path, setPath] = useState("");
-  const [agent, setAgent] = useState<AgentChoice>("");
+  const [agent, setAgent] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [runtimes, setRuntimes] = useState<ProfileRuntime[]>([]);
-  // Launch lines the user is editing, keyed by profile id — never by product.
-  const [pathEdits, setPathEdits] = useState<Record<string, string>>({});
-  const [dirtyPaths, setDirtyPaths] = useState<Record<string, boolean>>({});
-  const [savingPaths, setSavingPaths] = useState(false);
+  const [runtimes, setRuntimes] = useState<PickerRow[]>([]);
+  const [probing, setProbing] = useState(false);
+  const [panelKind, setPanelKind] = useState<string | undefined>();
+  const [copied, setCopied] = useState<string | undefined>();
+
   const [customOpen, setCustomOpen] = useState(false);
   const [customRows, setCustomRows] = useState<CustomAgentRow[]>([]);
-  const [customEditId, setCustomEditId] = useState<string | undefined>();
-  const [customLabel, setCustomLabel] = useState("");
-  const [customCommand, setCustomCommand] = useState("");
-  const [customArgs, setCustomArgs] = useState("");
-  const [customEnv, setCustomEnv] = useState("");
-  const [customCwd, setCustomCwd] = useState("");
-  const [customBusy, setCustomBusy] = useState(false);
-  const [customError, setCustomError] = useState<string | undefined>();
+  const [reservedIds, setReservedIds] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | undefined>();
+  const [formId, setFormId] = useState("");
+  const [formLabel, setFormLabel] = useState("");
+  const [formCommand, setFormCommand] = useState("");
+  const [formArgs, setFormArgs] = useState("");
+  const [formEnv, setFormEnv] = useState("");
+  const [formCwd, setFormCwd] = useState("");
+  const [formError, setFormError] = useState<string | undefined>();
+  const [saving, setSaving] = useState(false);
 
   const refreshSessions = () => {
     fetchSessionHistory()
@@ -191,31 +176,34 @@ export function ProjectPicker() {
   const refreshCustomAgents = () => {
     fetch("/api/agents")
       .then(async (response) => {
-        const body = (await response.json().catch(() => ({}))) as { agents?: CustomAgentRow[] };
+        const body = (await response.json().catch(() => ({}))) as {
+          agents?: CustomAgentRow[];
+          reservedIds?: string[];
+        };
         setCustomRows(body.agents ?? []);
+        setReservedIds(body.reservedIds ?? []);
       })
       .catch(() => setCustomRows([]));
   };
 
-  /** Seed the launch editor from the catalog's rows; keep unlucky edits intact. */
-  const applyRuntimes = (list: ProfileRuntime[]) => {
+  /** Replace the probe list; keep a sensible selection when rows disappear. */
+  const applyRows = (list: PickerRow[]) => {
     setRuntimes(list);
-    setPathEdits((prev) => {
-      const next = { ...prev };
-      for (const rt of list) {
-        if (rt.configurable && next[rt.kind] === undefined) {
-          next[rt.kind] = rt.commandLine ?? rt.path ?? "";
-        }
-      }
-      return next;
+    setAgent((current) => {
+      if (list.some((row) => row.kind === current)) return current;
+      return list.find((row) => row.state === "ready")?.kind ?? list[0]?.kind ?? "";
     });
-    setAgent((current) => current || pickDefault(list));
+    setPanelKind((current) => (list.some((row) => row.kind === current) ? current : undefined));
   };
 
-  const refreshRuntimes = () => {
-    fetchRuntimes()
-      .then((list) => applyRuntimes(list as ProfileRuntime[]))
-      .catch(() => setRuntimes([]));
+  const refreshRuntimes = (showSpinner = false) => {
+    if (showSpinner) setProbing(true);
+    return fetchRuntimes()
+      .then((list) => applyRows(list as unknown as PickerRow[]))
+      .catch(() => setRuntimes([]))
+      .finally(() => {
+        if (showSpinner) setProbing(false);
+      });
   };
 
   useEffect(() => {
@@ -223,19 +211,26 @@ export function ProjectPicker() {
       .then(setProjects)
       .catch(() => setProjects([]));
     refreshSessions();
-    refreshRuntimes();
+    void refreshRuntimes();
     refreshCustomAgents();
   }, []);
 
+  // Esc closes the adapter panel and the custom form.
+  useEffect(() => {
+    if (!panelKind && !customOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setPanelKind(undefined);
+      setCustomOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [panelKind, customOpen]);
+
   const query = path.trim().toLowerCase();
-  /**
-   * The side panels stay open and follow the selected runtime: the path
-   * editor shows that runtime's row, the history only its sessions. Typing
-   * a path narrows the history further.
-   */
-  const selectedRuntime = runtimes.find((runtime) => runtime.kind === agent);
-  const canStart = selectedRuntime?.state === "ready";
-  const hasDirtyPath = Object.values(dirtyPaths).some(Boolean);
+  const selected = runtimes.find((row) => row.kind === agent);
+  const canStart = selected?.state === "ready";
+  const panelRow = runtimes.find((row) => row.kind === panelKind);
 
   const visibleSessions = useMemo(() => {
     const byRuntime = sessions.filter((s) => s.runtime === agent);
@@ -245,10 +240,7 @@ export function ProjectPicker() {
   const start = async (projectPath: string) => {
     if (!projectPath.trim()) return;
     if (!canStart) {
-      setError(
-        selectedRuntime?.stateReason ??
-          t("This runtime is not startable. Fix its ACP entry below first."),
-      );
+      setError(selected?.stateReason ?? "当前 agent 不可启动，请先补全它的 ACP 入口。");
       return;
     }
     setBusy(true);
@@ -260,119 +252,6 @@ export function ProjectPicker() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
-    }
-  };
-
-  const savePaths = async () => {
-    const launch: Record<string, string> = {};
-    for (const runtime of runtimes) {
-      if (runtime.configurable && dirtyPaths[runtime.kind]) {
-        launch[runtime.kind] = pathEdits[runtime.kind] ?? "";
-      }
-    }
-    if (Object.keys(launch).length === 0) return;
-    setSavingPaths(true);
-    setError(undefined);
-    try {
-      const response = await fetch("/api/runtimes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ launch }),
-      });
-      const body = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        runtimes?: ProfileRuntime[];
-      };
-      if (!response.ok) throw new Error(body.error ?? `${response.status} ${response.statusText}`);
-      const list = body.runtimes ?? [];
-      setDirtyPaths({});
-      setPathEdits((prev) => {
-        const next = { ...prev };
-        for (const runtime of list) {
-          if (runtime.configurable) next[runtime.kind] = runtime.commandLine ?? runtime.path ?? "";
-        }
-        return next;
-      });
-      applyRuntimes(list);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSavingPaths(false);
-    }
-  };
-
-  const resetCustomForm = () => {
-    setCustomEditId(undefined);
-    setCustomLabel("");
-    setCustomCommand("");
-    setCustomArgs("");
-    setCustomEnv("");
-    setCustomCwd("");
-    setCustomError(undefined);
-  };
-
-  const saveCustom = async () => {
-    setCustomBusy(true);
-    setCustomError(undefined);
-    try {
-      const payload = {
-        label: customLabel.trim(),
-        command: customCommand.trim(),
-        args: splitArgs(customArgs),
-        env: parseEnv(customEnv),
-        cwd: customCwd.trim(),
-      };
-      const response = await fetch(
-        customEditId ? `/api/agents/${encodeURIComponent(customEditId)}` : "/api/agents",
-        {
-          method: customEditId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-      const body = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(body.error ?? `${response.status} ${response.statusText}`);
-      resetCustomForm();
-      refreshRuntimes();
-      refreshCustomAgents();
-    } catch (err) {
-      setCustomError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCustomBusy(false);
-    }
-  };
-
-  const editCustom = (row: CustomAgentRow) => {
-    setCustomEditId(row.id);
-    setCustomLabel(row.label);
-    setCustomCommand(row.command);
-    setCustomArgs((row.args ?? []).join(" "));
-    setCustomEnv(
-      Object.entries(row.env ?? {})
-        .map(([key, value]) => `${key}=${value}`)
-        .join("\n"),
-    );
-    setCustomCwd(row.cwd ?? "");
-    setCustomError(undefined);
-    setCustomOpen(true);
-  };
-
-  const deleteCustom = async (row: CustomAgentRow) => {
-    setCustomBusy(true);
-    setCustomError(undefined);
-    try {
-      const response = await fetch(`/api/agents/${encodeURIComponent(row.id)}`, {
-        method: "DELETE",
-      });
-      const body = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(body.error ?? `${response.status} ${response.statusText}`);
-      if (customEditId === row.id) resetCustomForm();
-      refreshRuntimes();
-      refreshCustomAgents();
-    } catch (err) {
-      setCustomError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCustomBusy(false);
     }
   };
 
@@ -390,6 +269,149 @@ export function ProjectPicker() {
     }
   };
 
+  const copy = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      window.setTimeout(() => setCopied((current) => (current === key ? undefined : current)), 1500);
+    } catch {
+      setCopied(undefined);
+    }
+  };
+
+  const resetForm = () => {
+    setEditingId(undefined);
+    setFormId("");
+    setFormLabel("");
+    setFormCommand("");
+    setFormArgs("");
+    setFormEnv("");
+    setFormCwd("");
+    setFormError(undefined);
+  };
+
+  const openCustomForm = () => {
+    resetForm();
+    setCustomOpen(true);
+  };
+
+  const editCustom = (row: CustomAgentRow) => {
+    setEditingId(row.id);
+    setFormId(row.id);
+    setFormLabel(row.label);
+    setFormCommand(row.command);
+    setFormArgs((row.args ?? []).join("\n"));
+    setFormEnv(
+      Object.entries(row.env ?? {})
+        .map(([key, value]) => `${key}=${value}`)
+        .join("\n"),
+    );
+    setFormCwd(row.cwd ?? "");
+    setFormError(undefined);
+    setCustomOpen(true);
+    setPanelKind(undefined);
+  };
+
+  /** Prefill a custom entry from a needs-adapter row; nothing is written yet. */
+  const prefillFromAdapter = (row: PickerRow) => {
+    resetForm();
+    setFormLabel(`${row.label} ACP`);
+    setFormCommand(row.adapter?.suggestedEntry.command ?? "");
+    setFormArgs((row.adapter?.suggestedEntry.args ?? []).join("\n"));
+    setCustomOpen(true);
+    setPanelKind(undefined);
+  };
+
+  const validateForm = (): CustomPayload | undefined => {
+    const command = formCommand.trim();
+    if (!command) {
+      setFormError("请填写命令（绝对路径或 PATH 上的名称）。");
+      return undefined;
+    }
+    const id = formId.trim();
+    if (id && !/^[A-Za-z0-9._-]+$/.test(id)) {
+      setFormError("id 只能包含字母、数字、点、横线和下划线。");
+      return undefined;
+    }
+    if (id && id !== editingId && reservedIds.includes(id)) {
+      setFormError(`id “${id}” 与内置 agent 冲突，请换一个。`);
+      return undefined;
+    }
+    const env = parseEnv(formEnv);
+    if (env === undefined) {
+      setFormError("环境变量每行必须是 KEY=VALUE。");
+      return undefined;
+    }
+    return {
+      id,
+      label: formLabel.trim(),
+      command,
+      args: parseArgs(formArgs),
+      env,
+      cwd: formCwd.trim(),
+    };
+  };
+
+  const saveCustom = async () => {
+    const payload = validateForm();
+    if (!payload) return;
+    setSaving(true);
+    setFormError(undefined);
+    try {
+      const response = await fetch(
+        editingId ? `/api/agents/${encodeURIComponent(editingId)}` : "/api/agents",
+        {
+          method: editingId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(payload.id ? { id: payload.id } : {}),
+            label: payload.label,
+            command: payload.command,
+            args: payload.args,
+            env: payload.env,
+            cwd: payload.cwd,
+          }),
+        },
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        checked?: string[];
+      };
+      if (!response.ok) {
+        const checked = body.checked?.slice(0, 5).join("、");
+        throw new Error(
+          `${body.error ?? `${response.status} ${response.statusText}`}${
+            checked ? `\n检查过：${checked}` : ""
+          }`,
+        );
+      }
+      resetForm();
+      setCustomOpen(false);
+      refreshCustomAgents();
+      await refreshRuntimes();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteCustom = async (row: CustomAgentRow) => {
+    setFormError(undefined);
+    try {
+      const response = await fetch(`/api/agents/${encodeURIComponent(row.id)}`, {
+        method: "DELETE",
+      });
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? `${response.status} ${response.statusText}`);
+      if (editingId === row.id) resetForm();
+      refreshCustomAgents();
+      await refreshRuntimes();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   return (
     <div className="mon-root picker-root">
       {window.absenceDesktop ? (
@@ -399,22 +421,22 @@ export function ProjectPicker() {
       ) : null}
 
       <div className="picker">
-        {/* One column, top to bottom: the path, the runtime, the history, the
-            runtime's own path. The history takes the space that is left and
-            scrolls, so the card never changes size. */}
         <header className="picker__brand">
           <h1>
             ABSENCE
             <span>发呆症</span>
           </h1>
-          <p>{t("AI moves fast. Humans watch. Choose a project and let the agent work.")}</p>
+          <p>只列出这台机器上探测到的 agent。Absence 不会代装，也不会改它们的配置。</p>
         </header>
 
         <div className="picker__body">
           <section className="picker__block">
-            <label className="picker__label">{t("project path")}</label>
+            <label className="picker__label" htmlFor="project-path">
+              项目路径
+            </label>
             <div className="picker__openrow">
               <input
+                id="project-path"
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 placeholder="E:/path/to/project"
@@ -426,9 +448,10 @@ export function ProjectPicker() {
               <button
                 type="button"
                 disabled={busy || !path.trim() || !canStart}
+                aria-label="打开项目"
                 onClick={() => void start(path)}
               >
-                {busy ? t("opening…") : t("Open")}
+                {busy ? "打开中…" : "打开"}
               </button>
             </div>
             {error ? <div className="picker__error">{error}</div> : null}
@@ -436,15 +459,16 @@ export function ProjectPicker() {
 
           {projects.length > 0 ? (
             <section className="picker__block">
-              <label className="picker__label">{t("recent")}</label>
+              <label className="picker__label">最近</label>
               <div className="picker__list picker__projects">
                 {projects.map((project) => (
                   <button
                     key={project.path}
                     type="button"
                     disabled={busy || !canStart}
+                    aria-label={`打开 ${project.path}`}
                     onClick={() => void start(project.path)}
-                    title={canStart ? project.path : selectedRuntime?.stateReason}
+                    title={canStart ? project.path : selected?.stateReason}
                   >
                     <b>{project.name}</b>
                     <span>{project.path}</span>
@@ -455,65 +479,182 @@ export function ProjectPicker() {
           ) : null}
 
           <section className="picker__block">
-            <label className="picker__label">{t("runtime")}</label>
-            <div className="picker__runtimes">
-              {runtimes.map((rt) => (
-                <button
-                  key={rt.kind}
-                  type="button"
-                  onClick={() => setAgent(rt.kind)}
-                  title={rt.stateReason ?? rt.note}
-                  data-on={agent === rt.kind ? "true" : undefined}
-                  data-state={rt.state ?? "unavailable"}
-                >
-                  <i data-state={rt.state ?? "unavailable"} />
-                  {rt.label}
-                  <small>{stateLabel(t, rt.state)}</small>
-                </button>
-              ))}
+            <div className="picker__hhead">
+              <label className="picker__label">检测到的 Agent</label>
+              <button
+                type="button"
+                className="picker__link"
+                aria-label="重新探测本机 agent"
+                disabled={probing}
+                onClick={() => void refreshRuntimes(true)}
+              >
+                {probing ? "探测中…" : "重新探测"}
+              </button>
             </div>
-            <p className="picker__note">
-              {t(
-                "Green means the ACP entry was found on this machine. Amber means the agent CLI is installed but its ACP adapter is missing (or sign-in is missing). Red means neither was found.",
-              )}
-            </p>
-            {selectedRuntime ? (
-              <div className="picker__agentfacts">
-                <p className="picker__note">
-                  <strong>{stateLabel(t, selectedRuntime.state)}</strong>
-                  {" · "}
-                  {sourceLabel(t, selectedRuntime.source)}
-                  {selectedRuntime.discoveredFrom ? ` · ${selectedRuntime.discoveredFrom}` : null}
+
+            {runtimes.length === 0 ? (
+              <div className="picker__empty">
+                <p>
+                  没有探测到任何可用的 agent。Absence 只读取本机已安装的 ACP 入口，不会联网下载或代装。
                 </p>
-                <p className="picker__note">{selectedRuntime.stateReason}</p>
-                {selectedRuntime.willDownload ? (
-                  <p className="picker__note picker__warn">
-                    {t("This launch uses npx and will download a package temporarily.")}
-                  </p>
-                ) : null}
-                {selectedRuntime.installHint ? (
-                  <p className="picker__note">{selectedRuntime.installHint}</p>
-                ) : null}
-                <p className="picker__note">
-                  {t("sign-in")}: {selectedRuntime.auth ?? "unknown"}
-                  {selectedRuntime.authReason ? ` — ${selectedRuntime.authReason}` : null}
-                </p>
-                <p className="picker__note">{modelsText(t, selectedRuntime.models)}</p>
+                <p>你可以在 PATH 上安装 agent，或手动添加一个自定义 ACP 入口。</p>
+                <button type="button" className="picker__save" onClick={openCustomForm}>
+                  添加自定义 ACP
+                </button>
               </div>
-            ) : null}
+            ) : (
+              <div className="picker__agents">
+                {runtimes.map((row) => (
+                  <article key={row.kind} className="picker__agentcard" data-state={row.state}>
+                    <div className="picker__agenthead">
+                      <button
+                        type="button"
+                        className="picker__agentpick"
+                        aria-pressed={agent === row.kind}
+                        aria-label={`选择 ${row.label}`}
+                        onClick={() => setAgent(row.kind)}
+                      >
+                        <span className="picker__agentname">{row.label}</span>
+                      </button>
+                      <span className="picker__badge" data-state={row.state}>
+                        {STATE_TEXT[row.state]}
+                      </span>
+                    </div>
+                    <p className="picker__note">{row.stateReason}</p>
+                    <p className="picker__note">{sourceLine(row)}</p>
+                    {row.willDownload ? (
+                      <p className="picker__note picker__warn">
+                        npx 兜底已显式开启，启动时会临时下载包。
+                      </p>
+                    ) : null}
+                    <p className="picker__note">
+                      认证：{AUTH_TEXT[row.auth]}
+                      {row.authReason ? ` — ${row.authReason}` : null}
+                    </p>
+                    <p className="picker__note">
+                      模型来源：{modelsLabel(row.models)}
+                      {row.models.items.length > 0 ? ` — ${row.models.items.join("、")}` : null}
+                    </p>
+                    <div className="picker__agentactions">
+                      {row.state === "needs-adapter" && row.adapter ? (
+                        <button
+                          type="button"
+                          className="picker__save"
+                          aria-label={`补全 ${row.label} 的 ACP 适配器`}
+                          aria-expanded={panelKind === row.kind}
+                          onClick={() =>
+                            setPanelKind((current) => (current === row.kind ? undefined : row.kind))
+                          }
+                        >
+                          {panelKind === row.kind ? "收起补全" : "补全 ACP"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
+
+          {panelRow?.adapter ? (
+            <section
+              className="picker__panel"
+              role="dialog"
+              aria-label={`补全 ${panelRow.label} 的 ACP 适配器`}
+            >
+              <div className="picker__hhead">
+                <strong>补全 {panelRow.label} 的 ACP</strong>
+                <button
+                  type="button"
+                  className="picker__link"
+                  aria-label="关闭补全面板"
+                  onClick={() => setPanelKind(undefined)}
+                >
+                  关闭
+                </button>
+              </div>
+              {panelRow.adapter.packages.length > 0 ? (
+                <p className="picker__note">
+                  适配器包：<code>{panelRow.adapter.packages.join("、")}</code>
+                </p>
+              ) : null}
+              {panelRow.adapter.bins.length > 0 ? (
+                <p className="picker__note">
+                  需要的可执行文件：<code>{panelRow.adapter.bins.join("、")}</code>
+                </p>
+              ) : null}
+              {panelRow.adapter.command ? (
+                <div className="picker__cmdrow">
+                  <code className="picker__cmd">{panelRow.adapter.command}</code>
+                  <button
+                    type="button"
+                    className="picker__link"
+                    aria-label="复制安装命令"
+                    onClick={() =>
+                      void copy(
+                        panelRow.adapter?.command ?? "",
+                        `${panelRow.kind}:install`,
+                      )
+                    }
+                  >
+                    {copied === `${panelRow.kind}:install` ? "已复制" : "复制"}
+                  </button>
+                </div>
+              ) : null}
+              {panelRow.adapter.localCommand ? (
+                <div className="picker__cmdrow">
+                  <code className="picker__cmd">{panelRow.adapter.localCommand}</code>
+                  <button
+                    type="button"
+                    className="picker__link"
+                    aria-label="复制项目内安装命令"
+                    onClick={() =>
+                      void copy(
+                        panelRow.adapter?.localCommand ?? "",
+                        `${panelRow.kind}:local`,
+                      )
+                    }
+                  >
+                    {copied === `${panelRow.kind}:local` ? "已复制" : "复制"}
+                  </button>
+                </div>
+              ) : null}
+              <p className="picker__note">{panelRow.adapter.note}</p>
+              <div className="picker__panelactions">
+                <button
+                  type="button"
+                  className="picker__save"
+                  aria-label="重新探测本机 agent"
+                  disabled={probing}
+                  onClick={() => void refreshRuntimes(true)}
+                >
+                  {probing ? "探测中…" : "重新探测"}
+                </button>
+                <button
+                  type="button"
+                  className="picker__save"
+                  aria-label={`用 ${panelRow.label} 的适配器预填自定义入口`}
+                  onClick={() => prefillFromAdapter(panelRow)}
+                >
+                  预填自定义入口
+                </button>
+              </div>
+            </section>
+          ) : null}
 
           <section className="picker__block picker__block--fill">
             <div className="picker__hhead">
-              <label className="picker__label">{t("History")}</label>
-              <span>{t("{n} sessions", { n: visibleSessions.length })}</span>
+              <label className="picker__label">历史</label>
+              <span>
+                {visibleSessions.length} 个会话
+              </span>
             </div>
             <div className="picker__list picker__history">
               {visibleSessions.length === 0 ? (
                 <p className="picker__note">
                   {query
-                    ? t("No saved sessions for this path.")
-                    : t("No saved sessions for this runtime yet — open a project to start one.")}
+                    ? "此路径没有已保存的会话。"
+                    : "该 agent 还没有历史——打开一个项目开始第一轮。"}
                 </p>
               ) : (
                 visibleSessions.map((session) => (
@@ -521,8 +662,9 @@ export function ProjectPicker() {
                     key={session.id}
                     type="button"
                     disabled={busy}
+                    aria-label={`恢复会话 ${session.absenceSessionId ?? session.id}`}
                     onClick={() => void resume(session)}
-                    title={t("Resume {id}", { id: session.absenceSessionId ?? session.id })}
+                    title={`恢复 ${session.absenceSessionId ?? session.id}`}
                   >
                     <span className="picker__hrow">
                       <b>{session.name ?? session.projectName}</b>
@@ -531,8 +673,8 @@ export function ProjectPicker() {
                     <span className="picker__hpath">{session.projectPath}</span>
                     <span className="picker__hmeta">
                       <i data-runtime={session.runtime}>{session.runtime}</i>
-                      {"· "}
-                      {t("{n} msgs", { n: session.messageCount })}
+                      {" · "}
+                      {session.messageCount} 条消息
                       {session.firstPrompt ? ` · ${session.firstPrompt}` : null}
                     </span>
                   </button>
@@ -542,135 +684,132 @@ export function ProjectPicker() {
           </section>
 
           <section className="picker__block">
-            {/* The selected profile's launch line: switching the runtime
-                switches the row, so what you edit is always what you will
-                open with. Rows come from the catalog, never a product list. */}
-            <label className="picker__label">{t("runtime paths")}</label>
-            <div className="picker__pathlist">
-              {runtimes
-                .filter((rt) => rt.configurable && rt.kind === agent)
-                .map((rt) => (
-                  <div key={rt.kind} className="picker__pathedit">
-                    <div className="picker__pathrow">
-                      <i data-state={rt.state ?? "unavailable"} />
-                      <span>{rt.label}</span>
-                      <em>{stateLabel(t, rt.state)}</em>
-                    </div>
-                    <input
-                      value={pathEdits[rt.kind] ?? ""}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setPathEdits((prev) => ({ ...prev, [rt.kind]: value }));
-                        setDirtyPaths((prev) => ({ ...prev, [rt.kind]: true }));
-                      }}
-                      placeholder={rt.commandLine ?? rt.note}
-                      spellCheck={false}
-                    />
-                    <p className="picker__note">{rt.stateReason}</p>
-                    {rt.auth === "missing" ? (
-                      <p className="picker__note">
-                        {t(
-                          "No credentials were found for this agent. Absence does not read or store them — sign in through the agent's own tools.",
-                        )}
-                      </p>
-                    ) : null}
-                  </div>
-                ))}
-              <button
-                type="button"
-                className="picker__save"
-                disabled={savingPaths || !hasDirtyPath}
-                onClick={() => void savePaths()}
-              >
-                {savingPaths ? t("saving…") : t("save paths")}
-              </button>
-            </div>
-          </section>
-
-          <section className="picker__block">
             <div className="picker__hhead">
-              <label className="picker__label">{t("custom ACP entry")}</label>
+              <label className="picker__label">自定义 ACP</label>
               <button
                 type="button"
                 className="picker__link"
-                onClick={() => {
-                  if (customOpen) resetCustomForm();
-                  setCustomOpen(!customOpen);
-                }}
+                aria-label={customOpen ? "收起自定义 ACP 表单" : "添加自定义 ACP"}
+                onClick={() => (customOpen ? (resetForm(), setCustomOpen(false)) : openCustomForm())}
               >
-                {customOpen ? t("close") : t("add…")}
+                {customOpen ? "收起" : "添加自定义 ACP"}
               </button>
             </div>
+
             {customRows.length > 0 ? (
-              <div className="picker__pathlist">
+              <div className="picker__customrows">
                 {customRows.map((row) => (
-                  <div key={row.id} className="picker__pathrow picker__customrow">
-                    <i data-state={row.available ? "ready" : "unavailable"} />
-                    <span>{row.label}</span>
-                    <em>{row.available ? row.resolved : t("command not found")}</em>
-                    <button type="button" className="picker__link" onClick={() => editCustom(row)}>
-                      {t("edit")}
+                  <div key={row.id} className="picker__customrow">
+                    <span className="picker__badge" data-state={row.available ? "ready" : "unavailable"}>
+                      {row.available ? "可启动" : "命令未找到"}
+                    </span>
+                    <span className="picker__customname">{row.label}</span>
+                    <code className="picker__customcmd">{row.commandLine}</code>
+                    <button
+                      type="button"
+                      className="picker__link"
+                      aria-label={`编辑 ${row.label}`}
+                      onClick={() => editCustom(row)}
+                    >
+                      编辑
                     </button>
                     <button
                       type="button"
                       className="picker__link"
-                      disabled={customBusy}
+                      aria-label={`删除 ${row.label}`}
                       onClick={() => void deleteCustom(row)}
                     >
-                      {t("delete")}
+                      删除
                     </button>
                   </div>
                 ))}
               </div>
             ) : null}
+
             {customOpen ? (
               <div className="picker__custom">
-                <input
-                  value={customLabel}
-                  onChange={(e) => setCustomLabel(e.target.value)}
-                  placeholder={t("display name")}
-                  spellCheck={false}
-                />
-                <input
-                  value={customCommand}
-                  onChange={(e) => setCustomCommand(e.target.value)}
-                  placeholder={t("command (absolute path or PATH name)")}
-                  spellCheck={false}
-                />
-                <input
-                  value={customArgs}
-                  onChange={(e) => setCustomArgs(e.target.value)}
-                  placeholder={t("arguments (optional)")}
-                  spellCheck={false}
-                />
-                <input
-                  value={customCwd}
-                  onChange={(e) => setCustomCwd(e.target.value)}
-                  placeholder={t("working directory (optional)")}
-                  spellCheck={false}
-                />
-                <textarea
-                  value={customEnv}
-                  onChange={(e) => setCustomEnv(e.target.value)}
-                  placeholder={t("environment, one KEY=VALUE per line (optional)")}
-                  spellCheck={false}
-                  rows={3}
-                />
-                {customError ? <div className="picker__error">{customError}</div> : null}
+                <label className="picker__field">
+                  <span>id（可留空，自动生成）</span>
+                  <input
+                    value={formId}
+                    onChange={(e) => setFormId(e.target.value)}
+                    placeholder="my-acp"
+                    spellCheck={false}
+                    disabled={editingId !== undefined}
+                  />
+                </label>
+                <label className="picker__field">
+                  <span>显示名称</span>
+                  <input
+                    value={formLabel}
+                    onChange={(e) => setFormLabel(e.target.value)}
+                    placeholder="我的 ACP"
+                    spellCheck={false}
+                  />
+                </label>
+                <label className="picker__field">
+                  <span>命令（绝对路径或 PATH 上的名称）</span>
+                  <input
+                    value={formCommand}
+                    onChange={(e) => setFormCommand(e.target.value)}
+                    placeholder="pi-acp 或 C:/path/to/agent-acp.exe"
+                    spellCheck={false}
+                  />
+                </label>
+                <label className="picker__field">
+                  <span>参数（每行一个）</span>
+                  <textarea
+                    value={formArgs}
+                    onChange={(e) => setFormArgs(e.target.value)}
+                    placeholder={"--flag\nvalue"}
+                    spellCheck={false}
+                    rows={3}
+                  />
+                </label>
+                <label className="picker__field">
+                  <span>环境变量（每行 KEY=VALUE）</span>
+                  <textarea
+                    value={formEnv}
+                    onChange={(e) => setFormEnv(e.target.value)}
+                    placeholder="KEY=VALUE"
+                    spellCheck={false}
+                    rows={3}
+                  />
+                </label>
+                <label className="picker__field">
+                  <span>工作目录（可选）</span>
+                  <input
+                    value={formCwd}
+                    onChange={(e) => setFormCwd(e.target.value)}
+                    placeholder="E:/path/to/project"
+                    spellCheck={false}
+                  />
+                </label>
+                {formError ? <div className="picker__error picker__pre">{formError}</div> : null}
                 <div className="picker__customactions">
                   <button
                     type="button"
+                    className="picker__link"
+                    aria-label="取消自定义 ACP 编辑"
+                    onClick={() => {
+                      resetForm();
+                      setCustomOpen(false);
+                    }}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
                     className="picker__save"
-                    disabled={customBusy || !customCommand.trim()}
+                    disabled={saving || !formCommand.trim()}
+                    aria-label={editingId ? "保存自定义 ACP 修改" : "添加自定义 ACP 入口"}
                     onClick={() => void saveCustom()}
                   >
-                    {customBusy ? t("saving…") : customEditId ? t("update entry") : t("add entry")}
+                    {saving ? "保存中…" : editingId ? "保存修改" : "添加"}
                   </button>
                 </div>
                 <p className="picker__note">
-                  {t(
-                    "Saved to ~/.absence/agents.json. Absence never changes the agent's own configuration; models and sign-in stay the agent's business.",
-                  )}
+                  只写入 ~/.absence/agents.json。命令必须能解析（PATHEXT 感知）；失败时会列出检查过的路径。
                 </p>
               </div>
             ) : null}
