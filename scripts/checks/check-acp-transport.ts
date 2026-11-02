@@ -27,6 +27,7 @@ import {
   type AcpConnectionOptions,
 } from "../../apps/server/src/agents/acp/AcpConnection";
 import { AcpProtocolVersionError } from "../../apps/server/src/agents/acp/protocol/version";
+import { pickExecutable, resolveExecutable } from "../../apps/server/src/agents/acp/protocol/transport";
 import { check, finish, section } from "./harness";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -554,6 +555,75 @@ async function main(): Promise<void> {
       );
     } finally {
       await destroy(run);
+    }
+  }
+
+  section("Windows: PATHEXT resolution and a batch shim in a path with spaces");
+  {
+    check(
+      "the .cmd wins over the extensionless shim `where` printed first",
+      pickExecutable(
+        ["D:\\nodejs\\npx", "D:\\nodejs\\npx.cmd"],
+        "npx",
+        ".COM;.EXE;.BAT;.CMD",
+      ) === "D:\\nodejs\\npx.cmd",
+      pickExecutable(["D:\\nodejs\\npx", "D:\\nodejs\\npx.cmd"], "npx", ".COM;.EXE;.BAT;.CMD"),
+    );
+    check(
+      "PATHEXT order outranks `where` order (.exe before .cmd)",
+      pickExecutable(["C:\\tools\\x.cmd", "C:\\tools\\x.exe"], "x", ".COM;.EXE;.BAT;.CMD") ===
+        "C:\\tools\\x.exe",
+    );
+    check(
+      "a lookup with no executable extension falls back to the first hit",
+      pickExecutable(["C:\\tools\\x.shim"], "x", ".COM;.EXE;.BAT;.CMD") === "C:\\tools\\x.shim",
+    );
+    check(
+      "a bare name is left to `where` only on Windows",
+      process.platform === "win32" ? resolveExecutable("npx") !== "npx" : resolveExecutable("npx") === "npx",
+      resolveExecutable("npx"),
+    );
+
+    if (process.platform === "win32") {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "absence acp batch "));
+      const agentPath = path.join(dir, "fake agent.mjs");
+      const shimPath = path.join(dir, "run agent.cmd");
+      const argsPath = path.join(dir, "args.txt");
+      await fs.writeFile(agentPath, FAKE_AGENT, "utf8");
+      await fs.writeFile(
+        shimPath,
+        [
+          "@echo off",
+          `echo %~1>"${argsPath}"`,
+          `"${process.execPath}" "${agentPath}" %*`,
+          "",
+        ].join("\r\n"),
+        "utf8",
+      );
+
+      const connection = new AcpConnection({
+        launch: { command: shimPath, args: ["a b"] },
+        cwd: repoRoot,
+        onNotification: () => {},
+        onRequest: () => {
+          throw new Error("unexpected request");
+        },
+      });
+      try {
+        const init = await connection.start();
+        check(
+          "a .cmd shim in a path containing spaces starts the agent",
+          init.protocolVersion === 1,
+          JSON.stringify(init),
+        );
+        const session = await connection.newSession(repoRoot);
+        check("the batch-launched agent still serves session/new", session.sessionId === "session-1");
+        const args = (await fs.readFile(argsPath, "utf8")).trim();
+        check("an argument containing a space reaches the agent unsplit", args === "a b", args);
+      } finally {
+        connection.close("batch check cleanup");
+        await fs.rm(dir, { recursive: true, force: true });
+      }
     }
   }
 

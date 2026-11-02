@@ -71,30 +71,7 @@ export function createStdioTransport(
   // `npx.cmd` there, and CreateProcess cannot execute it (ENOENT).
   const entry = resolveExecutable(launch.command);
   const args = launch.args ?? [];
-
-  // Mirrors the resolution DshClient already needed on Windows:
-  //   .js      → run through node (a .js shim is not executable: EFTYPE)
-  //   .cmd/.bat → go through the shell, quoted (spawn cannot exec it: EINVAL)
-  const isScript = /\.(js|cjs|mjs)$/i.test(entry);
-  const isBatch = process.platform === "win32" && /\.(cmd|bat)$/i.test(entry);
-
-  let child: ReturnType<typeof spawn>;
-  if (isBatch) {
-    const line = [quote(entry), ...args.map(quote)].join(" ");
-    child = spawn(line, {
-      cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      env,
-      shell: true,
-      windowsVerbatimArguments: true,
-    });
-  } else {
-    child = spawn(isScript ? process.execPath : entry, isScript ? [entry, ...args] : args, {
-      cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      env,
-    });
-  }
+  const child = spawnResolved(entry, args, cwd, env);
 
   const messageListeners = emitter<[JsonRpcMessage]>();
   const malformedListeners = emitter<[string]>();
@@ -185,30 +162,102 @@ export function createStdioTransport(
  * Turn a launch command into something CreateProcess can start.
  *
  * On Windows a bare `npx` / `uvx` / `qwen` is a `.cmd` shim on PATH, and
- * `spawn("npx")` fails with ENOENT. `where` applies PATHEXT, so ask it once and
- * use the first hit. An absolute path or a name that already carries an
- * extension is left alone; a lookup failure falls through to spawn's own error,
- * which the adapter reports as "not installed".
+ * `spawn("npx")` fails with ENOENT. `where` applies PATHEXT, so ask it once.
+ * Its output can list an extensionless shim *before* the `.cmd` that Windows
+ * itself would run (`D:\nodejs\npx` then `D:\nodejs\npx.cmd`), so the first
+ * hit is not enough: choose by PATHEXT priority instead. An absolute path or a
+ * name that already carries an extension is left alone; a lookup failure falls
+ * through to spawn's own error, which the adapter reports as "not installed".
  */
-function resolveExecutable(entry: string): string {
+export function resolveExecutable(entry: string, env: NodeJS.ProcessEnv = process.env): string {
   if (process.platform !== "win32" || path.isAbsolute(entry)) return entry;
-  if (/\.(exe|com|cmd|bat|js|cjs|mjs)$/i.test(entry)) return entry;
+  if (path.extname(entry).length > 0) return entry;
   try {
     const result = spawnSync("where", [entry], { encoding: "utf8", windowsHide: true });
     if (result.status !== 0 || !result.stdout) return entry;
-    const first = result.stdout
+    const lines = result.stdout
       .split(/\r?\n/)
       .map((line) => line.trim())
-      .find((line) => line.length > 0);
-    return first ?? entry;
+      .filter((line) => line.length > 0);
+    return pickExecutable(lines, entry, env.PATHEXT);
   } catch {
     return entry;
   }
 }
 
-/** Quote an argument for a Windows command line. */
-function quote(value: string): string {
+/**
+ * Choose the line Windows would actually execute, by PATHEXT order.
+ *
+ * `where` returns every match in PATH order, and its first line may be a
+ * non-executable shim (`npx`) while the real one is `npx.cmd`. Only lines with
+ * an entry in PATHEXT are executable; among them the earliest PATHEXT
+ * extension wins (`.COM` before `.EXE`, `.BAT`, `.CMD`).
+ */
+export function pickExecutable(
+  lines: readonly string[],
+  fallback: string,
+  pathext: string | undefined,
+): string {
+  const exts = (pathext ?? ".COM;.EXE;.BAT;.CMD")
+    .split(";")
+    .map((ext) => ext.trim().toLowerCase())
+    .filter((ext) => ext.length > 0);
+  let best: { line: string; rank: number } | undefined;
+  for (const line of lines) {
+    const ext = path.extname(line).toLowerCase();
+    const rank = exts.indexOf(ext);
+    if (rank < 0) continue;
+    if (!best || rank < best.rank) best = { line, rank };
+  }
+  return best?.line ?? lines[0] ?? fallback;
+}
+
+/**
+ * Spawn an already-resolved executable.
+ *
+ *   .js        → run through node (a .js shim is not executable: EFTYPE)
+ *   .cmd/.bat  → through `cmd /d /s /c`, quoted (CreateProcess cannot exec a
+ *                batch file: EINVAL). The whole command line is escaped for
+ *                cmd, so an argument is never interpolated raw into the
+ *                command that cmd parses.
+ */
+export function spawnResolved(
+  entry: string,
+  args: readonly string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): ReturnType<typeof spawn> {
+  const isScript = /\.(js|cjs|mjs)$/i.test(entry);
+  const isBatch = process.platform === "win32" && /\.(cmd|bat)$/i.test(entry);
+  if (isBatch) {
+    const comspec = env.ComSpec ?? process.env.ComSpec ?? "cmd.exe";
+    // `/s` strips the outermost quotes, so wrap the whole line once and quote
+    // each argument inside it. windowsVerbatimArguments keeps Node from
+    // re-quoting what was already escaped for cmd.
+    const line = [quoteForCmd(entry), ...args.map(quoteForCmd)].join(" ");
+    return spawn(comspec, ["/d", "/s", "/c", `"${line}"`], {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      env,
+      windowsVerbatimArguments: true,
+    });
+  }
+  return spawn(isScript ? process.execPath : entry, isScript ? [entry, ...args] : [...args], {
+    cwd,
+    stdio: ["pipe", "pipe", "pipe"],
+    env,
+  });
+}
+
+/**
+ * Quote one argument for a `cmd.exe` command line.
+ *
+ * Empty values become `""`; anything with whitespace or a cmd metacharacter is
+ * wrapped in double quotes. Embedded quotes are doubled, which is how cmd
+ * passes a literal quote through to the child.
+ */
+function quoteForCmd(value: string): string {
   if (value.length === 0) return '""';
-  if (!/[\s"]/.test(value)) return value;
-  return `"${value.replace(/"/g, '\\"')}"`;
+  if (!/[\s"&|<>^%!()]/.test(value)) return value;
+  return `"${value.replace(/"/g, '""')}"`;
 }

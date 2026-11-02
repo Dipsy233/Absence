@@ -14,11 +14,15 @@
  *   - the agent side, over a spawned child process.
  */
 
-import { spawn, spawnSync } from "node:child_process";
-import path from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { parseJsonRpcMessage, type JsonRpcMessage } from "../protocol/jsonrpc";
-import type { AcpTransport, AcpTransportLaunch, Unsubscribe } from "../protocol/transport";
+import {
+  resolveExecutable,
+  spawnResolved,
+  type AcpTransport,
+  type AcpTransportLaunch,
+  type Unsubscribe,
+} from "../protocol/transport";
 
 export interface AcpProxyTransport extends AcpTransport {
   /** The raw line, exactly as it arrived (newline excluded). */
@@ -189,29 +193,9 @@ export function createAgentTransport(
   env: Record<string, string> = {},
 ): AcpProxyTransport {
   const mergedEnv = { ...process.env, NO_COLOR: "1", ...launch.env, ...env };
-  const entry = resolveExecutable(launch.command);
+  const entry = resolveExecutable(launch.command, mergedEnv);
   const args = launch.args ?? [];
-
-  const isScript = /\.(js|cjs|mjs)$/i.test(entry);
-  const isBatch = process.platform === "win32" && /\.(cmd|bat)$/i.test(entry);
-
-  let child: ReturnType<typeof spawn>;
-  if (isBatch) {
-    const line = [quote(entry), ...args.map(quote)].join(" ");
-    child = spawn(line, {
-      cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: mergedEnv,
-      shell: true,
-      windowsVerbatimArguments: true,
-    });
-  } else {
-    child = spawn(isScript ? process.execPath : entry, isScript ? [entry, ...args] : args, {
-      cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: mergedEnv,
-    });
-  }
+  const child = spawnResolved(entry, args, cwd, mergedEnv);
 
   if (!child.stdout || !child.stdin) {
     throw new Error(`failed to open pipes for agent (${entry})`);
@@ -246,24 +230,3 @@ export function createAgentTransport(
   });
 }
 
-function resolveExecutable(entry: string): string {
-  if (process.platform !== "win32" || path.isAbsolute(entry)) return entry;
-  if (/\.(exe|com|cmd|bat|js|cjs|mjs)$/i.test(entry)) return entry;
-  try {
-    const result = spawnSync("where", [entry], { encoding: "utf8", windowsHide: true });
-    if (result.status !== 0 || !result.stdout) return entry;
-    const first = result.stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find((line) => line.length > 0);
-    return first ?? entry;
-  } catch {
-    return entry;
-  }
-}
-
-function quote(value: string): string {
-  if (value.length === 0) return '""';
-  if (!/[\s"]/.test(value)) return value;
-  return `"${value.replace(/"/g, '\\"')}"`;
-}
