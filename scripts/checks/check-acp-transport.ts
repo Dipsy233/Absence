@@ -158,6 +158,10 @@ input.on("line", async (line) => {
       write({ jsonrpc: "2.0", id: message.id, result: {} });
       break;
 
+    case "session/set_config_option":
+      write({ jsonrpc: "2.0", id: message.id, result: { configOptions: [] } });
+      break;
+
     default:
       if (message.id !== undefined) {
         write({
@@ -295,6 +299,21 @@ async function main(): Promise<void> {
         "the resume actually reached the agent",
         methodsOf(log).includes("session/resume"),
         methodsOf(log).join(","),
+      );
+
+      await run.connection.setConfigOption("session-1", "model", "claude-sonnet");
+      await run.connection.setConfigOption("session-1", "auto_approve", false);
+      const configLog = await readLog(run.logPath);
+      const configFrames = configLog.filter((entry) => entry.method === "session/set_config_option");
+      check(
+        "string config values pass through unchanged",
+        configFrames[0]?.params?.value === "claude-sonnet",
+        JSON.stringify(configFrames[0]),
+      );
+      check(
+        "boolean config values pass through unchanged",
+        configFrames[1]?.params?.value === false,
+        JSON.stringify(configFrames[1]),
       );
 
       await run.connection.closeSession("session-1");

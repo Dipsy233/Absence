@@ -23,8 +23,10 @@ import type {
   AcpClientCapabilities,
   AcpClientInfo,
   AcpConfigOption,
+  AcpConfigValue,
   AcpInitializeResult,
   AcpSessionResult,
+  AcpSetConfigOptionParams,
 } from "./protocol/types";
 import { ACP_PROTOCOL_VERSION, negotiateProtocolVersion } from "./protocol/version";
 
@@ -43,8 +45,10 @@ export type {
   AcpClientCapabilities,
   AcpClientInfo,
   AcpConfigOption,
+  AcpConfigValue,
   AcpInitializeResult,
   AcpSessionResult,
+  AcpSetConfigOptionParams,
 } from "./protocol/types";
 export type { AcpTransport } from "./protocol/transport";
 
@@ -269,9 +273,14 @@ export class AcpConnection {
     }
   }
 
-  /** Switch a config option (model, mode, thought level…). */
-  async setConfigOption(sessionId: string, configId: string, value: string): Promise<unknown> {
-    const result = (await this.request("session/set_config_option", { sessionId, configId, value })) as
+  /** Switch a config option (model, mode, thought level, boolean toggle…). */
+  async setConfigOption(
+    sessionId: string,
+    configId: string,
+    value: AcpConfigValue,
+  ): Promise<unknown> {
+    const params: AcpSetConfigOptionParams = { sessionId, configId, value };
+    const result = (await this.request("session/set_config_option", params)) as
       | { configOptions?: unknown }
       | undefined;
     return result?.configOptions ?? result;

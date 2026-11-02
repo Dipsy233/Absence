@@ -30,6 +30,15 @@ export interface AcpInitializeResult {
   authMethods?: unknown[];
 }
 
+/** ACP config options are select strings or boolean toggles. */
+export type AcpConfigValue = string | boolean;
+
+export interface AcpSetConfigOptionParams {
+  sessionId: string;
+  configId: string;
+  value: AcpConfigValue;
+}
+
 /** One selectable config option, as ACP reports it (model, mode, thought level…). */
 export interface AcpConfigOption {
   id: string;
