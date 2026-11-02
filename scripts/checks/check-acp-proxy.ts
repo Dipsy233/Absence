@@ -614,6 +614,99 @@ async function main(): Promise<void> {
     }
   }
 
+  section("the real `absence proxy` CLI exits after both ends close");
+  {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "absence-acp-proxy-cli-"));
+    const agentPath = path.join(dir, "fake-agent.mjs");
+    await fs.writeFile(agentPath, FAKE_AGENT, "utf8");
+    const tsxCli = path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs");
+    const entry = path.join(repoRoot, "apps", "server", "src", "index.ts");
+    const child = spawn(
+      process.execPath,
+      [tsxCli, entry, "proxy", "--", process.execPath, agentPath],
+      {
+        cwd: dir,
+        env: {
+          ...process.env,
+          PORT: "0",
+          HOST: "127.0.0.1",
+          ABSENCE_STATE_DIR: path.join(dir, "state"),
+          ABSENCE_PROJECTS_ROOT: dir,
+          ABSENCE_DOCKER: "0",
+          ABSENCE_MCP: "0",
+          ABSENCE_LOG_LEVEL: "warn",
+          NO_COLOR: "1",
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      },
+    );
+    const stderr: string[] = [];
+    child.stderr?.on("data", (chunk) => {
+      stderr.push(String(chunk));
+      process.stderr.write(`[proxy-cli] ${chunk}`);
+    });
+
+    const startedAt = Date.now();
+    try {
+      if (!child.stdin || !child.stdout) throw new Error("proxy CLI has no pipes");
+      child.stdin.write(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: 1, clientInfo: { name: "check", version: "1" } },
+        }) + "\n",
+      );
+
+      // Wait for the initialize answer, then close the client side (EOF).
+      const answered = await new Promise<boolean>((resolve) => {
+        let buffer = "";
+        const timer = setTimeout(() => resolve(false), 6000);
+        child.stdout!.on("data", (chunk) => {
+          buffer += String(chunk);
+          if (buffer.includes('"id":1') && buffer.includes('"result"')) {
+            clearTimeout(timer);
+            resolve(true);
+          }
+        });
+      });
+      check("the proxy CLI answered initialize", answered, stderr.join("").slice(-300));
+
+      child.stdin.end();
+
+      const exit = await new Promise<{ code: number | null; at: number } | undefined>((resolve) => {
+        const timer = setTimeout(() => resolve(undefined), 8000);
+        child.once("exit", (code) => {
+          clearTimeout(timer);
+          resolve({ code, at: Date.now() });
+        });
+      });
+      check(
+        "the proxy process exits after the client EOF and agent close",
+        exit !== undefined,
+        `still alive after ${Date.now() - startedAt}ms`,
+      );
+      check(
+        "it exits promptly instead of lingering",
+        exit !== undefined && exit.at - startedAt < 8000,
+        exit ? `${exit.at - startedAt}ms` : "no exit",
+      );
+      check(
+        "the client-side close keeps a zero exit code",
+        exit?.code === 0,
+        JSON.stringify(exit?.code),
+      );
+    } finally {
+      try {
+        child.kill();
+      } catch {
+        // already gone
+      }
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   finish("acp-proxy");
 }
 

@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { parseProxyArgs, parseWatchArgs, type ProxyArgs, type WatchArgs } from "./cliArgs";
 import { startServer, type RunningServer } from "./index";
 import { proxySessions, createProcessTransport } from "./agents/acp/proxy";
+import { JobMonitor } from "./process/JobMonitor";
 import { TerminalMirror } from "./sessions/TerminalMirror";
 import { registerTerminalMirror } from "./sessions/terminalRegistry";
 
@@ -195,10 +196,20 @@ async function proxyCommand(
   } catch {
     // The proxy already finished; a slow server shutdown must not change the code.
   }
+  // The server close releases Fastify and the archive, but the process-wide
+  // kernel observer is deliberately kept for a serving process. A proxy is
+  // finished here: its helper child holds the event loop open, and leaving it
+  // behind is exactly the "still alive 8s after both ends closed" failure.
+  JobMonitor.get().dispose();
   restoreStdout();
   // The agent's own exit code is the client's answer. A client-side close (the
   // parent went away) is a normal end and keeps its code when there is one.
-  process.exitCode = exit.side === "agent" ? (exit.code ?? 1) : (exit.code ?? 0);
+  const code = exit.side === "agent" ? (exit.code ?? 1) : (exit.code ?? 0);
+  process.exitCode = code;
+  // Both ends are gone and every handle they owned is released. Exit explicitly
+  // so a platform-specific stream that outlives close cannot keep a finished
+  // proxy resident.
+  process.exit(code);
 }
 
 /**
