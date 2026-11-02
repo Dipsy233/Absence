@@ -44,6 +44,13 @@ const ZH: Record<string, string> = {
   "Back to the metrics — the default page": "回到指标——默认页",
   "Back to the agent — the default page": "回到智能体——默认页",
   "The content the agent has in context": "智能体上下文里的内容",
+  "range unknown": "范围未知",
+  "range unknown in context": "已在上下文中（范围未知）",
+  "The agent did not report which lines it read": "智能体未报告它读取了哪些行",
+  "Authenticate the ACP agent": "认证 ACP 智能体",
+  "exit ?": "退出码未知",
+  "not executed · permission denied": "未执行（权限被拒）",
+  "DENIED": "已拒绝",
 
   // ── Metrics ────────────────────────────────────────────────────────────
   METRICS: "指标",

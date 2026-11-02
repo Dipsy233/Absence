@@ -1,6 +1,6 @@
 import type { AgentStatus, AbsenceEvent } from "@absence/core";
 import type { FileMap, ReplaySnapshot, ReplayView } from "../types/replay";
-import { STAGE_EVENT_TYPES, isInstantSearch, statusFromEvent } from "./events";
+import { isStageEvent, statusFromEvent } from "./events";
 
 const SNAPSHOT_EVERY = 25;
 const SNAPSHOT_INTERVAL_MS = 5000;
@@ -49,7 +49,7 @@ export function buildSnapshots(events: AbsenceEvent[]): ReplaySnapshot[] {
     applyEventToFiles(files, event);
     const derived = statusFromEvent(event);
     if (derived) status = derived;
-    if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) currentAction = event;
+    if (isStageEvent(event)) currentAction = event;
 
     const byCount = (i + 1) % SNAPSHOT_EVERY === 0;
     const byTime = event.timestamp >= nextByTime;
@@ -89,7 +89,7 @@ export function seek(events: AbsenceEvent[], snapshots: ReplaySnapshot[], t: num
     applyEventToFiles(files, event);
     const derived = statusFromEvent(event);
     if (derived) status = derived;
-    if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) currentAction = event;
+    if (isStageEvent(event)) currentAction = event;
     appliedIndex = i + 1;
   }
 
@@ -116,7 +116,7 @@ export function timelineEnd(events: AbsenceEvent[]): number {
  * between the hidden updates in between.
  */
 function opensMoment(event: AbsenceEvent, previous: AbsenceEvent | undefined): boolean {
-  if (!STAGE_EVENT_TYPES.has(event.type) || isInstantSearch(event)) return false;
+  if (!isStageEvent(event)) return false;
   if (event.type === "thinking" && previous?.type === "thinking") return false;
   return true;
 }

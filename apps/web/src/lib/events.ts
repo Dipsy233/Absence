@@ -75,11 +75,26 @@ export function clearsStage(event: AbsenceEvent): boolean {
 }
 
 /** The action the Stage should still be showing, or undefined for the default page. */
+/**
+ * True when this event should become the Stage's current action. `tool_update`
+ * only counts when it carries live explore output from an execute call; Pi's
+ * progress updates (empty `{}`) must not blank the Stage.
+ */
+export function isStageEvent(event: AbsenceEvent): boolean {
+  if (event.type === "tool_update") {
+    const partial = event.payload.partial as
+      | { kind?: string; text?: string }
+      | undefined;
+    return partial?.kind === "execute" && typeof partial.text === "string" && partial.text.length > 0;
+  }
+  return STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event);
+}
+
 export function lastStageAction(events: AbsenceEvent[]): AbsenceEvent | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!;
     if (clearsStage(event)) return undefined;
-    if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) return event;
+    if (isStageEvent(event)) return event;
   }
   return undefined;
 }
@@ -193,7 +208,7 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
       };
     }
     case "file_read": {
-      const { path, content, startLine, endLine, language } = event.payload;
+      const { path, content, startLine, endLine, language, rangeKnown } = event.payload;
       return baseItem(
         event,
         "file",
@@ -205,9 +220,12 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
           language: language ?? languageFromPath(path),
           startLine,
           endLine,
+          ...(rangeKnown === false ? { rangeKnown: false as const } : {}),
           // The payload content is the slice that was read, so number it as it
           // appears in the file (a read of 10–20 shows lines 10–20, not 1–11).
-          lineOffset: Math.max(0, startLine - 1),
+          // An unreported range has no file offsets to claim: number the slice
+          // from 1 and let the toolbar say "range unknown".
+          lineOffset: rangeKnown === false ? 0 : Math.max(0, startLine - 1),
           caption: "Agent is reading",
         },
         path,
@@ -253,14 +271,39 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
         path,
       );
     }
+    case "tool_update": {
+      const partial = event.payload.partial as
+        | { kind?: string; command?: string; text?: string }
+        | undefined;
+      if (partial?.kind !== "execute" || !partial.text) return undefined;
+      const command = partial.command || event.payload.toolName;
+      return {
+        id: `tool_${event.payload.toolCallId}`,
+        type: "terminal",
+        title: command,
+        source: { eventId: event.id },
+        payload: {
+          kind: "terminal",
+          command,
+          stdout: partial.text,
+          stderr: "",
+          exitCode: 0,
+          exitCodeKnown: false,
+        },
+        createdAt: event.timestamp,
+        event,
+      };
+    }
     case "command": {
-      const { command, stdout, stderr, exitCode } = event.payload;
+      const { command, stdout, stderr, exitCode, exitCodeKnown, permissionDenied } = event.payload;
       return baseItem(event, "terminal", command, {
         kind: "terminal",
         command,
         stdout,
         stderr,
         exitCode,
+        ...(exitCodeKnown === false ? { exitCodeKnown: false as const } : {}),
+        ...(permissionDenied ? { permissionDenied: true as const } : {}),
       });
     }
     case "search": {
@@ -428,6 +471,9 @@ export function appendActivityRow(rows: ActivityRow[], row: ActivityRow): boolea
 /** A compact, clickable row for the Activity panel. */
 export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined {
   if (!ACTIVITY_TYPES.has(event.type)) return undefined;
+  // An OS change matching a tool call the agent already reported is evidence,
+  // not a second act. Fold it rather than showing two rows for one edit.
+  if (event.type === "file_change" && event.payload.echo) return undefined;
   if (isInstantSearch(event)) return undefined;
   const id = event.id;
   const time = formatClock(event.timestamp);
@@ -452,7 +498,10 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
         time,
         action: "READ",
         primary: event.payload.path,
-        secondary: `${event.payload.startLine}–${event.payload.endLine} · ${formatBytes(event.payload.content.length)}`,
+        secondary:
+          event.payload.rangeKnown === false
+            ? `range unknown · ${formatBytes(event.payload.content.length)}`
+            : `${event.payload.startLine}–${event.payload.endLine} · ${formatBytes(event.payload.content.length)}`,
         tone: "read",
         stageItem,
       };
@@ -520,10 +569,14 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
         id,
         event,
         time,
-        action: "RUN",
+        action: event.payload.permissionDenied ? "DENIED" : "RUN",
         primary: event.payload.command,
-        secondary: `exit ${event.payload.exitCode}`,
-        tone: "run",
+        secondary: event.payload.permissionDenied
+          ? "not executed · permission denied"
+          : event.payload.exitCodeKnown === false
+            ? "exit code unknown"
+            : `exit ${event.payload.exitCode}`,
+        tone: event.payload.permissionDenied ? "approval" : "run",
         stageItem,
       };
     case "approval":

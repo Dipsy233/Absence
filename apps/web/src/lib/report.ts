@@ -127,7 +127,10 @@ export function buildRunFacts(
   const signals: { kind: PhaseSignalKind; eventId: string; at: number }[] = [];
 
   // What the agent learned: reads merged per path, plus every search.
-  const readRanges = new Map<string, { start: number; end: number; evidence: string[] }>();
+  const readRanges = new Map<
+    string,
+    { start: number; end: number; rangeKnown?: false; evidence: string[] }
+  >();
   const searches: SearchKnowledge[] = [];
 
   const commands: BuiltCommand[] = [];
@@ -189,27 +192,39 @@ export function buildRunFacts(
 
     switch (event.type) {
       case "file_read": {
-        const { path, startLine, endLine } = event.payload;
+        const { path, startLine, endLine, rangeKnown } = event.payload;
         reads++;
         read.add(path);
         deleted.delete(path);
         // Track the agent's read context (its v0) for version-loop detection.
-        const lines = knownLines.get(path) ?? {};
-        event.payload.content.split("\n").forEach((line, index) => {
-          lines[startLine + index] = line;
-        });
-        knownLines.set(path, lines);
+        // An unreported range cannot be placed on real line numbers, so its
+        // content is not indexed as if it began at line 1.
+        if (rangeKnown !== false) {
+          const lines = knownLines.get(path) ?? {};
+          event.payload.content.split("\n").forEach((line, index) => {
+            lines[startLine + index] = line;
+          });
+          knownLines.set(path, lines);
+        }
         const fact = file(path, event.timestamp);
         fact.read = true;
         fact.evidence.push(event.id);
         known.add(path);
         const range = readRanges.get(path);
         if (range) {
-          range.start = Math.min(range.start, startLine);
-          range.end = Math.max(range.end, endLine);
+          if (rangeKnown === false) range.rangeKnown = false;
+          else {
+            range.start = Math.min(range.start, startLine);
+            range.end = Math.max(range.end, endLine);
+          }
           range.evidence.push(event.id);
         } else {
-          readRanges.set(path, { start: startLine, end: endLine, evidence: [event.id] });
+          readRanges.set(path, {
+            start: startLine,
+            end: endLine,
+            ...(rangeKnown === false ? { rangeKnown: false as const } : {}),
+            evidence: [event.id],
+          });
         }
         signals.push({ kind: "read", eventId: event.id, at: event.timestamp });
         break;
@@ -255,6 +270,9 @@ export function buildRunFacts(
         break;
       }
       case "file_change":
+        // An echo of a tool call the agent already reported is OS evidence,
+        // not a second change: do not count it as a separate watcher event.
+        if (event.payload.echo) break;
         watcher.push({
           path: event.payload.path,
           kind: event.payload.kind,
@@ -353,7 +371,9 @@ export function buildRunFacts(
       }
       case "command": {
         const exitCode = event.payload.exitCode;
-        const status = exitCode === 0 ? "success" : "failed";
+        const denied = event.payload.permissionDenied === true;
+        const status = denied ? "denied" : exitCode === 0 ? "success" : "failed";
+        const exitCodeKnown = event.payload.exitCodeKnown === false ? (false as const) : undefined;
         const end = unclaimedEnds.pop();
         commands.push(
           end
@@ -362,6 +382,8 @@ export function buildRunFacts(
                 eventId: event.id,
                 command: event.payload.command,
                 exitCode,
+                ...(exitCodeKnown ? { exitCodeKnown } : {}),
+                ...(denied ? { permissionDenied: true as const } : {}),
                 status,
                 evidence: [...end.evidence, event.id],
                 sliceIndex: i,
@@ -371,21 +393,27 @@ export function buildRunFacts(
                 toolName: "shell",
                 command: event.payload.command,
                 exitCode,
+                ...(exitCodeKnown ? { exitCodeKnown } : {}),
+                ...(denied ? { permissionDenied: true as const } : {}),
                 status,
                 evidence: [event.id],
                 sliceIndex: i,
               },
         );
-        signals.push({ kind: status === "success" ? "cmd-success" : "cmd-fail", eventId: event.id, at: event.timestamp });
-        noteStreak(status === "failed", event.id);
-        // A repeated failure is the loop signal: one failure may be bad luck,
-        // the same command failing again and again is the agent stuck.
-        if (status === "failed") {
-          const key = event.payload.command.trim();
-          const seen = failedCommands.get(key) ?? { count: 0, command: key, evidence: [] };
-          seen.count++;
-          seen.evidence.push(event.id);
-          failedCommands.set(key, seen);
+        // A denied attempt never ran: it is not a failure signal and must not
+        // feed the retry-loop / failure-streak attention rules.
+        if (!denied) {
+          signals.push({ kind: status === "success" ? "cmd-success" : "cmd-fail", eventId: event.id, at: event.timestamp });
+          noteStreak(status === "failed", event.id);
+          // A repeated failure is the loop signal: one failure may be bad luck,
+          // the same command failing again and again is the agent stuck.
+          if (status === "failed") {
+            const key = event.payload.command.trim();
+            const seen = failedCommands.get(key) ?? { count: 0, command: key, evidence: [] };
+            seen.count++;
+            seen.evidence.push(event.id);
+            failedCommands.set(key, seen);
+          }
         }
         break;
       }
@@ -457,8 +485,13 @@ export function buildRunFacts(
   }
 
   const commandFacts: CommandFact[] = commands.map(({ sliceIndex: _sliceIndex, ...fact }) => fact);
-  const counts = { total: 0, running: 0, succeeded: 0, failed: 0, unknown: 0 };
+  const counts = { total: 0, running: 0, succeeded: 0, failed: 0, denied: 0, unknown: 0 };
   for (const command of commands) {
+    if (command.status === "denied") {
+      // The command never executed, so it is not a command execution count.
+      counts.denied++;
+      continue;
+    }
     counts.total++;
     if (command.status === "running") counts.running++;
     else if (command.status === "success") counts.succeeded++;
@@ -575,6 +608,7 @@ export function buildRunFacts(
           path,
           startLine: range.start,
           endLine: range.end,
+          ...(range.rangeKnown ? { rangeKnown: false as const } : {}),
           evidence: range.evidence,
         }),
       ),
@@ -724,8 +758,10 @@ function buildTimeline(
       }
 
       case "file_read": {
-        const { path, startLine, endLine } = event.payload;
-        push(event, "read", "READ", path, [`lines ${startLine}–${endLine} into context`]);
+        const { path, startLine, endLine, rangeKnown } = event.payload;
+        push(event, "read", "READ", path, [
+          rangeKnown === false ? "read into context (range unknown)" : `lines ${startLine}–${endLine} into context`,
+        ]);
         break;
       }
 
@@ -754,7 +790,8 @@ function buildTimeline(
       }
 
       case "file_change": {
-        const { path, kind, outside } = event.payload;
+        const { path, kind, outside, echo } = event.payload;
+        if (echo) break;
         push(event, "observe", outside ? "OUTSIDE" : kind === "deleted" ? "REMOVE" : "CHANGE", path, [
           outside
             ? "changed outside the project"
@@ -775,7 +812,13 @@ function buildTimeline(
       case "tool_end": {
         const command = commandByEvent.get(event.id);
         if (!command) break;
-        push(event, "run", "RUN", command.command || "(shell)", [commandEffect(command)]);
+        push(
+          event,
+          "run",
+          command.permissionDenied ? "DENIED" : "RUN",
+          command.command || "(shell)",
+          [commandEffect(command)],
+        );
         break;
       }
 
@@ -818,11 +861,17 @@ function buildTimeline(
 
 /** What the observer can say about a command's effect, without reading it. */
 function commandEffect(command: CommandFact): string {
+  if (command.status === "denied" || command.permissionDenied) {
+    return "not executed (permission denied)";
+  }
   if (command.status === "running") return "process still running";
   if (command.status === "failed") {
+    if (command.exitCodeKnown === false) return "failed · exit code unknown";
     return command.exitCode !== undefined ? `failed · exit ${command.exitCode}` : "failed, no output captured";
   }
-  if (command.status === "success") return `exit ${command.exitCode}`;
+  if (command.status === "success") {
+    return command.exitCodeKnown === false ? "exit code unknown" : `exit ${command.exitCode}`;
+  }
   return "outcome unknown";
 }
 
@@ -1203,6 +1252,7 @@ export function renderLive(
         `${plural(changed, "file")} changed`,
         facts.commands.total > 0 ? `${plural(facts.commands.succeeded, "command")} completed` : "",
         facts.commands.failed > 0 ? `${facts.commands.failed} failed` : "",
+        facts.commands.denied > 0 ? `${facts.commands.denied} denied` : "",
       ];
       break;
     case "executing":
@@ -1315,6 +1365,7 @@ export function renderRun(facts: RunFacts): RunReport {
       commands: facts.commands.total,
       succeeded: facts.commands.succeeded,
       failed: facts.commands.failed,
+      denied: facts.commands.denied,
       unknown: facts.commands.unknown,
     },
     mcp: Object.values(facts.mcp.servers),

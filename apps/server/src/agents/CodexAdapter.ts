@@ -974,6 +974,9 @@ export class CodexAdapter extends BaseAdapter {
       endLine: Math.max(1, lineCount),
       content,
       language: languageFromPath(abs),
+      // Codex reports a read action, not a line range: 1..lineCount is the
+      // slice's display numbering, so it must not read as a precise range.
+      rangeKnown: false,
     });
   }
 

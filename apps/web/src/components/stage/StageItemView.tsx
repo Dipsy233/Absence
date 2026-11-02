@@ -19,6 +19,7 @@ export function StageItemView({ item, showToolbar = true }: { item: StageItem; s
           language={payload.language}
           startLine={payload.startLine}
           endLine={payload.endLine}
+          rangeKnown={payload.rangeKnown}
           lineOffset={payload.lineOffset}
           caption={payload.caption}
           badge={payload.badge}
@@ -43,6 +44,8 @@ export function StageItemView({ item, showToolbar = true }: { item: StageItem; s
           stdout={payload.stdout}
           stderr={payload.stderr}
           exitCode={payload.exitCode}
+          exitCodeKnown={payload.exitCodeKnown}
+          permissionDenied={payload.permissionDenied}
           mcp={payload.mcp}
           event={item.event}
         />

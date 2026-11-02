@@ -22,8 +22,8 @@ export function RoundsPeek({ item }: { item: StageItem }) {
     const contentLines = p.content.length === 0 ? 0 : p.content.split("\n").length;
     const stored = files[p.path];
     const storedLines = stored ? stored.content.split("\n").length : 0;
-    const start = p.startLine ?? p.lineOffset ?? 1;
-    const end = p.endLine ?? start + contentLines - 1;
+    const start = p.rangeKnown === false ? 1 : p.startLine ?? p.lineOffset ?? 1;
+    const end = p.rangeKnown === false ? contentLines : p.endLine ?? start + contentLines - 1;
     return { total: Math.max(storedLines, end, contentLines), from: start, to: end };
   }, [item, files]);
 

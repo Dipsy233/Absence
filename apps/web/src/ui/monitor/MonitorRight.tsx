@@ -294,9 +294,11 @@ function KnownFiles() {
                         <span className="mon-verlist__what">
                           {entry.complete
                             ? t("whole file")
-                            : entry.startLine !== undefined && entry.endLine !== undefined
-                              ? t("lines {a}–{b}", { a: entry.startLine, b: entry.endLine })
-                              : t("partial")}
+                            : entry.rangeKnown === false
+                              ? t("range unknown")
+                              : entry.startLine !== undefined && entry.endLine !== undefined
+                                ? t("lines {a}–{b}", { a: entry.startLine, b: entry.endLine })
+                                : t("partial")}
                         </span>
                         <span className="mon-verlist__at">{formatClock(entry.timestamp)}</span>
                       </button>

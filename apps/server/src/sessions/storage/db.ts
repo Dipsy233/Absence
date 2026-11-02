@@ -187,6 +187,7 @@ function open(): DatabaseSyncType {
       line_offset      INTEGER NOT NULL DEFAULT 0,
       start_line       INTEGER,
       end_line         INTEGER,
+      range_known      INTEGER NOT NULL DEFAULT 1,
       caption          TEXT,
       known_lines_json TEXT,
       PRIMARY KEY (session_id, path, version)
@@ -249,6 +250,10 @@ function open(): DatabaseSyncType {
     PRAGMA user_version = ${SCHEMA_VERSION};
   `);
   try {
+    // `CREATE TABLE IF NOT EXISTS` does not add a column to an existing DB.
+    // This is the one column added after v0.4 shipped; older rows default to
+    // known, which is exactly what their 1..N display represented.
+    ensureColumn(db, "file_versions", "range_known", "INTEGER NOT NULL DEFAULT 1");
     importLegacyArchives(db);
     const runs = new RunIndex(db);
     ensureRunsMigrated(db, runs);
@@ -263,6 +268,18 @@ function open(): DatabaseSyncType {
   }
   database = db;
   return db;
+}
+
+/** Add a column when a database created by an older build lacks it. */
+function ensureColumn(
+  db: DatabaseSyncType,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as SqlRow[];
+  if (columns.some((entry) => String(entry.name) === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 /**

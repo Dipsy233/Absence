@@ -34,14 +34,20 @@ function latest(view: FileView): FileVersion | undefined {
 function applyEvent(views: Record<string, FileView>, event: AbsenceEvent): void {
   switch (event.type) {
     case "file_read": {
-      const { path, content, startLine, endLine } = event.payload;
+      const { path, content, startLine, endLine, rangeKnown } = event.payload;
       const view = views[path] ?? emptyView(path);
 
       if (view.complete) {
         // We already hold the whole file; the read adds nothing.
-        views[path] = { ...view, path, lastRead: { startLine, endLine }, status: "reading" };
+        views[path] = {
+          ...view,
+          path,
+          lastRead: { startLine, endLine, ...(rangeKnown === false ? { rangeKnown: false as const } : {}) },
+          status: "reading",
+        };
         break;
       }
+      const nextRangeKnown = view.rangeKnown === false || rangeKnown === false ? (false as const) : undefined;
 
       // Reads accumulate into v0: the agent's context is the union of every
       // range it has read, not just the most recent one.
@@ -61,11 +67,13 @@ function applyEvent(views: Record<string, FileView>, event: AbsenceEvent): void 
           lineOffset: state.lineOffset,
           startLine: state.startLine,
           endLine: state.endLine,
+          ...(nextRangeKnown ? { rangeKnown: false as const } : {}),
           caption: state.caption,
         }),
         path,
         knownLines,
-        lastRead: { startLine, endLine },
+        rangeKnown: nextRangeKnown,
+        lastRead: { startLine, endLine, ...(rangeKnown === false ? { rangeKnown: false as const } : {}) },
         status: "reading",
       };
       break;
@@ -90,6 +98,7 @@ function applyEvent(views: Record<string, FileView>, event: AbsenceEvent): void 
         status: "modified",
         lastModifiedAt: event.timestamp,
         knownLines: {},
+        rangeKnown: undefined,
       };
       break;
     }
@@ -139,6 +148,7 @@ function versionFromInfo(info: FileVersionInfo): FileVersion {
     lineOffset: info.lineOffset,
     startLine: info.startLine,
     endLine: info.endLine,
+    ...(info.rangeKnown === false ? { rangeKnown: false as const } : {}),
     caption: info.caption,
   };
 }
@@ -222,6 +232,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
           content: currentWins ? current.content : latest?.content ?? view.content,
           version: currentWins ? current.version : latest?.version ?? view.version,
           complete: currentWins ? current.complete : latest?.complete ?? view.complete,
+          rangeKnown: currentWins ? current.rangeKnown : latest?.rangeKnown,
           lastModifiedAt: latest?.timestamp ?? view.lastModifiedAt,
         };
       }

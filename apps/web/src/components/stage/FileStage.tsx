@@ -13,6 +13,8 @@ interface FileStageProps {
   /** Highlight range, in original file coordinates. */
   startLine?: number;
   endLine?: number;
+  /** False when the agent did not report a line: never fake a highlight. */
+  rangeKnown?: false;
   /** Original line number of the first displayed line (1 = whole file). */
   lineOffset?: number;
   caption?: string;
@@ -29,6 +31,7 @@ export function FileStage({
   language,
   startLine,
   endLine,
+  rangeKnown,
   lineOffset = 0,
   caption,
   badge,
@@ -47,7 +50,12 @@ export function FileStage({
 
     const localStart = startLine !== undefined ? startLine - lineOffset : undefined;
     const localEnd = endLine !== undefined ? endLine - lineOffset : undefined;
-    const hasRange = localStart !== undefined && localEnd !== undefined && localStart >= 1 && localEnd >= localStart;
+    const hasRange =
+      rangeKnown !== false &&
+      localStart !== undefined &&
+      localEnd !== undefined &&
+      localStart >= 1 &&
+      localEnd >= localStart;
 
     collectionRef.current.set(
       hasRange
@@ -70,7 +78,7 @@ export function FileStage({
     );
 
     if (hasRange) editor.revealLineInCenterIfOutsideViewport(localStart);
-  }, [startLine, endLine, lineOffset]);
+  }, [startLine, endLine, rangeKnown, lineOffset]);
 
   useEffect(() => {
     applyDecorations();
@@ -90,7 +98,11 @@ export function FileStage({
               </span>
             ) : null}
             <span className="text-desk-dim">{formatBytes(content.length)}</span>
-            {startLine !== undefined && endLine !== undefined ? (
+            {rangeKnown === false ? (
+              <span className="text-desk-dim" title={t("The agent did not report which lines it read")}>
+                {t("range unknown")}
+              </span>
+            ) : startLine !== undefined && endLine !== undefined ? (
               <span className="text-desk-amber">
                 {startLine}–{endLine}
               </span>

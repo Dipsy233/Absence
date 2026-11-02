@@ -379,9 +379,11 @@ function describe(
         chipText: t("FILE"),
         title: payload.path,
         sub:
-          payload.startLine !== undefined && payload.endLine !== undefined
-            ? t("lines {a}–{b} in context", { a: payload.startLine, b: payload.endLine })
-            : (payload.caption ?? t("In the agent's context")),
+          payload.rangeKnown === false
+            ? t("range unknown in context")
+            : payload.startLine !== undefined && payload.endLine !== undefined
+              ? t("lines {a}–{b} in context", { a: payload.startLine, b: payload.endLine })
+              : (payload.caption ?? t("In the agent's context")),
         time,
       };
     case "terminal":

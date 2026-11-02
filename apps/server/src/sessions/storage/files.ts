@@ -23,6 +23,8 @@ interface FileState {
   knownLines: Record<number, string>;
   latestVersion: number;
   complete: boolean;
+  /** Sticky once any contributing read lacked a reported range. */
+  rangeKnown?: false;
 }
 
 interface SessionFiles {
@@ -39,6 +41,7 @@ interface FileVersionRow {
   lineOffset: number;
   startLine?: number;
   endLine?: number;
+  rangeKnown?: false;
   caption?: string;
   knownLinesJson?: string;
 }
@@ -54,13 +57,13 @@ export class FileIndex {
 
   constructor(private readonly db: DatabaseSync) {
     this.selectFiles = db.prepare(
-      "SELECT path, version, complete, known_lines_json FROM file_versions WHERE session_id = ? ORDER BY path ASC, version ASC",
+      "SELECT path, version, complete, range_known, known_lines_json FROM file_versions WHERE session_id = ? ORDER BY path ASC, version ASC",
     );
     this.insertVersion = db.prepare(`
       INSERT INTO file_versions
         (session_id, path, version, ts, source, complete, content, line_offset,
-         start_line, end_line, caption, known_lines_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         start_line, end_line, range_known, caption, known_lines_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id, path, version) DO UPDATE SET
         ts               = excluded.ts,
         source           = excluded.source,
@@ -69,6 +72,7 @@ export class FileIndex {
         line_offset      = excluded.line_offset,
         start_line       = excluded.start_line,
         end_line         = excluded.end_line,
+        range_known      = excluded.range_known,
         caption          = excluded.caption,
         known_lines_json = excluded.known_lines_json
     `);
@@ -95,7 +99,7 @@ export class FileIndex {
   list(sessionId: string): FileVersionInfo[] {
     const rows = this.db
       .prepare(
-        "SELECT path, version, ts, source, complete, content, line_offset, start_line, end_line, caption, known_lines_json FROM file_versions WHERE session_id = ? ORDER BY path ASC, version ASC",
+        "SELECT path, version, ts, source, complete, content, line_offset, start_line, end_line, range_known, caption, known_lines_json FROM file_versions WHERE session_id = ? ORDER BY path ASC, version ASC",
       )
       .all(sessionId) as SqlRow[];
     return rows.map(rowToVersion).filter((version): version is FileVersionInfo => version !== undefined);
@@ -156,6 +160,7 @@ export class FileIndex {
           knownLines: complete ? {} : knownLines,
           latestVersion: version,
           complete,
+          ...(Number(row.range_known ?? 1) === 0 ? { rangeKnown: false as const } : {}),
         });
       }
     }
@@ -179,6 +184,9 @@ export class FileIndex {
       }
       if (file.complete) return;
 
+      // One unknown read makes the accumulated v0 range unknown: its line keys
+      // were placed with the 1..N fallback, so the union cannot be precise.
+      if (event.payload.rangeKnown === false) file.rangeKnown = false;
       const knownLines = { ...file.knownLines };
       const lines = event.payload.content.split("\n");
       for (let i = 0; i < lines.length; i++) {
@@ -196,6 +204,7 @@ export class FileIndex {
         lineOffset: rendered.lineOffset,
         startLine: rendered.startLine,
         endLine: rendered.endLine,
+        ...(file.rangeKnown ? { rangeKnown: false as const } : {}),
         caption: rendered.caption,
         knownLinesJson: JSON.stringify(knownLines),
       });
@@ -226,6 +235,7 @@ export class FileIndex {
       file.latestVersion = version;
       file.complete = true;
       file.knownLines = {};
+      file.rangeKnown = undefined;
       return;
     }
 
@@ -248,6 +258,7 @@ export class FileIndex {
       row.lineOffset,
       row.startLine ?? null,
       row.endLine ?? null,
+      row.rangeKnown === false ? 0 : 1,
       row.caption ?? null,
       row.knownLinesJson ?? null,
     );
@@ -281,6 +292,7 @@ function rowToVersion(row: SqlRow): FileVersionInfo | undefined {
         : Number(row.start_line),
     endLine:
       row.end_line === null || row.end_line === undefined ? undefined : Number(row.end_line),
+    ...(Number(row.range_known ?? 1) === 0 ? { rangeKnown: false as const } : {}),
     caption: typeof row.caption === "string" ? row.caption : undefined,
     knownLines: source === "read" ? parseKnownLines(row.known_lines_json) : undefined,
   };

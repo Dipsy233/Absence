@@ -32,6 +32,8 @@ export type StagePayload =
       /** Range to highlight, in original file coordinates. */
       startLine?: number;
       endLine?: number;
+      /** False when the agent did not report a line: show "range unknown". */
+      rangeKnown?: false;
       /**
        * Original line number of the first displayed line (1 = the content is the
        * whole file from the top). A read of lines 10–20 sets this to 10 so the
@@ -59,6 +61,10 @@ export type StagePayload =
       stdout: string;
       stderr: string;
       exitCode: number;
+      /** False when the protocol did not carry the real exit code. */
+      exitCodeKnown?: false;
+      /** The permission was rejected: this command never ran. */
+      permissionDenied?: true;
       /**
        * Present when this terminal is an MCP call rather than a shell command:
        * the terminal view is the right surface for "something ran, here is what

@@ -26,6 +26,10 @@ interface TerminalStageProps {
   stdout: string;
   stderr: string;
   exitCode: number;
+  /** False when the protocol did not carry the real exit code. */
+  exitCodeKnown?: false;
+  /** The permission was rejected: this command never ran. */
+  permissionDenied?: true;
   /** Present when this terminal shows an MCP call rather than a shell command. */
   mcp?: McpTerminalContext;
   event?: AbsenceEvent;
@@ -36,6 +40,8 @@ export function TerminalStage({
   stdout,
   stderr,
   exitCode,
+  exitCodeKnown,
+  permissionDenied,
   mcp,
   event,
 }: TerminalStageProps) {
@@ -81,10 +87,28 @@ export function TerminalStage({
           <span
             className={[
               "chip",
-              mcp && pending ? "text-desk-dim" : exitCode === 0 ? "text-desk-teal" : "text-desk-ember",
+              mcp && pending
+                ? "text-desk-dim"
+                : permissionDenied
+                  ? "text-desk-ember"
+                  : exitCodeKnown === false
+                    ? "text-desk-dim"
+                    : exitCode === 0
+                      ? "text-desk-teal"
+                      : "text-desk-ember",
             ].join(" ")}
           >
-            {mcp ? (pending ? t("running") : exitCode === 0 ? t("ok") : t("error")) : t("exit {code}", { code: exitCode })}
+            {mcp
+              ? pending
+                ? t("running")
+                : exitCode === 0
+                  ? t("ok")
+                  : t("error")
+              : permissionDenied
+                ? t("not executed · permission denied")
+                : exitCodeKnown === false
+                  ? t("exit ?")
+                  : t("exit {code}", { code: exitCode })}
           </span>
           <CopyButton label={t("copy cmd")} text={command} title={t("Copy the command")} />
           <CopyButton label={t("copy out")} text={output} title={t("Copy the output")} disabled={output.length === 0} />

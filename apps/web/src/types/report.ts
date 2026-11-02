@@ -62,7 +62,7 @@ export interface Phase {
   eventId: string;
 }
 
-export type CommandStatus = "running" | "success" | "failed" | "unknown";
+export type CommandStatus = "running" | "success" | "failed" | "denied" | "unknown";
 
 /** A shell command observed during the run (paired from tool_start/tool_end). */
 export interface CommandFact {
@@ -75,6 +75,10 @@ export interface CommandFact {
   endedAt?: number;
   durationMs?: number;
   exitCode?: number;
+  /** False when the protocol did not carry the real exit code. */
+  exitCodeKnown?: false;
+  /** The permission was rejected: this command never ran. */
+  permissionDenied?: true;
   status: CommandStatus;
   evidence: string[];
 }
@@ -197,7 +201,15 @@ export interface RunFacts {
     byPath: Record<string, FileFact>;
   };
 
-  commands: { total: number; running: number; succeeded: number; failed: number; unknown: number };
+  commands: {
+    total: number;
+    running: number;
+    succeeded: number;
+    failed: number;
+    /** Permission-denied attempts are not counted in `total`. */
+    denied: number;
+    unknown: number;
+  };
   commandFacts: CommandFact[];
 
   /** MCP servers the agent called this run, one entry per server. */
@@ -251,6 +263,8 @@ export interface ReadKnowledge {
   path: string;
   startLine: number;
   endLine: number;
+  /** False when any contributing read did not report a line range. */
+  rangeKnown?: false;
   evidence: string[];
 }
 
@@ -295,7 +309,13 @@ export interface RunReport {
   };
   /** The commands the agent executed, in order. */
   executions: CommandFact[];
-  execution: { commands: number; succeeded: number; failed: number; unknown: number };
+  execution: {
+    commands: number;
+    succeeded: number;
+    failed: number;
+    denied: number;
+    unknown: number;
+  };
   /** MCP servers the agent called, in first-use order. */
   mcp: McpUsageFact[];
   /** Total MCP calls (and how many the server rejected). */

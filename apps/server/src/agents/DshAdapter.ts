@@ -405,6 +405,8 @@ export class DshAdapter extends BaseAdapter {
           endLine: Math.max(1, lineCount),
           content: text,
           language: languageFromPath(abs),
+          // DSH's read result carries no line range; 1..lineCount is fallback.
+          rangeKnown: false,
         });
       } else if (lowered === "write" || lowered === "file_write") {
         const p = toolInputPath(update) ?? "";

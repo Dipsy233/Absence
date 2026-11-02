@@ -530,7 +530,9 @@ export function ChartUI() {
                           >
                             <span className="chart-it__n">{read.path}</span>
                             <span className="chart-it__m">
-                              {t("lines {a}–{b}", { a: read.startLine, b: read.endLine })}
+                              {read.rangeKnown === false
+                                ? t("range unknown")
+                                : t("lines {a}–{b}", { a: read.startLine, b: read.endLine })}
                             </span>
                           </button>
                         ))}
@@ -663,7 +665,9 @@ function commandLabel(
   t: (key: string, params?: Record<string, string | number>) => string,
   command: CommandFact,
 ): string {
+  if (command.permissionDenied || command.status === "denied") return t("not executed · permission denied");
   if (command.status === "running") return t("running");
+  if (command.exitCodeKnown === false) return t("exit ?");
   if (command.exitCode !== undefined) return t("exit {code}", { code: command.exitCode });
   if (command.status === "failed") return t("failed");
   return t("unknown");
