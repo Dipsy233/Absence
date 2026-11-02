@@ -7,10 +7,10 @@
  * know which observer was responsible. The `source` / `fidelity` pair is what
  * lets the UI say how trustworthy a fact is instead of guessing.
  */
-import type { AbsenceEvent } from "./events";
+import type { AbsenceEvent, EventFidelity, EventSource } from "./events";
 
 /** Which observer produced the fact. */
-export type MonitorSource = "acp" | "acp-proxy" | "os" | "terminal" | "legacy";
+export type MonitorSource = EventSource;
 
 /**
  * How the fact was obtained:
@@ -20,7 +20,7 @@ export type MonitorSource = "acp" | "acp-proxy" | "os" | "terminal" | "legacy";
  * - `inferred` — Absence derived it from a window or a shape rule
  * - `unknown`  — the protocol did not carry it; Absence does not invent it
  */
-export type MonitorFidelity = "exact" | "reported" | "inferred" | "unknown";
+export type MonitorFidelity = EventFidelity;
 
 /** One fact, tagged with where it came from and how sure Absence is. */
 export interface MonitorEvent {

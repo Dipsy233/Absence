@@ -737,14 +737,27 @@ export class AbsenceSession {
 
   private handleEvent(event: AbsenceEvent): void {
     if (this.disposed) return;
-    this.lastActiveAt = event.timestamp;
-    this.events.push(event);
+    // Absence's own events (OS watchers, system notices) are not tagged by an
+    // adapter. Stamp them too, so every live WS frame and every archived row
+    // carries the same `at`/`source`/`fidelity` shape. An unknown origin is
+    // reported as `unknown`, never guessed.
+    const stamped: AbsenceEvent =
+      event.at !== undefined && event.source !== undefined && event.fidelity !== undefined
+        ? event
+        : {
+            ...event,
+            at: event.at ?? event.timestamp,
+            source: event.source ?? "unknown",
+            fidelity: event.fidelity ?? "unknown",
+          };
+    this.lastActiveAt = stamped.timestamp;
+    this.events.push(stamped);
     if (this.events.length > MAX_EVENTS) {
       this.events.splice(0, this.events.length - MAX_EVENTS);
     }
-    this.applyToState(event);
-    this.bus.emit(event);
-    this.persist(event);
+    this.applyToState(stamped);
+    this.bus.emit(stamped);
+    this.persist(stamped);
     this.scheduleState();
   }
 

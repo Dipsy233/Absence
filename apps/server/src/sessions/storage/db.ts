@@ -91,7 +91,7 @@ const nodeRequire = createRequire(import.meta.url);
 const { DatabaseSync } = nodeRequire("node:sqlite") as typeof import("node:sqlite");
 
 const DB_FILE = "absence.db";
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const FLUSH_MS = 50;
 
 let database: DatabaseSyncType | undefined;
@@ -156,6 +156,10 @@ function open(): DatabaseSyncType {
       ts         INTEGER NOT NULL,
       type       TEXT NOT NULL,
       payload    TEXT NOT NULL,
+      -- Provenance, stored so GET /events returns the same shape as the live
+      -- WS stream. Rows written before this default to 'unknown'.
+      source     TEXT NOT NULL DEFAULT 'unknown',
+      fidelity   TEXT NOT NULL DEFAULT 'unknown',
       PRIMARY KEY (session_id, seq),
       UNIQUE (session_id, id)
     );
@@ -254,6 +258,11 @@ function open(): DatabaseSyncType {
     // This is the one column added after v0.4 shipped; older rows default to
     // known, which is exactly what their 1..N display represented.
     ensureColumn(db, "file_versions", "range_known", "INTEGER NOT NULL DEFAULT 1");
+    // v0.4.1: event provenance. `CREATE TABLE IF NOT EXISTS` does not add
+    // columns to an existing DB, and old rows have no provenance to recover —
+    // `unknown` is exactly what Absence can honestly say about them.
+    ensureColumn(db, "events", "source", "TEXT NOT NULL DEFAULT 'unknown'");
+    ensureColumn(db, "events", "fidelity", "TEXT NOT NULL DEFAULT 'unknown'");
     importLegacyArchives(db);
     const runs = new RunIndex(db);
     ensureRunsMigrated(db, runs);
@@ -317,8 +326,8 @@ function importLegacyArchives(db: DatabaseSyncType): void {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertEvent = db.prepare(`
-    INSERT OR IGNORE INTO events (session_id, seq, id, ts, type, payload)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO events (session_id, seq, id, ts, type, payload, source, fidelity)
+    VALUES (?, ?, ?, ?, ?, ?, 'unknown', 'unknown')
   `);
 
   let sessions = 0;
@@ -587,8 +596,8 @@ function flushPending(): void {
   try {
     db.exec("BEGIN IMMEDIATE");
     const insertEvent = db.prepare(`
-      INSERT OR IGNORE INTO events (session_id, seq, id, ts, type, payload)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO events (session_id, seq, id, ts, type, payload, source, fidelity)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const maxSeq = db.prepare(
       "SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM events WHERE session_id = ?",
@@ -612,6 +621,8 @@ function flushPending(): void {
           event.timestamp,
           event.type,
           JSON.stringify(event.payload),
+          event.source ?? "unknown",
+          event.fidelity ?? "unknown",
         );
         runEvents.push({ seq, event });
         seq += 1;
@@ -644,12 +655,21 @@ export async function drainArchive(): Promise<void> {
 
 /** Rebuild the full AbsenceEvent from the columns + payload JSON. */
 function eventFromRow(sessionId: string, row: SqlRow): AbsenceEvent {
+  const timestamp = Number(row.ts);
+  const source = typeof row.source === "string" && row.source.length > 0 ? row.source : "unknown";
+  const fidelity =
+    typeof row.fidelity === "string" && row.fidelity.length > 0 ? row.fidelity : "unknown";
   return {
     id: String(row.id),
     sessionId,
-    timestamp: Number(row.ts),
+    timestamp,
     type: String(row.type),
     payload: JSON.parse(String(row.payload)),
+    // Same flat provenance the live WS frame carries. Rows written before the
+    // columns existed read back as `unknown`.
+    at: timestamp,
+    source,
+    fidelity,
   } as AbsenceEvent;
 }
 
@@ -658,7 +678,7 @@ export async function readEvents(cwd: string, id: string): Promise<AbsenceEvent[
   let rows: SqlRow[];
   try {
     rows = open()
-      .prepare("SELECT id, ts, type, payload FROM events WHERE session_id = ? ORDER BY seq ASC")
+      .prepare("SELECT id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? ORDER BY seq ASC")
       .all(id) as SqlRow[];
   } catch (error) {
     console.error("[absence] sqlite event read failed:", error);
@@ -682,7 +702,7 @@ export async function readProcessEvents(cwd: string, id: string): Promise<Absenc
   let rows: SqlRow[];
   try {
     rows = open()
-      .prepare("SELECT id, ts, type, payload FROM events WHERE session_id = ? AND type = 'process' ORDER BY seq ASC")
+      .prepare("SELECT id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? AND type = 'process' ORDER BY seq ASC")
       .all(id) as SqlRow[];
   } catch (error) {
     console.error("[absence] sqlite process event read failed:", error);
@@ -719,12 +739,12 @@ export async function readEventsPage(
       before === undefined
         ? db
             .prepare(
-              "SELECT seq, id, ts, type, payload FROM events WHERE session_id = ? ORDER BY seq DESC LIMIT ?",
+              "SELECT seq, id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? ORDER BY seq DESC LIMIT ?",
             )
             .all(id, limit + 1)
         : db
             .prepare(
-              "SELECT seq, id, ts, type, payload FROM events WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?",
+              "SELECT seq, id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?",
             )
             .all(id, before, limit + 1)
     ) as SqlRow[];
@@ -809,7 +829,7 @@ export async function readRunEvents(
   try {
     rows = open()
       .prepare(
-        "SELECT id, ts, type, payload FROM events WHERE session_id = ? AND seq BETWEEN ? AND ? ORDER BY seq ASC",
+        "SELECT id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? AND seq BETWEEN ? AND ? ORDER BY seq ASC",
       )
       .all(id, fromSeq, toSeq) as SqlRow[];
   } catch (error) {

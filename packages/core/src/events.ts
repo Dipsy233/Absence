@@ -331,6 +331,27 @@ export const ABSENCE_EVENT_TYPES = [
   "error",
 ] as const satisfies readonly AbsenceEventType[];
 
+/** Which observer produced an event. */
+export type EventSource = "acp" | "acp-proxy" | "os" | "terminal" | "legacy" | "unknown";
+
+/** How sure Absence is about the fact. */
+export type EventFidelity = "exact" | "reported" | "inferred" | "unknown";
+
+/**
+ * Provenance carried on every event, live and archived alike.
+ *
+ * The bus shape used to carry these only on the in-memory `MonitorEvent`, so a
+ * live WS frame and a re-read from the archive disagreed. They are flat on the
+ * event now, and the archive stores them. Records written before this existed
+ * read back as `unknown`.
+ */
+export interface EventProvenance {
+  /** When the observer published it; mirrors `timestamp`. */
+  at?: number;
+  source?: EventSource;
+  fidelity?: EventFidelity;
+}
+
 /** Discriminated union of every AbsenceEvent. */
 export type AbsenceEvent = {
   [K in AbsenceEventType]: {
@@ -339,7 +360,7 @@ export type AbsenceEvent = {
     timestamp: number;
     type: K;
     payload: AbsenceEventPayloadMap[K];
-  };
+  } & EventProvenance;
 }[AbsenceEventType];
 
 /** A AbsenceEvent of a specific type. */

@@ -1163,6 +1163,16 @@ async function main(): Promise<void> {
       if (/from\s+["']@earendil-works\/pi-coding-agent/.test(text)) sdkImports.push(file);
     }
     check("no ACP file imports the Pi SDK", sdkImports.length === 0, sdkImports.join(","));
+
+    const adapter = await fs.readFile(path.join(acpDir, "AcpAdapter.ts"), "utf8");
+    check(
+      "the bridged event carries flat at/source/fidelity, not a nested event copy",
+      adapter.includes("at: event.at") &&
+        adapter.includes("source: event.source") &&
+        adapter.includes("fidelity: event.fidelity") &&
+        !/event:\s*event\.event/.test(adapter),
+      "nested event copy found",
+    );
   }
 
   finish("acp-mapping");

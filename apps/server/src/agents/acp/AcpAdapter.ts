@@ -474,18 +474,18 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
   }
 
   /**
-   * Deliver one monitor fact. The legacy `AgentAdapter` subscriber expects a
-   * flat `AbsenceEvent`; the port subscriber expects a `MonitorEvent`. The
-   * bridged value carries both, which is the whole point of this class being
-   * the deprecated interface's compatibility layer.
+   * Deliver one monitor fact.
+   *
+   * One flat shape, on the socket and in the archive: event fields plus
+   * `at`/`source`/`fidelity`. The old bridge also attached a nested `event`
+   * copy, which made a live WS frame a different shape from a re-read one.
    */
   private dispatch(event: MonitorEvent): void {
-    const bridged: AbsenceEvent & MonitorEvent = {
+    const bridged: AbsenceEvent = {
       ...event.event,
       at: event.at,
       source: event.source,
       fidelity: event.fidelity,
-      event: event.event,
     };
     for (const listener of [...this.listeners]) listener(bridged);
   }

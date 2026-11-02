@@ -85,6 +85,11 @@ section("legacy import");
   );
   const first = events[0]!;
   check("the envelope is rebuilt, not just the payload", first.id === "evt_user" && first.type === "message" && first.timestamp === startedAt + 1);
+  check(
+    "legacy rows without provenance read back as unknown",
+    first.at === startedAt + 1 && first.source === "unknown" && first.fidelity === "unknown",
+    JSON.stringify({ at: first.at, source: first.source, fidelity: first.fidelity }),
+  );
 }
 
 section("run index");
@@ -121,12 +126,22 @@ section("new writes");
     firstPrompt: "roundtrip",
   });
   appendEvents(project, id, [
-    event("evt_new_user", "message", { role: "user", content: "roundtrip", streaming: false }, startedAt + 10),
+    {
+      ...event("evt_new_user", "message", { role: "user", content: "roundtrip", streaming: false }, startedAt + 10),
+      at: startedAt + 10,
+      source: "acp",
+      fidelity: "reported",
+    } as AbsenceEvent,
     event("evt_new_stream", "thinking", { content: "partial", streaming: true }, startedAt + 11),
   ]);
   await drainArchive();
   const events = await readEvents(project, id);
   check("a durable event round-trips", events.length === 1 && events[0]!.id === "evt_new_user", `${events.length}`);
+  check(
+    "source/fidelity/at survive the archive round-trip",
+    events[0]?.source === "acp" && events[0]?.fidelity === "reported" && events[0]?.at === startedAt + 10,
+    JSON.stringify({ at: events[0]?.at, source: events[0]?.source, fidelity: events[0]?.fidelity }),
+  );
   check("the session is listed", (await listArchives(project)).some((m) => m.absenceSessionId === id));
   const newRuns = await readRuns(id);
   check("a new run is indexed immediately", newRuns.length === 1 && newRuns[0]!.prompt === "roundtrip", `${newRuns.length}`);
