@@ -10,7 +10,6 @@ import {
   type CommandOption,
   type ConfigOptionSnapshot,
   type ConfigOptionValue,
-  type CapabilityState,
   type ContextState,
   type MonitorEvent,
   type MonitorFidelity,
@@ -24,7 +23,6 @@ import { AcpConfigOptions, humanModelName } from "./AcpConfigOptions";
 import { AcpPermissionBridge, type PermissionPrompt } from "./AcpPermissionBridge";
 import { AcpSession } from "./AcpSession";
 import type { AgentProfile } from "./profiles";
-import { discoverCapabilities } from "../../capabilities/discover";
 import { createMonitorBus } from "../../monitor/MonitorBus";
 import {
   BaseAdapter,
@@ -65,12 +63,6 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
   private readonly permissions: AcpPermissionBridge;
   private readonly listeners = new Set<(event: AbsenceEvent | MonitorEvent) => void>();
   private usage?: { used: number; total?: number };
-  /**
-   * Present only when the profile explicitly opted into the shared file scan.
-   * ACP carries no catalog request, so the default is no panel at all; the
-   * scan is a residual data policy, never a branch on a product name.
-   */
-  private discovered?: CapabilityState;
   private sessionTitle?: string;
   private availableCommands: AgentCommandInfo[] = [];
   private aborted = false;
@@ -123,10 +115,6 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
       // `sessionFile` is the deprecated legacy spelling of the same handle.
       const { degraded } = await session.start(ctx.resumeHandle ?? ctx.sessionFile);
       this.model = this.config.modelName() ?? this.profile.label;
-      // Explicit opt-in and off by default: no built-in profile sets this.
-      if (this.profile.discoverCapabilities === true) {
-        this.discovered = this.discover(this.cwd);
-      }
       const runtimeSessionId = session.sessionId;
       return {
         model: this.model,
@@ -237,10 +225,6 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
   getContextUsage(): ContextState | undefined {
     if (!this.usage) return undefined;
     return { used: this.usage.used, total: this.usage.total ?? 0 };
-  }
-
-  getCapabilities(): CapabilityState | undefined {
-    return this.discovered;
   }
 
   getSessionFile(): string | undefined {
@@ -508,28 +492,6 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
       ...(prompt.itemId !== undefined ? { itemId: prompt.itemId } : {}),
       options: prompt.options,
     });
-  }
-
-  /** The profile's explicit opt-in scan, mapped to what `session_state` carries. */
-  private discover(cwd: string): CapabilityState {
-    const discovered = discoverCapabilities({ cwd });
-    return {
-      skills: discovered.skills.map((skill) => ({
-        name: skill.name,
-        description: skill.description,
-        filePath: skill.filePath,
-        scope: skill.scope,
-      })),
-      mcp: discovered.mcpServers.map((server) => ({
-        name: server.name,
-        type: server.type,
-        source: server.source,
-        exposure: server.exposure,
-        enabled: server.enabled !== false,
-        ...(server.description !== undefined ? { description: server.description } : {}),
-      })),
-      diagnostics: [...discovered.diagnostics],
-    };
   }
 }
 

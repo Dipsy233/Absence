@@ -306,7 +306,7 @@ section("terminal mirror: bounded, coalesced, replayable");
 // ---------------------------------------------------------------------------
 section("commands are read off the command line");
 {
-  const { detectCommand } = await import("../../apps/server/src/process/CodexShell");
+  const { detectCommand } = await import("../../apps/server/src/process/CommandLine");
   const BS = String.fromCharCode(92);
   const Q = String.fromCharCode(34);
   const cmd = (line: string) => `C:${BS}WINDOWS${BS}system32${BS}cmd.exe ${line}`;

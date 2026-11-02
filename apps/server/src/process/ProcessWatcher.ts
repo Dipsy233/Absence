@@ -6,7 +6,7 @@ import { JobMonitor } from "./JobMonitor";
 import type { MetricsTarget } from "./ProcessMetrics";
 import type { WatchExit, WatchStart } from "./observer";
 import { snapshotProcesses, type ProcessTable, type ProcInfo } from "./ProcessTable";
-import { detectCommand, unwrapCommandText } from "./CodexShell";
+import { detectCommand, unwrapCommandText } from "./CommandLine";
 
 /** How long after a command returns we take the final look. */
 const SETTLE_MS = 2500;

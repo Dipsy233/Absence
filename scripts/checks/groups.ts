@@ -144,12 +144,9 @@ export const GROUPS: CheckGroup[] = [
   },
   {
     name: "agent",
-    label: "agent 适配层（codex / dsh 命令 / shell 环境 / capabilities / MCP / 观察器契约）",
+    label: "agent 适配层（ACP 契约 / 命令转发 / 观察器契约）",
     paths: ["apps/server/src/agents/**"],
     checks: [
-      { script: "check-codexshell.ts", timeout: 60_000 },
-      { script: "check-shellenv.ts", timeout: 60_000 },
-      { script: "check-capabilities.ts", timeout: 120_000 },
       { script: "check-capability-commands.ts", timeout: 60_000 },
       { script: "check-mcp-events.ts", timeout: 60_000 },
       { script: "check-observer.ts", timeout: 120_000 },
@@ -176,16 +173,14 @@ export const GROUPS: CheckGroup[] = [
   },
   {
     name: "io",
-    label: "文件与协议（fsdiff 引擎 / exec server）",
+    label: "文件与协议（fsdiff 引擎）",
     paths: [
       "apps/server/src/util/diff.ts",
       "apps/server/src/filesystem/**",
-      "apps/server/src/process/ExecServer.ts",
       "apps/web/src/lib/events.ts",
     ],
     checks: [
       { script: "check-fsdiff.ts", timeout: 60_000 },
-      { script: "check-execserver.ts", timeout: 120_000 },
     ],
   },
   {

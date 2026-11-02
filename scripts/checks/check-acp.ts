@@ -722,10 +722,8 @@ section("decoupling: no product branch, no Pi SDK, no local capability scan");
       !/(case|===|!==)\s*["'](pi|codex|dsh)["']/i.test(text),
     );
     check(
-      `${name} only scans capabilities behind the profile's explicit opt-in`,
-      name === "AcpAdapter.ts"
-        ? text.includes("this.profile.discoverCapabilities === true") && !/discoverCapabilities\s*:\s*true/.test(text)
-        : !/discoverCapabilities/.test(text),
+      `${name} never scans an agent's config for capabilities`,
+      !/discoverCapabilities/.test(text) && !/capabilities\/discover/.test(text),
     );
   }
   const profiles = await fs.readFile(path.join(dir, "profiles.ts"), "utf8");
