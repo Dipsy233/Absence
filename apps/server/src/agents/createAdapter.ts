@@ -2,17 +2,16 @@ import type { AdapterOptions, AgentAdapter } from "./AgentAdapter";
 import type { AgentKind } from "../config";
 import { MockAdapter } from "./MockAdapter";
 import { AcpAdapter } from "./acp/AcpAdapter";
-import { commandAvailable, getProfile, launchLine, missingProfileCommands } from "./acp/AgentCatalog";
-import type { AgentProfile } from "./acp/profiles";
+import { getProfile } from "./acp/AgentCatalog";
 import { buildAdapter, registerAdapter } from "./registry";
 
 /**
  * The shipped runtimes.
  *
- * There is one driving path: an ACP profile (data) plus the generic
- * `AcpAdapter` (protocol). The only non-ACP registration is the scripted
- * fixture used by development and the offline checks; it is not a product
- * runtime.
+ * There is one driving path: an ACP entry Absence found on this machine (or one
+ * the user configured) plus the generic `AcpAdapter` (protocol). The only non-
+ * ACP registration is the scripted fixture used by development and the offline
+ * checks; it is not a product runtime.
  */
 registerAdapter("mock", (options: AdapterOptions) => new MockAdapter(options));
 
@@ -26,13 +25,13 @@ registerAdapter("mock", (options: AdapterOptions) => new MockAdapter(options));
  * A profile is resolved per session, so a launch-command fix saved in the
  * picker or an entry in ~/.absence/agents.json takes effect without a restart.
  *
- * Throws a readable error when neither exists, and when the ACP profile exists
- * but its launch command is not installed — never a silent fall back to mock.
+ * A row that is not `ready` throws the catalog's own reason — `needs-adapter`,
+ * `needs-auth` or `unavailable` — never a silent npx download or a mock fallback.
  */
 export function createAdapter(kind: AgentKind, options: AdapterOptions): AgentAdapter {
   const profile = getProfile(kind);
   if (profile) {
-    if (commandAvailable(profile.launch.command)) return new AcpAdapter(profile, options);
+    if (profile.state === "ready") return new AcpAdapter(profile, options);
     throw new Error(unavailableMessage(profile));
   }
 
@@ -46,16 +45,17 @@ export function createAdapter(kind: AgentKind, options: AdapterOptions): AgentAd
   );
 }
 
-/** Say which profile, which command, and how to fix it — no silent fallback. */
-function unavailableMessage(profile: AgentProfile): string {
-  const missing = missingProfileCommands(profile);
-  const hint = profile.commandEnv
-    ? `set ${profile.commandEnv}, or edit the launch command in the picker`
-    : "edit the launch command in the picker";
+/** Say which profile, which state, and how to fix it — no silent fallback. */
+function unavailableMessage(profile: {
+  id: string;
+  label: string;
+  state: string;
+  stateReason: string;
+  installHint?: string;
+}): string {
   return (
-    `Runtime "${profile.id}" (${profile.label}) cannot start: ` +
-    `${missing.length > 0 ? missing.join(", ") : profile.launch.command} ` +
-    `not found on PATH. Launch line is "${launchLine(profile)}"; ${hint}.` +
-    (profile.note ? ` ${profile.note}` : "")
+    `Runtime "${profile.id}" (${profile.label}) is not startable (${profile.state}): ` +
+    profile.stateReason +
+    (profile.installHint ? ` ${profile.installHint}` : "")
   );
 }

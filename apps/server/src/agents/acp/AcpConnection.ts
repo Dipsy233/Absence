@@ -318,7 +318,10 @@ export class AcpConnection {
       ...this.options.env,
       ...(launch.env ?? {}),
     };
-    return createStdioTransport(launch, this.options.cwd ?? process.cwd(), env);
+    // A custom entry may pin its own working directory; the profile carries it
+    // as data, so the protocol layer still knows no product.
+    const launchCwd = (launch as { cwd?: string }).cwd;
+    return createStdioTransport(launch, launchCwd || this.options.cwd || process.cwd(), env);
   }
 
   private bindTransport(transport: AcpTransport): void {

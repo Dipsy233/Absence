@@ -1,11 +1,13 @@
 import type { FastifyInstance } from "fastify";
-import { getProfile } from "../agents/acp/AgentCatalog";
+import { getProfile, setNpxAllowed } from "../agents/acp/AgentCatalog";
 import { runtimeStatuses, setRuntimePaths } from "../runtimes/config";
+import { sessionStore } from "../sessions/SessionStore";
+import { agentRoutes } from "./agents";
 
 /**
- * Runtime configuration API — the Project Picker reads which ACP profiles the
- * catalog knows and where their launch lines point, and can point a missing
- * one at the right executable. Values persist to ~/.absence/runtimes.json.
+ * Runtime configuration API — the Project Picker reads which ACP entries the
+ * catalog discovered on this machine and can override a launch line. Values
+ * persist to Absence's own state file (~/.absence/agents.json).
  *
  * The request shape is generic (`launch: { [profileId]: "command args…" }`).
  * There are deliberately no `piBin` / `codexBin` / `dshBin` fields: a new
@@ -13,18 +15,33 @@ import { runtimeStatuses, setRuntimePaths } from "../runtimes/config";
  * it.
  */
 export async function runtimeRoutes(app: FastifyInstance): Promise<void> {
+  // Custom ACP CRUD lives in its own module; registering it here keeps the
+  // server entry point untouched.
+  await app.register(agentRoutes);
+
   /** Every runtime and whether it is startable, plus its launch line. */
   app.get("/api/runtimes", async () => {
-    return { runtimes: runtimeStatuses() };
+    return { runtimes: runtimeStatuses(liveSessionModels()) };
   });
 
   /**
    * Save launch lines. An empty string clears an override for that profile.
    * Unknown profile ids are refused with a readable message rather than
    * stored silently (a typo would otherwise be invisible forever).
+   *
+   * `allowNpx: true` is the explicit opt-in for the npx fallback; it is stored
+   * in Absence's own file, never in an agent's.
    */
   app.post("/api/runtimes", async (request, reply) => {
-    const body = request.body as { launch?: Record<string, unknown> } | undefined;
+    const body = request.body as
+      | { launch?: Record<string, unknown>; allowNpx?: unknown }
+      | undefined;
+    if (body?.allowNpx !== undefined) {
+      if (typeof body.allowNpx !== "boolean") {
+        return reply.code(400).send({ error: "allowNpx must be a boolean." });
+      }
+      setNpxAllowed(body.allowNpx);
+    }
     const launch: Record<string, string> = {};
     for (const [id, value] of Object.entries(body?.launch ?? {})) {
       if (typeof value !== "string") {
@@ -39,10 +56,24 @@ export async function runtimeRoutes(app: FastifyInstance): Promise<void> {
       launch[profile?.id ?? id] = value;
     }
     try {
-      setRuntimePaths({ launch });
-      return { ok: true, runtimes: runtimeStatuses() };
+      if (Object.keys(launch).length > 0) setRuntimePaths({ launch });
+      return { ok: true, runtimes: runtimeStatuses(liveSessionModels()) };
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
     }
   });
+}
+
+/**
+ * Models a live ACP session reported for its runtime. `session/new`'s
+ * `configOptions` are already collapsed into `session.model` by the adapter,
+ * so this is the agent's own answer — never a config-file guess.
+ */
+function liveSessionModels(): Record<string, string> {
+  const models: Record<string, string> = {};
+  for (const session of sessionStore.list()) {
+    const model = session.session.model;
+    if (typeof model === "string" && model) models[session.session.agentRuntime] = model;
+  }
+  return models;
 }

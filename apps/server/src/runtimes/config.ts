@@ -2,25 +2,27 @@ import {
   launchLine,
   launchOverrides,
   listProfiles,
-  missingProfileCommands,
   writeLaunchOverrides,
+  type AgentAuthStatus,
+  type AgentModels,
+  type AgentReadiness,
   type CatalogEntry,
+  type LaunchOrigin,
 } from "../agents/acp/AgentCatalog";
+import type { AgentAuthMode } from "../agents/acp/profiles";
 import { registeredRuntimes } from "../agents/registry";
 import type { RuntimeStatus } from "@absence/core";
 
 export type { RuntimeStatus };
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Runtime configuration — the launch lines the agent profiles use, editable
-   from the Project Picker so a missing/incorrectly-pathed runtime can be fixed
-   without editing environment variables or restarting.
+   Runtime configuration — which ACP entries this machine has, and the launch
+   lines the user may override from the Project Picker.
 
-   Persisted to ~/.absence/runtimes.json as a map from profile id to a launch
-   line (`command args…`). There are no per-product fields here: the list is
-   whatever the catalog knows, and a new agent adds data, not a key in this
-   file. Env vars still seed the shipped profiles; a saved value overrides them
-   and survives a restart, so the picker is the single place to edit launches.
+   Persisted to ~/.absence/agents.json (Absence's own file; a legacy
+   ~/.absence/runtimes.json is still read, never rewritten). There are no
+   per-product fields here: the list is whatever the catalog discovered, and a
+   new agent adds data, not a key in this file.
    ══════════════════════════════════════════════════════════════════════════ */
 
 export interface RuntimePaths {
@@ -51,24 +53,46 @@ export interface ProfileRuntimeStatus extends RuntimeStatus {
   profileId: string;
   /** `command args…`, the editable launch line. */
   commandLine: string;
-  /** Whether the agent may refuse `session/new` until it authenticates. */
-  auth?: "none" | "optional" | "required";
+  /** Ready / needs-adapter / needs-auth / unavailable, with one sentence. */
+  state: AgentReadiness;
+  stateReason: string;
+  /** Auto-discovered, manually configured, or a user override. */
+  source: LaunchOrigin;
+  /** The executable or node_modules entry discovery landed on. */
+  discoveredFrom?: string;
+  /** Auth conclusion read from the agent's own config, or unknown. */
+  auth: AgentAuthStatus;
+  authReason: string;
+  /** The agent's declared sign-in expectation. */
+  authHint?: AgentAuthMode;
+  /** The agent's declared models; ACP session models win when available. */
+  models: AgentModels;
+  /** True when launching would download a package (npx opt-in only). */
+  willDownload?: boolean;
+  /** What to install to make a non-ready row startable. */
+  installHint?: string;
   capabilities?: string;
   requires?: string[];
-  source: CatalogEntry["source"];
 }
 
 /**
- * Every runtime, with an availability verdict for the picker.
+ * Every runtime, with a readiness verdict for the picker.
  *
- * One row per catalog profile — no product is written down here. A runtime
+ * One row per catalog entry — no product is written down here. A runtime
  * adapter registered without a profile (the mock, or a host's own) gets a row
  * too, so the list is genuinely "what can run", not a copy of a hard-coded
  * roster.
+ *
+ * `liveModels` carries models an ACP session reported for a runtime
+ * (`session/new` / `config_option_update`). They override the static list read
+ * from the agent's own config, because the agent is the authority once it is
+ * connected.
  */
-export function runtimeStatuses(): RuntimeStatus[] {
+export function runtimeStatuses(liveModels?: Record<string, string>): ProfileRuntimeStatus[] {
   const profiles = listProfiles().filter((profile) => profile.source !== "fixture");
-  const statuses: ProfileRuntimeStatus[] = profiles.map(profileStatus);
+  const statuses: ProfileRuntimeStatus[] = profiles.map((profile) =>
+    profileStatus(profile, liveModels?.[profile.id]),
+  );
 
   const known = new Set<string>();
   for (const profile of profiles) {
@@ -85,37 +109,52 @@ export function runtimeStatuses(): RuntimeStatus[] {
       note: "registered adapter (no ACP profile)",
       profileId: kind,
       commandLine: "",
-      source: "builtin",
+      state: "ready",
+      stateReason: "registered adapter (no ACP profile)",
+      source: "auto",
+      auth: "unknown",
+      authReason: "no agent config; sign-in status unknown",
+      models: { state: "unknown", items: [] },
     });
   }
   return statuses;
 }
 
-function profileStatus(profile: CatalogEntry): ProfileRuntimeStatus {
+function profileStatus(profile: CatalogEntry, sessionModel?: string): ProfileRuntimeStatus {
   const line = launchLine(profile);
-  const missing = missingProfileCommands(profile);
   const notes = [profile.note, profile.capabilities];
-  if (profile.auth === "required") {
-    notes.push(
-      "sign-in required — the agent may refuse session/new until its own authenticate method succeeds; Absence forwards that request and never reads credentials",
-    );
-  } else if (profile.auth === "optional") {
-    notes.push("sign-in may be requested by the agent");
+  notes.push(profile.stateReason);
+  if (profile.models.items.length > 0) {
+    notes.push(`models: ${profile.models.items.join(", ")}`);
+  } else if (profile.models.state === "empty") {
+    notes.push("agent has not declared any models");
+  } else if (profile.models.state === "unknown") {
+    notes.push("model list unknown (agent config unreadable)");
   }
   notes.push(`launch: ${line}`);
-  if (missing.length > 0) notes.push(`missing: ${missing.join(", ")}`);
+  if (profile.willDownload) notes.push("will download a package temporarily on launch");
+  if (profile.installHint) notes.push(profile.installHint);
+  const models: AgentModels = sessionModel ? { state: "session", items: [sessionModel] } : profile.models;
   return {
     kind: profile.id,
     label: profile.label,
-    available: missing.length === 0,
+    available: profile.state === "ready",
     configurable: profile.configurable === true,
     path: line,
     note: notes.filter(Boolean).join(" · ") || "ACP profile",
     profileId: profile.id,
     commandLine: line,
-    auth: profile.auth,
-    capabilities: profile.capabilities,
-    requires: profile.requires,
-    source: profile.source,
+    state: profile.state,
+    stateReason: profile.stateReason,
+    source: profile.origin,
+    ...(profile.discoveredFrom ? { discoveredFrom: profile.discoveredFrom } : {}),
+    auth: profile.authStatus,
+    authReason: profile.authReason,
+    ...(profile.auth ? { authHint: profile.auth } : {}),
+    models,
+    ...(profile.willDownload ? { willDownload: true } : {}),
+    ...(profile.installHint ? { installHint: profile.installHint } : {}),
+    ...(profile.capabilities ? { capabilities: profile.capabilities } : {}),
+    ...(profile.requires ? { requires: profile.requires } : {}),
   };
 }
