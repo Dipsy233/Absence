@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Shape-based classification for ACP tool calls whose kind is 'other' or missing. Rules only look at generic field names (command / path / old_string / url …), never at an agent name or product-specific tool title. A new agent therefore needs no code change: if it sends an ACP-shaped call, these rules already cover it.",
+  "note": "Shape-based classification for ACP tool calls whose kind is 'other' or missing. A real ACP kind always wins and is never overridden. Rules only look at generic field names (command / path / old_string / url …), never at an agent name, a private tool name or a product-specific title. A new agent therefore needs no code change: if it sends an ACP-shaped call, these rules already cover it.",
   "fields": {
     "command": ["command", "cmd", "script", "shell_command", "commandLine"],
     "path": ["path", "file_path", "filePath", "file", "filename", "target_file", "abs_path"],
@@ -11,12 +11,6 @@
     "range": ["offset", "limit", "start_line", "end_line", "startLine", "endLine"]
   },
   "rules": [
-    {
-      "id": "mcp",
-      "kind": "fetch",
-      "when": { "namePattern": "^mcp__" },
-      "as": "mcp"
-    },
     {
       "id": "shell-command",
       "kind": "execute",
@@ -52,11 +46,6 @@
       "id": "read-with-path",
       "kind": "read",
       "when": { "allFields": ["path"] }
-    },
-    {
-      "id": "plan-or-task",
-      "kind": "think",
-      "when": { "namePattern": "^(todo|task|plan|update_plan|write_todos)$" }
     }
   ]
 }

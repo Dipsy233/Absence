@@ -28,8 +28,8 @@ interface RuleSet {
   rules: Array<{
     id: string;
     kind: string;
-    as?: "write" | "mcp";
-    when: { namePattern?: string; anyField?: string; allFields?: string[] };
+    as?: "write";
+    when: { anyField?: string; allFields?: string[] };
   }>;
 }
 
@@ -45,7 +45,6 @@ const FALLBACK: RuleSet = {
     range: ["offset", "limit", "start_line", "end_line", "startLine", "endLine"],
   },
   rules: [
-    { id: "mcp", kind: "fetch", as: "mcp", when: { namePattern: "^mcp__" } },
     { id: "shell-command", kind: "execute", when: { anyField: "command" } },
     { id: "edit-with-replacement", kind: "edit", when: { anyField: "oldContent" } },
     { id: "write-with-content", kind: "edit", as: "write", when: { allFields: ["path", "content"] } },
@@ -53,7 +52,6 @@ const FALLBACK: RuleSet = {
     { id: "fetch-with-url", kind: "fetch", when: { anyField: "url" } },
     { id: "read-with-range", kind: "read", when: { allFields: ["path", "range"] } },
     { id: "read-with-path", kind: "read", when: { allFields: ["path"] } },
-    { id: "plan-or-task", kind: "think", when: { namePattern: "^(todo|task|plan|update_plan|write_todos)$" } },
   ],
 };
 
@@ -116,9 +114,10 @@ const ACP_KINDS = new Set([
 /**
  * Decide what a tool call is.
  *
- * A usable ACP `kind` wins; the rules fill in when it is absent or `other`,
- * and also extract the structured fields (command / path / query) the event
- * payloads need regardless of kind.
+ * A usable ACP `kind` wins. Only when the protocol omitted it (or said `other`,
+ * which ACP defines as "not classified") do the shape rules answer. The rules
+ * look at generic fields, never at a tool title or an agent's private tool
+ * name; a title is display text and cannot prove what a call does.
  */
 export function resolveTool(facts: AcpToolFacts): ResolvedTool {
   const record = isRecord(facts.rawInput) ? facts.rawInput : undefined;
@@ -131,63 +130,62 @@ export function resolveTool(facts: AcpToolFacts): ResolvedTool {
     for (const key of keys) {
       const value = record[key];
       if (typeof value === "string" && value.trim().length > 0) return value;
+      // Range fields (`offset` / `limit`) are usually numbers; a present
+      // number still proves the shape a rule is looking for.
+      if (typeof value === "number" && Number.isFinite(value)) return String(value);
     }
     return undefined;
   };
 
   const hasField = (bucket: string): boolean => first(bucket) !== undefined;
 
+  // `other` is not a classification: it is the absence of one. A real ACP kind
+  // is authoritative and is never overridden by the shape table.
+  const declared = normalizeKind(facts.kind);
+  const usable = declared !== "other" ? declared : undefined;
+
   const resolved: ResolvedTool = {
-    kind: normalizeKind(facts.kind),
-    rule: facts.kind && facts.kind !== "other" ? "acp-kind" : "",
+    kind: usable ?? "other",
+    rule: usable ? "acp-kind" : "",
     command: first("command"),
     path: first("path") ?? facts.locations?.find((l) => l.path)?.path ?? contentPath(facts.content),
     query: first("query"),
     url: first("url"),
   };
 
+  // `mcp__<server>__<tool>` is a shared MCP naming convention, not an agent's
+  // private tool name; it is the only recognised identifier convention.
   const mcp = mcpParts(facts.name);
-  if (mcp) {
-    resolved.mcp = mcp;
-    if (resolved.kind === "other") {
-      resolved.kind = "fetch";
-      resolved.rule = "mcp";
-    }
-  }
 
   // An `edit` that carries whole new content and no old text is a write: same
   // kind in ACP, different first-class event in Absence.
-  if (resolved.kind === "edit" && hasField("content") && !hasField("oldContent")) {
+  if ((usable ?? resolved.kind) === "edit" && hasField("content") && !hasField("oldContent")) {
     resolved.write = true;
   }
 
-  if (resolved.kind !== "other" && resolved.rule === "acp-kind") return resolved;
+  if (mcp) {
+    resolved.mcp = mcp;
+    if (!usable) {
+      resolved.kind = "fetch";
+      resolved.rule = "mcp";
+      return resolved;
+    }
+  }
+
+  if (usable) return resolved;
 
   for (const rule of rules.rules) {
-    if (!matches(rule, facts, hasField)) continue;
+    if (!matches(rule, hasField)) continue;
     resolved.kind = normalizeKind(rule.kind);
     resolved.rule = rule.id;
     if (rule.as === "write") resolved.write = true;
-    if (rule.as === "mcp" && resolved.mcp) return resolved;
     if (resolved.kind !== "other") return resolved;
   }
-  if (resolved.kind === "other" && resolved.command) resolved.kind = "execute";
   return resolved;
 }
 
-function matches(
-  rule: RuleSet["rules"][number],
-  facts: AcpToolFacts,
-  hasField: (bucket: string) => boolean,
-): boolean {
+function matches(rule: RuleSet["rules"][number], hasField: (bucket: string) => boolean): boolean {
   const { when } = rule;
-  if (when.namePattern) {
-    try {
-      if (!new RegExp(when.namePattern, "i").test(facts.name)) return false;
-    } catch {
-      return false;
-    }
-  }
   if (when.anyField && !hasField(when.anyField)) return false;
   if (when.allFields && !when.allFields.every((bucket) => hasField(bucket))) return false;
   return true;

@@ -3,6 +3,8 @@ import type {
   AbsenceEventPayloadMap,
   AbsenceEventType,
   FileChangePayload,
+  MonitorFidelity,
+  MonitorSource,
 } from "@absence/core";
 import { readFileSafe } from "../../filesystem/FileTree";
 import { unifiedDiff } from "../../util/diff";
@@ -25,13 +27,24 @@ export type MappedEvent = {
 }[AbsenceEventType];
 
 /**
+ * A mapped event plus its provenance, so the monitor layer can say whether the
+ * fact came from the agent's report or from a disk snapshot Absence took.
+ */
+export interface MappedEventRecord {
+  event: MappedEvent;
+  source: MonitorSource;
+  fidelity: MonitorFidelity;
+}
+
+/**
  * ACP tool calls → AbsenceEvent.
  *
- * The mapping is by ACP `kind` (plus the shape rules for `other`), never by
- * tool title. A read is a read whether the agent calls it `Read`, `read_file`
- * or `cat`; a shell call is a shell call whether it is `Bash`, `run_shell_command`
- * or `shell`. That is the whole decoupling: adding an agent means adding a
- * launch profile, not teaching Absence a new vocabulary.
+ * The mapping is by ACP `kind` (plus the shape rules when the protocol gave no
+ * kind), never by tool title or a product's private tool vocabulary. A read is
+ * a read whether the agent calls it `Read`, `read_file` or `cat`; a shell call
+ * is a shell call whether it is `Bash`, `run_shell_command` or `shell`. That is
+ * the whole decoupling: adding an agent means adding a launch profile, not
+ * teaching Absence a new vocabulary.
  *
  * Data sources, in order:
  *   1. what the agent reported (content / rawOutput / locations)
@@ -49,6 +62,11 @@ export class AcpToolMapper {
 
   /** Map a finished tool call to the first-class events it deserves. */
   async mapCompleted(facts: AcpToolFacts): Promise<MappedEvent[]> {
+    return (await this.mapCompletedDetailed(facts)).map((record) => record.event);
+  }
+
+  /** The same mapping, with `source` / `fidelity` kept alongside each event. */
+  async mapCompletedDetailed(facts: AcpToolFacts): Promise<MappedEventRecord[]> {
     const resolved = this.resolve(facts);
     // `content` is the model-facing result; some agents put the same text in
     // `rawOutput` instead, so the two are tried in that order.
@@ -57,7 +75,7 @@ export class AcpToolMapper {
 
     if (resolved.mcp) {
       return [
-        {
+        reported({
           type: "mcp",
           payload: {
             server: resolved.mcp.server,
@@ -68,7 +86,7 @@ export class AcpToolMapper {
             result: content.slice(0, 20_000),
             isError: failed,
           },
-        },
+        }),
       ];
     }
 
@@ -83,36 +101,37 @@ export class AcpToolMapper {
       case "execute": {
         // The authoritative denial comes from the client's permission answer
         // (AcpAdapter passes `permissionDenied`). A message-only fallback covers
-        // adapters that encode it in the failed tool text instead.
+        // adapters that encode it in the failed tool text instead. A denial is
+        // never silent: the event says the command did not run.
         const denied =
-          failed &&
-          (facts.permissionDenied === true ||
-            (facts.rawOutput === undefined && permissionDeniedText(content)));
-        const reported = reportedExitCode(facts.rawOutput);
-        const exitCode = denied ? 1 : reported ?? (failed ? 1 : 0);
-        return [
-          {
-            type: "command",
-            payload: {
-              command: resolved.command ?? "",
-              // A failed call's text is usually the error the command wrote; a
-              // successful one's is its output. Keeping them apart is what lets
-              // the Report say "this failed" from the event alone.
-              stdout: failed ? "" : content,
-              stderr: failed ? content : "",
-              exitCode,
-              // ACP only carries completed/failed; the real code has to come
-              // from `rawOutput`. When it is absent the numeric fallback is a
-              // status inference, and the event says so instead of pretending.
-              ...(denied || reported === undefined ? { exitCodeKnown: false as const } : {}),
-              ...(denied ? { permissionDenied: true as const } : {}),
-            },
+          facts.permissionDenied === true ||
+          (failed && facts.rawOutput === undefined && permissionDeniedText(content));
+        const reportedCode = denied ? undefined : reportedExitCode(facts.rawOutput);
+        const exitCode = denied ? 1 : reportedCode ?? (failed ? 1 : 0);
+        const event: MappedEvent = {
+          type: "command",
+          payload: {
+            command: resolved.command ?? "",
+            // A failed call's text is usually the error the command wrote; a
+            // successful one's is its output. Keeping them apart is what lets
+            // the Report say "this failed" from the event alone.
+            stdout: failed ? "" : content,
+            stderr: failed ? content : "",
+            exitCode,
+            // ACP only carries completed/failed; the real code has to come
+            // from `rawOutput`. When it is absent the numeric fallback is a
+            // status inference, and the event says so instead of pretending.
+            ...(denied || reportedCode === undefined ? { exitCodeKnown: false as const } : {}),
+            ...(denied ? { permissionDenied: true as const } : {}),
           },
-        ];
+        };
+        // A denial is reported by the client; an unknown exit code is inferred
+        // from the call status, so the fidelity follows the weakest fact.
+        return [denied || reportedCode !== undefined ? reported(event) : inferred(event)];
       }
       case "search":
         return [
-          {
+          reported({
             type: "search",
             payload: {
               tool: (resolved.query ? "grep" : "find") as string,
@@ -121,7 +140,7 @@ export class AcpToolMapper {
               matches: content.split("\n").filter((line) => line.trim().length > 0).length,
               output: content.slice(0, 4000),
             },
-          },
+          }),
         ];
       default:
         // `fetch` / `think` / `other`: the tool_start/tool_end pair already
@@ -135,10 +154,15 @@ export class AcpToolMapper {
    * reported one; when it did not, the range is the content that came back.
    * Absence never claims a range the agent did not report.
    */
-  private async fileRead(facts: AcpToolFacts, resolved: ResolvedTool, content: string): Promise<MappedEvent[]> {
+  private async fileRead(
+    facts: AcpToolFacts,
+    resolved: ResolvedTool,
+    content: string,
+  ): Promise<MappedEventRecord[]> {
     if (!resolved.path) return [];
     const abs = this.abs(resolved.path);
-    const raw = content.length > 0 ? content : ((await readFileSafe(abs)) ?? "");
+    const reportedContent = content.length > 0;
+    const raw = reportedContent ? content : ((await readFileSafe(abs)) ?? "");
     // Some agents decorate a read result with a header and `N: line` prefixes.
     // That is a *format*, not a product, so it is unwrapped generically here
     // rather than in an agent-specific adapter.
@@ -147,28 +171,35 @@ export class AcpToolMapper {
     const location = facts.locations?.find((l) => typeof l.line === "number");
     const startLine = location?.line ?? 1;
     const lines = text.split("\n").length;
-    return [
-      {
-        type: "file_read",
-        payload: {
-          path: this.display(resolved.path),
-          startLine,
-          endLine: startLine + Math.max(0, lines - 1),
-          content: text,
-          language: languageFromPath(abs),
-          // No `locations.line`: 1..contentLines is a display fallback, not a
-          // range the agent reported. The UI must say "range unknown".
-          ...(location === undefined ? { rangeKnown: false as const } : {}),
-        },
+    const event: MappedEvent = {
+      type: "file_read",
+      payload: {
+        path: this.display(resolved.path),
+        startLine,
+        endLine: startLine + Math.max(0, lines - 1),
+        content: text,
+        language: languageFromPath(abs),
+        // No `locations.line`: 1..contentLines is a display fallback, not a
+        // range the agent reported. The UI must say "range unknown" — and the
+        // returned text may be only the snippet that was read, never the whole
+        // file.
+        ...(location === undefined ? { rangeKnown: false as const } : {}),
       },
-    ];
+    };
+    // When the protocol returned no text and Absence read the file itself, the
+    // content is an OS observation rather than the agent's report.
+    return [reportedContent ? reported(event) : { ...exact(event), source: "os" }];
   }
 
   /**
    * A write or an edit. Prefer the diff the agent sent; otherwise reconstruct
    * from the call's own input (old/new strings) or from disk.
    */
-  private async fileEdit(facts: AcpToolFacts, resolved: ResolvedTool, content: string): Promise<MappedEvent[]> {
+  private async fileEdit(
+    facts: AcpToolFacts,
+    resolved: ResolvedTool,
+    content: string,
+  ): Promise<MappedEventRecord[]> {
     if (!resolved.path) return [];
     const abs = this.abs(resolved.path);
     const diff = diffOfContent(facts.content);
@@ -177,13 +208,13 @@ export class AcpToolMapper {
 
     if (resolved.write) {
       return [
-        {
+        reported({
           type: "file_write",
           payload: {
             path: this.display(resolved.path),
             content: written ?? ((await readFileSafe(abs)) ?? ""),
           },
-        },
+        }),
       ];
     }
 
@@ -212,22 +243,29 @@ export class AcpToolMapper {
     }
     if (!after) return [];
     return [
-      {
+      reported({
         type: "file_edit",
         payload: {
           path: this.display(resolved.path),
           before,
           after,
           diff: unifiedDiff(before, after, resolved.path, resolved.path),
+          // Still an edit the agent reported, but only a snippet: consumers
+          // must not present it as the file's complete content.
           ...(fullContent ? {} : { fullContent: false as const }),
         },
-      },
+      }),
     ];
   }
 
-  private fileChange(resolved: ResolvedTool, kind: FileChangePayload["kind"]): MappedEvent[] {
+  private fileChange(resolved: ResolvedTool, kind: FileChangePayload["kind"]): MappedEventRecord[] {
     if (!resolved.path) return [];
-    return [{ type: "file_change", payload: { path: this.display(resolved.path), kind } }];
+    return [
+      reported({
+        type: "file_change",
+        payload: { path: this.display(resolved.path), kind },
+      }),
+    ];
   }
 
   private abs(p: string): string {
@@ -244,6 +282,18 @@ export class AcpToolMapper {
 }
 
 export { mcpParts };
+
+function reported(event: MappedEvent): MappedEventRecord {
+  return { event, source: "acp", fidelity: "reported" };
+}
+
+function inferred(event: MappedEvent): MappedEventRecord {
+  return { event, source: "acp", fidelity: "inferred" };
+}
+
+function exact(event: MappedEvent): MappedEventRecord {
+  return { event, source: "acp", fidelity: "exact" };
+}
 
 /**
  * The real exit code an ACP `rawOutput` carried. Agents put it at the top level
