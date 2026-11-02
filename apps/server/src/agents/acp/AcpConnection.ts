@@ -1,6 +1,52 @@
-import { spawn, spawnSync } from "node:child_process";
-import path from "node:path";
-import { createInterface } from "node:readline";
+import {
+  AcpRpcError as RpcError,
+  AcpRequestCancelledError,
+  AcpUnsupportedCapabilityError,
+  JSON_RPC_INTERNAL_ERROR,
+  JSON_RPC_METHOD_NOT_FOUND,
+} from "./protocol/errors";
+import {
+  canCallSessionMethod,
+  normalizeCapabilities,
+  type AcpCapabilities,
+  type AcpSessionMethod,
+} from "./protocol/capabilities";
+import { classifyClientRequest } from "./protocol/clientRequests";
+import { isJsonRpcId, type JsonRpcId, type JsonRpcMessage } from "./protocol/jsonrpc";
+import { PendingRequests } from "./protocol/pending";
+import {
+  createStdioTransport,
+  type AcpTransport,
+  type AcpTransportLaunch,
+} from "./protocol/transport";
+import type {
+  AcpClientCapabilities,
+  AcpClientInfo,
+  AcpConfigOption,
+  AcpInitializeResult,
+  AcpSessionResult,
+} from "./protocol/types";
+import { ACP_PROTOCOL_VERSION, negotiateProtocolVersion } from "./protocol/version";
+
+export { AcpRpcError, AcpRequestCancelledError, AcpUnsupportedCapabilityError } from "./protocol/errors";
+export {
+  ACP_PROTOCOL_VERSION,
+  AcpProtocolVersionError,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from "./protocol/version";
+export type {
+  AcpCapabilities,
+  AcpSessionCapabilities,
+  AcpSessionMethod,
+} from "./protocol/capabilities";
+export type {
+  AcpClientCapabilities,
+  AcpClientInfo,
+  AcpConfigOption,
+  AcpInitializeResult,
+  AcpSessionResult,
+} from "./protocol/types";
+export type { AcpTransport } from "./protocol/transport";
 
 /**
  * A generic Agent Client Protocol transport (https://agentclientprotocol.com).
@@ -9,22 +55,24 @@ import { createInterface } from "node:readline";
  * about Pi, Codex, Claude Code, Qwen Code or DSH: a caller hands it a launch
  * spec (command + args + env) and gets an NDJSON JSON-RPC channel back.
  *
- * The shape is deliberately the same one DshClient established, because that
- * was already the observer model rather than a product-specific one:
+ * The transport layer itself is protocol-pure:
+ *   - `initialize` carries `clientInfo` and negotiates `protocolVersion`;
+ *   - requests made before the handshake completes are queued, then sent in
+ *     order;
+ *   - `session/resume|load|close` is never sent unless the agent declared it;
+ *   - agent→client requests are routed explicitly (unknown methods get
+ *     `-32601`, not silence);
+ *   - stdout non-JSON lines and stderr are diagnostics, never protocol;
+ *   - `close()` is idempotent and rejects every pending request with `-32800`.
+ *
+ * The shape is deliberately the same one DshClient established:
  *
  *   initialize                 — capabilities handshake
  *   session/new                — create a session (cwd, mcpServers)
  *   session/prompt             — run one turn; resolves with a stopReason
  *   session/cancel             — notification: interrupt the active turn
- *   session/close              — tear the session down
+ *   session/close              — tear the session down (capacity-gated)
  *   session/set_config_option  — switch a configurable option (model, mode, …)
- *
- * Agent→client notifications (`session/update`) carry the stream:
- *   agent_message_chunk / agent_thought_chunk / tool_call / tool_call_update /
- *   usage_update / config_option_update / available_commands_update
- *
- * The agent also issues requests of its own (`session/request_permission`);
- * the client must answer them or the turn stays blocked.
  *
  * Process ownership: the caller spawns this from the Absence server, which
  * already runs inside a Job Object (process/JobSidecar.ts). Every agent process
@@ -32,42 +80,29 @@ import { createInterface } from "node:readline";
  * this transport does not need to (and must not) wrap the agent in another job.
  */
 
-/** A JSON-RPC error returned by the agent, with the method that caused it. */
-export class AcpRpcError extends Error {
-  constructor(
-    readonly method: string,
-    message: string,
-    readonly code?: number,
-    readonly data?: unknown,
-  ) {
-    super(message);
-    this.name = "AcpRpcError";
-  }
-}
-
-export interface AcpLaunch {
-  /** Executable, npm shim, or a .js entry run through node. */
-  command: string;
-  args?: string[];
-  /** Extra environment for the agent process. */
-  env?: Record<string, string>;
-}
+export type AcpLaunch = AcpTransportLaunch;
 
 export interface AcpConnectionOptions {
-  launch: AcpLaunch;
-  cwd: string;
-  /** Environment merged over process.env (ABSENCE_SESSION_ID is added by the adapter). */
+  /** Launch spec; required unless `transport` is supplied. */
+  launch?: AcpLaunch;
+  /** Agent working directory; required unless `transport` is supplied. */
+  cwd?: string;
+  /** Extra environment for the agent process. */
   env?: Record<string, string>;
-  /** Invoked for every `session/update` notification the agent pushes. */
+  /** A pre-built transport (a proxy/tee can reuse the same dispatcher). */
+  transport?: AcpTransport;
+  /** Identify this client in `initialize`; defaults to Absence. */
+  clientInfo?: AcpClientInfo;
+  /** Invoked for every notification the agent pushes. */
   onNotification: (method: string, params: any) => void;
   /**
-   * Invoked for every agent-to-client request. Return the result to send back,
-   * or throw to answer with a JSON-RPC error.
+   * Invoked for every agent-to-client request the agent protocol supports.
+   * Return the result to send back, or throw to answer with a JSON-RPC error.
    */
   onRequest?: (method: string, params: any) => unknown | Promise<unknown>;
   /** Invoked when the agent process dies. */
   onExit?: (code: number | null) => void;
-  /** Invoked on stderr output (diagnostics only). */
+  /** Invoked on stderr (and malformed stdout) diagnostics only. */
   onErrorOutput?: (chunk: string) => void;
   /** Invoked once the agent process exists, so the caller can record its pid. */
   onSpawn?: (pid: number | undefined) => void;
@@ -77,128 +112,78 @@ export interface AcpConnectionOptions {
    * is what keeps the agent's execution path identical to running it in a
    * terminal (see docs/decoupling.md).
    */
-  clientCapabilities?: {
-    fs?: { readTextFile?: boolean; writeTextFile?: boolean };
-    terminal?: boolean;
-  };
+  clientCapabilities?: AcpClientCapabilities;
 }
 
-/** One selectable config option, as ACP reports it (model, mode, thought level…). */
-export interface AcpConfigOption {
-  id: string;
-  name?: string;
-  category?: string;
-  type?: string;
-  currentValue?: unknown;
-  options?: Array<
-    | { value: string; name?: string; description?: string }
-    | { group: string; name?: string; options?: Array<{ value: string; name?: string; description?: string }> }
-  >;
+interface QueuedAction {
+  run: () => void;
+  /** Present for requests so a failed handshake can settle them. */
+  reject?: (error: Error) => void;
 }
 
-export interface AcpInitializeResult {
-  protocolVersion?: number;
-  agentCapabilities?: Record<string, unknown>;
-  authMethods?: unknown[];
-}
-
-export interface AcpSessionResult {
-  sessionId: string;
-  configOptions?: AcpConfigOption[];
-}
+const DEFAULT_CLIENT_INFO: AcpClientInfo = {
+  name: "absence",
+  version: process.env.ABSENCE_VERSION ?? "0.4.0",
+};
 
 export class AcpConnection {
-  private child?: ReturnType<typeof spawn>;
-  private nextId = 1;
-  private pending = new Map<
-    number,
-    { method: string; resolve: (v: any) => void; reject: (e: Error) => void }
-  >();
+  private transport?: AcpTransport;
+  private readonly pending = new PendingRequests();
+  private readonly queue: QueuedAction[] = [];
+  /** Sessions already closed, so repeated `closeSession` is idempotent. */
+  private readonly closedSessions = new Set<string>();
   private closed = false;
   private ready = false;
-  private queue: Array<() => void> = [];
+  private started = false;
+  private exitNotified = false;
   private initResult?: AcpInitializeResult;
+  private caps?: AcpCapabilities;
 
   constructor(private readonly options: AcpConnectionOptions) {}
 
   /**
-   * Spawn the agent and perform the `initialize` handshake. Resolves once the
-   * agent is accepting requests.
+   * Spawn the agent (or attach the supplied transport) and perform the
+   * `initialize` handshake. Resolves once the agent is accepting requests.
    */
   async start(): Promise<AcpInitializeResult> {
-    const { launch } = this.options;
-    // Resolve a bare Windows command through PATH/PATHEXT first: `npx` is
-    // `npx.cmd` there, and CreateProcess cannot execute it (ENOENT).
-    const entry = resolveExecutable(launch.command);
-    const args = launch.args ?? [];
-    const env = {
-      ...process.env,
-      NO_COLOR: "1",
-      ...this.options.env,
-      ...(launch.env ?? {}),
+    if (this.ready && this.initResult) return this.initResult;
+    if (this.closed) throw new AcpRequestCancelledError("initialize", "connection is closed");
+    if (this.started) throw new Error("acp connection is already starting");
+    this.started = true;
+
+    const transport = this.options.transport ?? this.spawnTransport();
+    this.transport = transport;
+    this.bindTransport(transport);
+    this.options.onSpawn?.(transport.pid);
+
+    const params = {
+      protocolVersion: ACP_PROTOCOL_VERSION,
+      clientInfo: this.options.clientInfo ?? DEFAULT_CLIENT_INFO,
+      clientCapabilities: normalizeClientCapabilities(this.options.clientCapabilities),
     };
 
-    // Mirrors the resolution DshClient already needed on Windows:
-    //   .js      → run through node (a .js shim is not executable: EFTYPE)
-    //   .cmd/.bat → go through the shell, quoted (spawn cannot exec it: EINVAL)
-    const isScript = /\.(js|cjs|mjs)$/i.test(entry);
-    const isBatch = process.platform === "win32" && /\.(cmd|bat)$/i.test(entry);
-
-    let child: ReturnType<typeof spawn>;
-    if (isBatch) {
-      const line = [quote(entry), ...args.map(quote)].join(" ");
-      child = spawn(line, {
-        cwd: this.options.cwd,
-        stdio: ["pipe", "pipe", "pipe"],
-        env,
-        shell: true,
-        windowsVerbatimArguments: true,
-      });
-    } else {
-      child = spawn(isScript ? process.execPath : entry, isScript ? [entry, ...args] : args, {
-        cwd: this.options.cwd,
-        stdio: ["pipe", "pipe", "pipe"],
-        env,
-      });
+    let result: unknown;
+    try {
+      result = await this.sendRequest("initialize", params);
+    } catch (error) {
+      this.closeInternal(`initialize failed: ${messageOf(error)}`);
+      throw error;
     }
-    this.child = child;
-    this.options.onSpawn?.(child.pid);
 
-    // A failed spawn emits 'error' asynchronously; without this listener the
-    // whole server would go down. Turn it into a rejected handshake instead.
-    child.on("error", (error) => {
-      this.closed = true;
-      const wrapped = new Error(
-        `failed to start agent (${entry}): ${error instanceof Error ? error.message : String(error)}`,
-      );
-      this.rejectAll(wrapped);
-      this.options.onExit?.(null);
-    });
-    child.on("exit", (code) => {
-      this.closed = true;
-      this.rejectAll(new Error(`acp agent exited (code ${code})`));
-      this.options.onExit?.(code);
-    });
-    child.stderr?.on("data", (chunk) => this.options.onErrorOutput?.(String(chunk)));
+    let version: number;
+    try {
+      const record =
+        result !== null && typeof result === "object" ? (result as Record<string, unknown>) : {};
+      version = negotiateProtocolVersion(record.protocolVersion);
+      this.initResult = record as AcpInitializeResult;
+      this.caps = normalizeCapabilities(this.initResult, version);
+    } catch (error) {
+      this.closeInternal(messageOf(error));
+      throw error;
+    }
 
-    const rl = createInterface({ input: child.stdout! });
-    rl.on("line", (line) => this.handleLine(line));
-
-    const capabilities = this.options.clientCapabilities ?? {};
-    const result = await this.request("initialize", {
-      protocolVersion: 1,
-      clientCapabilities: {
-        fs: {
-          readTextFile: capabilities.fs?.readTextFile === true,
-          writeTextFile: capabilities.fs?.writeTextFile === true,
-        },
-        terminal: capabilities.terminal === true,
-      },
-    });
-    this.initResult = (result ?? {}) as AcpInitializeResult;
     this.ready = true;
-    for (const flush of this.queue) flush();
-    this.queue = [];
+    this.flushQueue();
     return this.initResult;
   }
 
@@ -207,35 +192,60 @@ export class AcpConnection {
     return this.initResult;
   }
 
+  /** The normalised capability view; `undefined` before the handshake. */
+  get capabilities(): AcpCapabilities | undefined {
+    return this.caps;
+  }
+
+  /** True only when the agent declared the capability gating this method. */
+  supportsSessionMethod(method: AcpSessionMethod): boolean {
+    return canCallSessionMethod(this.caps, method);
+  }
+
   /** Create a session rooted at a working directory. */
   async newSession(cwd: string, mcpServers: unknown[] = []): Promise<AcpSessionResult> {
     const result = await this.request("session/new", { cwd, mcpServers });
-    if (!result?.sessionId) throw new Error("acp agent returned no session id");
-    return {
-      sessionId: String(result.sessionId),
-      configOptions: Array.isArray(result.configOptions) ? (result.configOptions as AcpConfigOption[]) : undefined,
-    };
+    return this.sessionResult(result, undefined);
   }
 
-  /** Reopen an existing session by id (`session/resume`, or `session/load`). */
-  async resumeSession(sessionId: string, cwd: string, mcpServers: unknown[] = []): Promise<AcpSessionResult> {
-    const result = await this.request("session/resume", { sessionId, cwd, mcpServers }).catch((error) => {
-      // Older adapters only implement session/load. One retry, then give up.
-      if (error instanceof Error) return this.request("session/load", { sessionId, cwd, mcpServers });
-      throw error;
-    });
-    return {
-      sessionId: String(result?.sessionId ?? sessionId),
-      configOptions: Array.isArray(result?.configOptions) ? (result.configOptions as AcpConfigOption[]) : undefined,
-    };
+  /**
+   * Reopen an existing session by id (`session/resume`, or `session/load`).
+   *
+   * ACP MUST NOT call either method when the agent did not declare it, so an
+   * undeclared capability is reported instead. The adapter's existing
+   * `resume → newSession` fallback then creates a fresh session.
+   */
+  async resumeSession(
+    sessionId: string,
+    cwd: string,
+    mcpServers: unknown[] = [],
+  ): Promise<AcpSessionResult> {
+    if (canCallSessionMethod(this.caps, "session/resume")) {
+      const result = await this.request("session/resume", { sessionId, cwd, mcpServers });
+      return this.sessionResult(result, sessionId);
+    }
+    if (canCallSessionMethod(this.caps, "session/load")) {
+      const result = await this.request("session/load", { sessionId, cwd, mcpServers });
+      return this.sessionResult(result, sessionId);
+    }
+    throw new AcpUnsupportedCapabilityError(
+      "session/resume",
+      "ACP agent declared neither session/resume nor session/load; Absence must not call them. " +
+        "The caller should create a new session instead.",
+    );
   }
 
   /**
    * Run one turn. Resolves when the prompt settles (`session/prompt` replies
    * with `{ stopReason }`); progress arrives as `session/update` meanwhile.
    */
-  async prompt(sessionId: string, blocks: Array<{ type: string; text?: string }>): Promise<{ stopReason?: string }> {
-    const result = await this.request("session/prompt", { sessionId, prompt: blocks });
+  async prompt(
+    sessionId: string,
+    blocks: Array<{ type: string; text?: string }>,
+  ): Promise<{ stopReason?: string }> {
+    const result = (await this.request("session/prompt", { sessionId, prompt: blocks })) as
+      | { stopReason?: string }
+      | undefined;
     return { stopReason: result?.stopReason };
   }
 
@@ -244,8 +254,14 @@ export class AcpConnection {
     this.notify("session/cancel", { sessionId });
   }
 
-  /** Close a session and let the agent release its resources. */
+  /**
+   * Close a session and let the agent release its resources. Never sends
+   * `session/close` unless declared; repeated calls are no-ops.
+   */
   async closeSession(sessionId: string): Promise<void> {
+    if (this.closedSessions.has(sessionId)) return;
+    this.closedSessions.add(sessionId);
+    if (this.closed || !canCallSessionMethod(this.caps, "session/close")) return;
     try {
       await this.request("session/close", { sessionId });
     } catch {
@@ -255,7 +271,9 @@ export class AcpConnection {
 
   /** Switch a config option (model, mode, thought level…). */
   async setConfigOption(sessionId: string, configId: string, value: string): Promise<unknown> {
-    const result = await this.request("session/set_config_option", { sessionId, configId, value });
+    const result = (await this.request("session/set_config_option", { sessionId, configId, value })) as
+      | { configOptions?: unknown }
+      | undefined;
     return result?.configOptions ?? result;
   }
 
@@ -265,167 +283,243 @@ export class AcpConnection {
   }
 
   isAlive(): boolean {
-    return !this.closed && this.child !== undefined && this.child.exitCode === null;
+    return !this.closed && this.transport !== undefined && this.transport.isAlive();
+  }
+
+  /**
+   * Idempotent teardown. The first call rejects every pending request with a
+   * cancellation-class error and stops the agent; later calls do nothing.
+   */
+  close(reason = "acp connection closed"): void {
+    this.closeInternal(reason);
   }
 
   dispose(): void {
-    this.closed = true;
-    this.rejectAll(new Error("acp connection disposed"));
-    try {
-      this.child?.kill();
-    } catch {
-      // already gone
-    }
-    this.child = undefined;
+    this.close("connection disposed");
   }
 
   // --------------------------------------------------------------------------
 
-  private rejectAll(error: Error): void {
-    for (const [, p] of this.pending) p.reject(error);
-    this.pending.clear();
-    for (const flush of this.queue) flush();
-    this.queue = [];
+  private spawnTransport(): AcpTransport {
+    const launch = this.options.launch;
+    if (!launch) throw new Error("acp connection has neither a transport nor a launch spec");
+    const env = {
+      ...process.env,
+      NO_COLOR: "1",
+      ...this.options.env,
+      ...(launch.env ?? {}),
+    };
+    return createStdioTransport(launch, this.options.cwd ?? process.cwd(), env);
   }
 
-  private request(method: string, params: unknown): Promise<any> {
-    if (this.closed) return Promise.reject(new Error("acp connection is closed"));
-    const id = this.nextId++;
-    const send = (): Promise<any> =>
-      new Promise((resolve, reject) => {
-        if (this.closed || !this.child) {
-          reject(new Error("acp connection is closed"));
-          return;
-        }
-        const stdin = this.child.stdin;
-        if (!stdin) {
-          reject(new Error("acp stdin is unavailable"));
-          return;
-        }
-        this.pending.set(id, { method, resolve, reject });
-        stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n", (error) => {
-          if (error) {
-            this.pending.delete(id);
-            reject(error);
-          }
-        });
-      });
+  private bindTransport(transport: AcpTransport): void {
+    transport.onMessage((message) => this.handleMessage(message));
+    // stdout lines that are not JSON-RPC are diagnostics; they must not be
+    // dispatched as requests or notifications.
+    transport.onMalformedLine((line) => this.options.onErrorOutput?.(line));
+    transport.onStderr((chunk) => this.options.onErrorOutput?.(chunk));
+    transport.onError((error) => {
+      if (this.closed) return;
+      this.closeInternal(`agent process error: ${messageOf(error)}`);
+      this.notifyExit(null);
+    });
+    transport.onExit((code) => {
+      if (!this.closed) this.closeInternal(`agent process exited (code ${code})`);
+      this.notifyExit(code);
+    });
+  }
 
-    // The agent rejects everything until `initialize` round-trips; hold other
-    // requests back so they cannot race the handshake.
+  private notifyExit(code: number | null): void {
+    if (this.exitNotified) return;
+    this.exitNotified = true;
+    this.options.onExit?.(code);
+  }
+
+  /** Stop the pipe and settle everything still outstanding. Idempotent. */
+  private closeInternal(reason: string): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.ready = false;
+    const cancellation = new AcpRequestCancelledError("", reason);
+    this.pending.rejectAll(cancellation);
+    const queued = this.queue.splice(0);
+    for (const action of queued) action.reject?.(cancellation);
+    try {
+      this.transport?.close();
+    } catch {
+      // already gone
+    }
+  }
+
+  private flushQueue(): void {
+    const queued = this.queue.splice(0);
+    for (const action of queued) {
+      if (this.closed) {
+        action.reject?.(new AcpRequestCancelledError("", "connection is closed"));
+        continue;
+      }
+      action.run();
+    }
+  }
+
+  /**
+   * Send a request. Before the handshake completes, everything except
+   * `initialize` waits in a single FIFO queue and is flushed in order.
+   */
+  private request(method: string, params: unknown): Promise<unknown> {
+    if (this.closed) {
+      return Promise.reject(new AcpRequestCancelledError(method, "connection is closed"));
+    }
     if (!this.ready && method !== "initialize") {
       return new Promise((resolve, reject) => {
-        this.queue.push(() => void send().then(resolve, reject));
+        this.queue.push({
+          run: () => void this.sendRequest(method, params).then(resolve, reject),
+          reject,
+        });
       });
     }
-    return send();
+    return this.sendRequest(method, params);
+  }
+
+  private sendRequest(method: string, params: unknown): Promise<unknown> {
+    if (this.closed) {
+      return Promise.reject(new AcpRequestCancelledError(method, "connection is closed"));
+    }
+    const transport = this.transport;
+    if (!transport) {
+      return Promise.reject(new AcpRequestCancelledError(method, "transport is not started"));
+    }
+    const pending = this.pending.create(method);
+    try {
+      transport.send({ jsonrpc: "2.0", id: pending.id, method, params });
+    } catch (error) {
+      this.pending.discard(pending.id);
+      const reason = `failed to write ${method}: ${messageOf(error)}`;
+      this.closeInternal(reason);
+      return Promise.reject(new AcpRequestCancelledError(method, reason));
+    }
+    return pending.promise;
   }
 
   private notify(method: string, params: unknown): void {
-    if (this.closed || !this.child) return;
-    try {
-      this.child.stdin?.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n");
-    } catch {
-      // Pipe gone; the exit handler settles pending state.
+    if (this.closed) return;
+    const run = (): void => {
+      if (this.closed) return;
+      try {
+        this.transport?.send({ jsonrpc: "2.0", method, params });
+      } catch (error) {
+        this.closeInternal(`failed to write ${method}: ${messageOf(error)}`);
+      }
+    };
+    if (!this.ready) {
+      this.queue.push({ run });
+      return;
     }
+    run();
   }
 
-  private handleLine(line: string): void {
-    let msg: any;
-    try {
-      msg = JSON.parse(line);
-    } catch {
-      return; // diagnostics, not JSON-RPC
-    }
-    // A response to one of our requests.
-    if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
-      const pending = this.pending.get(msg.id);
-      if (!pending) return;
-      this.pending.delete(msg.id);
-      if (msg.error) {
-        pending.reject(
-          new AcpRpcError(
-            pending.method,
-            String(msg.error.message ?? "acp error"),
-            numberOrUndefined(msg.error.code),
-            msg.error.data,
-          ),
-        );
+  private handleMessage(message: JsonRpcMessage): void {
+    if (this.closed) return;
+
+    if ("method" in message) {
+      const method = message.method;
+      if ("id" in message && isJsonRpcId(message.id)) {
+        void this.handleAgentRequest(message.id, method, message.params);
       } else {
-        pending.resolve(msg.result);
+        this.options.onNotification(method, message.params ?? {});
       }
       return;
     }
-    // An agent-to-client request carries both an id and a method.
-    if (msg.id !== undefined && typeof msg.method === "string") {
-      void this.handleAgentRequest(msg.id, msg.method, msg.params ?? {});
-      return;
-    }
-    if (typeof msg.method === "string") {
-      this.options.onNotification(msg.method, msg.params ?? {});
+
+    // A response to one of our requests.
+    const pending = this.pending.take(message.id);
+    if (!pending) return;
+    if ("error" in message) {
+      pending.reject(
+        new RpcError(
+          pending.method,
+          String(message.error.message ?? "ACP error"),
+          numberOrUndefined(message.error.code),
+          message.error.data,
+        ),
+      );
+    } else {
+      pending.resolve(message.result);
     }
   }
 
-  private async handleAgentRequest(id: unknown, method: string, params: any): Promise<void> {
+  /**
+   * Route an agent→client request. Permission is forwarded to the caller; fs
+   * and terminal callbacks are refused unless the matching capability was
+   * declared, and unknown methods are refused explicitly.
+   */
+  private async handleAgentRequest(id: JsonRpcId, method: string, params: unknown): Promise<void> {
+    const route = classifyClientRequest(method, this.options.clientCapabilities);
+    if (!route.supported) {
+      this.sendError(id, JSON_RPC_METHOD_NOT_FOUND, route.reason ?? `unsupported request: ${method}`);
+      return;
+    }
+    const handler = this.options.onRequest;
+    if (!handler) {
+      this.sendError(id, JSON_RPC_METHOD_NOT_FOUND, `No client handler for "${method}".`);
+      return;
+    }
     try {
-      const result = await this.options.onRequest?.(method, params);
+      const result = await handler(method, params ?? {});
+      // `undefined` cannot be serialised as a JSON-RPC result; treat it as
+      // unhandled rather than sending an invalid frame.
       if (result === undefined) {
-        this.sendResponse({ jsonrpc: "2.0", id, error: { code: -32601, message: `unhandled request: ${method}` } });
+        this.sendError(id, JSON_RPC_METHOD_NOT_FOUND, `Unhandled request: ${method}`);
         return;
       }
-      this.sendResponse({ jsonrpc: "2.0", id, result });
+      this.sendMessage({ jsonrpc: "2.0", id, result });
     } catch (error) {
-      this.sendResponse({
-        jsonrpc: "2.0",
-        id,
-        error: { code: -32000, message: error instanceof Error ? error.message : String(error) },
-      });
+      this.sendError(id, JSON_RPC_INTERNAL_ERROR, messageOf(error));
     }
   }
 
-  private sendResponse(payload: unknown): void {
-    if (this.closed || !this.child) return;
+  private sendError(id: JsonRpcId, code: number, message: string): void {
+    this.sendMessage({ jsonrpc: "2.0", id, error: { code, message } });
+  }
+
+  private sendMessage(message: JsonRpcMessage): void {
+    if (this.closed) return;
     try {
-      this.child.stdin?.write(JSON.stringify(payload) + "\n");
-    } catch {
-      // Pipe gone; the exit handler will settle it.
+      this.transport?.send(message);
+    } catch (error) {
+      this.closeInternal(`failed to write response: ${messageOf(error)}`);
     }
+  }
+
+  private sessionResult(result: any, fallbackId: string | undefined): AcpSessionResult {
+    const sessionId = result?.sessionId ?? fallbackId;
+    if (!sessionId) throw new Error("acp agent returned no session id");
+    return {
+      sessionId: String(sessionId),
+      configOptions: Array.isArray(result?.configOptions)
+        ? (result.configOptions as AcpConfigOption[])
+        : undefined,
+    };
   }
 }
 
-/**
- * Turn a launch command into something CreateProcess can start.
- *
- * On Windows a bare `npx` / `uvx` / `qwen` is a `.cmd` shim on PATH, and
- * `spawn("npx")` fails with ENOENT. `where` applies PATHEXT, so ask it once and
- * use the first hit. An absolute path or a name that already carries an
- * extension is left alone; a lookup failure falls through to spawn's own error,
- * which the adapter reports as "not installed".
- */
-function resolveExecutable(entry: string): string {
-  if (process.platform !== "win32" || path.isAbsolute(entry)) return entry;
-  if (/\.(exe|com|cmd|bat|js|cjs|mjs)$/i.test(entry)) return entry;
-  try {
-    const result = spawnSync("where", [entry], { encoding: "utf8", windowsHide: true });
-    if (result.status !== 0 || !result.stdout) return entry;
-    const first = result.stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find((line) => line.length > 0);
-    return first ?? entry;
-  } catch {
-    return entry;
-  }
+function normalizeClientCapabilities(
+  capabilities: AcpClientCapabilities | undefined,
+): Required<AcpClientCapabilities> {
+  return {
+    fs: {
+      readTextFile: capabilities?.fs?.readTextFile === true,
+      writeTextFile: capabilities?.fs?.writeTextFile === true,
+    },
+    terminal: capabilities?.terminal === true,
+  };
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function numberOrUndefined(value: unknown): number | undefined {
   const n = Number(value);
   return Number.isFinite(n) ? n : undefined;
-}
-
-/** Quote an argument for a Windows command line. */
-function quote(value: string): string {
-  if (value.length === 0) return '""';
-  if (!/[\s"]/.test(value)) return value;
-  return `"${value.replace(/"/g, '\\"')}"`;
 }
