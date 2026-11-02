@@ -72,15 +72,22 @@ export interface FileWritePayload {
 
 export interface FileEditPayload {
   path: string;
+  /**
+   * The path exactly as the agent reported it. `pathRelative` is true when
+   * that was a relative path, which Absence preserves instead of inventing an
+   * absolute or project-relative one.
+   */
+  pathRelative?: boolean;
   before: string;
   after: string;
   diff: string;
   /**
-   * False when `before`/`after` are only the ACP diff snippet and the whole
-   * file could not be reconstructed. The event is still a real edit; consumers
-   * must not treat the snippet as the file's complete content.
+   * True when `before`/`after` are the whole file; false when they are only
+   * the ACP diff snippet and the whole file could not be reconstructed. The
+   * event is still a real edit; consumers must not treat the snippet as the
+   * file's complete content. Absent when the caller did not state it.
    */
-  fullContent?: false;
+  fullContent?: boolean;
 }
 
 export interface FileChangePayload {
@@ -112,6 +119,12 @@ export interface CommandPayload {
    * the UI must say "exit code unknown". Absent means the code was reported.
    */
   exitCodeKnown?: false;
+  /**
+   * The agent referenced a terminal (`terminal/create`) instead of reporting
+   * raw output. Carried through verbatim as a reference; Absence does not
+   * resolve it, inspect its process, or turn it into an egg.
+   */
+  terminalId?: string;
   /**
    * The user denied the permission request: the command was never executed.
    * `exitCode`/`exitCodeKnown` are kept for protocol compatibility, but the UI
