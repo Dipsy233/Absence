@@ -13,6 +13,7 @@ import {
   type FileState,
   type FileTreeNode,
   type MetricsFrame,
+  type ObservedRange,
   type Session,
   type SessionRuntimeState,
   type SessionSnapshot,
@@ -38,6 +39,7 @@ import { TerminalMirror } from "./TerminalMirror";
 import { SessionLogTail } from "./SessionLogTail";
 import { OutsideAttribution } from "./OutsideAttribution";
 import { createAdapter } from "../agents/createAdapter";
+import { formatAgentCommand, shouldForwardAgentCommand } from "../agents/slashCommands";
 import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
 import { ProcessWatcher } from "../process/ProcessWatcher";
@@ -181,6 +183,12 @@ export class AbsenceSession {
   private currentAction?: AbsenceEvent;
   private files = new Map<string, FileState>();
   /**
+   * Full-file baselines being read from disk after a partial `file_read`.
+   * `computeDiskDiff` awaits the one for its path, so a command that changes the
+   * file cannot race the baseline and produce a slice-shaped `before`.
+   */
+  private readonly baselineLoads = new Map<string, Promise<void>>();
+  /**
    * Content the agent itself just reported (an explicit `file_edit`/`file_write`),
    * keyed by project-relative path. The filesystem watcher consults this so a
    * shell write (`Set-Content`, `echo >`) is not reported twice when the agent
@@ -269,7 +277,11 @@ export class AbsenceSession {
     this.session.processPrecision = JobMonitor.get().available ? "exact" : "sampled";
     // An observed session never gets an adapter: there is no runtime to drive.
     if (!observe) {
-      this.adapter = createAdapter(kind, { tools: config.piTools, processWatcher: this.processWatcher });
+      this.adapter = createAdapter(kind, {
+        tools: config.piTools,
+        processWatcher: this.processWatcher,
+        onStateChange: () => this.scheduleState(),
+      });
     }
     // Baseline now: what is already running before the agent starts. The snapshot
     // costs half a second, so it has to be taken here rather than when the first
@@ -449,6 +461,24 @@ export class AbsenceSession {
 
     this.unsubAdapter = this.adapter?.subscribe((event) => this.handleEvent(event));
 
+    // An ACP agent can answer `initialize` with auth methods and then refuse
+    // `session/new` until `authenticate`. The adapter keeps the connection and
+    // reports `authRequired`; this is the one actionable sentence telling the
+    // user how to unblock it from the chat.
+    const authMethods = this.adapter?.getAuthMethods?.() ?? [];
+    if (this.adapter?.isAuthRequired?.() && authMethods.length > 0) {
+      const methods = authMethods
+        .map((method) => `${method.id} (${method.name})`)
+        .join(", ");
+      this.handleEvent(
+        createEvent(this.id, "message", {
+          role: "system",
+          content: `Authentication required by ${this.session.agentRuntime}. Methods: ${methods}. Run /auth <methodId> to sign in.`,
+          streaming: false,
+        }),
+      );
+    }
+
     this.tree = await buildTree(this.session.projectPath);
     this.treeDirty = true;
 
@@ -564,6 +594,12 @@ export class AbsenceSession {
           { value: "list", label: "list", description: "servers and whether they connected" },
           { value: "reconnect", label: "reconnect", description: "reconnect a server in this session" },
         ];
+      case "auth":
+        return (this.adapter.getAuthMethods?.() ?? []).map((method) => ({
+          value: method.id,
+          label: method.name,
+          description: method.description,
+        }));
       default:
         return [];
     }
@@ -587,20 +623,34 @@ export class AbsenceSession {
     }
     const notice = (content: string): void =>
       this.handleEvent(createEvent(this.id, "message", { role: "system", content, streaming: false }));
+    // An agent-advertised `/compact`, `/mcp`, `/skill` or a custom `/…` is the
+    // agent's own command. Forward it as a prompt instead of pretending Absence
+    // implements it; Pi/Codex advertise nothing here, so their local behaviour
+    // is unchanged.
+    const forward = shouldForwardAgentCommand(name, adapter.getAvailableCommands?.());
     // `/skill <name>` prompts the agent, so it counts as mutating too — but a
     // bare `/skill` only lists, and `/mcp` is allowed while a run is going,
     // because someone watching a stuck run needs to see why a server is not
-    // answering.
+    // answering. A forwarded agent command is always treated as mutating.
     const mutating =
+      forward ||
       name === "model" ||
       name === "thinking" ||
       name === "compact" ||
       name === "permission" ||
+      name === "auth" ||
       (name === "skill" && (this.adapter?.getCapabilities?.()?.skills ?? []).some((skill) =>
         skill.name.toLowerCase() === args.trim().split(/\s+/)[0]?.toLowerCase(),
       ));
     if (mutating && (adapter.isBusy?.() ?? false)) {
       notice(`Cannot run /${name} while the agent is working — stop it first.`);
+      return;
+    }
+    if (forward) {
+      // `this.prompt` records the user's line in the chat and lets the run's
+      // normal error handling report a failed command; the agent sees the line
+      // verbatim, including its own spelling and arguments.
+      this.prompt(formatAgentCommand(name, args));
       return;
     }
     try {
@@ -622,6 +672,7 @@ export class AbsenceSession {
           const level = args.trim();
           if (!level) {
             const current = adapter.getThinking();
+            if (!current) return notice("This runtime has no thinking setting.");
             return notice(`Thinking level: ${current.level}. Options: ${current.available.join(", ")}.`);
           }
           const applied = await adapter.setThinking(level);
@@ -635,6 +686,7 @@ export class AbsenceSession {
           const level = args.trim();
           if (!level) {
             const current = adapter.getPermission();
+            if (!current) return notice("This runtime has no permission setting.");
             return notice(`Permission: ${current.level}. Options: ${current.available.join(", ")}.`);
           }
           const applied = await adapter.setPermission(level);
@@ -683,6 +735,32 @@ export class AbsenceSession {
         case "mcp":
           notice(await this.runMcpCommand(args));
           break;
+        case "auth": {
+          if (!adapter.authenticate) {
+            return notice("This runtime does not support ACP authentication.");
+          }
+          const methods = adapter.getAuthMethods?.() ?? [];
+          const methodId = args.trim();
+          if (!methodId) {
+            const lines = methods.map(
+              (method) => `  ${method.id}  ${method.name}${method.description ? ` — ${method.description}` : ""}`,
+            );
+            return notice(
+              lines.length > 0
+                ? ["Usage: /auth <methodId>", ...lines].join(NL)
+                : "No authentication methods were advertised.",
+            );
+          }
+          await adapter.authenticate(methodId);
+          // The deferred session only exists now; record its id so a later
+          // resume can reopen the same agent conversation.
+          this.piSessionFile = adapter.getSessionFile?.() ?? this.piSessionFile;
+          this.piSessionId = adapter.getRuntimeSessionId?.() ?? this.piSessionId;
+          await this.flushMeta();
+          this.scheduleState();
+          notice(`Authenticated with ${methodId}.`);
+          break;
+        }
         default:
           notice(`Unknown command: /${name}`);
       }
@@ -841,6 +919,9 @@ export class AbsenceSession {
     // rather than guessing when it changed. (The disk scan behind it is
     // cached by the adapter — see PiAdapter.getCapabilities.)
     const capabilities = this.adapter?.getCapabilities?.();
+    const agentCommands = this.adapter?.getAvailableCommands?.();
+    const authMethods = this.adapter?.getAuthMethods?.();
+    const authRequired = this.adapter?.isAuthRequired?.() === true;
     const includeTree = options.includeTree ?? true;
     return {
       session: this.session,
@@ -849,6 +930,9 @@ export class AbsenceSession {
       context: this.context,
       ...(includeTree && this.tree ? { tree: this.tree } : {}),
       ...(capabilities ? { capabilities } : {}),
+      ...(agentCommands && agentCommands.length > 0 ? { agentCommands } : {}),
+      ...(authMethods && authMethods.length > 0 ? { authMethods } : {}),
+      ...(authRequired ? { authRequired } : {}),
     };
   }
 
@@ -1078,9 +1162,7 @@ export class AbsenceSession {
       // The status exits when the agent starts emitting text (see "message").
       case "file_read":
         this.setStatus("reading");
-        this.upsertFile(event.payload.path, event.payload.content, {
-          lastRead: { startLine: event.payload.startLine, endLine: event.payload.endLine },
-        });
+        this.applyFileRead(event.payload);
         break;
 
       case "file_write":
@@ -1103,8 +1185,13 @@ export class AbsenceSession {
             event.payload.diff = unifiedDiff(event.payload.before, event.payload.after, event.payload.path, event.payload.path);
           }
         }
-        this.noteAgentWrite(event.payload.path, event.payload.after);
-        this.upsertFile(event.payload.path, event.payload.after, { bump: true });
+        // A snippet-only edit is real, but its `after` is not the whole file.
+        // Storing it would make the next disk diff look like a second edit and
+        // would claim file content the agent never sent.
+        if (event.payload.fullContent !== false) {
+          this.noteAgentWrite(event.payload.path, event.payload.after);
+          this.upsertFile(event.payload.path, event.payload.after, { bump: true });
+        }
         break;
 
       case "command":
@@ -1177,18 +1264,79 @@ export class AbsenceSession {
     }
   }
 
+  /**
+   * A read is evidence about a *range*, not the whole file. Store it in
+   * `observedRanges` and leave `content` alone; when no whole-file baseline
+   * exists, read one from disk so a later command's diff has an honest `before`.
+   */
+  private applyFileRead(payload: {
+    path: string;
+    content: string;
+    startLine: number;
+    endLine: number;
+    rangeKnown?: false;
+  }): void {
+    const existing = this.files.get(payload.path);
+    const state: FileState = existing ?? {
+      path: payload.path,
+      content: "",
+      version: 0,
+    };
+    const range = {
+      startLine: payload.startLine,
+      endLine: payload.endLine,
+      content: payload.content,
+      ...(payload.rangeKnown === false ? { rangeKnown: false as const } : {}),
+    };
+    state.lastRead = {
+      startLine: payload.startLine,
+      endLine: payload.endLine,
+      ...(payload.rangeKnown === false ? { rangeKnown: false as const } : {}),
+    };
+    state.observedRanges = mergeObservedRange(state.observedRanges, range);
+    state.lastModified = Date.now();
+    this.files.set(payload.path, state);
+    if (state.content.length === 0 && !this.baselineLoads.has(payload.path)) {
+      this.baselineLoads.set(payload.path, this.loadBaseline(payload.path));
+    }
+  }
+
+  /**
+   * Cache the full file from disk without claiming the agent read it. This is
+   * the OS baseline for the next diff; the agent's own evidence stays in
+   * `observedRanges`.
+   */
+  private async loadBaseline(filePath: string): Promise<void> {
+    try {
+      const absolute = path.isAbsolute(filePath) ? filePath : path.join(this.session.projectPath, filePath);
+      const content = await readFileSafe(absolute);
+      const state = this.files.get(filePath);
+      // A write/edit may have landed while the read was in flight; never
+      // overwrite content the agent itself supplied.
+      if (state && content !== null && state.content.length === 0) {
+        state.content = content;
+      }
+    } finally {
+      this.baselineLoads.delete(filePath);
+    }
+  }
+
   private upsertFile(
     filePath: string,
     content: string,
-    options: { lastRead?: { startLine: number; endLine: number }; bump?: boolean } = {},
+    options: {
+      lastRead?: { startLine: number; endLine: number; rangeKnown?: false };
+      bump?: boolean;
+    } = {},
   ): void {
     const existing = this.files.get(filePath);
-    const version = (existing?.version ?? 0) + (options.bump ? 1 : existing ? 0 : 1);
+    const version = options.bump ? (existing?.version ?? 0) + 1 : existing?.version ?? 0;
     this.files.set(filePath, {
       path: filePath,
       content,
       version,
       lastRead: options.lastRead ?? existing?.lastRead,
+      observedRanges: existing?.observedRanges,
       lastModified: Date.now(),
     });
   }
@@ -1203,7 +1351,34 @@ export class AbsenceSession {
   private onFsChange(kind: "created" | "modified" | "deleted", absolutePath: string): void {
     const rel = toPosix(path.relative(this.session.projectPath, absolutePath));
     if (!rel || rel.startsWith("..")) return;
-    this.handleEvent(createEvent(this.id, "file_change", { path: rel, kind }));
+    void this.handleFsChange(rel, kind);
+  }
+
+  /**
+   * One OS change, judged against what the agent already reported. The
+   * `file_change` is always emitted (it is real OS evidence); when its content
+   * matches a tool call Absence already recorded, it is marked `echo` and the
+   * second, redundant diff is skipped.
+   */
+  private async handleFsChange(
+    rel: string,
+    kind: "created" | "modified" | "deleted",
+  ): Promise<void> {
+    const absolute = path.join(this.session.projectPath, rel);
+    const content = kind === "deleted" ? null : await readFileSafe(absolute);
+    const reported = this.recentAgentWrites.get(rel);
+    const echo = content !== null && reported !== undefined && reported.content === content;
+    this.handleEvent(
+      createEvent(this.id, "file_change", {
+        path: rel,
+        kind,
+        ...(echo ? { echo: true as const } : {}),
+      }),
+    );
+    if (kind === "deleted" || echo) {
+      if (echo) this.recentAgentWrites.delete(rel);
+      return;
+    }
     // The watcher is what turns a shell write into a diff: Codex has no Write
     // action in its command parse (`Set-Content`, `echo > file`, a sed in a
     // pipeline are all `Unknown`), so without this a file changed by a command
@@ -1232,6 +1407,11 @@ export class AbsenceSession {
   }
 
   private async computeDiskDiff(rel: string): Promise<void> {
+    // A partial read starts a full-file baseline asynchronously. Wait for it
+    // before comparing: otherwise the command's change can win the race and
+    // the diff's `before` is the slice the agent read, not the previous file.
+    const baseline = this.baselineLoads.get(rel);
+    if (baseline) await baseline;
     const absolute = path.join(this.session.projectPath, rel);
     const content = await readFileSafe(absolute);
     // Binary, gone, or unreadable: the `file_change` above already told the
@@ -1331,6 +1511,23 @@ export class AbsenceSession {
       });
     }, 500);
   }
+}
+
+/** Keep the agent's observed ranges without letting a long run grow forever. */
+function mergeObservedRange(
+  existing: ObservedRange[] | undefined,
+  next: ObservedRange,
+): ObservedRange[] {
+  const list = [...(existing ?? [])];
+  const index = list.findIndex(
+    (range) =>
+      range.startLine === next.startLine &&
+      range.endLine === next.endLine &&
+      (range.rangeKnown ?? true) === (next.rangeKnown ?? true),
+  );
+  if (index >= 0) list[index] = next;
+  else list.push(next);
+  return list.slice(-50);
 }
 
 function statusForTool(toolName: string): AgentStatus {

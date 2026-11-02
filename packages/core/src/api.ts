@@ -9,8 +9,8 @@
    beside the client fetch — and stayed equal only by hand.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** The agent runtimes Absence can drive. */
-export type RuntimeKind = "pi" | "codex" | "dsh" | "mock";
+/** The agent runtimes Absence can drive. ACP agents are data profiles, so the type is open. */
+export type RuntimeKind = "pi" | "codex" | "dsh" | "mock" | (string & {});
 
 /** One agent runtime and whether it can start right now (GET /api/runtimes). */
 export interface RuntimeStatus {

@@ -2,7 +2,13 @@ import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 
-export type AgentKind = "pi" | "codex" | "dsh" | "mock";
+/**
+ * A runtime kind. The four built-ins are spelled out for autocomplete, but the
+ * type is open on purpose: an ACP agent is a data profile (see
+ * agents/acp/AgentCatalog.ts), so `claude-code` / `qwen-code` / any future id
+ * must be storable without touching this file.
+ */
+export type AgentKind = "pi" | "codex" | "dsh" | "mock" | (string & {});
 
 export interface AbsenceConfig {
   port: number;

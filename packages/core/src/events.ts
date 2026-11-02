@@ -57,6 +57,12 @@ export interface FileReadPayload {
   endLine: number;
   content: string;
   language?: string;
+  /**
+   * The agent did not report a line (`locations.line`). `startLine`/`endLine`
+   * are a display fallback (1..content lines), not an asserted range; the UI
+   * must say "range unknown" instead of presenting them as precise.
+   */
+  rangeKnown?: false;
 }
 
 export interface FileWritePayload {
@@ -69,6 +75,12 @@ export interface FileEditPayload {
   before: string;
   after: string;
   diff: string;
+  /**
+   * False when `before`/`after` are only the ACP diff snippet and the whole
+   * file could not be reconstructed. The event is still a real edit; consumers
+   * must not treat the snippet as the file's complete content.
+   */
+  fullContent?: false;
 }
 
 export interface FileChangePayload {
@@ -81,6 +93,12 @@ export interface FileChangePayload {
    * human wants to hear about.
    */
   outside?: boolean;
+  /**
+   * The OS saw a change the agent already reported through a tool call. It is
+   * real evidence, but not a second act: Activity hides it, so one edit does
+   * not become two rows.
+   */
+  echo?: true;
 }
 
 export interface CommandPayload {
@@ -88,6 +106,18 @@ export interface CommandPayload {
   stdout: string;
   stderr: string;
   exitCode: number;
+  /**
+   * False when the protocol did not carry a real exit code (`rawOutput`). `exitCode`
+   * is then a status-derived fallback (1 failed / 0 OK), not the exact code —
+   * the UI must say "exit code unknown". Absent means the code was reported.
+   */
+  exitCodeKnown?: false;
+  /**
+   * The user denied the permission request: the command was never executed.
+   * `exitCode`/`exitCodeKnown` are kept for protocol compatibility, but the UI
+   * must not present this as a real exit status, and execution counters skip it.
+   */
+  permissionDenied?: true;
 }
 
 /** v0.2: a search/listing action (Pi's grep / find / ls tools). */

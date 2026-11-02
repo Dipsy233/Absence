@@ -95,12 +95,27 @@ export interface SessionHistoryEntry {
   archived: boolean;
 }
 
+/** One range the agent actually read, as reported by its protocol. */
+export interface ObservedRange {
+  startLine: number;
+  endLine: number;
+  content: string;
+  /** False when the agent did not report a line; the range is a fallback. */
+  rangeKnown?: false;
+}
+
 /** Content Absence remembers about a file the agent has touched (read.md §26). */
 export interface FileState {
   path: string;
+  /**
+   * The last *whole-file* content Absence knows: a write/edit, or a baseline
+   * read from disk when the agent only reported a slice. Never the slice itself.
+   */
   content: string;
   version: number;
-  lastRead?: { startLine: number; endLine: number };
+  lastRead?: { startLine: number; endLine: number; rangeKnown?: false };
+  /** What the agent reported reading, kept separately from the whole file. */
+  observedRanges?: ObservedRange[];
   lastModified?: number;
 }
 
@@ -207,6 +222,19 @@ export function canDriveSession(source: SessionSource | undefined): boolean {
   return source === undefined || source.kind === "runtime";
 }
 
+/** One `/` command the agent itself advertised over ACP. */
+export interface AgentCommandInfo {
+  name: string;
+  description?: string;
+}
+
+/** One ACP authentication method advertised during `initialize`. */
+export interface AuthMethodInfo {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 /** Subset pushed over the wire when only runtime metadata changed. */
 export interface SessionRuntimeState {
   session: Session;
@@ -223,6 +251,12 @@ export interface SessionRuntimeState {
    * a runtime that reports neither omits it, and the UI hides the panel.
    */
   capabilities?: CapabilityState;
+  /** `/` commands the agent advertised; the palette merges these with Absence's own. */
+  agentCommands?: AgentCommandInfo[];
+  /** ACP authentication methods, when the agent advertised any. */
+  authMethods?: AuthMethodInfo[];
+  /** True when the agent requires authentication before a session can be created. */
+  authRequired?: boolean;
 }
 
 /** One skill the runtime can load (a directory with a SKILL.md). */

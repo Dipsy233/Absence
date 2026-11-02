@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { isAgentBusy, type CommandOption } from "@absence/core";
 import * as api from "../../lib/api";
 import { buildPrompt } from "../../lib/context";
-import { COMMANDS, findCommand, isSkillInvocation, type CommandSpec } from "../../lib/commands";
+import {
+  findCommand,
+  isSkillInvocation,
+  mergeAgentCommands,
+  type CommandSpec,
+} from "../../lib/commands";
 import { useChatStore } from "../../stores/chatStore";
 import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
 import type { ChatContext } from "../../types/chat";
@@ -57,6 +62,8 @@ export function useChatInput(): ChatInput {
   const clearContext = useChatStore((s) => s.clearContext);
   const status = useSessionStore((s) => s.agent.status);
   const connected = useSessionStore((s) => s.connected);
+  const agentCommands = useSessionStore((s) => s.agentCommands);
+  const commands = useMemo(() => mergeAgentCommands(agentCommands), [agentCommands]);
   const sessionId = useSessionStore((s) => s.session?.id);
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
   const runCommand = useSessionStore((s) => s.runCommand);
@@ -76,7 +83,7 @@ export function useChatInput(): ChatInput {
   const cmdName = (spaceAt === -1 ? body : body.slice(0, spaceAt)).toLowerCase();
   const argText = spaceAt === -1 ? "" : body.slice(spaceAt + 1);
   const phase: "name" | "arg" = spaceAt === -1 ? "name" : "arg";
-  const command = commandMode ? findCommand(cmdName) : undefined;
+  const command = commandMode ? findCommand(cmdName, commands) : undefined;
 
   // `/skill:` completes skill names, not command names: the palette needs the
   // session's skills, which the server reports with the capability state.
@@ -84,8 +91,8 @@ export function useChatInput(): ChatInput {
   const skillPrefix = commandMode && body.startsWith("skill:") ? body.slice("skill:".length) : undefined;
 
   const nameMatches = useMemo(
-    () => (commandMode && phase === "name" ? COMMANDS.filter((c) => c.name.startsWith(cmdName)) : []),
-    [commandMode, phase, cmdName],
+    () => (commandMode && phase === "name" ? commands.filter((c) => c.name.startsWith(cmdName)) : []),
+    [commandMode, phase, cmdName, commands],
   );
 
   const skillMatches: CommandOption[] = useMemo(() => {
@@ -180,7 +187,7 @@ export function useChatInput(): ChatInput {
       return;
     }
     if (phase === "name") {
-      const spec = findCommand(value);
+      const spec = findCommand(value, commands);
       if (!spec) return;
       if (spec.kind === "none") void execute(spec.name, "");
       else openArgPhase(spec);

@@ -84,7 +84,7 @@ export async function fetchProjects(root?: string): Promise<Project[]> {
 
 export async function createSession(
   projectPath: string,
-  agent?: "pi" | "codex" | "dsh" | "mock",
+  agent?: RuntimeKind,
   resume?: ResumeTarget,
 ): Promise<SessionSnapshot> {
   return json<SessionSnapshot>(

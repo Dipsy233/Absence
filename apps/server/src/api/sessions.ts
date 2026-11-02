@@ -14,6 +14,8 @@ import {
   readRuns,
 } from "../sessions/archive";
 import { sessionStore, RuntimeUnavailableError } from "../sessions/SessionStore";
+import { hasAdapter } from "../agents/registry";
+import { getProfile } from "../agents/acp/AgentCatalog";
 import { toPosix } from "../util/paths";
 import { takeTerminalMirror } from "../sessions/terminalRegistry";
 
@@ -27,7 +29,11 @@ async function isDirectory(candidate: string): Promise<boolean> {
 }
 
 function resolveAgent(value: string | undefined): AgentKind {
-  if (value === "mock" || value === "pi" || value === "codex" || value === "dsh") return value;
+  const kind = value?.trim();
+  // An ACP profile is a runtime kind too: accept any id the registry can
+  // build, or any profile the catalog knows (including ~/.absence/agents.json),
+  // instead of hard-coding the built-ins here (that was coupling).
+  if (kind && (hasAdapter(kind) || getProfile(kind) !== undefined)) return kind;
   return config.defaultAgent;
 }
 
@@ -245,7 +251,10 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.post("/api/sessions/:id/prompt", async (request, reply) => {
+  // Fastify's default bodyLimit is 1 MiB. A pasted stack trace or a long
+  // file excerpt is a legitimate prompt, so this one route accepts 8 MiB;
+  // everything else keeps the default.
+  app.post("/api/sessions/:id/prompt", { bodyLimit: 8 * 1024 * 1024 }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const session = sessionStore.get(id);
     if (!session) return reply.code(404).send({ error: "session not found" });

@@ -1,5 +1,7 @@
 import {
   createEvent,
+  type AgentCommandInfo,
+  type AuthMethodInfo,
   type CapabilityState,
   type CommandOption,
   type ContextState,
@@ -43,6 +45,12 @@ export interface AdapterOptions {
    * agent leaves running can be reported back as a `process` event.
    */
   processWatcher?: ProcessWatcher;
+  /**
+   * Ask the owning session to push a new `session_state`. ACP updates that are
+   * not AbsenceEvents (available commands, config options, auth state) use it
+   * so the palette/auth UI does not wait for the next event.
+   */
+  onStateChange?: () => void;
 }
 
 export interface AgentAdapter {
@@ -79,8 +87,8 @@ export interface AgentAdapter {
    * new `provider/id`.
    */
   setModel?(value: string): Promise<string>;
-  /** Current thinking level and the levels this model supports. */
-  getThinking?(): { level: string; available: string[] };
+  /** Current thinking level and the levels this model supports, when it has one. */
+  getThinking?(): { level: string; available: string[] } | undefined;
   /** Set the thinking level. Returns the level actually applied. */
   setThinking?(level: string): Promise<string>;
   /** The session's display name, when it has one. */
@@ -95,6 +103,19 @@ export interface AgentAdapter {
   /** True while the runtime is mid-run (mutating commands are refused). */
   isBusy?(): boolean;
 
+  // --- agent-provided command / auth surface (ACP) --------------------------
+  /**
+   * `/` commands the agent itself advertised. Absence forwards an advertised
+   * command as a prompt unless it owns that name (`/model`, `/thinking`, …).
+   */
+  getAvailableCommands?(): AgentCommandInfo[];
+  /** Authentication methods advertised during the runtime handshake. */
+  getAuthMethods?(): AuthMethodInfo[];
+  /** True when the agent is blocked on authentication before it can run. */
+  isAuthRequired?(): boolean;
+  /** Authenticate with one advertised method; resolves once it is usable. */
+  authenticate?(methodId: string): Promise<void>;
+
   // --- approvals -------------------------------------------------------------
   /**
    * Answer an approval prompt the runtime raised (a `approval` event). The
@@ -103,7 +124,7 @@ export interface AgentAdapter {
    */
   respondApproval?(id: string, value: string): Promise<void>;
   /** The runtime's current permission/sandbox setting, when it has one. */
-  getPermission?(): { level: string; available: string[] };
+  getPermission?(): { level: string; available: string[] } | undefined;
   /**
    * Change the runtime's permission/sandbox setting for subsequent turns
    * (the sandbox the agent runs in). Returns the applied level.

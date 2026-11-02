@@ -5,6 +5,7 @@ import { config, configure } from "../config";
 import { resolveDshBin } from "../agents/DshClient";
 import { resolveCodexBinDetailed } from "../agents/CodexBin";
 import { resolvePiDetailed } from "../agents/PiBin";
+import { listProfiles } from "../agents/acp/AgentCatalog";
 import type { RuntimeStatus } from "@absence/core";
 
 export type { RuntimeStatus };
@@ -71,7 +72,15 @@ export function applyRuntimePaths(): void {
   const saved = read();
   if (saved.piBin !== undefined) configure({ piBin: saved.piBin });
   if (saved.codexBin !== undefined) configure({ codexBin: saved.codexBin });
-  if (saved.dshBin !== undefined) configure({ dshBin: saved.dshBin });
+  if (saved.dshBin !== undefined) {
+    configure({ dshBin: saved.dshBin });
+  } else if (!config.dshBin) {
+    // The generic ACP profile launches `config.dshBin ?? "dsh"`. DSH Desktop's
+    // bundled bin.js is not on PATH, so resolve it once here — the same
+    // discovery the pre-ACP DshClient used — or the default path would regress.
+    const resolved = resolveDshBin();
+    if (resolved !== "dsh") configure({ dshBin: resolved });
+  }
 }
 
 /** Save new binary paths and apply them to the live config at once. */
@@ -145,5 +154,61 @@ export function runtimeStatuses(): RuntimeStatus[] {
       configurable: false,
       note: "no credentials needed — lays real processes for the watcher",
     },
+    ...acpRuntimeStatuses(["dsh"]),
   ];
+}
+
+/**
+ * Every ACP profile the catalog knows, as a picker entry.
+ *
+ * These are data, not code: the list comes from agents/acp/profiles.ts plus
+ * ~/.absence/agents.json plus the optional registry cache. `dsh` is skipped
+ * because it already has its own entry above.
+ */
+function acpRuntimeStatuses(skip: string[]): RuntimeStatus[] {
+  return listProfiles()
+    .filter((profile) => profile.source !== "fixture" && !skip.includes(profile.id))
+    .map((profile) => ({
+      kind: profile.id,
+      label: profile.label,
+      available: commandOnPath(profile.launch.command),
+      configurable: false,
+      path: profile.launch.command,
+      note:
+        [profile.note, `launch: ${[profile.launch.command, ...(profile.launch.args ?? [])].join(" ")}`]
+          .filter(Boolean)
+          .join(" · ") || "ACP profile",
+    }));
+}
+
+/**
+ * True when a launch command is present: an existing absolute path, or on PATH.
+ *
+ * Deliberately a PATH scan rather than `where`/`which`: the picker asks this for
+ * every ACP profile, and spawning a process per profile made the first
+ * `/api/runtimes` request slower than the UI's 1 s probe timeout.
+ */
+function commandOnPath(command: string): boolean {
+  if (path.isAbsolute(command)) {
+    try {
+      return fs.existsSync(command);
+    } catch {
+      return false;
+    }
+  }
+  const extensions =
+    process.platform === "win32"
+      ? (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)
+      : [""];
+  const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    for (const extension of extensions) {
+      try {
+        if (fs.existsSync(path.join(dir, command + extension))) return true;
+      } catch {
+        // unreadable PATH entry; try the next one
+      }
+    }
+  }
+  return false;
 }

@@ -1,4 +1,4 @@
-import type { CommandOption } from "@absence/core";
+import type { AgentCommandInfo, CommandOption } from "@absence/core";
 
 /** How a command takes its argument. */
 export type CommandKind =
@@ -57,10 +57,53 @@ export const COMMANDS: CommandSpec[] = [
       { value: "jsonl", label: "jsonl", description: "raw session log" },
     ],
   },
+  {
+    name: "auth",
+    description: "Authenticate the ACP agent",
+    argHint: "<methodId>",
+    kind: "text",
+  },
 ];
 
-export function findCommand(name: string): CommandSpec | undefined {
-  return COMMANDS.find((command) => command.name.toLowerCase() === name.toLowerCase());
+/**
+ * Commands Absence executes itself. An agent that advertises the same name
+ * never replaces them — `/model`, `/thinking` and `/permission` map onto ACP
+ * configOptions, and the rest are Absence features.
+ */
+const LOCAL_COMMANDS = new Set([
+  "model",
+  "thinking",
+  "permission",
+  "session",
+  "name",
+  "export",
+  "auth",
+]);
+
+/**
+ * Merge Absence's static commands with the `/` commands an agent advertised.
+ * Agent commands take text arguments and are sent verbatim by the server; they
+ * only replace an Absence command when the name is not one Absence owns.
+ */
+export function mergeAgentCommands(specs: AgentCommandInfo[] | undefined): CommandSpec[] {
+  const merged = new Map<string, CommandSpec>(COMMANDS.map((command) => [command.name, command]));
+  for (const spec of specs ?? []) {
+    const name = spec.name.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (LOCAL_COMMANDS.has(key)) continue;
+    merged.set(key, {
+      name,
+      description: spec.description ?? "provided by the agent",
+      argHint: "[arguments]",
+      kind: "text",
+    });
+  }
+  return [...merged.values()];
+}
+
+export function findCommand(name: string, commands: CommandSpec[] = COMMANDS): CommandSpec | undefined {
+  return commands.find((command) => command.name.toLowerCase() === name.toLowerCase());
 }
 
 /**

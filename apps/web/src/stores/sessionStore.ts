@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import type {
+  AgentCommandInfo,
   AgentStatus,
+  AuthMethodInfo,
   CapabilityState,
   ContextState,
   AbsenceEvent,
@@ -9,11 +11,12 @@ import type {
   SessionRuntimeState,
   SessionSnapshot,
   SessionSource,
+  RuntimeKind,
 } from "@absence/core";
 import type { StageItem } from "../types/stage";
 import { MAX_SESSION_EVENTS } from "@absence/core";
 import * as api from "../lib/api";
-import { STAGE_EVENT_TYPES, clearsStage, isInstantSearch, lastStageAction } from "../lib/events";
+import { isStageEvent, clearsStage, lastStageAction } from "../lib/events";
 import { applyProcessEvent, sortEggs, type Egg } from "../lib/eggs";
 import { eventsBase, markEventsBase, resetEventCaches } from "../lib/history";
 import { useRunsStore } from "./runsStore";
@@ -75,6 +78,12 @@ interface SessionStore {
    * during a run as servers connect; undefined for a runtime that reports none.
    */
   capabilities?: CapabilityState;
+  /** `/` commands the agent advertised; merged into the palette. */
+  agentCommands?: AgentCommandInfo[];
+  /** ACP authentication methods, when the agent advertised any. */
+  authMethods?: AuthMethodInfo[];
+  /** True when the agent is blocked until `/auth <methodId>` succeeds. */
+  authRequired?: boolean;
   /**
    * Where the events come from. `observe` means Absence only watches somebody
    * else's agent process: the chat cannot prompt it, Stop cannot stop it, and
@@ -85,7 +94,7 @@ interface SessionStore {
   connected: boolean;
   error?: string;
 
-  startSession: (projectPath: string, agent?: "pi" | "codex" | "dsh" | "mock") => Promise<void>;
+  startSession: (projectPath: string, agent?: RuntimeKind) => Promise<void>;
   /** Reopen a persisted session from the history list. */
   resumeSession: (entry: SessionHistoryEntry) => Promise<void>;
   sendPrompt: (text: string) => Promise<void>;
@@ -113,6 +122,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   currentAction: undefined,
   context: undefined,
   capabilities: undefined,
+  agentCommands: undefined,
+  authMethods: undefined,
+  authRequired: undefined,
   source: undefined,
   connected: false,
   error: undefined,
@@ -133,11 +145,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             piSessionId: entry.piSessionId,
           }
         : undefined;
-    const snapshot = await api.createSession(
-      entry.projectPath,
-      entry.runtime === "mock" || entry.runtime === "codex" || entry.runtime === "dsh" ? entry.runtime : "pi",
-      resume,
-    );
+    const snapshot = await api.createSession(entry.projectPath, entry.runtime, resume);
     get().hydrate(snapshot);
   },
 
@@ -177,6 +185,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       currentAction: undefined,
       context: undefined,
       capabilities: undefined,
+      agentCommands: undefined,
+      authMethods: undefined,
+      authRequired: undefined,
       source: undefined,
       connected: false,
       error: undefined,
@@ -203,6 +214,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       agent: snapshot.agent,
       context: snapshot.context,
       capabilities: snapshot.capabilities,
+      agentCommands: snapshot.agentCommands,
+      authMethods: snapshot.authMethods,
+      authRequired: snapshot.authRequired,
       source: snapshot.source,
       events: snapshot.events,
       eventsVersion: get().eventsVersion + 1,
@@ -217,6 +231,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       agent: state.agent,
       context: state.context,
       capabilities: state.capabilities,
+      agentCommands: state.agentCommands,
+      authMethods: state.authMethods,
+      authRequired: state.authRequired,
       source: state.source,
     }),
 
@@ -250,7 +267,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         // A run ended, or a new one just started: back to the default Stage page.
         currentAction = undefined;
         stageChanged = true;
-      } else if (STAGE_EVENT_TYPES.has(event.type) && !isInstantSearch(event)) {
+      } else if (isStageEvent(event)) {
         currentAction = event;
         stageChanged = true;
       }
