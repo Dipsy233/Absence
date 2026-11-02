@@ -761,7 +761,9 @@ function explicitLaunch(
   }
   if (profile.source === "custom" || profile.source === "fixture") return profile.launch;
   // A config-backed command (dshBin) materialised by builtinProfiles().
-  if (profile.launch.command) {
+  // Registry profiles keep their own launch through `resolvePlainProfile`, so
+  // their npx distribution is not mistaken for an explicit user choice.
+  if (profile.source === "builtin" && profile.launch.command) {
     return {
       command: profile.launch.command,
       ...(profile.discovery?.acpArgs ? { args: profile.discovery.acpArgs } : {}),
