@@ -22,34 +22,9 @@ import {
 } from "./ToolRules";
 
 /** One event the ACP layer decided to emit for a finished tool call. */
-export type CommandEventPayload = AbsenceEventPayloadMap["command"] & {
-  /**
-   * ACP's `{type:"terminal", terminalId}` block. It is a reference to the
-   * agent's terminal, not a pid: Absence never resolves it into a process.
-   */
-  terminalId?: string;
-};
-
-export type FileEditEventPayload = Omit<AbsenceEventPayloadMap["file_edit"], "fullContent"> & {
-  /**
-   * `true` when the agent sent the whole old/new file in a `diff` block;
-   * `false` when only a snippet could be kept. Absent means Absence rebuilt the
-   * whole file from disk and consumers may treat it as complete.
-   */
-  fullContent?: boolean;
-  /** The reported path was relative and has been preserved verbatim. */
-  pathRelative?: true;
-};
-
-export type MappedEvent =
-  | { type: "command"; payload: CommandEventPayload }
-  | { type: "file_edit"; payload: FileEditEventPayload }
-  | {
-      [K in Exclude<AbsenceEventType, "command" | "file_edit">]: {
-        type: K;
-        payload: AbsenceEventPayloadMap[K];
-      };
-    }[Exclude<AbsenceEventType, "command" | "file_edit">];
+export type MappedEvent = {
+  [K in AbsenceEventType]: { type: K; payload: AbsenceEventPayloadMap[K] };
+}[AbsenceEventType];
 
 /**
  * A mapped event plus its provenance, so the monitor layer can say whether the
@@ -284,13 +259,13 @@ export class AcpToolMapper {
           // Keep the agent's relative path verbatim — Absence does not turn it
           // into an absolute path just because it knows the session cwd.
           path: this.display(resolved.path),
-          ...(pathRelative ? { pathRelative: true as const } : {}),
+          ...(pathRelative ? { pathRelative: true } : {}),
           before,
           after,
           diff: unifiedDiff(before, after, resolved.path, resolved.path),
           // A reconstructed edit has full content; a diff that was already the
           // whole file is marked `true`; an unreconstructable snippet is false.
-          ...(fullContent ? { ...(wholeFile ? { fullContent: true } : {}) } : { fullContent: false as const }),
+          ...(fullContent ? { ...(wholeFile ? { fullContent: true } : {}) } : { fullContent: false }),
         },
       }),
     ];

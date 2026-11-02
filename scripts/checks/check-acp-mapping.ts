@@ -274,8 +274,7 @@ async function main(): Promise<void> {
     const whole = firstOf(wholeDiff, "file_edit");
     check(
       "a whole-file diff maps to file_edit with fullContent=true",
-      whole?.event.type === "file_edit" &&
-        (whole.event.payload as { fullContent?: boolean }).fullContent === true,
+      whole?.event.type === "file_edit" && whole.event.payload.fullContent === true,
       whole?.event.type === "file_edit" ? JSON.stringify(whole.event.payload) : "no file_edit",
     );
     check(
@@ -288,8 +287,26 @@ async function main(): Promise<void> {
       "a relative diff path is preserved, not turned absolute",
       whole?.event.type === "file_edit" &&
         whole.event.payload.path === "src/deep.ts" &&
-        (whole.event.payload as { pathRelative?: true }).pathRelative === true,
+        whole.event.payload.pathRelative === true,
       whole?.event.type === "file_edit" ? whole.event.payload.path : "no file_edit",
+    );
+
+    const absPath = path.join(dir, "src", "deep.ts");
+    const absDiff = await mapper.mapCompletedDetailed({
+      toolCallId: "e4",
+      name: "Edit",
+      kind: "edit",
+      content: [{ type: "diff", path: absPath, oldText: wholeOld, newText: wholeNew }],
+    });
+    const absEdit = firstOf(absDiff, "file_edit");
+    check(
+      "an absolute path is not marked pathRelative",
+      absEdit?.event.type === "file_edit" && absEdit.event.payload.pathRelative === undefined,
+    );
+    check(
+      "an absolute path inside the project is shown project-relative",
+      absEdit?.event.type === "file_edit" && absEdit.event.payload.path === "src/deep.ts",
+      absEdit?.event.type === "file_edit" ? absEdit.event.payload.path : "no file_edit",
     );
 
     const write = await mapper.mapCompletedDetailed({
@@ -431,7 +448,23 @@ async function main(): Promise<void> {
     check(
       "the terminal block becomes a terminalId reference, not a guessed process",
       blockCommand?.event.type === "command" &&
-        (blockCommand.event.payload as { terminalId?: string }).terminalId === "term-1",
+        blockCommand.event.payload.terminalId === "term-1",
+    );
+    const terminalOnly = await mapper.mapCompletedDetailed({
+      toolCallId: "c2g",
+      name: "Run",
+      kind: "execute",
+      status: "completed",
+      rawInput: { command: "echo terminal only" },
+      content: [{ type: "terminal", terminalId: "term-2" }],
+    });
+    const terminalOnlyCommand = firstOf(terminalOnly, "command");
+    check(
+      "terminalId alone does not invent an exit code",
+      terminalOnlyCommand?.event.type === "command" &&
+        terminalOnlyCommand.event.payload.exitCodeKnown === false &&
+        terminalOnlyCommand.fidelity === "inferred",
+      terminalOnlyCommand?.event.type === "command" ? JSON.stringify(terminalOnlyCommand.event.payload) : "no command",
     );
 
     const denied = await mapper.mapCompletedDetailed({
@@ -669,8 +702,11 @@ async function main(): Promise<void> {
     );
     check(
       "the terminal block is carried as terminalId",
-      command?.event.type === "command" &&
-        (command.event.payload as { terminalId?: string }).terminalId === "term-1",
+      command?.event.type === "command" && command.event.payload.terminalId === "term-1",
+    );
+    check(
+      "no process or egg is invented from a terminal reference",
+      done.every((event) => event.event.type !== "process"),
     );
 
     projector.dispose();
