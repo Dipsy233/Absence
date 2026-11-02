@@ -879,7 +879,8 @@ function inspectProviders(dir: string, spec: NonNullable<AgentProfile["inspect"]
     source = file;
     break;
   }
-  const authFile = spec.authFiles?.length ? path.join(dir, spec.authFiles[0]) : undefined;
+  const authName = spec.authFiles?.[0];
+  const authFile = authName ? path.join(dir, authName) : undefined;
   const authBody = authFile ? readJson(authFile) : undefined;
   const authConfigured =
     isNonEmptyObject(authBody) || Boolean(parsed && hasProviderCredential(parsed));
@@ -948,12 +949,15 @@ function inspectToml(dir: string, spec: NonNullable<AgentProfile["inspect"]>): A
       // missing or unreadable; try the next candidate
     }
   }
-  const authFile = spec.authFiles?.length ? path.join(dir, spec.authFiles[0]) : undefined;
+  const authName = spec.authFiles?.[0];
+  const authFile = authName ? path.join(dir, authName) : undefined;
   const authBody = authFile ? readJson(authFile) : undefined;
   const authConfigured = isNonEmptyObject(authBody);
   const provider = toml?.top.model_provider;
   const providerNeedsAuth =
-    typeof provider === "string" && toml?.sections[`model_providers.${provider}`]?.requires_openai_auth;
+    typeof provider === "string"
+      ? toml?.sections[`model_providers.${provider}`]?.requires_openai_auth
+      : undefined;
   const noAuthProvider = providerNeedsAuth === false;
 
   let models: AgentModels = { ...UNKNOWN_MODELS };

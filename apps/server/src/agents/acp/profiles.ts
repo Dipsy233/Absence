@@ -331,6 +331,7 @@ export const builtinProfileData: readonly ProfileData[] = [
       cli: ["gemini"],
       acpArgs: ["--acp"],
     },
+    launch: {},
     requires: ["gemini"],
     commandEnv: "ABSENCE_GEMINI_ACP_BIN",
     auth: "optional",

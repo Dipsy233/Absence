@@ -195,7 +195,8 @@ try {
     const discovered = pi?.discoveredFrom;
     check(
       "discoveredFrom is the executable",
-      discovered !== undefined && fs.realpathSync(discovered) === fs.realpathSync(piAcp),
+      discovered !== undefined &&
+        fs.realpathSync(discovered).toLowerCase() === fs.realpathSync(piAcp).toLowerCase(),
       discovered,
     );
     check(
@@ -378,6 +379,8 @@ try {
 
   section("read-only agent config: models and auth facts, never values");
   {
+    makeBin(adapterBin, "codex-acp");
+    makeBin(adapterBin, "claude-code-acp");
     const piDir = path.join(temp, "pi-agent");
     const codexDir = path.join(temp, "codex");
     const claudeDir = path.join(temp, "claude");

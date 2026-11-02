@@ -117,7 +117,9 @@ function parseEnv(text: string): Record<string, string> {
   return env;
 }
 
-function stateLabel(t: (key: string) => string, state: Readiness | undefined): string {
+type TFn = (key: string, params?: Record<string, string | number>) => string;
+
+function stateLabel(t: TFn, state: Readiness | undefined): string {
   switch (state) {
     case "ready":
       return t("ready");
@@ -130,13 +132,13 @@ function stateLabel(t: (key: string) => string, state: Readiness | undefined): s
   }
 }
 
-function sourceLabel(t: (key: string) => string, source: LaunchSource | undefined): string {
+function sourceLabel(t: TFn, source: LaunchSource | undefined): string {
   if (source === "manual") return t("custom entry");
   if (source === "override") return t("user override");
   return t("auto-discovered");
 }
 
-function modelsText(t: (key: string) => string, models: AgentModels | undefined): string {
+function modelsText(t: TFn, models: AgentModels | undefined): string {
   if (!models) return t("model list unknown");
   if (models.state === "session") {
     return t("models from the ACP session: {list}", { list: models.items.join(", ") });
