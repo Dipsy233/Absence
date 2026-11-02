@@ -18,15 +18,27 @@
  *      the agent (the turn only completes if it does);
  *   5. model / commands come from the agent's own configOptions and
  *      available_commands_update.
+ *
+ * The last sections exercise the `AgentSessionPort` contract directly (an
+ * inline scripted agent, because the behaviours are about this client layer):
+ *   - `resume` / `load` / `close` are never sent without a declared capability;
+ *   - a prompt is trimmed to the agent's declared `promptCapabilities`;
+ *   - `cancel` answers every pending permission `cancelled` *before* it sends
+ *     `session/cancel`;
+ *   - `respondPermission` is a verbatim JSON-RPC echo (no auto decision);
+ *   - `session/close` is awaited on close and repeated cancel/close are safe;
+ *   - `commands` come only from `available_commands_update`.
  */
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AbsenceEvent } from "@absence/core";
+import type { AbsenceEvent, AgentSessionPort, PermissionAnswer } from "@absence/core";
 import { AcpAdapter } from "../../apps/server/src/agents/acp/AcpAdapter";
-import { fixtureProfile } from "../../apps/server/src/agents/acp/profiles";
+import { fixtureProfile, type AgentProfile } from "../../apps/server/src/agents/acp/profiles";
 import { resolveTool } from "../../apps/server/src/agents/acp/ToolRules";
 import type { ProcessWatcher } from "../../apps/server/src/process/ProcessWatcher";
-import { check, finish, section } from "./harness";
+import { check, finish, section, waitFor } from "./harness";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const scenarioDir = path.join(repoRoot, "scripts", "acp-fixture", "scenarios");
@@ -172,6 +184,545 @@ section("the same adapter class drove both agents");
   // Nothing in this file constructs a per-agent adapter: one AcpAdapter, two
   // profiles. That is the decoupling contract in one line.
   check("claude-code is a profile, not a class", true);
+}
+
+// ---------------------------------------------------------------------------
+// AgentSessionPort: capability gating, cancellation ordering, permissions
+
+/**
+ * A tiny scripted agent whose every received frame is logged, so the checks
+ * can assert what the client actually sent (and in which order). It is inline
+ * because these behaviours belong to this client layer, not to a fixture.
+ */
+const PORT_AGENT = String.raw`
+import fs from 'node:fs';
+import { createInterface } from 'node:readline';
+
+const scenario = process.env.ABSENCE_PORT_SCENARIO || 'caps-minimal';
+const logPath = process.env.ABSENCE_PORT_LOG;
+let nextId = 900;
+let activePrompt = null;
+const pending = new Map();
+
+const write = (payload) => process.stdout.write(JSON.stringify(payload) + '\n');
+const log = (entry) => {
+  if (!logPath) return;
+  fs.appendFileSync(logPath, JSON.stringify(entry) + '\n');
+};
+const respond = (id, result) => write({ jsonrpc: '2.0', id, result });
+const notify = (method, params) => write({ jsonrpc: '2.0', method, params });
+const update = (sessionId, body) => notify('session/update', { sessionId, update: body });
+const request = (method, params) =>
+  new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { method, resolve, reject });
+    write({ jsonrpc: '2.0', id, method, params });
+  });
+
+const configOptions = [
+  {
+    id: 'model',
+    name: 'Model',
+    category: 'model',
+    type: 'select',
+    currentValue: 'inline-model',
+    options: [{ value: 'inline-model', name: 'Inline Model' }, { value: 'other-model', name: 'Other Model' }],
+  },
+  { id: 'toggle', name: 'Toggle', category: 'mode', type: 'boolean', currentValue: false },
+];
+
+const input = createInterface({ input: process.stdin });
+input.on('line', async (line) => {
+  if (!line.trim()) return;
+  let message;
+  try {
+    message = JSON.parse(line);
+  } catch {
+    return;
+  }
+
+  if (message.id !== undefined && (message.result !== undefined || message.error !== undefined)) {
+    const entry = pending.get(message.id);
+    log({
+      kind: 'client-response',
+      id: message.id,
+      method: entry ? entry.method : '?',
+      result: message.result,
+      error: message.error,
+    });
+    if (!entry) return;
+    pending.delete(message.id);
+    if (message.error) entry.reject(new Error(message.error.message));
+    else entry.resolve(message.result);
+    return;
+  }
+
+  log({ kind: 'method', method: message.method });
+
+  switch (message.method) {
+    case 'initialize':
+      respond(message.id, {
+        protocolVersion: 1,
+        agentCapabilities:
+          scenario === 'caps-full'
+            ? {
+                loadSession: true,
+                sessionCapabilities: { resume: {}, close: true },
+                promptCapabilities: { image: true, audio: true, embeddedContext: true },
+                auth: { logout: true },
+                mcp: { http: true, sse: false },
+              }
+            : { promptCapabilities: { image: false, audio: false, embeddedContext: false } },
+        authMethods: [],
+      });
+      break;
+
+    case 'session/new':
+    case 'session/resume':
+    case 'session/load':
+      respond(message.id, { sessionId: 'inline-session', configOptions });
+      break;
+
+    case 'session/set_config_option':
+      log({
+        kind: 'set-config',
+        id: message.params?.configId,
+        value: message.params?.value,
+        valueType: typeof message.params?.value,
+      });
+      for (const option of configOptions) {
+        if (option.id === message.params?.configId) option.currentValue = message.params?.value;
+      }
+      respond(message.id, { configOptions });
+      notify('session/update', {
+        sessionId: message.params?.sessionId,
+        update: { sessionUpdate: 'config_option_update', configOptions },
+      });
+      break;
+
+    case 'session/close':
+      respond(message.id, {});
+      break;
+
+    case 'session/cancel': {
+      log({ kind: 'cancel' });
+      const promptId = activePrompt;
+      activePrompt = null;
+      for (const [, entry] of pending) entry.reject(new Error('turn cancelled'));
+      pending.clear();
+      if (promptId !== null) respond(promptId, { stopReason: 'cancelled' });
+      break;
+    }
+
+    case 'session/prompt': {
+      const sessionId = message.params?.sessionId;
+      activePrompt = message.id;
+      log({
+        kind: 'prompt',
+        types: (message.params?.prompt || []).map((block) => block.type),
+      });
+
+      if (scenario === 'caps-full') {
+        update(sessionId, {
+          sessionUpdate: 'available_commands_update',
+          availableCommands: [
+            { name: 'compact', description: 'agent compact' },
+            { name: 'review', description: 'agent review' },
+          ],
+        });
+        update(sessionId, { sessionUpdate: 'usage_update', used: 1200, size: 10000 });
+        notify('session/update', {
+          sessionId,
+          update: {
+            sessionUpdate: 'config_option_update',
+            configOptions: [
+              {
+                id: 'model',
+                name: 'Model',
+                category: 'model',
+                type: 'select',
+                currentValue: 'other-model',
+                options: configOptions[0].options,
+              },
+              configOptions[1],
+            ],
+          },
+        });
+        activePrompt = null;
+        respond(message.id, { stopReason: 'end_turn' });
+        break;
+      }
+
+      if (scenario === 'permission-cancel' || scenario === 'respond-passthrough') {
+        const callId = 'inline_tool';
+        update(sessionId, {
+          sessionUpdate: 'tool_call',
+          toolCallId: callId,
+          title: 'Review a command',
+          kind: 'execute',
+          status: 'pending',
+          rawInput: { command: 'echo inline' },
+        });
+        try {
+          const result = await request('session/request_permission', {
+            sessionId,
+            toolCall: {
+              toolCallId: callId,
+              title: 'Review a command',
+              rawInput: { command: 'echo inline' },
+            },
+            options: [
+              { optionId: 'do-it', name: 'Do it', kind: 'allow_once' },
+              { optionId: 'no', name: 'No', kind: 'reject_once' },
+            ],
+          });
+          log({ kind: 'permission-answer', result });
+        } catch (error) {
+          log({ kind: 'permission-answer', note: String(error && error.message ? error.message : error) });
+        }
+        if (scenario === 'permission-cancel') break; // the cancel settles this turn
+        if (activePrompt === message.id) {
+          activePrompt = null;
+          update(sessionId, {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: callId,
+            status: 'completed',
+            content: [{ type: 'content', content: { type: 'text', text: 'inline done' } }],
+            rawOutput: { exitCode: 0 },
+          });
+          respond(message.id, { stopReason: 'end_turn' });
+        }
+        break;
+      }
+
+      activePrompt = null;
+      respond(message.id, { stopReason: 'end_turn' });
+      break;
+    }
+
+    default:
+      if (message.id !== undefined) {
+        write({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'unsupported' } });
+      }
+  }
+});
+`;
+
+async function portScenario(scenario: string) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), `absence-acp-port-${scenario}-`));
+  const agentPath = path.join(dir, "agent.mjs");
+  await fs.writeFile(agentPath, PORT_AGENT, "utf8");
+  const logPath = path.join(dir, "agent-log.ndjson");
+  const profile: AgentProfile = {
+    id: `port-${scenario}`,
+    label: `Port ${scenario}`,
+    source: "fixture",
+    launch: {
+      command: process.execPath,
+      args: [agentPath],
+      env: { ABSENCE_PORT_SCENARIO: scenario, ABSENCE_PORT_LOG: logPath },
+    },
+  };
+  const adapter = new AcpAdapter(profile);
+  const port: AgentSessionPort = adapter;
+  const readLog = async (): Promise<Array<Record<string, any>>> => {
+    try {
+      return (await fs.readFile(logPath, "utf8"))
+        .split(/\r?\n/)
+        .filter((line) => line.trim().length > 0)
+        .map((line) => JSON.parse(line));
+    } catch {
+      return [];
+    }
+  };
+  const cleanup = async (): Promise<void> => {
+    try {
+      await adapter.close();
+    } catch {
+      // already closed
+    }
+    await fs.rm(dir, { recursive: true, force: true });
+  };
+  return { adapter, port, readLog, cleanup };
+}
+
+section("AgentSessionPort: capability-gated lifecycle and prompt trimming");
+{
+  const { adapter, port, readLog, cleanup } = await portScenario("caps-minimal");
+  check(
+    "AcpAdapter exposes the session port surface",
+    [
+      "start",
+      "prompt",
+      "cancel",
+      "close",
+      "subscribe",
+      "capabilities",
+      "configOptions",
+      "setConfigOption",
+      "commands",
+      "auth",
+      "authenticate",
+      "respondPermission",
+    ].every((name) => typeof (adapter as unknown as Record<string, unknown>)[name] === "function"),
+  );
+
+  // A handle was supplied, but the agent declared neither resume nor load.
+  const info = await port.start({
+    sessionId: "port-caps-min",
+    cwd: repoRoot,
+    resumeHandle: "saved-handle",
+  });
+  const caps = port.capabilities();
+  check(
+    "undeclared load/resume/close stay off",
+    caps.loadSession === false && caps.resumeSession === false && caps.closeSession === false,
+    JSON.stringify(caps),
+  );
+  check(
+    "undeclared prompt capabilities stay off",
+    caps.prompt.image === false && caps.prompt.audio === false && caps.prompt.embeddedContext === false,
+  );
+  check("the port reports source acp-client", caps.source === "acp-client");
+  check("the agent session id is reported", info.runtimeSessionId === "inline-session");
+
+  const first = await readLog();
+  check(
+    "initialize settles before session/new",
+    first[0]?.method === "initialize" && first[1]?.method === "session/new",
+    JSON.stringify(first.map((entry) => entry.method)),
+  );
+  check(
+    "no undeclared resume/load/close is sent",
+    !first.some((entry) =>
+      ["session/resume", "session/load", "session/close"].includes(String(entry.method)),
+    ),
+    JSON.stringify(first.map((entry) => entry.method)),
+  );
+  check("commands are empty until the agent advertises one", port.commands().length === 0);
+
+  await port.prompt([
+    { type: "text", text: "hello" },
+    { type: "image", data: "AAAA", mimeType: "image/png" },
+    { type: "audio", data: "BBBB", mimeType: "audio/wav" },
+    { type: "resource", uri: "file:///x", mimeType: "text/plain", text: "body" },
+  ]);
+  const promptFrame = (await readLog()).find((entry) => entry.kind === "prompt");
+  check(
+    "prompt blocks are trimmed to the declared capabilities",
+    promptFrame?.types.join(",") === "text",
+    JSON.stringify(promptFrame),
+  );
+
+  await port.close();
+  await port.close();
+  const final = await readLog();
+  check(
+    "no session/close was sent when it was not declared",
+    !final.some((entry) => entry.method === "session/close"),
+  );
+  check("repeated close is idempotent", true);
+  await cleanup();
+}
+
+section("AgentSessionPort: declared capabilities are used and forwarded");
+{
+  const { port, readLog, cleanup } = await portScenario("caps-full");
+  const info = await port.start({
+    sessionId: "port-caps-full",
+    cwd: repoRoot,
+    resumeHandle: "saved-handle",
+  });
+  const caps = port.capabilities();
+  check(
+    "declared load/resume/close are reported",
+    caps.loadSession && caps.resumeSession && caps.closeSession,
+    JSON.stringify(caps),
+  );
+  check(
+    "declared prompt capabilities are reported",
+    caps.prompt.image && caps.prompt.audio && caps.prompt.embeddedContext,
+  );
+  check(
+    "auth and mcp capabilities come from initialize",
+    caps.auth.logout && caps.mcp.http && !caps.mcp.sse,
+    JSON.stringify(caps),
+  );
+
+  const started = await readLog();
+  check(
+    "a declared resume is used instead of session/new",
+    started.some((entry) => entry.method === "session/resume") &&
+      !started.some((entry) => entry.method === "session/new"),
+    JSON.stringify(started.map((entry) => entry.method)),
+  );
+  check("the model comes from the agent's configOptions", info.model === "inline-model", info.model);
+
+  await port.setConfigOption("toggle", true);
+  const setFrame = (await readLog()).find((entry) => entry.kind === "set-config");
+  check(
+    "a boolean config value is forwarded as a boolean",
+    setFrame?.valueType === "boolean" && setFrame?.value === true,
+    JSON.stringify(setFrame),
+  );
+  check(
+    "configOptions() refreshes after set_config_option",
+    port.configOptions().find((option) => option.id === "toggle")?.currentValue === true,
+  );
+
+  await port.prompt([
+    { type: "text", text: "hello" },
+    { type: "image", data: "AAAA", mimeType: "image/png" },
+    { type: "audio", data: "BBBB", mimeType: "audio/wav" },
+    { type: "resource", uri: "file:///x", mimeType: "text/plain", text: "body" },
+    { type: "resource_link", uri: "file:///y", name: "y.txt", mimeType: "text/plain" },
+  ]);
+  const promptFrame = (await readLog()).find((entry) => entry.kind === "prompt");
+  check(
+    "every declared block is forwarded",
+    promptFrame?.types.join(",") === "text,image,audio,resource,resource_link",
+    JSON.stringify(promptFrame),
+  );
+  check(
+    "commands() is exactly the agent's advertised list",
+    port.commands().map((command) => command.name).join(",") === "compact,review",
+    port.commands().map((command) => command.name).join(","),
+  );
+  check(
+    "config_option_update refreshed the model",
+    port.configOptions().find((option) => option.id === "model")?.currentValue === "other-model",
+    JSON.stringify(port.configOptions()),
+  );
+
+  await port.close();
+  const final = await readLog();
+  check(
+    "session/close is sent when declared",
+    final.some((entry) => entry.method === "session/close"),
+  );
+  await cleanup();
+}
+
+section("cancel: pending permissions are answered before session/cancel");
+{
+  const { adapter, port, readLog, cleanup } = await portScenario("permission-cancel");
+  const events: AbsenceEvent[] = [];
+  let requestId = "";
+  adapter.subscribe((event) => {
+    events.push(event);
+    if (event.type === "approval") {
+      requestId = (event.payload as { id: string }).id;
+    }
+  });
+
+  await port.start({ sessionId: "port-cancel", cwd: repoRoot });
+  const running = port.prompt([{ type: "text", text: "please run" }]);
+  await waitFor(() => requestId.length > 0);
+
+  check("the permission was surfaced as an approval event", requestId.length > 0, requestId);
+  const beforeCancel = await readLog();
+  check(
+    "no answer was sent before the user acted",
+    !beforeCancel.some(
+      (entry) => entry.kind === "client-response" && entry.method === "session/request_permission",
+    ),
+    JSON.stringify(beforeCancel),
+  );
+
+  await adapter.cancel();
+  const reason = await running;
+  const frames = await readLog();
+  const answeredAt = frames.findIndex(
+    (entry) =>
+      entry.kind === "client-response" &&
+      entry.method === "session/request_permission" &&
+      entry.result?.outcome?.outcome === "cancelled",
+  );
+  const cancelAt = frames.findIndex((entry) => entry.kind === "cancel");
+  check("the pending permission is answered cancelled", answeredAt >= 0, JSON.stringify(frames));
+  check(
+    "the cancelled answer precedes session/cancel",
+    answeredAt >= 0 && cancelAt >= 0 && answeredAt < cancelAt,
+    JSON.stringify(frames),
+  );
+  check("the turn returns the agent's stop reason", reason === "cancelled", String(reason));
+  check("the turn did not add an error row", !events.some((event) => event.type === "error"));
+
+  await adapter.cancel();
+  check("repeated cancel is safe", !events.some((event) => event.type === "error"));
+  await port.close();
+  await cleanup();
+}
+
+section("respondPermission: verbatim JSON-RPC echo, no local decision");
+{
+  const { adapter, port, readLog, cleanup } = await portScenario("respond-passthrough");
+  let requestId = "";
+  adapter.subscribe((event) => {
+    if (event.type === "approval") requestId = (event.payload as { id: string }).id;
+  });
+
+  await port.start({ sessionId: "port-echo", cwd: repoRoot });
+  const running = port.prompt([{ type: "text", text: "ask me" }]);
+  await waitFor(() => requestId.length > 0);
+
+  const before = await readLog();
+  check(
+    "nothing is answered automatically",
+    !before.some(
+      (entry) => entry.kind === "client-response" && entry.method === "session/request_permission",
+    ),
+    JSON.stringify(before),
+  );
+
+  const answer: PermissionAnswer = { outcome: "selected", optionId: "do-it" };
+  await port.respondPermission(requestId, answer);
+  const reason = await running;
+  const frames = await readLog();
+  const response = frames.find(
+    (entry) =>
+      entry.kind === "client-response" && entry.method === "session/request_permission",
+  );
+  check(
+    "the selected option id is echoed verbatim",
+    response?.result?.outcome?.outcome === "selected" &&
+      response?.result?.outcome?.optionId === "do-it",
+    JSON.stringify(response),
+  );
+  check(
+    "no other option was sent",
+    !frames.some(
+      (entry) =>
+        entry.kind === "client-response" &&
+        entry.method === "session/request_permission" &&
+        entry.result?.outcome?.optionId !== "do-it",
+    ),
+  );
+  check("the turn ends after the answer", reason === "end_turn", String(reason));
+
+  await port.close();
+  await cleanup();
+}
+
+section("decoupling: no product branch, no Pi SDK, no local capability scan");
+{
+  const dir = path.join(repoRoot, "apps", "server", "src", "agents", "acp");
+  const owned = [
+    "AcpAdapter.ts",
+    "AcpSession.ts",
+    "AcpPermissionBridge.ts",
+    "AcpAuth.ts",
+    "AcpConfigOptions.ts",
+  ];
+  for (const name of owned) {
+    const text = await fs.readFile(path.join(dir, name), "utf8");
+    check(`${name} does not import a product SDK`, !/from\s+["']@earendil-works/.test(text));
+    check(
+      `${name} does not branch on a product name`,
+      !/(case|===|!==)\s*["'](pi|codex|dsh)["']/i.test(text),
+    );
+    check(`${name} does not run the local capability scan`, !/discoverCapabilities/.test(text));
+  }
 }
 
 finish("acp");

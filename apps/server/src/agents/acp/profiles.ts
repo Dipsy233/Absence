@@ -28,10 +28,12 @@ export interface AgentProfile {
    */
   note?: string;
   /**
-   * Ask Absence's shared, cross-runtime discovery for the skills/MCP panel.
-   * ACP itself carries no catalog request, so this is opt-in: a profile that
-   * does not set it gets no panel rather than a list of another runtime's
-   * servers. It is a data policy, not a product branch.
+   * Ask Absence's shared, cross-runtime file scan for the skills/MCP panel.
+   * ACP carries no catalog request, so this is explicit opt-in and defaults
+   * off: a profile that does not set it gets no panel rather than a list of
+   * another runtime's servers. It is a data policy, not a product branch.
+   * No built-in profile sets it (the scan is a residual, moved out of the ACP
+   * client layer).
    */
   discoverCapabilities?: boolean;
 }
@@ -63,9 +65,6 @@ export function builtinProfiles(): AgentProfile[] {
           ...(config.dshModel ? { DSH_MODEL: config.dshModel } : {}),
         },
       },
-      // DSH has no ACP catalog request; its skills and MCP servers are read by
-      // the shared discovery scan, exactly as the pre-ACP adapter did.
-      discoverCapabilities: true,
     },
     {
       id: "claude-code",
