@@ -83,6 +83,14 @@ export interface AcpToolFacts {
   /** ACP's `content` (text blocks, `{type:"diff"}`, `{type:"terminal"}`, …). */
   content?: unknown;
   rawOutput?: unknown;
+  /**
+   * Output accumulated from every `tool_call_update` of this call, in order.
+   * The protocol streams output as chunks and only the final update may carry
+   * the whole thing (`rawOutput.aggregatedOutput`); this is the fallback when
+   * it does not. Capped by the projector, which sets `outputTruncated`.
+   */
+  accumulatedOutput?: string;
+  outputTruncated?: boolean;
   /** The update-level `_meta` (ACP's extension bag), e.g. `terminal_exit`. */
   meta?: unknown;
   /** The client answered the permission request with a reject option. */

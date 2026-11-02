@@ -60,6 +60,10 @@ interface CallRecord {
   windowOpened: boolean;
   windowId?: number;
   lastUpdateAt?: number;
+  /** Output chunks seen so far, in protocol order. */
+  output: string;
+  /** The cap was hit; the final event must say the tail is missing. */
+  outputTruncated: boolean;
 }
 
 export class AcpMonitorProjector {
@@ -137,6 +141,7 @@ export class AcpMonitorProjector {
   private async toolCall(update: any): Promise<MonitorEvent[]> {
     const record = this.upsert(update);
     if (!record || record.ended) return [];
+    this.collectOutput(record, update);
     const events: MonitorEvent[] = [];
     if (!record.started) {
       events.push(this.start(record));
@@ -149,6 +154,7 @@ export class AcpMonitorProjector {
   private async toolCallUpdate(update: any): Promise<MonitorEvent[]> {
     const record = this.upsert(update);
     if (!record || record.ended) return [];
+    this.collectOutput(record, update);
     const events: MonitorEvent[] = [];
     if (!record.started) {
       // ACP should send tool_call before updates. If an adapter skips it, the
@@ -230,6 +236,8 @@ export class AcpMonitorProjector {
       startFidelity: update.sessionUpdate === "tool_call" ? "exact" : "reported",
       ended: false,
       windowOpened: false,
+      output: "",
+      outputTruncated: false,
     };
     this.calls.set(toolCallId, record);
     this.openWindow(record);
@@ -254,6 +262,10 @@ export class AcpMonitorProjector {
     if (record.ended) return [];
     record.ended = true;
     record.facts = factsOf(update, record.facts);
+    // The final update usually carries no per-chunk text at all; the mapper
+    // needs everything this call streamed to avoid keeping only its last chunk.
+    if (record.output.length > 0) record.facts.accumulatedOutput = record.output;
+    if (record.outputTruncated) record.facts.outputTruncated = true;
     this.closeWindow(record);
 
     const events: MonitorEvent[] = [
@@ -290,6 +302,31 @@ export class AcpMonitorProjector {
     this.options.commandWindow?.end(windowId);
   }
 
+  /**
+   * Fold one `tool_call_update` chunk into the call's accumulated output.
+   *
+   * ACP streams output as chunks; a later update usually carries only the next
+   * chunk, but some adapters resend the value *so far*. A chunk that starts
+   * with what we already have is treated as that cumulative snapshot and
+   * replaces it, never appended twice. Output is capped so a pathological
+   * stream cannot exhaust memory; the final event then says it was truncated
+   * instead of quietly presenting half a result as the whole one.
+   */
+  private collectOutput(record: CallRecord, update: any): void {
+    const chunk = textOfToolContent(update.content);
+    if (chunk.length === 0) return;
+    const current = record.output;
+    if (chunk.length <= current.length && chunk === current) return; // same snapshot
+    const next =
+      chunk.length > current.length && chunk.startsWith(current) ? chunk : current + chunk;
+    if (next.length <= MAX_ACCUMULATED_OUTPUT) {
+      record.output = next;
+      return;
+    }
+    record.output = next.slice(0, MAX_ACCUMULATED_OUTPUT);
+    record.outputTruncated = true;
+  }
+
   private wrapMapped(record: MappedEventRecord): MonitorEvent {
     return this.wrap(
       record.event.type as AbsenceEventType,
@@ -322,6 +359,13 @@ export class AcpMonitorProjector {
 }
 
 const TOOL_UPDATE_MS = 150;
+
+/**
+ * Upper bound on one call's accumulated output (2 MB of text). A tool that
+ * would exceed it is reported as truncated rather than allowed to grow the
+ * session's memory without bound.
+ */
+const MAX_ACCUMULATED_OUTPUT = 2_000_000;
 
 function isTerminal(status: unknown): boolean {
   return status === "completed" || status === "failed";

@@ -109,16 +109,19 @@ export class AcpToolMapper {
         const reportedCode = denied ? undefined : reportedExitCode(facts);
         const exitCode = denied ? 1 : reportedCode ?? (failed ? 1 : 0);
         const terminalId = terminalIdOf(facts.content);
+        // The final output, in protocol priority order: the agent's aggregated
+        // copy, then its explicit stdout/stderr, then every chunk this call
+        // streamed. A failed call's text usually is the error the command
+        // wrote, so it stays on stderr.
+        const output = commandOutput(facts, failed);
         const event: MappedEvent = {
           type: "command",
           payload: {
             command: resolved.command ?? "",
-            // A failed call's text is usually the error the command wrote; a
-            // successful one's is its output. Keeping them apart is what lets
-            // the Report say "this failed" from the event alone.
-            stdout: failed ? "" : content,
-            stderr: failed ? content : "",
+            stdout: output.stdout,
+            stderr: output.stderr,
             exitCode,
+            ...(output.truncated ? { truncated: true as const } : {}),
             // ACP only carries completed/failed; the real code has to come
             // from `rawOutput` or the agent's `_meta.terminal_exit`. When it is
             // absent the numeric fallback is a status inference, and the event
@@ -311,6 +314,48 @@ function inferred(event: MappedEvent): MappedEventRecord {
 
 function exact(event: MappedEvent): MappedEventRecord {
   return { event, source: "acp", fidelity: "exact" };
+}
+
+/**
+ * The command's final output, in the order ACP can supply it:
+ *
+ *   1. `rawOutput.aggregatedOutput` — the agent's own complete copy
+ *   2. `rawOutput.stdout` + `rawOutput.stderr` — explicit channels
+ *   3. every chunk streamed through `tool_call_update.content`
+ *
+ * A failed call's text belongs on stderr, as before; an explicit channel pair
+ * is kept exactly where the agent put it.
+ */
+function commandOutput(
+  facts: AcpToolFacts,
+  failed: boolean,
+): { stdout: string; stderr: string; truncated: boolean } {
+  const raw = facts.rawOutput;
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    const record = raw as Record<string, unknown>;
+    if (typeof record["aggregatedOutput"] === "string") {
+      const text = record["aggregatedOutput"];
+      return failed
+        ? { stdout: "", stderr: text, truncated: facts.outputTruncated === true }
+        : { stdout: text, stderr: "", truncated: facts.outputTruncated === true };
+    }
+    const stdout = typeof record["stdout"] === "string" ? record["stdout"] : undefined;
+    const stderr = typeof record["stderr"] === "string" ? record["stderr"] : undefined;
+    if (stdout !== undefined || stderr !== undefined) {
+      return {
+        stdout: stdout ?? "",
+        stderr: stderr ?? "",
+        truncated: facts.outputTruncated === true,
+      };
+    }
+  }
+  const text =
+    facts.accumulatedOutput && facts.accumulatedOutput.length > 0
+      ? facts.accumulatedOutput
+      : textOfToolContent(facts.content) || textOfToolContent(facts.rawOutput);
+  return failed
+    ? { stdout: "", stderr: text, truncated: facts.outputTruncated === true }
+    : { stdout: text, stderr: "", truncated: facts.outputTruncated === true };
 }
 
 /**

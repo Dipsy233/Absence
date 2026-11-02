@@ -126,6 +126,11 @@ export interface CommandPayload {
    */
   terminalId?: string;
   /**
+   * The output hit Absence's accumulation cap and the tail is missing. The
+   * event is still the real prefix, not a complete result.
+   */
+  truncated?: true;
+  /**
    * The user denied the permission request: the command was never executed.
    * `exitCode`/`exitCodeKnown` are kept for protocol compatibility, but the UI
    * must not present this as a real exit status, and execution counters skip it.

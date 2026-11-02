@@ -467,6 +467,83 @@ async function main(): Promise<void> {
       terminalOnlyCommand?.event.type === "command" ? JSON.stringify(terminalOnlyCommand.event.payload) : "no command",
     );
 
+    const aggregated = await mapper.mapCompletedDetailed({
+      toolCallId: "c-agg",
+      name: "Run",
+      kind: "execute",
+      status: "completed",
+      rawInput: { command: "echo hi" },
+      content: [{ type: "content", content: { type: "text", text: "last-chunk" } }],
+      accumulatedOutput: "first-chunklast-chunk",
+      rawOutput: { aggregatedOutput: "FULL-OUTPUT", exitCode: 0 },
+    });
+    const aggregatedCommand = firstOf(aggregated, "command");
+    check(
+      "rawOutput.aggregatedOutput wins over the last streamed chunk",
+      aggregatedCommand?.event.type === "command" &&
+        aggregatedCommand.event.payload.stdout === "FULL-OUTPUT" &&
+        aggregatedCommand.event.payload.stdout !== "last-chunk",
+      aggregatedCommand?.event.type === "command"
+        ? JSON.stringify(aggregatedCommand.event.payload.stdout)
+        : "no command",
+    );
+    const channels = await mapper.mapCompletedDetailed({
+      toolCallId: "c-channels",
+      name: "Run",
+      kind: "execute",
+      status: "completed",
+      rawInput: { command: "emit both" },
+      rawOutput: { stdout: "out\n", stderr: "err\n", exitCode: 0 },
+    });
+    const channelsCommand = firstOf(channels, "command");
+    check(
+      "rawOutput.stdout and rawOutput.stderr stay on their own channels",
+      channelsCommand?.event.type === "command" &&
+        channelsCommand.event.payload.stdout === "out\n" &&
+        channelsCommand.event.payload.stderr === "err\n",
+      channelsCommand?.event.type === "command"
+        ? JSON.stringify(channelsCommand.event.payload)
+        : "no command",
+    );
+
+    const accumulated = await mapper.mapCompletedDetailed({
+      toolCallId: "c-acc",
+      name: "Run",
+      kind: "execute",
+      status: "completed",
+      rawInput: { command: "stream only" },
+      content: [{ type: "content", content: { type: "text", text: "last-chunk" } }],
+      accumulatedOutput: "first-chunklast-chunk",
+    });
+    const accumulatedCommand = firstOf(accumulated, "command");
+    check(
+      "without a final aggregate the accumulated chunks are the output",
+      accumulatedCommand?.event.type === "command" &&
+        accumulatedCommand.event.payload.stdout === "first-chunklast-chunk",
+      accumulatedCommand?.event.type === "command"
+        ? JSON.stringify(accumulatedCommand.event.payload.stdout)
+        : "no command",
+    );
+
+    const truncated = await mapper.mapCompletedDetailed({
+      toolCallId: "c-trunc",
+      name: "Run",
+      kind: "execute",
+      status: "completed",
+      rawInput: { command: "too much output" },
+      accumulatedOutput: "x".repeat(10),
+      outputTruncated: true,
+    });
+    const truncatedCommand = firstOf(truncated, "command");
+    check(
+      "a capped stream marks the command as truncated",
+      truncatedCommand?.event.type === "command" &&
+        truncatedCommand.event.payload.truncated === true,
+      truncatedCommand?.event.type === "command"
+        ? JSON.stringify(truncatedCommand.event.payload)
+        : "no command",
+    );
+
     const denied = await mapper.mapCompletedDetailed({
       toolCallId: "c3",
       name: "Run",
@@ -710,6 +787,110 @@ async function main(): Promise<void> {
     );
 
     projector.dispose();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+
+  section("AcpMonitorProjector: streamed output accumulates across updates");
+  {
+    const dir = await tempDir();
+    const projector = new AcpMonitorProjector({
+      sessionId: "s5",
+      cwd: dir,
+      now: () => 1,
+    });
+
+    await projector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "stream",
+        title: "Print a long report",
+        kind: "execute",
+        status: "in_progress",
+        rawInput: { command: "node big-report.js" },
+      },
+    });
+    const chunks: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      const chunk = `chunk-${String(i).padStart(2, "0")}-` + "x".repeat(8000);
+      chunks.push(chunk);
+      await projector.project("session/update", {
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "stream",
+          status: "in_progress",
+          content: [{ type: "content", content: { type: "text", text: chunk } }],
+        },
+      });
+    }
+    const full = chunks.join("");
+
+    const done = await projector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "stream",
+        status: "completed",
+        rawOutput: { aggregatedOutput: full, exitCode: 0 },
+      },
+    });
+    const command = firstOf(done, "command");
+    check(
+      "the final event carries the whole stream, not just the last chunk",
+      command?.event.type === "command" && command.event.payload.stdout === full,
+      command?.event.type === "command"
+        ? `${command.event.payload.stdout.length} chars`
+        : "no command",
+    );
+    check(
+      "the last-chunk regression is gone (> 8 KB)",
+      command?.event.type === "command" && command.event.payload.stdout.length > 8_000,
+      command?.event.type === "command" ? `${command.event.payload.stdout.length}` : "no command",
+    );
+
+    const cumulativeProjector = new AcpMonitorProjector({
+      sessionId: "s6",
+      cwd: dir,
+      now: () => 1,
+    });
+    await cumulativeProjector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "cum",
+        title: "Cumulative",
+        kind: "execute",
+        status: "in_progress",
+        rawInput: { command: "echo abc" },
+      },
+    });
+    for (const text of ["a", "ab", "abc"]) {
+      await cumulativeProjector.project("session/update", {
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "cum",
+          status: "in_progress",
+          content: [{ type: "content", content: { type: "text", text } }],
+        },
+      });
+    }
+    const cumulativeDone = await cumulativeProjector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "cum",
+        status: "completed",
+        rawOutput: { exitCode: 0 },
+      },
+    });
+    const cumulativeCommand = firstOf(cumulativeDone, "command");
+    check(
+      "a cumulative chunk replaces the prefix instead of repeating it",
+      cumulativeCommand?.event.type === "command" &&
+        cumulativeCommand.event.payload.stdout === "abc",
+      cumulativeCommand?.event.type === "command"
+        ? JSON.stringify(cumulativeCommand.event.payload.stdout)
+        : "no command",
+    );
+
+    projector.dispose();
+    cumulativeProjector.dispose();
     await fs.rm(dir, { recursive: true, force: true });
   }
 
