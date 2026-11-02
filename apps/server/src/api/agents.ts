@@ -7,6 +7,7 @@ import {
   launchLine,
   npxAllowed,
   removeCustomAgent,
+  reservedAgentIds,
   resolveCommand,
   updateCustomAgent,
   type CustomAgent,
@@ -27,6 +28,8 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     return {
       file,
       allowNpx: npxAllowed(file),
+      /** Ids the form may not reuse, so collision is caught before a round-trip. */
+      reservedIds: reservedAgentIds(),
       agents: customAgents(file).map(describe),
     };
   });

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { getProfile, setNpxAllowed } from "../agents/acp/AgentCatalog";
-import { runtimeStatuses, setRuntimePaths } from "../runtimes/config";
+import { getProfile, listProfiles, pickerRows, setNpxAllowed } from "../agents/acp/AgentCatalog";
+import { setRuntimePaths } from "../runtimes/config";
 import { sessionStore } from "../sessions/SessionStore";
 import { agentRoutes } from "./agents";
 
@@ -19,9 +19,14 @@ export async function runtimeRoutes(app: FastifyInstance): Promise<void> {
   // server entry point untouched.
   await app.register(agentRoutes);
 
-  /** Every runtime and whether it is startable, plus its launch line. */
+  /**
+   * Every agent discovered on this machine, in the picker's row shape.
+   * `unavailable` entries are deliberately absent: the probe view never lists
+   * something that is not installed. A fresh request re-runs discovery, so the
+   * UI's "重新探测" button needs no restart.
+   */
   app.get("/api/runtimes", async () => {
-    return { runtimes: runtimeStatuses(liveSessionModels()) };
+    return { runtimes: pickerRows(listProfiles(), liveSessionModels()) };
   });
 
   /**
@@ -57,7 +62,7 @@ export async function runtimeRoutes(app: FastifyInstance): Promise<void> {
     }
     try {
       if (Object.keys(launch).length > 0) setRuntimePaths({ launch });
-      return { ok: true, runtimes: runtimeStatuses(liveSessionModels()) };
+      return { ok: true, runtimes: pickerRows(listProfiles(), liveSessionModels()) };
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
     }
