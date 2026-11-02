@@ -139,6 +139,54 @@ async function main(): Promise<void> {
     });
     check("no kind + a path is read", readByPath.kind === "read" && readByPath.rule === "read-with-path");
 
+    const argv = resolveTool({
+      toolCallId: "k-argv",
+      name: "echo hi",
+      kind: "execute",
+      rawInput: {
+        call_id: "call_0_0",
+        command: ["C:\\Program Files\\PowerShell\\7\\pwsh.exe", "-Command", "echo hi"],
+        cwd: "E:\\work",
+      },
+    });
+    check(
+      "an argv command array is recovered as a display command",
+      argv.kind === "execute" &&
+        argv.command !== undefined &&
+        argv.command.includes("echo hi") &&
+        argv.command.indexOf("pwsh.exe") < argv.command.indexOf("-Command"),
+      JSON.stringify(argv),
+    );
+    check(
+      "the argv's argument order is preserved",
+      argv.command === '"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "echo hi"',
+      argv.command,
+    );
+
+    const nullInput = resolveTool({
+      toolCallId: "k-null",
+      name: "Run",
+      kind: "execute",
+      rawInput: null,
+    });
+    check(
+      "rawInput null is handled without inventing a command",
+      nullInput.kind === "execute" && nullInput.command === undefined,
+      JSON.stringify(nullInput),
+    );
+
+    const emptyArgv = resolveTool({
+      toolCallId: "k-empty-argv",
+      name: "Run",
+      kind: "execute",
+      rawInput: { command: [] },
+    });
+    check(
+      "an empty argv is an empty value, not a fabricated command",
+      emptyArgv.kind === "execute" && emptyArgv.command === undefined,
+      JSON.stringify(emptyArgv),
+    );
+
     const mcp = resolveTool({
       toolCallId: "k11",
       name: "mcp__filesystem__read_file",
@@ -472,7 +520,7 @@ async function main(): Promise<void> {
       name: "Run",
       kind: "execute",
       status: "completed",
-      rawInput: { command: "echo hi" },
+      rawInput: { command: ["pwsh.exe", "-Command", "echo hi"] },
       content: [{ type: "content", content: { type: "text", text: "last-chunk" } }],
       accumulatedOutput: "first-chunklast-chunk",
       rawOutput: { aggregatedOutput: "FULL-OUTPUT", exitCode: 0 },
@@ -487,6 +535,15 @@ async function main(): Promise<void> {
         ? JSON.stringify(aggregatedCommand.event.payload.stdout)
         : "no command",
     );
+    check(
+      "the argv command array reaches the command payload",
+      aggregatedCommand?.event.type === "command" &&
+        aggregatedCommand.event.payload.command.includes("echo hi"),
+      aggregatedCommand?.event.type === "command"
+        ? aggregatedCommand.event.payload.command
+        : "no command",
+    );
+
     const channels = await mapper.mapCompletedDetailed({
       toolCallId: "c-channels",
       name: "Run",

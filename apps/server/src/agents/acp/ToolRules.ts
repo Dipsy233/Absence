@@ -144,6 +144,14 @@ export function resolveTool(facts: AcpToolFacts): ResolvedTool {
       // Range fields (`offset` / `limit`) are usually numbers; a present
       // number still proves the shape a rule is looking for.
       if (typeof value === "number" && Number.isFinite(value)) return String(value);
+      // Some adapters send argv arrays (`["pwsh.exe","-Command","echo hi"]`).
+      // Preserve the argument order and join them as a display command.
+      if (Array.isArray(value)) {
+        const parts = value.filter((part): part is string => typeof part === "string");
+        if (parts.length === value.length && parts.length > 0 && parts.some((part) => part.trim())) {
+          return joinCommandArray(parts);
+        }
+      }
     }
     return undefined;
   };
@@ -232,6 +240,17 @@ export function mcpParts(name: string): { server: string; tool: string } | undef
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Render an argv array as one display command, keeping the exact argument
+ * order. This is presentation only: the original array stays in the event's
+ * `tool_start.args` untouched.
+ */
+function joinCommandArray(parts: readonly string[]): string {
+  return parts
+    .map((part) => (/[\s"]/.test(part) ? `"${part.replace(/"/g, '\\"')}"` : part))
+    .join(" ");
 }
 
 /** Extract text from an ACP content block. */
