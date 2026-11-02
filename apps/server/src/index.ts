@@ -15,7 +15,7 @@ import { acpProxyRoutes } from "./api/acpProxy";
 import { proxySessions } from "./agents/acp/proxy";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
-import { closeArchive } from "./sessions/archive";
+import { closeArchive, expireArchives } from "./sessions/archive";
 import { drainMetrics, expireMetrics } from "./sessions/storage/metrics";
 
 export interface StartServerOptions {
@@ -133,16 +133,30 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   const expireTimer = setInterval(expire, 24 * 60 * 60_000);
   expireTimer.unref?.();
 
+  // Archived-session retention is opt-in (both settings default to 0 = keep
+  // everything); when an operator sets it, whole archives are removed on the
+  // same once-at-startup, then-daily cadence as the metric expiry.
+  const expireSessions = () => {
+    void expireArchives({
+      retentionDays: config.sessionRetentionDays,
+      maxSessions: config.maxArchivedSessions,
+    });
+  };
+  expireSessions();
+  const expireSessionsTimer = setInterval(expireSessions, 24 * 60 * 60_000);
+  expireSessionsTimer.unref?.();
+
   app.log.info(`ABSENCE server listening on ${url} (agent=${config.defaultAgent})`);
   app.log.info(`projects root: ${config.projectsRoot}`);
 
-  return {
-    app,
-    port: actualPort,
-    host,
-    url,
-    close: async () => {
-      clearInterval(expireTimer);
+    return {
+      app,
+      port: actualPort,
+      host,
+      url,
+      close: async () => {
+        clearInterval(expireTimer);
+        clearInterval(expireSessionsTimer);
       // Proxy sessions own child processes; none should outlive the server.
       proxySessions.closeAll("server closing");
       await app.close();

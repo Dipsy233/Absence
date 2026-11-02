@@ -6,6 +6,7 @@ import type {
   TerminalServerMessage,
 } from "@absence/core";
 import { sessionStore } from "../sessions/SessionStore";
+import { readEventsPageForward } from "../sessions/archive";
 
 /** Minimal shape of the ws socket we use — avoids depending on ws types. */
 interface ClientSocket {
@@ -16,6 +17,14 @@ interface ClientSocket {
 }
 
 const OPEN = 1;
+
+/** A query-string positive integer, or undefined when absent/invalid. */
+function parsePositiveInt(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^\d+$/.test(value)) return undefined;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n > 0 ? n : undefined;
+}
 
 /**
  * Event batching window. A run can emit many events per second (process
@@ -40,6 +49,13 @@ function send(socket: ClientSocket, message: SessionServerMessage | TerminalServ
  *
  * On connect we replay the current snapshot, then stream AbsenceEvents and
  * session-state updates.
+ *
+ * `?since=<seq>` turns the snapshot into a catch-up: the client sends the seq
+ * of the last event it persisted (`event.seq` on every archive-read event) and
+ * receives the state plus only the events after it, instead of re-downloading
+ * up to 2000 events on every reconnect. If more than one catch-up page exists,
+ * `state.events` stops at the page boundary and the rest is fetched from
+ * GET /api/sessions/:id/events?after=<seq> before going back to live frames.
  */
 export async function wsRoutes(app: FastifyInstance): Promise<void> {
   app.get("/ws/sessions/:id", { websocket: true }, async (socket, request) => {
@@ -52,7 +68,20 @@ export async function wsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const client = socket as unknown as ClientSocket;
-    send(client, { type: "snapshot", state: await session.snapshot() });
+    const since = parsePositiveInt(
+      (request.query as { since?: string } | undefined)?.since,
+    );
+    if (since !== undefined) {
+      // Reads flush the pending buffer first, so the page is current at the
+      // moment the socket switches to live frames — nothing is lost between
+      // the catch-up page and the subscription below.
+      const state = await session.snapshot();
+      const page = await readEventsPageForward(id, { after: since, limit: 2000 });
+      state.events = page.events;
+      send(client, { type: "snapshot", state });
+    } else {
+      send(client, { type: "snapshot", state: await session.snapshot() });
+    }
 
     // Buffer events for this client only: a slow reader loses its own frames,
     // never another client's. The batch is flushed on a timer, on size, and on

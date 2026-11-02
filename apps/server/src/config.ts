@@ -54,6 +54,20 @@ export interface AbsenceConfig {
    */
   metricsRetentionDays: number;
   /**
+   * How many days of archived sessions to keep (by last update). Whole
+   * archives — events, runs, file versions, metrics — older than this are
+   * deleted once a day, next to the metric expiry. 0 (the default) keeps
+   * every session: deleting user data is never a default, so this is opt-in
+   * via ABSENCE_SESSION_RETENTION_DAYS.
+   */
+  sessionRetentionDays: number;
+  /**
+   * How many archived sessions to keep at most, newest by last update. Like
+   * the day-based retention this is opt-in (ABSENCE_MAX_ARCHIVED_SESSIONS)
+   * and 0 (the default) keeps everything.
+   */
+  maxArchivedSessions: number;
+  /**
    * Watch Docker containers through the daemon's own event stream (see
    * process/DockerMonitor.ts). A container's processes live inside the
    * daemon's VM, where neither the Job Object nor eBPF can reach, so its
@@ -105,6 +119,12 @@ export const config: AbsenceConfig = {
   metricsRetentionDays: Number.isFinite(Number(process.env.ABSENCE_METRICS_RETENTION_DAYS))
     ? Math.max(0, Math.floor(Number(process.env.ABSENCE_METRICS_RETENTION_DAYS)))
     : 30,
+  sessionRetentionDays: Number.isFinite(Number(process.env.ABSENCE_SESSION_RETENTION_DAYS))
+    ? Math.max(0, Math.floor(Number(process.env.ABSENCE_SESSION_RETENTION_DAYS)))
+    : 0,
+  maxArchivedSessions: Number.isFinite(Number(process.env.ABSENCE_MAX_ARCHIVED_SESSIONS))
+    ? Math.max(0, Math.floor(Number(process.env.ABSENCE_MAX_ARCHIVED_SESSIONS)))
+    : 0,
   dockerEnabled: envFlag(process.env.ABSENCE_DOCKER, true),
   dockerBin: process.env.ABSENCE_DOCKER_BIN,
   // Built UI lives at the repo root under dist/web (see apps/web/vite.config.ts

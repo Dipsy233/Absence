@@ -5,11 +5,17 @@ import type { SessionHistoryEntry } from "@absence/core";
 import type { AgentKind } from "../config";
 import { config } from "../config";
 import {
+  deleteArchive,
   listArchives,
+  queryArchives,
   readEventsPage,
+  readEventsPageForward,
+  readFileVersionContent,
   readFileVersions,
+  readFileVersionSummaries,
   readMeta,
   readRunEvents,
+  readRunEventsPage,
   readRuns,
 } from "../sessions/archive";
 import { sessionStore, RuntimeUnavailableError } from "../sessions/SessionStore";
@@ -44,15 +50,69 @@ function parsePositiveInt(value: string | undefined): number | undefined {
   return Number.isSafeInteger(n) && n > 0 ? n : undefined;
 }
 
+/** A query-string non-negative integer, or undefined when absent/invalid. */
+function parseNonNegativeInt(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^\d+$/.test(value)) return undefined;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= 0 ? n : undefined;
+}
+
 /** Session lifecycle API (read.md §31–32). */
 export async function sessionRoutes(app: FastifyInstance): Promise<void> {
   /**
-   * The persisted history: ABSENCE archives merged with Pi's session files, newest
-   * first. `?path=` narrows it to one project. This is what survives a restart.
+   * The persisted history: ABSENCE archives, newest first. This is what
+   * survives a restart.
+   *
+   *   ?path=<dir>      exact project filter (kept from the original route)
+   *   ?search=<text>   substring match over name, path and first prompt
+   *   ?runtime=<id>    exact runtime filter
+   *   ?since=<ms>      updatedAt >= since
+   *   ?until=<ms>      updatedAt <= until
+   *   ?limit=<n>       page size (1..200) — turns on page mode
+   *   ?cursor=<key>    nextCursor from the previous page
+   *
+   * Without `limit`/`cursor` the response is the original entry array, so the
+   * existing client keeps working. With them it is a page object:
+   * `{ entries, nextCursor, hasMore }` — the cursor encodes the sort key and
+   * id of the last row, so paging is stable while new sessions arrive.
    */
-  app.get("/api/sessions/history", async (request) => {
-    const filter = (request.query as { path?: string } | undefined)?.path?.trim();
-    return sessionHistory(filter || undefined);
+  app.get("/api/sessions/history", async (request, reply) => {
+    const q = (request.query ?? {}) as Record<string, string | undefined>;
+    const since = parsePositiveInt(q.since);
+    if (q.since !== undefined && since === undefined) {
+      return reply.code(400).send({ error: "since must be a positive integer" });
+    }
+    const until = parsePositiveInt(q.until);
+    if (q.until !== undefined && until === undefined) {
+      return reply.code(400).send({ error: "until must be a positive integer" });
+    }
+    const limit = parsePositiveInt(q.limit);
+    if (q.limit !== undefined && limit === undefined) {
+      return reply.code(400).send({ error: "limit must be a positive integer" });
+    }
+    const pathFilter = q.path?.trim();
+    const query = {
+      ...(pathFilter ? { path: pathFilter } : {}),
+      ...(q.search?.trim() ? { search: q.search } : {}),
+      ...(q.runtime?.trim() ? { runtime: q.runtime } : {}),
+      ...(since !== undefined ? { since } : {}),
+      ...(until !== undefined ? { until } : {}),
+    };
+    const filtered = Object.keys(query).length > 0;
+
+    // Page mode: exactly what the query asked for, plus the next cursor.
+    if (limit !== undefined || q.cursor !== undefined) {
+      return queryArchives({ ...query, ...(limit !== undefined ? { limit } : {}), ...(q.cursor ? { cursor: q.cursor } : {}) });
+    }
+    // Filtered without pagination: still routed through the SQL query, capped
+    // so a runaway filter cannot serialise the whole table. Page mode is the
+    // complete answer when a client needs more.
+    if (filtered) {
+      return (await queryArchives({ ...query, limit: 200 })).entries;
+    }
+    // The original behaviour, byte for byte: every archive, newest first.
+    return sessionHistory(pathFilter || undefined);
   });
 
   app.post("/api/sessions", async (request, reply) => {
@@ -166,7 +226,37 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     return readRuns(id);
   });
 
-  /** One run's summary and events, by the 1-based index History shows. */
+  /**
+   * One run's summary only — the outline row without any event body. A client
+   * can size the run (`eventCount`) and decide how it wants to page its
+   * events before downloading any.
+   */
+  app.get("/api/sessions/:id/runs/:index", async (request, reply) => {
+    const { id, index } = request.params as { id: string; index: string };
+    const runIndex = parsePositiveInt(index);
+    if (runIndex === undefined) {
+      return reply.code(400).send({ error: "run index must be a positive integer" });
+    }
+    if (!sessionStore.get(id) && !(await readMeta("", id))) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    const run = (await readRuns(id)).find((candidate) => candidate.index === runIndex);
+    if (!run) return reply.code(404).send({ error: "run not found" });
+    return { run };
+  });
+
+  /**
+   * One run's summary and events, by the 1-based index History shows.
+   *
+   *   ?after=<seq>     forward cursor from the previous page's nextAfter
+   *   ?limit=<n>       page size (1..2000)
+   *
+   * Without them the whole run arrives at once (the original shape, kept for
+   * the current client). With them the response is
+   * `{ run, events, nextAfter, hasMore }`: each page is rendered as it
+   * arrives, so a run with tens of thousands of observed events never has to
+   * be parsed whole.
+   */
   app.get("/api/sessions/:id/runs/:index/events", async (request, reply) => {
     const { id, index } = request.params as { id: string; index: string };
     const runIndex = parsePositiveInt(index);
@@ -178,6 +268,20 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     }
     const run = (await readRuns(id)).find((candidate) => candidate.index === runIndex);
     if (!run) return reply.code(404).send({ error: "run not found" });
+
+    const query = (request.query ?? {}) as { after?: string; limit?: string };
+    const after = parsePositiveInt(query.after);
+    if (query.after !== undefined && after === undefined) {
+      return reply.code(400).send({ error: "after must be a positive integer" });
+    }
+    const limit = parsePositiveInt(query.limit);
+    if (query.limit !== undefined && limit === undefined) {
+      return reply.code(400).send({ error: "limit must be a positive integer" });
+    }
+    if (after !== undefined || limit !== undefined) {
+      const page = await readRunEventsPage(id, run.fromSeq, run.toSeq, { after, limit });
+      return { run, ...page };
+    }
     return { run, events: await readRunEvents(id, run.fromSeq, run.toSeq) };
   });
 
@@ -186,17 +290,27 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
    *
    *   ?limit=500          page size (1..2000)
    *   ?before=<seq>       exclusive cursor from the previous page's nextBefore
+   *   ?after=<seq>        exclusive forward cursor (catch-up direction);
+   *                       mutually exclusive with `before`
    *
-   * Returns `{ events, nextBefore, hasMore }`, with events chronological inside
-   * the page. A live session and an archived one are served the same way; the
-   * database is the source of history either way.
+   * Returns `{ events, nextBefore, hasMore }` paging backwards, or
+   * `{ events, nextAfter, hasMore }` paging forwards, with events
+   * chronological inside the page. A live session and an archived one are
+   * served the same way; the database is the source of history either way.
    */
   app.get("/api/sessions/:id/events", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const query = (request.query ?? {}) as { before?: string; limit?: string };
+    const query = (request.query ?? {}) as { before?: string; after?: string; limit?: string };
     const before = parsePositiveInt(query.before);
     if (query.before !== undefined && before === undefined) {
       return reply.code(400).send({ error: "before must be a positive integer" });
+    }
+    const after = parsePositiveInt(query.after);
+    if (query.after !== undefined && after === undefined) {
+      return reply.code(400).send({ error: "after must be a positive integer" });
+    }
+    if (before !== undefined && after !== undefined) {
+      return reply.code(400).send({ error: "before and after are mutually exclusive" });
     }
     const limit = parsePositiveInt(query.limit);
     if (query.limit !== undefined && limit === undefined) {
@@ -207,7 +321,48 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     if (!sessionStore.get(id) && !(await readMeta("", id))) {
       return reply.code(404).send({ error: "session not found" });
     }
+    if (after !== undefined) {
+      return readEventsPageForward(id, { after, limit });
+    }
     return readEventsPage(id, { before, limit });
+  });
+
+  /**
+   * The file-version outline: every version, without full contents. Each row
+   * carries its size and a short preview; the text itself is fetched per
+   * version from /file-versions/content. This is what an outline or a large
+   * listing should read — /file-versions stays for the current client, which
+   * wants the text inline.
+   */
+  app.get("/api/sessions/:id/file-versions/index", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!sessionStore.get(id) && !(await readMeta("", id))) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    return readFileVersionSummaries(id);
+  });
+
+  /**
+   * One file version's full content, by its exact (path, version) key. This is
+   * the read side of payload previews: an event row stores the head of a
+   * value; this returns the whole thing the FileIndex materialised from the
+   * same event.
+   */
+  app.get("/api/sessions/:id/file-versions/content", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const query = (request.query ?? {}) as { path?: string; version?: string };
+    const filePath = query.path?.trim();
+    // Version 0 is legitimate: it is the accumulated read-version before the
+    // first write, so this key is non-negative, not positive.
+    const version = parseNonNegativeInt(query.version);
+    if (!filePath) return reply.code(400).send({ error: "path is required" });
+    if (version === undefined) return reply.code(400).send({ error: "version is required" });
+    if (!sessionStore.get(id) && !(await readMeta("", id))) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    const info = await readFileVersionContent(id, filePath, version);
+    if (!info) return reply.code(404).send({ error: "file version not found" });
+    return info;
   });
 
   /**
@@ -332,6 +487,31 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     if (!sessionStore.get(id)) return reply.code(404).send({ error: "session not found" });
     await sessionStore.remove(id);
+    return { ok: true };
+  });
+
+  /**
+   * Delete one archived session's persisted state — events, runs, file
+   * versions, metrics and the header row. This is the only way history ever
+   * shrinks; without it the archive grows unbounded on a machine that watches
+   * agents every day.
+   *
+   * A live session must be closed first (`POST /close`): while it is open the
+   * next event flush would silently recreate the rows, and the caller would
+   * believe a deletion happened that did not stick.
+   */
+  app.delete("/api/sessions/:id/archive", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (sessionStore.get(id)) {
+      return reply.code(409).send({ error: "session is open; close it before deleting its archive" });
+    }
+    let deleted: boolean;
+    try {
+      deleted = await deleteArchive(id);
+    } catch (error) {
+      return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+    if (!deleted) return reply.code(404).send({ error: "archive not found" });
     return { ok: true };
   });
 }
