@@ -27,3 +27,25 @@ export interface FileVersionInfo {
   /** For a read version, the lines accumulated so far, keyed by file line. */
   knownLines?: Record<number, string>;
 }
+
+/**
+ * A file-version row without its full content, for listings that only need to
+ * show what exists (the outline of Agent Folder / File History). The full text
+ * is fetched per version from GET /api/sessions/:id/file-versions/content.
+ */
+export interface FileVersionSummary {
+  path: string;
+  version: number;
+  timestamp: number;
+  source: FileVersionSource;
+  complete: boolean;
+  lineOffset: number;
+  startLine?: number;
+  endLine?: number;
+  rangeKnown?: boolean;
+  caption?: string;
+  /** Stored content size in UTF-8 bytes. */
+  contentBytes: number;
+  /** First ~240 characters, so a list can show what the version holds. */
+  preview: string;
+}

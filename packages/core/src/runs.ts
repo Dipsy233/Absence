@@ -32,6 +32,11 @@ export interface RunSummary {
   counts: RunCounts;
   /** The run was reconstructed from a partial event set (legacy import). */
   partial?: boolean;
+  /**
+   * How many stored events the run spans (`toSeq - fromSeq + 1`), so an outline
+   * can size a run — and decide how to page it — without loading its events.
+   */
+  eventCount?: number;
 }
 
 /**

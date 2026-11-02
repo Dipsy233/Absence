@@ -350,6 +350,14 @@ export interface EventProvenance {
   at?: number;
   source?: EventSource;
   fidelity?: EventFidelity;
+  /**
+   * The event's position in the session's persisted sequence, present on
+   * events read back from the archive (paging endpoints, catch-up reads). A
+   * live frame has no seq yet — the number is assigned when the event is
+   * written — so its absence means "not persisted (yet)", never "first".
+   * This is the cursor a client sends back as `?since=` / `?after=`.
+   */
+  seq?: number;
 }
 
 /** Discriminated union of every AbsenceEvent. */
@@ -441,3 +449,24 @@ export const MAX_SESSION_EVENTS = 10_000;
  * rather than in either app.
  */
 export const EPHEMERAL_MS = 300;
+
+/**
+ * Stored event payloads keep large text fields at this many characters; the
+ * full text lives in exactly one other place (a file version's `content`) and
+ * is fetched on demand from its endpoint. One limit across the writer (which
+ * applies it) and the UI (which labels a truncated field as such) so both
+ * agree on what "preview" means.
+ */
+export const EVENT_PREVIEW_LIMIT = 1_200;
+
+/**
+ * Truncate one payload text field for storage: keep the head, mark the cut.
+ * The ellipsis is part of the stored value, so a reader needs no extra flag to
+ * know the field is a preview — though the payload also carries
+ * `previewTruncated: true` when anything was cut, for UIs that style the whole
+ * event. A field at or below the limit is returned untouched.
+ */
+export function previewText(value: string, limit: number = EVENT_PREVIEW_LIMIT): string {
+  if (value.length <= limit) return value;
+  return value.slice(0, limit) + "…";
+}

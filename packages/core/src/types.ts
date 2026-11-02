@@ -330,3 +330,47 @@ export interface SessionEventPage {
   nextBefore?: number;
   hasMore: boolean;
 }
+
+/**
+ * One forward page of persisted events, oldest → newest (GET /events?after=).
+ *
+ * `nextAfter` is the cursor for the next newer page: pass it back as `?after=`.
+ * It is absent when this page already reaches the newest event. This is the
+ * resume/catch-up direction: a client that holds `lastSeq` asks for everything
+ * after it instead of re-downloading a whole snapshot.
+ */
+export interface SessionEventForwardPage {
+  events: AbsenceEvent[];
+  nextAfter?: number;
+  hasMore: boolean;
+}
+
+/**
+ * Cursor key for GET /api/sessions/history pagination, encoding the sort key
+ * (updatedAt) and the id tie-break of the last row of the previous page.
+ */
+export type SessionHistoryCursor = string;
+
+/** One page of the persisted session history, newest first. */
+export interface SessionHistoryPage {
+  entries: SessionHistoryEntry[];
+  /** Cursor for the next older page; absent when this page is the last one. */
+  nextCursor?: SessionHistoryCursor;
+  hasMore: boolean;
+}
+
+/**
+ * Filters for the persisted session history. `search` is a substring match
+ * over project name, project path and first prompt; `runtime` is exact;
+ * `since`/`until` bound `updatedAt` inclusively.
+ */
+export interface SessionHistoryQuery {
+  /** Exact project path (the original `?path=` filter, kept for compat). */
+  path?: string;
+  search?: string;
+  runtime?: string;
+  since?: number;
+  until?: number;
+  limit?: number;
+  cursor?: SessionHistoryCursor;
+}
