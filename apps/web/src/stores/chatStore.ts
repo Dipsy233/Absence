@@ -66,6 +66,8 @@ interface ChatStore {
   clearContext: () => void;
   ingest: (event: AbsenceEvent) => void;
   ingestEvents: (events: AbsenceEvent[]) => void;
+  /** Append a locally generated system notice (never an agent message). */
+  appendSystem: (content: string) => void;
   hydrate: (snapshot: SessionSnapshot) => void;
   reset: () => void;
 }
@@ -92,6 +94,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   ingest: (event) => get().ingestEvents([event]),
+
+  appendSystem: (content) =>
+    set({
+      messages: [
+        ...get().messages,
+        {
+          id: `local-${Date.now()}`,
+          role: "system",
+          content,
+          timestamp: Date.now(),
+        },
+      ],
+    }),
 
   hydrate: (snapshot) => set({ messages: snapshot.chat, pending: [] }),
   reset: () => set({ messages: [], pending: [] }),

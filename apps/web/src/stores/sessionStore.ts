@@ -20,6 +20,26 @@ import { isStageEvent, clearsStage, lastStageAction } from "../lib/events";
 import { applyProcessEvent, sortEggs, type Egg } from "../lib/eggs";
 import { eventsBase, markEventsBase, resetEventCaches } from "../lib/history";
 import { useRunsStore } from "./runsStore";
+import { useChatStore } from "./chatStore";
+
+/**
+ * How long the UI waits for the server to confirm a stop.
+ *
+ * The server's own watchdog settles a hung turn after ~10s and emits
+ * `agent_end aborted`. This is the client-side backstop for a build/agent where
+ * that never arrives: after it, the UI is unlocked and a system notice says the
+ * stop was not confirmed.
+ */
+const STOP_CONFIRM_MS = 12_000;
+let stopToken = 0;
+let stopTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Invalidate the pending stop confirmation and cancel its timer. */
+function clearStopWatch(): void {
+  stopToken += 1;
+  if (stopTimer) clearTimeout(stopTimer);
+  stopTimer = undefined;
+}
 
 /**
  * Eggs folded incrementally from `process` events.
@@ -92,6 +112,8 @@ interface SessionStore {
    */
   source?: SessionSource;
   connected: boolean;
+  /** A stop was requested and the server has not confirmed it yet. */
+  stopping: boolean;
   error?: string;
 
   startSession: (projectPath: string, agent?: RuntimeKind) => Promise<void>;
@@ -127,6 +149,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   authRequired: undefined,
   source: undefined,
   connected: false,
+  stopping: false,
   error: undefined,
 
   startSession: async (projectPath, agent) => {
@@ -149,6 +172,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   sendPrompt: async (text) => {
     const id = get().session?.id;
     if (!id || !text.trim()) return;
+    // A new prompt supersedes any pending stop confirmation.
+    clearStopWatch();
+    if (get().stopping) set({ stopping: false });
     await api.sendPrompt(id, text);
   },
 
@@ -167,11 +193,33 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   abort: async () => {
     const id = get().session?.id;
     if (!id) return;
-    await api.abortSession(id);
+    clearStopWatch();
+    const token = stopToken;
+    set({ stopping: true });
+    stopTimer = setTimeout(() => {
+      stopTimer = undefined;
+      if (token !== stopToken || !get().stopping) return;
+      // The server never confirmed the stop. Unlock the UI locally and say so;
+      // the server-side watchdog is the normal path (see AcpSession).
+      set({ stopping: false, agent: { ...get().agent, status: "listening" } });
+      useChatStore
+        .getState()
+        .appendSystem(
+          "Stop was not acknowledged by the agent within 12s; the run was unlocked locally.",
+        );
+    }, STOP_CONFIRM_MS);
+    try {
+      await api.abortSession(id);
+    } catch (error) {
+      clearStopWatch();
+      set({ stopping: false });
+      throw error;
+    }
   },
 
   reset: () => {
     resetEventCaches();
+    clearStopWatch();
     useRunsStore.getState().clear();
     set({
       session: undefined,
@@ -187,6 +235,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       authRequired: undefined,
       source: undefined,
       connected: false,
+      stopping: false,
       error: undefined,
     });
   },
@@ -222,7 +271,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     });
   },
 
-  applyRuntimeState: (state) =>
+  applyRuntimeState: (state) => {
+    // The server saying "listening" is the confirmation a stop was waiting for.
+    if (state.agent.status === "listening" && get().stopping) clearStopWatch();
     set({
       session: state.session,
       agent: state.agent,
@@ -232,7 +283,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       authMethods: state.authMethods,
       authRequired: state.authRequired,
       source: state.source,
-    }),
+      ...(state.agent.status === "listening" && get().stopping ? { stopping: false } : {}),
+    });
+  },
 
   ingestEvents: (incoming) => {
     if (incoming.length === 0) return;
@@ -270,9 +323,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       }
     }
 
+    if (incoming.some((event) => event.type === "agent_end") && get().stopping) {
+      // The run closed: the stop request has been answered.
+      clearStopWatch();
+    }
     const patch: Partial<SessionStore> = {
       events,
       eventsVersion: get().eventsVersion + 1,
+      ...(incoming.some((event) => event.type === "agent_end") && get().stopping
+        ? { stopping: false }
+        : {}),
     };
     if (eggsChanged) {
       patch.eggState = { eggs, version: get().eggState.version + 1, retired };
