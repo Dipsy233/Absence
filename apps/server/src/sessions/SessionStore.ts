@@ -278,7 +278,6 @@ export class AbsenceSession {
     // An observed session never gets an adapter: there is no runtime to drive.
     if (!observe) {
       this.adapter = createAdapter(kind, {
-        tools: config.piTools,
         processWatcher: this.processWatcher,
         onStateChange: () => this.scheduleState(),
       });

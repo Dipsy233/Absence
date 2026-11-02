@@ -1,9 +1,8 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import os from "node:os";
-import type { BashOperations } from "@earendil-works/pi-coding-agent";
+import { spawn } from "node:child_process";
 import {
-  type CapabilityState,
   type CommandOption,
   type ContextState,
   type AbsenceEvent,
@@ -12,10 +11,6 @@ import {
   type SessionStatsInfo,
 } from "@absence/core";
 import { BaseAdapter, type AdapterOptions, type AgentStartContext, type AgentStartResult } from "./AgentAdapter";
-import { loadPiSdk } from "./PiBin";
-import { config } from "../config";
-import { discoverCapabilities } from "../capabilities/discover";
-import { createAbsenceShell } from "../process/AbsenceShell";
 import { readFileSafe, scanCodeFiles } from "../filesystem/FileTree";
 import { unifiedDiff } from "../util/diff";
 import { languageFromPath } from "../util/language";
@@ -29,8 +24,9 @@ const PREFERRED = /(app|index|main|auth|api|server|client|utils|user|login|confi
  * It reads real files from the project so the Stage shows real content,
  * and paces events the way a real agent would.
  *
- * Its shell command is real too: it goes through the same Absence shell the Pi
- * runtime uses, so the process watcher reports eggs with no credentials needed.
+ * Its shell commands are real too: they run through the server's own
+ * ProcessWatcher command window, so eggs and metrics see the same evidence a
+ * real agent would produce, with no SDK, credentials or product coupling.
  */
 export class MockAdapter extends BaseAdapter {
   readonly runtime = "mock";
@@ -40,9 +36,8 @@ export class MockAdapter extends BaseAdapter {
   private thinkingLevel = "medium";
   private name?: string;
   private tokensUsed = 0;
-  private shell?: BashOperations;
 
-  constructor(private readonly options: AdapterOptions = { tools: [] }) {
+  constructor(private readonly options: AdapterOptions = {}) {
     super();
   }
 
@@ -51,29 +46,6 @@ export class MockAdapter extends BaseAdapter {
     this.cwd = ctx.cwd;
     this.model = ctx.model ?? "mock/agent";
     return { model: this.model };
-  }
-
-  getCapabilities(): CapabilityState | undefined {
-    // Even the scripted runtime shows what the project actually has, so the
-    // capability panels can be developed without credentials.
-    const discovered = discoverCapabilities({ cwd: this.cwd });
-    return {
-      skills: discovered.skills.map((skill) => ({
-        name: skill.name,
-        description: skill.description,
-        filePath: skill.filePath,
-        scope: skill.scope,
-      })),
-      mcp: discovered.mcpServers.map((server) => ({
-        name: server.name,
-        type: server.type,
-        source: server.source,
-        exposure: server.exposure,
-        enabled: server.enabled !== false,
-        description: server.description,
-      })),
-      diagnostics: [...discovered.diagnostics],
-    };
   }
 
   getContextUsage(): ContextState | undefined {
@@ -144,48 +116,52 @@ export class MockAdapter extends BaseAdapter {
     return this.busy;
   }
 
-  /** Absence's shell when a watcher is present, else Pi's plain local shell. */
-  private async shellOperations(): Promise<BashOperations> {
-    if (this.shell) return this.shell;
-    const { sdk } = await loadPiSdk(config.piBin);
-    if (this.options.processWatcher) {
-      this.shell = (
-        await createAbsenceShell(this.options.processWatcher, {
-          createLocalBashOperations: sdk.createLocalBashOperations,
-          createLocalPowerShellOperations: sdk.createLocalPowerShellOperations,
-        })
-      ).bash;
-    } else {
-      this.shell = sdk.createLocalBashOperations();
-    }
-    return this.shell;
-  }
-
-  /** Run a command for real and collect its output, the way Pi's tool does. */
+  /**
+   * Run a command for real and collect its output. The ProcessWatcher window
+   * is what attributes the process it lays to the command event.
+   */
   private async runCommand(command: string, timeoutMs = 20_000): Promise<{ stdout: string; exitCode: number }> {
+    const window = this.options.processWatcher?.begin(command, this.cwd);
     const chunks: Buffer[] = [];
     try {
-      const shell = await this.shellOperations();
-      const { exitCode } = await shell.exec(command, this.cwd, {
-        onData: (data) => chunks.push(data),
-        timeout: timeoutMs,
+      const exitCode = await new Promise<number>((resolve) => {
+        const child = spawn(command, {
+          cwd: this.cwd,
+          shell: true,
+          windowsHide: true,
+          env: process.env,
+        });
+        const timer = setTimeout(() => child.kill(), timeoutMs);
+        child.stdout?.on("data", (data: Buffer) => chunks.push(Buffer.from(data)));
+        child.stderr?.on("data", (data: Buffer) => chunks.push(Buffer.from(data)));
+        child.on("error", (error) => {
+          clearTimeout(timer);
+          chunks.push(Buffer.from(String(error)));
+          resolve(-1);
+        });
+        child.on("close", (code) => {
+          clearTimeout(timer);
+          resolve(code ?? -1);
+        });
       });
-      return { stdout: Buffer.concat(chunks).toString("utf8"), exitCode: exitCode ?? -1 };
+      return { stdout: Buffer.concat(chunks).toString("utf8"), exitCode };
     } catch (error) {
       const partial = chunks.length > 0 ? Buffer.concat(chunks).toString("utf8") : "";
       const message = error instanceof Error ? error.message : String(error);
       return { stdout: `${partial}${message}`, exitCode: -1 };
+    } finally {
+      if (window !== undefined) this.options.processWatcher?.end(window);
     }
   }
 
   /**
    * A scripted prompt drives the shell directly: every line starting with
-   * `$ ` runs as a real command through the same AbsenceShell a real agent
-   * uses, so watchers, eggs and metrics see exactly what they would see from
-   * a real runtime — deterministically, with no model, no credentials. The
-   * rest of the prompt is ignored. This is the fast path for end-to-end
-   * checks; the demo script below remains the default when no `$` line is
-   * present.
+   * `$ ` runs as a real command through the same ProcessWatcher window a real
+   * ACP agent's execute call opens, so watchers, eggs and metrics see exactly
+   * what they would see from a real runtime — deterministically, with no model
+   * and no credentials. The rest of the prompt is ignored. This is the fast
+   * path for end-to-end checks; the demo script below remains the default when
+   * no `$` line is present.
    */
   private async runScripted(commands: string[]): Promise<void> {
     const emit = <K extends AbsenceEventType>(type: K, payload: AbsenceEventPayloadMap[K]) =>

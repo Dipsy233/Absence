@@ -88,19 +88,12 @@ export function launchOverrides(): Record<string, string> {
   try {
     const parsed = JSON.parse(fs.readFileSync(RUNTIME_FILE, "utf8")) as {
       launch?: unknown;
-      /** @deprecated P5 removes the native DSH adapter and this legacy key. */
-      dshBin?: unknown;
     };
     const launch: Record<string, string> = {};
     if (parsed && typeof parsed.launch === "object" && parsed.launch !== null) {
       for (const [id, value] of Object.entries(parsed.launch as Record<string, unknown>)) {
         if (typeof value === "string" && value.trim()) launch[id] = value.trim();
       }
-    }
-    // One-release migration: the old file stored only dsh's binary path. It is
-    // an ACP profile now, so the path can become its launch line unchanged.
-    if (typeof parsed?.dshBin === "string" && parsed.dshBin.trim() && !launch.dsh) {
-      launch.dsh = parsed.dshBin.trim();
     }
     return launch;
   } catch {

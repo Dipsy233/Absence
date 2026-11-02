@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { SessionHistoryEntry } from "@absence/core";
-import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentKind } from "../config";
 import { config } from "../config";
 import {
@@ -346,18 +345,14 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 }
 
 /**
- * Merge ABSENCE's archives with Pi's own session files into one history list.
- * ABSENCE's archive wins on identity (it names the Pi session file); a Pi session
- * with no ABSENCE archive still appears, it just cannot restore the Stage.
+ * The persisted history: Absence's own archives, newest first. `?path=` narrows
+ * it to one project. This is what survives a restart; no agent-private session
+ * files are read or merged.
  */
 async function sessionHistory(projectPath?: string): Promise<SessionHistoryEntry[]> {
-  const entries = new Map<string, SessionHistoryEntry>();
-  const seenPiFiles = new Set<string>();
-
+  const entries: SessionHistoryEntry[] = [];
   for (const meta of await listArchives(projectPath)) {
-    if (meta.piSessionFile) seenPiFiles.add(meta.piSessionFile);
-    const key = meta.piSessionFile ? `pi:${meta.piSessionFile}` : `absence:${meta.absenceSessionId}`;
-    entries.set(key, {
+    entries.push({
       id: meta.absenceSessionId,
       absenceSessionId: meta.absenceSessionId,
       piSessionFile: meta.piSessionFile,
@@ -372,41 +367,5 @@ async function sessionHistory(projectPath?: string): Promise<SessionHistoryEntry
       archived: true,
     });
   }
-
-  for (const info of await listPiSessions(projectPath)) {
-    if (seenPiFiles.has(info.path)) continue;
-    const cwd = info.cwd || projectPath || "";
-    entries.set(`pi:${info.path}`, {
-      id: info.id,
-      piSessionFile: info.path,
-      piSessionId: info.id,
-      projectPath: cwd,
-      projectName: cwd ? path.basename(cwd) : "—",
-      name: info.name,
-      createdAt: info.created.getTime(),
-      updatedAt: info.modified.getTime(),
-      messageCount: info.messageCount,
-      firstPrompt: info.firstMessage,
-      runtime: "pi",
-      archived: false,
-    });
-  }
-
-  return [...entries.values()].sort((a, b) => b.updatedAt - a.updatedAt);
-}
-
-/** Pi's persisted sessions, when the SDK is importable. Never throws. */
-async function listPiSessions(cwd?: string): Promise<SessionInfo[]> {
-  try {
-    const { SessionManager } = await import("@earendil-works/pi-coding-agent");
-    const infos = await SessionManager.listAll();
-    return cwd ? infos.filter((info) => samePath(info.cwd, cwd)) : infos;
-  } catch {
-    return [];
-  }
-}
-
-function samePath(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  return path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+  return entries.sort((a, b) => b.updatedAt - a.updatedAt);
 }

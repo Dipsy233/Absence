@@ -1,20 +1,20 @@
 /**
- * Offline check of P4: agents are resolved from catalog data, not product
+ * Offline check of the catalog: agents are resolved from data, not product
  * branches.
  *
  *   npx tsx scripts/checks/check-agent-catalog.ts
  *
  * What it proves:
  *   1. the shipped launch data is the verified Pi / Codex ACP commands;
- *   2. `createAdapter("pi")` / `("codex")` default to the ACP adapter, and the
- *      registry-name aliases reach the same profile;
- *   3. the explicit legacy switch is the *only* way back to the native
- *      adapters, and it is one env var;
+ *   2. `createAdapter("pi")` / `("codex")` resolve to the generic `AcpAdapter`,
+ *      and registry-name aliases reach the same profile;
+ *   3. the only non-ACP registration is the scripted fixture; there is no
+ *      legacy native path or switch;
  *   4. a missing profile or a missing launch command throws a readable error;
  *   5. /api/runtimes' rows come from the catalog with generic fields, not
  *      piBin / codexBin / dshBin;
  *   6. `agents/**` has no product-name equality branches outside the profile
- *      data and the deprecated native adapters P5 deletes.
+ *      data.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -28,9 +28,8 @@ import {
 } from "../../apps/server/src/agents/acp/AgentCatalog";
 import { builtinProfileData, builtinProfiles } from "../../apps/server/src/agents/acp/profiles";
 import { createAdapter } from "../../apps/server/src/agents/createAdapter";
-import { CodexAdapter } from "../../apps/server/src/agents/CodexAdapter";
 import { MockAdapter } from "../../apps/server/src/agents/MockAdapter";
-import { PiAdapter } from "../../apps/server/src/agents/PiAdapter";
+import { registeredRuntimes } from "../../apps/server/src/agents/registry";
 import { runtimeStatuses } from "../../apps/server/src/runtimes/config";
 import { check, finish, section } from "./harness";
 
@@ -117,7 +116,7 @@ section("catalog: ids and registry-name aliases resolve to the same profile");
   );
 }
 
-section("createAdapter: ACP by default, native only behind the explicit switch");
+section("createAdapter: every agent is an ACP profile, the fixture is the only registration");
 {
   const pi = createAdapter("pi", {});
   check("createAdapter(pi) is the generic ACP adapter", pi instanceof AcpAdapter, pi.constructor.name);
@@ -134,24 +133,18 @@ section("createAdapter: ACP by default, native only behind the explicit switch")
   alias.dispose();
 
   const mock = createAdapter("mock", {});
-  check("a non-ACP registered adapter still works", mock instanceof MockAdapter);
+  check("the scripted fixture still works", mock instanceof MockAdapter);
   mock.dispose();
 
-  process.env.ABSENCE_LEGACY_NATIVE_ADAPTERS = "1";
-  try {
-    const legacyPi = createAdapter("pi", {});
-    check("the legacy switch restores the Pi native adapter", legacyPi instanceof PiAdapter);
-    legacyPi.dispose();
-    const legacyCodex = createAdapter("codex", {});
-    check("the legacy switch restores the Codex native adapter", legacyCodex instanceof CodexAdapter);
-    legacyCodex.dispose();
-  } finally {
-    delete process.env.ABSENCE_LEGACY_NATIVE_ADAPTERS;
-  }
-
-  const backToAcp = createAdapter("pi", {});
-  check("after the switch is unset, pi is ACP again", backToAcp instanceof AcpAdapter);
-  backToAcp.dispose();
+  check(
+    "the registry holds only the fixture adapter",
+    registeredRuntimes().join(",") === "mock",
+    registeredRuntimes().join(","),
+  );
+  check(
+    "there is no legacy native switch left",
+    !("ABSENCE_LEGACY_NATIVE_ADAPTERS" in process.env) && !("ABSENCE_LEGACY_DSH" in process.env),
+  );
 }
 
 section("createAdapter: missing data is a readable error, never a silent fallback");
@@ -193,24 +186,10 @@ section("api rows: /api/runtimes is catalog data, not per-product fields");
   check("registered adapters without a profile still appear", mock !== undefined);
 }
 
-section("static: no product-name equality branches in the generic path");
+section("static: no product-name equality branches outside the profile data");
 {
-  /**
-   * The deprecated native adapters are the compatibility layer P5 deletes;
-   * they are allowed to know their own product. `profiles.ts` is the data file.
-   */
-  const allowed = new Set([
-    "profiles.ts",
-    "PiAdapter.ts",
-    "CodexAdapter.ts",
-    "DshAdapter.ts",
-    "DshClient.ts",
-    "AppServerClient.ts",
-    "CodexBin.ts",
-    "PiBin.ts",
-    "MockAdapter.ts",
-    "CodexCommands.ts",
-  ]);
+  /** `profiles.ts` is the data file; everything else must be product-neutral. */
+  const allowed = new Set(["profiles.ts"]);
   const pattern = /(===|!==)\s*["'](pi|codex|dsh)["']|case\s*["'](pi|codex|dsh)["']/;
   const offenders: string[] = [];
   const walk = (dir: string): void => {

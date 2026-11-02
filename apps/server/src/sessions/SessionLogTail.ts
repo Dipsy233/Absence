@@ -89,10 +89,18 @@ function newestCodexRollout(root: string): string | undefined {
   return best(root, 0)?.path;
 }
 
+/** The transcript layouts the observer knows, as data. */
+const TRANSCRIPT_SOURCES: ReadonlyArray<{
+  agent: TranscriptAgent;
+  locate: (projectPath: string) => string | undefined;
+}> = [
+  { agent: "pi", locate: (projectPath) => newestJsonl(piSessionDirFor(projectPath)) },
+  { agent: "codex", locate: () => newestCodexRollout(join(homedir(), ".codex", "sessions")) },
+];
+
 /** Where each agent keeps its transcripts, and how to find this session's. */
 export function locateTranscript(agent: TranscriptAgent, projectPath: string): string | undefined {
-  if (agent === "pi") return newestJsonl(piSessionDirFor(projectPath));
-  return newestCodexRollout(join(homedir(), ".codex", "sessions"));
+  return TRANSCRIPT_SOURCES.find((source) => source.agent === agent)?.locate(projectPath);
 }
 
 export class SessionLogTail {
@@ -103,8 +111,11 @@ export class SessionLogTail {
   private disposed = false;
   private path?: string;
   private agent?: TranscriptAgent;
-  private readonly pi = new PiTranscriptReader();
-  private readonly codex = new CodexTranscriptReader();
+  /** One reader per transcript layout, keyed by the layout it parses. */
+  private readonly readers = new Map<TranscriptAgent, PiTranscriptReader | CodexTranscriptReader>([
+    ["pi", new PiTranscriptReader()],
+    ["codex", new CodexTranscriptReader()],
+  ]);
 
   /**
    * @param projectPath the workspace, used to find Pi's per-project directory.
@@ -226,9 +237,9 @@ export class SessionLogTail {
       }
       const agent = this.agent ?? detectAgent(record);
       if (!agent) continue;
-      const parsed = agent === "pi" ? this.pi.push(record) : this.codex.push(record);
-      for (const call of parsed.calls ?? []) this.sink.onCall(call);
-      if (parsed.skills && parsed.skills.length > 0) this.sink.onSkills(parsed.skills);
+      const parsed = this.readers.get(agent)?.push(record);
+      for (const call of parsed?.calls ?? []) this.sink.onCall(call);
+      if (parsed?.skills && parsed.skills.length > 0) this.sink.onSkills(parsed.skills);
     }
   }
 }

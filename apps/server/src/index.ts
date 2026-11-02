@@ -15,7 +15,6 @@ import { acpProxyRoutes } from "./api/acpProxy";
 import { proxySessions } from "./agents/acp/proxy";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
-import { applyRuntimePaths } from "./runtimes/config";
 import { closeArchive } from "./sessions/archive";
 import { drainMetrics, expireMetrics } from "./sessions/storage/metrics";
 
@@ -46,9 +45,6 @@ export interface RunningServer {
  */
 export async function startServer(options: StartServerOptions = {}): Promise<RunningServer> {
   if (options.config) configure(options.config);
-  // Paths saved from the picker (~/.absence/runtimes.json) override the env
-  // defaults, so a runtime moved since last launch still resolves.
-  applyRuntimePaths();
 
   guardAgainstDeadStdio();
 

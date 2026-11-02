@@ -1,11 +1,8 @@
-import { config, configure } from "../config";
-import { resolveDshBin } from "../agents/DshClient";
 import {
   launchLine,
   launchOverrides,
   listProfiles,
   missingProfileCommands,
-  parseLaunchLine,
   writeLaunchOverrides,
   type CatalogEntry,
 } from "../agents/acp/AgentCatalog";
@@ -36,23 +33,7 @@ export function runtimePaths(): RuntimePaths {
   return { launch: launchOverrides() };
 }
 
-/**
- * Apply saved overrides at startup.
- *
- * Only DSH Desktop discovery remains here: its bundled `bin.js` is not on PATH
- * and the pre-ACP client resolved it once. Every other profile reads its saved
- * launch line through the catalog at session start.
- *
- * @deprecated P5 removes this block together with DshClient and the native
- * DSH adapter. The ACP profile then relies on its launch line alone.
- */
-export function applyRuntimePaths(): void {
-  if (launchOverrides().dsh || config.dshBin) return;
-  const resolved = resolveDshBin();
-  if (resolved !== "dsh") configure({ dshBin: resolved });
-}
-
-/** Save launch lines and apply them to the live config at once. */
+/** Save launch lines; the catalog reads them at the next session start. */
 export function setRuntimePaths(patch: RuntimePaths): RuntimePaths {
   const current = { ...launchOverrides() };
   for (const [id, value] of Object.entries(patch.launch ?? {})) {
@@ -61,11 +42,6 @@ export function setRuntimePaths(patch: RuntimePaths): RuntimePaths {
     else delete current[id];
   }
   writeLaunchOverrides(current);
-  // Keep the legacy DSH adapter's config in step; @deprecated, P5 deletes it.
-  if ("dsh" in patch.launch) {
-    const line = current.dsh;
-    configure({ dshBin: line ? parseLaunchLine(line)[0] : undefined });
-  }
   return { launch: current };
 }
 

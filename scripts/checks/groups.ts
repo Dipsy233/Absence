@@ -147,7 +147,6 @@ export const GROUPS: CheckGroup[] = [
     label: "agent 适配层（codex / dsh 命令 / shell 环境 / capabilities / MCP / 观察器契约）",
     paths: ["apps/server/src/agents/**"],
     checks: [
-      { script: "check-codex.ts", timeout: 60_000 },
       { script: "check-codexshell.ts", timeout: 60_000 },
       { script: "check-shellenv.ts", timeout: 60_000 },
       { script: "check-capabilities.ts", timeout: 120_000 },
