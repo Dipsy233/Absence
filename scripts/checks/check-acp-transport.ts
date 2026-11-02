@@ -27,6 +27,7 @@ import {
   type AcpConnectionOptions,
 } from "../../apps/server/src/agents/acp/AcpConnection";
 import { AcpProtocolVersionError } from "../../apps/server/src/agents/acp/protocol/version";
+import { AcpRpcError, describeAcpError } from "../../apps/server/src/agents/acp/protocol/errors";
 import { pickExecutable, resolveExecutable } from "../../apps/server/src/agents/acp/protocol/transport";
 import { check, finish, section } from "./harness";
 
@@ -556,6 +557,53 @@ async function main(): Promise<void> {
     } finally {
       await destroy(run);
     }
+  }
+
+  section("JSON-RPC error.data is preserved in the error event message");
+  {
+    const withDataMessage = new AcpRpcError(
+      "session/prompt",
+      "Internal error",
+      -32603,
+      { message: "maximum context length 8192 tokens exceeded" },
+    );
+    const described = describeAcpError(withDataMessage);
+    check(
+      "error.data.message is kept verbatim",
+      described.includes("maximum context length 8192 tokens exceeded"),
+      described,
+    );
+    check("the JSON-RPC code is kept", described.includes("-32603"), described);
+
+    const withDataError = new AcpRpcError("session/new", "Internal error", -32603, {
+      error:
+        'thread/start: failed to load configuration: `wire_api = "chat"` is no longer supported.',
+    });
+    check(
+      "error.data.error (codex style) is kept",
+      describeAcpError(withDataError).includes("wire_api"),
+      describeAcpError(withDataError),
+    );
+
+    const withStringData = new AcpRpcError("session/prompt", "Bad request", -32600, "provider said no");
+    check(
+      "a string detail is kept",
+      describeAcpError(withStringData).includes("provider said no"),
+      describeAcpError(withStringData),
+    );
+
+    const withoutData = new AcpRpcError("session/prompt", "Internal error", -32603);
+    check(
+      "an error with no data does not invent one",
+      describeAcpError(withoutData) === "Internal error (code -32603)",
+      describeAcpError(withoutData),
+    );
+
+    check(
+      "a plain Error keeps its message",
+      describeAcpError(new Error("plain failure")) === "plain failure",
+      describeAcpError(new Error("plain failure")),
+    );
   }
 
   section("Windows: PATHEXT resolution and a batch shim in a path with spaces");

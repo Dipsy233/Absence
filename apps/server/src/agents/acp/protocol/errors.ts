@@ -51,3 +51,42 @@ export class AcpUnsupportedCapabilityError extends Error {
 export function isRequestCancelled(error: unknown): error is AcpRequestCancelledError {
   return error instanceof AcpRequestCancelledError;
 }
+
+/**
+ * Describe a JSON-RPC error without throwing away what the provider said.
+ *
+ * ACP agents commonly send `{ code: -32603, message: "Internal error",
+ * data: { message: "maximum context length 8192 …" } }`. Keeping only the
+ * top-level message turns every provider failure into the same useless word.
+ * `error.data.message` / `error.data.error` / a string detail are appended
+ * verbatim, and the code is kept so callers can still distinguish classes.
+ */
+export function describeAcpError(error: unknown): string {
+  if (!(error instanceof AcpRpcError)) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  const parts = [error.message];
+  const detail = rpcDetail(error.data);
+  if (detail && detail !== error.message) parts.push(detail);
+  const code = error.code !== undefined ? ` (code ${error.code})` : "";
+  return `${parts.join(": ")}${code}`;
+}
+
+function rpcDetail(data: unknown): string | undefined {
+  if (typeof data === "string") return data.trim() || undefined;
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return undefined;
+  const record = data as Record<string, unknown>;
+  for (const key of ["message", "detail", "error", "reason"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim().length > 0) return value;
+    if (value !== null && typeof value === "object") {
+      const nested = rpcDetail(value);
+      if (nested) return nested;
+    }
+  }
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return undefined;
+  }
+}

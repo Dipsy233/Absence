@@ -22,6 +22,7 @@ import { AcpAuth } from "./AcpAuth";
 import { AcpConfigOptions, humanModelName } from "./AcpConfigOptions";
 import { AcpPermissionBridge, type PermissionPrompt } from "./AcpPermissionBridge";
 import { AcpSession } from "./AcpSession";
+import { describeAcpError } from "./protocol/errors";
 import type { AgentProfile } from "./profiles";
 import { createMonitorBus } from "../../monitor/MonitorBus";
 import {
@@ -373,7 +374,9 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
         // A watchdog settled the run; do not add an `error` row on top.
         this.emitAbsence("agent_end", { reason: "aborted" });
       } else {
-        this.emitAbsence("error", { message: messageOf(error) });
+        // Keep the provider's own detail (`error.data`), not just JSON-RPC's
+        // generic "Internal error".
+        this.emitAbsence("error", { message: describeAcpError(error) });
         this.emitAbsence("agent_end", { reason: "error" });
         if (!legacy) throw error;
       }
