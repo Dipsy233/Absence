@@ -199,10 +199,11 @@ export function buildRunFacts(
         // Track the agent's read context (its v0) for version-loop detection.
         // An unreported range cannot be placed on real line numbers, so its
         // content is not indexed as if it began at line 1.
+        const firstLine = startLine ?? 1;
         if (rangeKnown !== false) {
           const lines = knownLines.get(path) ?? {};
           event.payload.content.split("\n").forEach((line, index) => {
-            lines[startLine + index] = line;
+            lines[firstLine + index] = line;
           });
           knownLines.set(path, lines);
         }
@@ -211,17 +212,22 @@ export function buildRunFacts(
         fact.evidence.push(event.id);
         known.add(path);
         const range = readRanges.get(path);
+        // A read with no reported range cannot be placed on real line numbers.
+        // Keep the report's range as a display fallback (1..1) but keep the
+        // `rangeKnown=false` flag the report UI already respects.
+        const reportStart = startLine ?? 1;
+        const reportEnd = endLine ?? reportStart;
         if (range) {
           if (rangeKnown === false) range.rangeKnown = false;
           else {
-            range.start = Math.min(range.start, startLine);
-            range.end = Math.max(range.end, endLine);
+            range.start = Math.min(range.start, reportStart);
+            range.end = Math.max(range.end, reportEnd);
           }
           range.evidence.push(event.id);
         } else {
           readRanges.set(path, {
-            start: startLine,
-            end: endLine,
+            start: reportStart,
+            end: reportEnd,
             ...(rangeKnown === false ? { rangeKnown: false as const } : {}),
             evidence: [event.id],
           });

@@ -989,9 +989,9 @@ export class AbsenceSession {
   private applyFileRead(payload: {
     path: string;
     content: string;
-    startLine: number;
-    endLine: number;
-    rangeKnown?: false;
+    startLine?: number;
+    endLine?: number;
+    rangeKnown?: boolean;
   }): void {
     const existing = this.files.get(payload.path);
     const state: FileState = existing ?? {
@@ -1000,15 +1000,15 @@ export class AbsenceSession {
       version: 0,
     };
     const range = {
-      startLine: payload.startLine,
-      endLine: payload.endLine,
+      ...(payload.startLine !== undefined ? { startLine: payload.startLine } : {}),
+      ...(payload.endLine !== undefined ? { endLine: payload.endLine } : {}),
       content: payload.content,
-      ...(payload.rangeKnown === false ? { rangeKnown: false as const } : {}),
+      ...(payload.rangeKnown !== undefined ? { rangeKnown: payload.rangeKnown } : {}),
     };
     state.lastRead = {
-      startLine: payload.startLine,
-      endLine: payload.endLine,
-      ...(payload.rangeKnown === false ? { rangeKnown: false as const } : {}),
+      ...(payload.startLine !== undefined ? { startLine: payload.startLine } : {}),
+      ...(payload.endLine !== undefined ? { endLine: payload.endLine } : {}),
+      ...(payload.rangeKnown !== undefined ? { rangeKnown: payload.rangeKnown } : {}),
     };
     state.observedRanges = mergeObservedRange(state.observedRanges, range);
     state.lastModified = Date.now();
@@ -1042,7 +1042,7 @@ export class AbsenceSession {
     filePath: string,
     content: string,
     options: {
-      lastRead?: { startLine: number; endLine: number; rangeKnown?: false };
+      lastRead?: { startLine?: number; endLine?: number; rangeKnown?: boolean };
       bump?: boolean;
     } = {},
   ): void {

@@ -72,8 +72,8 @@ async function main(): Promise<void> {
       read ? JSON.stringify(read.payload) : "no file_read",
     );
     check(
-      "the fallback range is 1..content lines",
-      read?.type === "file_read" && read.payload.startLine === 1 && read.payload.endLine === 1,
+      "an unknown range reports no endLine instead of counting content lines",
+      read?.type === "file_read" && read.payload.startLine === 1 && read.payload.endLine === undefined,
     );
 
     const known = await mapper.mapCompleted({

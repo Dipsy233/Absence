@@ -97,11 +97,11 @@ export interface SessionHistoryEntry {
 
 /** One range the agent actually read, as reported by its protocol. */
 export interface ObservedRange {
-  startLine: number;
-  endLine: number;
+  startLine?: number;
+  endLine?: number;
   content: string;
-  /** False when the agent did not report a line; the range is a fallback. */
-  rangeKnown?: false;
+  /** False when no range is known; true when the agent declared one. */
+  rangeKnown?: boolean;
 }
 
 /** Content Absence remembers about a file the agent has touched (read.md §26). */
@@ -113,7 +113,7 @@ export interface FileState {
    */
   content: string;
   version: number;
-  lastRead?: { startLine: number; endLine: number; rangeKnown?: false };
+  lastRead?: { startLine?: number; endLine?: number; rangeKnown?: boolean };
   /** What the agent reported reading, kept separately from the whole file. */
   observedRanges?: ObservedRange[];
   lastModified?: number;

@@ -13,8 +13,8 @@ interface FileStageProps {
   /** Highlight range, in original file coordinates. */
   startLine?: number;
   endLine?: number;
-  /** False when the agent did not report a line: never fake a highlight. */
-  rangeKnown?: false;
+  /** False when no range was reported: never fake a highlight. */
+  rangeKnown?: boolean;
   /** Original line number of the first displayed line (1 = whole file). */
   lineOffset?: number;
   caption?: string;

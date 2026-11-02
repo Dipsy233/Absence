@@ -33,7 +33,7 @@ export type StagePayload =
       startLine?: number;
       endLine?: number;
       /** False when the agent did not report a line: show "range unknown". */
-      rangeKnown?: false;
+      rangeKnown?: boolean;
       /**
        * Original line number of the first displayed line (1 = the content is the
        * whole file from the top). A read of lines 10–20 sets this to 10 so the

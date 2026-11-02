@@ -36,24 +36,33 @@ function applyEvent(views: Record<string, FileView>, event: AbsenceEvent): void 
     case "file_read": {
       const { path, content, startLine, endLine, rangeKnown } = event.payload;
       const view = views[path] ?? emptyView(path);
+      const lastRead = {
+        ...(startLine !== undefined ? { startLine } : {}),
+        ...(endLine !== undefined ? { endLine } : {}),
+        ...(rangeKnown !== undefined ? { rangeKnown } : {}),
+      };
 
       if (view.complete) {
         // We already hold the whole file; the read adds nothing.
         views[path] = {
           ...view,
           path,
-          lastRead: { startLine, endLine, ...(rangeKnown === false ? { rangeKnown: false as const } : {}) },
+          lastRead,
           status: "reading",
         };
         break;
       }
-      const nextRangeKnown = view.rangeKnown === false || rangeKnown === false ? (false as const) : undefined;
+      const nextRangeKnown =
+        view.rangeKnown === false || rangeKnown === false ? false : undefined;
 
       // Reads accumulate into v0: the agent's context is the union of every
-      // range it has read, not just the most recent one.
+      // range it has read, not just the most recent one. A read with no
+      // reported start has no coordinates to place; 1 is only the display
+      // origin and `rangeKnown=false` says the position is not asserted.
       const knownLines = { ...view.knownLines };
+      const firstLine = startLine ?? 1;
       content.split("\n").forEach((line, index) => {
-        knownLines[startLine + index] = line;
+        knownLines[firstLine + index] = line;
       });
       const state = renderKnownState(knownLines);
 
@@ -73,7 +82,7 @@ function applyEvent(views: Record<string, FileView>, event: AbsenceEvent): void 
         path,
         knownLines,
         rangeKnown: nextRangeKnown,
-        lastRead: { startLine, endLine, ...(rangeKnown === false ? { rangeKnown: false as const } : {}) },
+        lastRead,
         status: "reading",
       };
       break;
@@ -82,6 +91,7 @@ function applyEvent(views: Record<string, FileView>, event: AbsenceEvent): void 
     case "file_edit": {
       const { path } = event.payload;
       const content = event.type === "file_edit" ? event.payload.after : event.payload.content;
+
       const view = views[path] ?? emptyView(path);
       const nextNumber = (latest(view)?.version ?? -1) + 1;
 

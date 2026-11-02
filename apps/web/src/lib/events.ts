@@ -220,12 +220,12 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
           language: language ?? languageFromPath(path),
           startLine,
           endLine,
-          ...(rangeKnown === false ? { rangeKnown: false as const } : {}),
+          ...(rangeKnown !== undefined ? { rangeKnown } : {}),
           // The payload content is the slice that was read, so number it as it
           // appears in the file (a read of 10–20 shows lines 10–20, not 1–11).
           // An unreported range has no file offsets to claim: number the slice
           // from 1 and let the toolbar say "range unknown".
-          lineOffset: rangeKnown === false ? 0 : Math.max(0, startLine - 1),
+          lineOffset: rangeKnown === false ? 0 : Math.max(0, (startLine ?? 1) - 1),
           caption: "Agent is reading",
         },
         path,

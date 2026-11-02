@@ -174,24 +174,22 @@ export class AcpToolMapper {
     // Some agents decorate a read result with a header and `N: line` prefixes.
     // That is a *format*, not a product, so it is unwrapped generically here
     // rather than in an agent-specific adapter.
-    const text = stripDecoratedRead(raw);
-    if (text.length === 0) return [];
+    const text = normalizeReadText(stripDecoratedRead(raw));
     const location = facts.locations?.find((l) => typeof l.line === "number");
-    const startLine = location?.line ?? 1;
-    const lines = text.split("\n").length;
+    const lineCount = text.split("\n").length;
+    const range = declaredReadRange(facts.rawInput, location?.line, lineCount);
     const event: MappedEvent = {
       type: "file_read",
       payload: {
         path: this.display(resolved.path),
-        startLine,
-        endLine: startLine + Math.max(0, lines - 1),
         content: text,
         language: languageFromPath(abs),
-        // No `locations.line`: 1..contentLines is a display fallback, not a
-        // range the agent reported. The UI must say "range unknown" — and the
-        // returned text may be only the snippet that was read, never the whole
-        // file.
-        ...(location === undefined ? { rangeKnown: false as const } : {}),
+        ...(range.startLine !== undefined ? { startLine: range.startLine } : {}),
+        ...(range.endLine !== undefined ? { endLine: range.endLine } : {}),
+        // No `locations.line` and no `offset`/`limit`: there is no range to
+        // assert. The number of lines the agent happened to return is not
+        // evidence of where it read; a trailing newline even adds a ghost line.
+        ...(range.rangeKnown !== undefined ? { rangeKnown: range.rangeKnown } : {}),
       },
     };
     // When the protocol returned no text and Absence read the file itself, the
@@ -474,6 +472,71 @@ function replaceOnce(text: string, find: string, replacement: string): string {
   const at = text.indexOf(find);
   if (at < 0) return text;
   return text.slice(0, at) + replacement + text.slice(at + find.length);
+}
+
+/**
+ * Normalise a read result's line endings and drop one trailing terminator.
+ *
+ * A CRLF file's last line otherwise keeps a `\r`, and a trailing newline makes
+ * `split("\n")` report one more line than the file has — both turn into a
+ * ghost line when written to the file index. Interior blank lines are kept.
+ */
+function normalizeReadText(text: string): string {
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized;
+}
+
+/**
+ * The line range a read proves.
+ *
+ *   1. `locations.line` — the agent reported a line; the returned text tells
+ *      how many lines it spans.
+ *   2. `rawInput.offset` / `limit` — the agent *declared* the range it asked
+ *      for. This is reported, not disk-verified, hence `rangeKnown: true`.
+ *   3. Neither — no range. Absence never derives one from `content` line count.
+ */
+function declaredReadRange(
+  rawInput: unknown,
+  locationLine: number | undefined,
+  lineCount: number,
+): { startLine?: number; endLine?: number; rangeKnown?: boolean } {
+  if (locationLine !== undefined) {
+    return {
+      startLine: locationLine,
+      endLine: locationLine + Math.max(0, lineCount - 1),
+    };
+  }
+  const record =
+    rawInput !== null && typeof rawInput === "object" && !Array.isArray(rawInput)
+      ? (rawInput as Record<string, unknown>)
+      : undefined;
+  const offset = numericField(record, "offset");
+  const limit = numericField(record, "limit");
+  if ((offset !== undefined && offset > 0) || (limit !== undefined && limit > 0)) {
+    const startLine = offset !== undefined && offset > 0 ? offset : 1;
+    return {
+      startLine,
+      endLine: startLine + Math.max(0, lineCount - 1),
+      rangeKnown: true,
+    };
+  }
+  // No reported line and no declared offset: there is no end line to assert.
+  // A start of 1 is the display origin only (the sim/UI already show
+  // "range unknown" from `rangeKnown=false`), never a measured range.
+  return { startLine: 1, rangeKnown: false };
+}
+
+function numericField(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined {
+  const value = record?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const n = Number(value.trim());
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
 }
 
 /**

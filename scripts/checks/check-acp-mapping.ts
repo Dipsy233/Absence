@@ -236,8 +236,11 @@ async function main(): Promise<void> {
       read ? JSON.stringify(read.event.payload) : "no file_read",
     );
     check(
-      "the fallback range is the returned content, 1..1",
-      read?.event.type === "file_read" && read.event.payload.startLine === 1 && read.event.payload.endLine === 1,
+      "a read with no reported line has no endLine to assert",
+      read?.event.type === "file_read" &&
+        read.event.payload.startLine === 1 &&
+        read.event.payload.endLine === undefined,
+      read?.event.type === "file_read" ? JSON.stringify(read.event.payload) : "no file_read",
     );
     check(
       "the read content is the snippet the agent returned, not the whole file",
@@ -260,6 +263,116 @@ async function main(): Promise<void> {
         known.event.payload.rangeKnown === undefined &&
         known.event.payload.startLine === 2 &&
         known.event.payload.endLine === 2,
+    );
+
+    // The four shapes from the regression: 3-line, empty, one line without
+    // newline, and CRLF + trailing newline. None may invent an end line or a
+    // ghost line from the text's terminator.
+    const threeLines = await mapper.mapCompletedDetailed({
+      toolCallId: "r-3lines",
+      name: "read",
+      kind: "read",
+      rawInput: { path: "notes.txt" },
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "alpha line1\nbeta line2\ngamma line3\r\n" },
+        },
+      ],
+    });
+    const threeLineRead = firstOf(threeLines, "file_read");
+    check(
+      "a 3-line CRLF read reports no endLine and no trailing \\r",
+      threeLineRead?.event.type === "file_read" &&
+        threeLineRead.event.payload.endLine === undefined &&
+        threeLineRead.event.payload.content === "alpha line1\nbeta line2\ngamma line3" &&
+        threeLineRead.event.payload.rangeKnown === false,
+      threeLineRead?.event.type === "file_read"
+        ? JSON.stringify(threeLineRead.event.payload)
+        : "no file_read",
+    );
+    check(
+      "the CRLF read is still reported at the protocol fidelity",
+      threeLineRead?.fidelity === "reported",
+      threeLineRead?.fidelity,
+    );
+
+    const emptyRead = await mapper.mapCompletedDetailed({
+      toolCallId: "r-empty",
+      name: "read",
+      kind: "read",
+      rawInput: { path: "empty.txt" },
+      content: [{ type: "content", content: { type: "text", text: "" } }],
+    });
+    const emptyFileRead = firstOf(emptyRead, "file_read");
+    check(
+      "an empty file is one empty read, not a ghost line",
+      emptyFileRead?.event.type === "file_read" &&
+        emptyFileRead.event.payload.content === "" &&
+        emptyFileRead.event.payload.endLine === undefined &&
+        emptyFileRead.event.payload.rangeKnown === false,
+      emptyFileRead?.event.type === "file_read"
+        ? JSON.stringify(emptyFileRead.event.payload)
+        : "no file_read",
+    );
+
+    const singleLine = await mapper.mapCompletedDetailed({
+      toolCallId: "r-single",
+      name: "read",
+      kind: "read",
+      rawInput: { path: "one.txt" },
+      content: [{ type: "content", content: { type: "text", text: "only line" } }],
+    });
+    const singleLineRead = firstOf(singleLine, "file_read");
+    check(
+      "a single line without a newline has no ghost second line",
+      singleLineRead?.event.type === "file_read" &&
+        singleLineRead.event.payload.content === "only line" &&
+        singleLineRead.event.payload.endLine === undefined,
+      singleLineRead?.event.type === "file_read"
+        ? JSON.stringify(singleLineRead.event.payload)
+        : "no file_read",
+    );
+
+    const declared = await mapper.mapCompletedDetailed({
+      toolCallId: "r-offset",
+      name: "read",
+      kind: "read",
+      rawInput: { path: "src.txt", offset: 2, limit: 2 },
+      content: [{ type: "content", content: { type: "text", text: "beta\ngamma" } }],
+    });
+    const declaredRead = firstOf(declared, "file_read");
+    check(
+      "offset/limit declares the range and marks rangeKnown=true",
+      declaredRead?.event.type === "file_read" &&
+        declaredRead.event.payload.startLine === 2 &&
+        declaredRead.event.payload.endLine === 3 &&
+        declaredRead.event.payload.rangeKnown === true,
+      declaredRead?.event.type === "file_read"
+        ? JSON.stringify(declaredRead.event.payload)
+        : "no file_read",
+    );
+    check(
+      "the declared range is reported, not disk-verified",
+      declaredRead?.fidelity === "reported",
+      declaredRead?.fidelity,
+    );
+
+    const pathOnlyLocation = await mapper.mapCompletedDetailed({
+      toolCallId: "r-path-location",
+      name: "read",
+      kind: "read",
+      locations: [{ path: "src/main.ts" }],
+      rawInput: {},
+      content: [{ type: "content", content: { type: "text", text: "export const main = 0;" } }],
+    });
+    const pathOnlyRead = firstOf(pathOnlyLocation, "file_read");
+    check(
+      "a path-only location still supplies the file path",
+      pathOnlyRead?.event.type === "file_read" && pathOnlyRead.event.payload.path === "src/main.ts",
+      pathOnlyRead?.event.type === "file_read"
+        ? pathOnlyRead.event.payload.path
+        : "no file_read",
     );
 
     const noPath = await mapper.mapCompletedDetailed({

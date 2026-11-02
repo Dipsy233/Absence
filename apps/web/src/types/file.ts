@@ -30,9 +30,9 @@ export interface FileView {
   history: FileVersion[];
   /** Accumulator for the current read-only version. */
   knownLines: Record<number, string>;
-  lastRead?: { startLine: number; endLine: number; rangeKnown?: false };
+  lastRead?: { startLine?: number; endLine?: number; rangeKnown?: boolean };
   /** Sticky for the read accumulation: any unreported range makes it unknown. */
-  rangeKnown?: false;
+  rangeKnown?: boolean;
   lastModifiedAt?: number;
 
   /** Convenience mirrors of the newest version. */

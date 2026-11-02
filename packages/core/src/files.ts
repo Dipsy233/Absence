@@ -21,8 +21,8 @@ export interface FileVersionInfo {
   lineOffset: number;
   startLine?: number;
   endLine?: number;
-  /** False when the read's range was not reported by the agent. */
-  rangeKnown?: false;
+  /** False when no range is known; true when the agent declared one. */
+  rangeKnown?: boolean;
   caption?: string;
   /** For a read version, the lines accumulated so far, keyed by file line. */
   knownLines?: Record<number, string>;

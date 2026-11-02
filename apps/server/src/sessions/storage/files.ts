@@ -23,8 +23,8 @@ interface FileState {
   knownLines: Record<number, string>;
   latestVersion: number;
   complete: boolean;
-  /** Sticky once any contributing read lacked a reported range. */
-  rangeKnown?: false;
+  /** Sticky false once any contributing read lacked a reported range. */
+  rangeKnown?: boolean;
 }
 
 interface SessionFiles {
@@ -189,8 +189,11 @@ export class FileIndex {
       if (event.payload.rangeKnown === false) file.rangeKnown = false;
       const knownLines = { ...file.knownLines };
       const lines = event.payload.content.split("\n");
+      // A read with no reported line has no coordinates; 1 is the display
+      // fallback, and its `rangeKnown=false` keeps the union marked unknown.
+      const startLine = event.payload.startLine ?? 1;
       for (let i = 0; i < lines.length; i++) {
-        knownLines[event.payload.startLine + i] = lines[i]!;
+        knownLines[startLine + i] = lines[i]!;
       }
       const rendered = renderKnownState(knownLines);
       const version = Math.max(0, file.latestVersion);
@@ -204,7 +207,7 @@ export class FileIndex {
         lineOffset: rendered.lineOffset,
         startLine: rendered.startLine,
         endLine: rendered.endLine,
-        ...(file.rangeKnown ? { rangeKnown: false as const } : {}),
+        ...(file.rangeKnown === false ? { rangeKnown: false as const } : {}),
         caption: rendered.caption,
         knownLinesJson: JSON.stringify(knownLines),
       });
