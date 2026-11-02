@@ -12,10 +12,11 @@ English | [中文](README.zh-CN.md)
 
 Absence is a real-time visualization observer for AI agents. It does not try to make
 an agent smarter — it lets a human *see* what the agent is doing. **Pi**,
-**OpenAI Codex** and **DSH** (DeepSeek Harness) are all first-class runtimes.
+**Claude Code**, **OpenAI Codex** and **DSH** (DeepSeek Harness) are all
+ACP profiles, driven through the same client.
 
 ```
-Pi, Codex or DSH runs the agent.
+The agent's own terminal software runs the agent.
 Absence observes the events.
 The Stage turns events into something humans can watch.
 ```
@@ -260,18 +261,9 @@ avatar-skin details.
 |---|---|---|
 | `PORT` | `8848` | Server port. `0` lets the OS pick a free one (the desktop shell does this); anything non-numeric or above 65535 falls back to `8848` |
 | `HOST` | `127.0.0.1` | Server host |
-| `ABSENCE_AGENT` | `pi` | Default runtime: `pi`, `codex`, `dsh` or `mock`. The project picker chooses per session; this is the fallback |
+| `ABSENCE_AGENT` | `pi` | Default runtime profile id. The project picker chooses per session; this is the fallback. Any ACP profile id is valid |
 | `ABSENCE_PROJECTS_ROOT` | `~/projects` | Directory listed in the project picker |
-| `ABSENCE_PI_BIN` | (probed) | Pi coding-agent package directory or its `dist/index.js`. Unset: the global install is used, then a copy next to Absence. Set from the picker; persisted to `~/.absence/runtimes.json` |
-| `ABSENCE_PI_TOOLS` | (unset) | Pi tool **allowlist**. Unset: Pi uses its own `defaultTools` setting — leave it that way unless you want to restrict tools. Setting it makes Pi treat MCP tools as "kept for codemode/tool_search only", so a server with `exposure: "direct"` connects but is silently never declared to the model. `bash` / `powershell` are served by Absence's own shell, which is what makes processes observable |
-| `ABSENCE_CODEX_SANDBOX` | `workspace-write` | Codex sandbox: `read-only`, `workspace-write` or `danger-full-access`. Without it the app-server runs read-only and every write waits on an approval |
-| `ABSENCE_CODEX_APPROVAL` | `on-request` | Codex approval policy: `untrusted`, `on-request`, `on-failure` or `never` |
-| `ABSENCE_CODEX_APPROVAL_DECISION` | `ask` | How Absence handles a Codex approval prompt: `ask` (record it as an activity and wait for a click), or an automatic `accept` / `accept-for-session` / `decline` |
-| `ABSENCE_CODEX_EXEC_SERVER` | on | Take over Codex's shell through its exec-server protocol (see below). Set `0` to let Codex run commands itself and fall back to the Job Object observer |
-| `ABSENCE_MCP` | on | Load MCP servers (and skills) for a session. Set `0` to skip the MCP half — useful when a server launcher hangs on this machine. Skills are always discovered |
-| `CODEX_HOME` | `~/.codex` | Codex's home. Absence reads its `config.toml` `[mcp_servers.*]` tables and `skills/` from here |
-| `ABSENCE_CODEX_BIN` | (PATH) | Codex entry: `codex.js` or the `codex` executable. Unset: `codex` on PATH is used. Set from the picker; persisted to `~/.absence/runtimes.json` |
-| `ABSENCE_DSH_BIN` | (probed) | dsh entry (`.../dsh/lib/bin.js`). Unset: DSH Desktop's install is probed, then `dsh` on PATH. Set from the picker |
+| `ABSENCE_DSH_BIN` | `dsh` | dsh entry for the shipped ACP profile; a saved launch line in the picker wins |
 | `ABSENCE_DSH_PROFILE` | `acp` | The dsh profile the ACP server boots (`dsh --profile acp`) |
 | `ABSENCE_DSH_HOME` | `~/.dsh` | `DSH_HOME` for the spawned dsh process |
 | `ABSENCE_DSH_PROVIDER` / `ABSENCE_DSH_MODEL` | (profile default) | Provider / model the ACP session starts on |
@@ -293,96 +285,38 @@ behaviour instead of a surprise.
 
 ### Chat commands
 
-The chat dock doubles as a small terminal: a line starting with `/` is a
-command, anything else is a prompt. `/model`, `/thinking`, `/permission`,
-`/compact`, `/name`, `/session`, `/export [html|jsonl]`. `/permission` sets the
-sandbox the agent runs in (`read-only`, `workspace-write`, `danger-full-access`).
-Model switching is session-scoped; results are archived with the session and
-come back on resume. The commands dispatch through the runtime-agnostic adapter,
-so they work the same on Pi, Codex and DSH.
+The chat dock doubles as a small terminal: a line starting with `/` is
+**forwarded to the agent verbatim**, exactly as typed. Absence does not parse or
+implement `/model`, `/skill`, `/skill:<name>`, `/mcp` or any other product
+command — the agent decides whether it recognises the line. The `/` palette is a
+completer: it lists the commands the agent advertised, plus the one ACP action
+Absence performs, `/auth <methodId>`. Results come back as normal run events and
+are archived with the session.
 
 ### Runtimes
 
-Absence drives three agent runtimes; the project picker (and `ABSENCE_AGENT`)
-chooses which. It is a *client*: it calls whichever runtime you installed and
-bundles none of them, so the picker shows each one's location and lets you set
-the path when the probe misses.
+Absence drives agents over the **Agent Client Protocol**. It is a *client*: it
+starts whichever ACP agent you installed and bundles none of them. A runtime is
+a **profile** — a launch line plus its environment and prerequisites — not a
+code path. The project picker (and `ABSENCE_AGENT`) chooses which profile; the
+shipped ones include Pi (`pi-acp`), Codex (`codex-acp`), Claude Code, Qwen Code
+and DSH (`dsh --profile acp`). Add your own entry to `~/.absence/agents.json`,
+or edit any launch line in the picker (persisted to `~/.absence/runtimes.json`).
 
-- **Pi** — a library, not a CLI: Absence loads the `@earendil-works/pi-coding-agent`
-  SDK in-process (`PiAdapter`), from the global install when there is one, and
-  wraps Pi's own shell operations (`AbsenceShell`) so it owns the command
-  boundary. Set a package path in the picker or via `ABSENCE_PI_BIN`.
-- **Codex** — Absence drives `codex app-server`, the JSON-RPC channel Codex
-  defines for observers (`CodexAdapter`). Unlike `codex exec --json`, the
-  app-server carries real item ids, call ids and timestamps, so a command's
-  lifecycle pairs exactly with the processes it lays. Absence then **takes over
-  Codex's shell** so it owns the command boundary there too. The `codex` used is
-  the one on your PATH (or a path you set); Absence does not ship one.
-- **DSH** (DeepSeek Harness) — Absence spawns `dsh --profile acp`, the
-  automation-only Agent Client Protocol server DSH ships (`DshAdapter`): JSON-RPC
-  over stdio, with stdout belonging entirely to ACP. Its `session/update`
-  notifications become AbsenceEvents, and each shell tool call opens a process
-  window so Agent Eggs sees what the agent lays.
-
-When a chosen runtime cannot start (not installed, or the path is wrong),
-Absence **reports the failure and does not fall back** — the picker shows the
-error, so you fix the runtime rather than unknowingly driving something else.
-The **mock** runtime is always available and lays real processes for the watcher.
+Absence does **not** take over the agent's shell: the agent runs commands with
+its own terminal software, and Absence observes the processes those commands lay
+through the OS (Job Object / eBPF / sampling). When a chosen runtime cannot start
+(not installed, or the path is wrong), Absence **reports the failure and does
+not fall back** — the picker shows the error. The **mock** runtime is a scripted
+fixture for development and lays real processes for the watcher.
 
 Either way the rest of Absence only ever sees `AbsenceEvent`; the Stage, Replay,
-the Report and the chat commands never learn which runtime ran.
+the Report and the chat never learn which agent ran.
 
-When a runtime asks for permission (Codex, or DSH's ACP permission request),
-Absence raises an `approval` event: Activity records an `APPROVE?` row and the
-agent waits on the decision. Like any other activity, clicking the row opens the
-request verbatim and its options on the Stage — nothing is forced onto the Stage
-for you.
+When the agent asks for permission, Absence raises an `approval` event and
+forwards the option the user picked, verbatim. It never decides for the user.
 
-### Taking over Codex's shell
-
-Pi's shell is Absence's own (see `AbsenceShell`), which is what lets Absence see
-every process a Pi command lays. Codex runs in its own process, so the same
-trick is not available — but Codex exposes an **exec-server** it will delegate
-command execution to. Absence starts a loopback exec-server, registers it with
-`environment/add`, and pins the thread to it, so Codex hands every command to
-Absence as a `process/start` request that Absence spawns itself.
-
-That matters because a command Codex spawns on its own can escape the Job
-Object the observer watches — `Start-Process` and other detached launches go
-through the shell (explorer.exe), which is outside the job, and the process then
-goes invisible. When Absence spawns the command, it is always Absence's own
-child, inside the job, and its exit is seen first-hand, so an egg can never be
-stuck at `running`. Set `ABSENCE_CODEX_EXEC_SERVER=0` to disable this and rely on
-the observer alone.
-
-The takeover is what makes Codex observation work on Linux. There the observer
-is eBPF (see `native/agentwatch-linux`) and reports no environment marker, so a
-process is attributed by its ancestry alone; the Windows-only
-`ABSENCE_SESSION_ID` trick has nothing to attach to. When Absence spawns the
-command, the ancestry is complete by construction, so every egg lands on the
-command that laid it on both platforms.
-
-The executor also owns interrupts. When a command runs without a PTY, Codex does
-not stop it by writing Ctrl+C to its stdin — it calls `process.interrupt()`,
-which arrives as `process/signal { signal: "interrupt" }`. Absence answers it
-with a process-tree kill, which is what Ctrl+C means to a command in a real
-console. (An executor that ignores `process/signal` leaves the command running
-and the agent reports that Ctrl+C did nothing.)
-
-Commands run the way Codex's own executor runs them. Codex defaults to plain
-pipes and only allocates a PTY when the model asks for `tty: true`; Absence does
-the same — a real PTY through `node-pty` (ConPTY on Windows) for `tty: true`,
-plain pipes otherwise. A PTY merges stdout and stderr into one stream (reported
-as `pty`) and delivers Ctrl+C written to it, so an interactive command behaves
-exactly as it would natively.
-
-Commands also run under the same environment they would on Codex's own executor.
-Codex sends an `env_policy` (inherit / exclude / set / include-only) alongside a
-sparse `env`; Absence runs that policy over its own environment exactly as
-Codex's `shell_environment::create_env` does (`ShellEnvironment.ts`), then lets
-the request's `env` win. Taking the environment from the policy — not from the
-sparse `env` alone — is what keeps `PATH` and `PATHEXT` present, so a command
-like `node ticker.mjs` resolves `node` just as it does natively.
+See [docs/decoupling.md](docs/decoupling.md) for the full architecture.
 
 ## Security note
 

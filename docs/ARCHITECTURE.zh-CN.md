@@ -1,5 +1,10 @@
 # 架构
 
+> **P5 之后：Absence 是 ACP-only 的观察器与转发层。** 本文中按产品拆分的
+> runtime 章节（PiAdapter / CodexAdapter / DshAdapter / capabilities / shell
+> 接管）已过期，最新说明见 [decoupling.md](decoupling.md) 与
+> [ARCHITECTURE.md](ARCHITECTURE.md)。下文保留与 ACP 无关的通用部分。
+
 Absence 内部实现的深入文档。介绍与使用方法见 [README](../README.zh-CN.md)。
 
 ```

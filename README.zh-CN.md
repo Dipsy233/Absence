@@ -2,6 +2,10 @@
 
 [English](README.md) | 中文
 
+> **P5 之后：Absence 只做观察与转发，agent 的接口由 agent 自己的终端软件提供。**
+> 当前架构见 [docs/decoupling.md](docs/decoupling.md) 与
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)；本文中按产品拆分的运行时章节已过期。
+
 > 向智能臣服!
 
 > AI 正变得无所不能，而人类正慢慢跟不上它做了什么。我们把这种状态称为

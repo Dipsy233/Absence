@@ -6,65 +6,48 @@ guide, see the [README](../README.md).
 ## Architecture
 
 ```
-Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AgentAdapter ──▶ Pi (SDK, in-process)
-   ▲                                                              ├─▶ Codex (app-server, JSON-RPC)
-   │                                                              └─▶ DSH (dsh --profile acp, ACP/JSON-RPC)
+Browser ──WebSocket──▶ Absence Server ──EventBus──▶ AcpAdapter ──▶ any ACP agent
+   ▲                                                (pi-acp / codex-acp /      │
+   │                                                 claude-code-acp / dsh / …) │
    └────────────── AbsenceEvent stream (file_read / file_edit / command / …) ┘
 ```
 
 - `packages/core` — the shared `AbsenceEvent` + domain types. The only vocabulary
-  the UI knows; it never learns that Pi, Codex or DSH exists.
-- `apps/server` — Fastify + WebSocket. Each runtime is one `AgentAdapter`:
-  `PiAdapter` wraps the Pi SDK in-process and maps `AgentSessionEvent` →
-  `AbsenceEvent`; `CodexAdapter` drives `codex app-server` over JSON-RPC and maps
-  its notifications the same way (`AppServerClient` is the transport — chosen over
-  `codex exec --json` because the app-server carries real item ids, call ids and
-  timestamps); `DshAdapter` drives `dsh --profile acp`, DSH's automation-only
-  Agent Client Protocol server, over JSON-RPC/NDJSON stdio (`DshClient` is the
-  transport) and maps its `session/update` notifications; `MockAdapter` replays a
-  scripted run with no credentials;
-  `chokidar` watches the project for out-of-band changes. **Absence owns the
-  shell in every real runtime.** For Pi, `process/AbsenceShell` wraps Pi's own
-  local shell operations and registers them as custom `bash` / `powershell` tools
-  (a custom tool shadows the built-in one by name, so `ABSENCE_PI_TOOLS` is
-  untouched). For Codex, `process/ExecServer` *is* the executor: Absence starts a
-  loopback exec-server, registers it with `environment/add` and pins the thread to
-  it, so Codex hands every command to Absence as a `process/start` to spawn. For
-  DSH, each shell tool call opens a `ProcessWatcher` window. Either
-  way Absence owns the command boundary, which is what tells `ProcessWatcher` when
-  a command ran. Pi marks the command with a `#` comment; Codex is attributed by
-  ancestry alone, which the takeover makes complete; DSH is attributed by the
-  window.
-  `ProcessWatcher` then observes the process table. On **Windows** it does not
-  sample it at all: `native/agentwatch` is a small helper that puts the server
-  into a **Job Object**, and the kernel then reports every creation and exit as
-  it happens. On **Linux** it does not sample either: `native/agentwatch-linux`
-  attaches three eBPF tracepoints (`sched_process_fork/exec/exit` plus
-  `sys_enter_execve` for argv) and reports the same events from a ring buffer. A
-  process that lives 20 ms is seen like any other on both — polling could never
-  see it. On other platforms, or if the helper cannot start, the watcher falls
-  back to snapshots (one CIM query on Windows, `ps` elsewhere). A process is an egg
-  when it appeared inside a command's window and its ancestor chain reaches Absence;
-  eggs are reported at the root of each new subtree, and nothing is ever killed.
+  the UI knows; it never learns which agent produced an event.
+- `apps/server` — Fastify + WebSocket. There is exactly one driving path:
+  `AcpAdapter` speaks the Agent Client Protocol to a profile from
+  `agents/acp/profiles.ts` (or `~/.absence/agents.json`), and
+  `AcpToolMapper` / `ToolRules` project `session/update` notifications into
+  `AbsenceEvent`s by protocol `kind` and payload shape — never by a product
+  name or a tool title. `MockAdapter` is a scripted fixture for development;
+  `chokidar` watches the project for out-of-band changes.
+  **Absence does not take over the agent's shell.** The ACP `execute` call
+  opens a `ProcessWatcher` window and the OS reports the processes inside it;
+  `ProcessWatcher` observes the process table (Job Object on Windows, eBPF on
+  Linux, sampling elsewhere). Pi, Codex, DSH and any other ACP agent run inside
+  their own terminal software with their own executor.
+  A process is an egg when it appeared inside a command's window and its
+  ancestor chain reaches Absence; eggs are reported at the root of each new
+  subtree, and nothing is ever killed.
   Eggs are then **classified by behaviour, not by name** (`process/classify.ts`,
   with the command's own text parsed by `process/CommandIntent.ts`). A process is
   `primary` when it outlived its command, spawns its own processes, is a subject
   the command named (`./daemon.sh`, `python train.py`), was backgrounded or
   redirected by the command, or runs from the workspace. It is a `tool` when it
   comes from a tool directory, or is simply *ephemeral* — gone in a few tens of
-  milliseconds with no children — which catches helpers wherever they live, such
-  as Pi's own `fd.exe`, without any directory list to keep in step. A transparent
-  launcher (`nohup`, `setsid`, `time`, `env`) is passed through so the child it
-  starts is the egg. The name prior in `process/priors.ts` is only a tiebreaker,
-  never a verdict — a `cat` that outlived its command is still primary. The eggs
-  panel lists primaries and folds tools into a count; Activity and the Report
-  apply the same filter. One platform difference matters for attribution: on
-  Linux a process can `exec` in place, so `nohup node ticker.mjs` reports twice
-  under one pid — once as `nohup`, once as `node`. A pid alone therefore cannot
-  mean "already handled"; the watcher keys on the **(pid, command line)** pair, so
-  the second event is judged as the new process it is. Pi keeps
-  its own session file (so a conversation can be resumed) and Absence archives the
-  `AbsenceEvent` stream it observed alongside it.
+  milliseconds with no children — which catches helpers wherever they live,
+  without any directory list to keep in step. A transparent launcher (`nohup`,
+  `setsid`, `time`, `env`) is passed through so the child it starts is the egg.
+  The name prior in `process/priors.ts` is only a tiebreaker, never a verdict —
+  a `cat` that outlived its command is still primary. The eggs panel lists
+  primaries and folds tools into a count; Activity and the Report apply the same
+  filter. One platform difference matters for attribution: on Linux a process
+  can `exec` in place, so `nohup node ticker.mjs` reports twice under one pid —
+  once as `nohup`, once as `node`. A pid alone therefore cannot mean "already
+  handled"; the watcher keys on the **(pid, command line)** pair.
+  Absence archives the `AbsenceEvent` stream it observed; the agent keeps its
+  own conversation, and the opaque ACP resume handle is stored with the archive
+  so a reopen can continue the agent's session.
   **Resource metrics (v0.4) bypass the event stream**: `process/ProcessMetrics`
   samples each egg's subtree for cumulative CPU and RSS on an adaptive cadence
   (2s→60s, chosen by concurrent primary count; a selected egg pins 2s) — Linux
@@ -137,25 +120,24 @@ apps/desktop/             Electron shell (not a workspace; own node_modules)
 packages/core/src/        events.ts (AbsenceEvent + payload map)  types.ts  index.ts
 
 apps/server/src/
-  capabilities/           discover.ts (skills + MCP, one scan for every runtime)
-                          piResources.ts (skills → Pi's loader, MCP → Pi's extension)
-                          manage.ts (create/import/delete skills, edit mcp.json)
-  agents/                 AgentAdapter.ts (the runtime-agnostic boundary)
-                          PiAdapter.ts  CodexAdapter.ts  CodexCommands.ts
-                          DshAdapter.ts (DeepSeek Harness over ACP)
-                          AppServerClient.ts (codex app-server JSON-RPC)
-                          DshClient.ts (dsh ACP JSON-RPC/NDJSON)
-                          PiBin.ts  CodexBin.ts (locate the user's runtime)
-                          MockAdapter.ts  createAdapter.ts
-  process/                AbsenceShell.ts (owns Pi's shell)  ProcessWatcher.ts (eggs)
-                          ExecServer.ts (owns Codex's shell: the exec-server)
-                          ShellEnvironment.ts (Codex env_policy)  CodexShell.ts (unwrap)
+  agents/                 AgentAdapter.ts (legacy bridge kept for MockAdapter)
+                          createAdapter.ts (profile lookup → AcpAdapter)
+                          registry.ts (the fixture registration door)
+                          MockAdapter.ts (scripted fixture)
+                          acp/  AcpAdapter.ts (the one client)
+                                AcpConnection.ts + protocol/** (JSON-RPC/NDJSON)
+                                AcpSession.ts  AcpPermissionBridge.ts  AcpAuth.ts
+                                AcpConfigOptions.ts  AcpToolMapper.ts  ToolRules.ts
+                                AgentCatalog.ts  profiles.ts
+                                proxy/** (transparent ACP proxy mode)
+  process/                ProcessWatcher.ts (eggs)
+                          CommandLine.ts (shell-wrapper parsing for display)
                           ProcessTable.ts (pid / ppid / command line / start time)
                           observer.ts (platform-neutral event shapes)
                           JobMonitor.ts + JobSidecar.ts (Windows kernel events)
                           EbpfObserver.ts (Linux kernel events)
                           CommandIntent.ts + classify.ts + priors.ts (primary vs tool)
-  runtimes/config.ts      runtime paths (~/.absence/runtimes.json)
+  runtimes/config.ts      launch-line overrides (~/.absence/runtimes.json)
   sessions/               SessionStore.ts  archive.ts (facade)
                           storage/db.ts (SQLite ~/.absence/absence.db; sessions, events, runs)
                           storage/runs.ts (incremental run index for History)
@@ -209,157 +191,65 @@ scripts/                  make-demo.mjs
   browser/                start-absence.bat  start-absence.sh (browser launchers)
   checks/                 check-history.ts  check-report.ts  check-eggs.ts
                           check-classify.ts  check-agentwatch.ts  check-ebpf.ts
-                          check-codex.ts  check-codexshell.ts  check-shellenv.ts
-                          check-execserver.ts  check-fsdiff.ts  check-metrics.ts
+                          check-acp.ts  check-acp-lifecycle.ts  check-acp-transport.ts
+                          check-acp-mapping.ts  check-acp-proxy.ts
+                          check-agent-catalog.ts  check-fsdiff.ts  check-metrics.ts
                           check-incremental.ts  check-outside-attr.ts
                           harness.ts  run-offline.ts (shared harness + runner)
-                          gen-whalebun-css.mjs (regenerates whalebun.css)
+                          gen-whalebun.css.mjs (regenerates whalebun.css)
 ```
 
-## Codex (`CodexAdapter`)
+## The ACP boundary (`agents/acp/`)
 
-Pi is embedded, so Absence controls the shell by wrapping Pi's tool operations.
-Codex is a separate process, driven over its own protocol — and the observation
-path is correspondingly different.
-
-```
-AgentAdapter
-  └─ CodexAdapter ── AppServerClient ──(stdio JSON-RPC)── codex app-server
-        │                                                     │
-        │  environment/add(exe-server URL)                   │  process/start
-        │  thread & turn environments ───────────────────────┘
-        ▼
-  CodexExecServer (loopback WebSocket, JSON-RPC)
-        │  spawn(argv)  ← Absence is the executor
-        ▼
-  the command, Absence's own child inside the Job/eBPF window
-```
-
-- **Transport** — `AppServerClient` speaks newline-delimited JSON-RPC to
-  `codex app-server`. The app-server (not `codex exec --json`) is used because it
-  carries real item ids, call ids and `startedAtMs`/`completedAtMs`; the SDK's
-  `--json` transport regenerates item ids and drops call ids and timestamps, so a
-  command's lifecycle could not be paired with the processes it lays.
-- **Shell takeover** — `CodexExecServer` is a small JSON-RPC server on loopback.
-  `CodexAdapter.start` starts it, registers it with `environment/add` and puts it
-  in the thread's `environments`, so Codex executes every command through it. It
-  implements `process/start` (spawn), `process/read`/`write`, `process/terminate`
-  and `process/signal` (interrupt), and drives `ProcessWatcher.begin/end` so eggs
-  attribute exactly as they do for Pi.
-- **PTY** — `process/start` with `tty: true` allocates a real PTY through
-  `node-pty` (ConPTY on Windows); otherwise plain pipes. This mirrors Codex, which
-  defaults to pipes and only allocates a PTY when the model asks.
-- **Environment** — the executor builds the command's environment from the
-  request's `env_policy` (`ShellEnvironment.ts`, a faithful port of Codex's
-  `shell_environment::create_env`), then lets the request's sparse `env` win.
-- **Display** — `CodexShell.ts` undoes Codex's shell wrapper (the `pwsh -Command
-  "…"`, `bash -lc "…"`, `cmd /c …` and the UTF-8 preamble) so commands and eggs
-  show what the model wrote.
-- **Approvals** — Codex's `item/…/requestApproval` server-to-client requests are
-  surfaced as `approval` events and answered by `respondApproval` (or
-  automatically, per `ABSENCE_CODEX_APPROVAL_DECISION`).
-
-## DSH (`DshAdapter`)
-
-DSH (DeepSeek Harness) is a separate process like Codex, but it exposes a
-different channel: an **automation-only Agent Client Protocol server** reached by
-running `dsh --profile acp`.
+Every agent is one profile plus one client. There is no per-product adapter,
+protocol, shell takeover, skills/MCP scan or approval policy.
 
 ```
-AgentAdapter
-  └─ DshAdapter ── DshClient ──(stdio NDJSON, JSON-RPC)── dsh --profile acp
-        │                                                      │
-        │  session/update notifications ──────────────────────┘
-        │  session/request_permission (client callback)
-        ▼
-  AbsenceEvents (message / thinking / tool_* / file_* / command / process / approval)
+AgentAdapter (legacy bridge)
+  └─ AcpAdapter ── AcpConnection ──(stdio NDJSON, JSON-RPC)── <profile launch line>
+        │                                                        (pi-acp, codex-acp,
+        │                                                         claude-code-acp, dsh, …)
+        ├─ AcpSession            lifecycle, turns, cancel watchdog
+        ├─ AcpPermissionBridge   session/request_permission ↔ the UI's answer
+        ├─ AcpAuth               advertised login methods, deferred session
+        ├─ AcpConfigOptions      the agent's own selectors
+        └─ AcpToolMapper         session/update → AbsenceEvent
 ```
 
-- **Transport** — `DshClient` speaks newline-delimited JSON-RPC over the child's
-  stdio. ACP (the Agent Client Protocol, the same wire format Zed's SDK uses)
-  hands the whole turn over as `session/update` notifications; stdout belongs
-  entirely to ACP, so there is no TUI to scrape.
-- **Mapping** — `agent_message_chunk` → `message` (streamed), `agent_thought_chunk`
-  → `thinking`, `tool_call`/`tool_call_update` → `tool_start`/`tool_end` plus the
-  first-class `file_read`/`file_write`/`file_edit`/`command`/`search` derived from
-  the tool name and its arguments, `usage_update` → context usage. DSH wraps read
-  results in `<path>…<content>NN: line…`; the adapter unwraps them so `file_read`
-  carries plain text like Pi's.
-- **Agent Eggs** — each shell tool call (`pwsh` etc.) opens a `ProcessWatcher`
-  window (`begin` on `tool_call`, `end` on `tool_call_update`), so the processes
-  the command lays fold into one egg attributed to that command.
-- **Approvals** — DSH's `session/request_permission` request is surfaced as an
-  `approval` event; the chosen ACP option id is sent back.
-- **Locating dsh** — `ABSENCE_DSH_BIN` / a saved path wins, then the DSH Desktop
-  install, then a `dsh` on PATH. A `.cmd`/`.bat` wrapper is run through the shell
-  (Windows cannot spawn it directly).
+- **Profiles are data** (`agents/acp/profiles.ts` + `~/.absence/agents.json` +
+  the optional ACP registry cache). A launch line, its env, its prerequisites and
+  its auth hint live there; a new agent adds a row, not a code branch.
+- **Capability-gated lifecycle** — `session/resume`, `session/load` and
+  `session/close` are only sent when `initialize` declared them. Prompt blocks
+  are trimmed to the declared `promptCapabilities`.
+- **Projection by protocol, not by product** — `AcpToolMapper` uses ACP `kind`
+  first and a shape table (`ToolRules.ts` / `toolRules.json`) when the agent
+  omits it. No rule matches a tool title or an agent name.
+- **Cancel ordering** — `cancel` answers every pending permission `cancelled`
+  before it sends `session/cancel`; a watchdog settles a turn when the agent
+  ignores the request.
+- **Approvals** — the agent's options are surfaced as an `approval` event and
+  `respondPermission` echoes the selected option id verbatim. There is no
+  auto-accept/decline path in the contract.
+- **`/` commands** — forwarded as prompt text, verbatim. Absence does not parse
+  or implement `/model`, `/skill`, `/skill:<name>` or `/mcp`; the agent decides.
+  `/auth` is the one ACP port action Absence performs (`authenticate`).
+- **Proxy mode** — `agents/acp/proxy/**` relays bytes untouched between an
+  external ACP client and its agent, and taps them into the same event stream.
 
-## Skills and MCP (`capabilities/`)
+## Runtime paths (launch lines, not vendor binaries)
 
-Both are **cross-runtime formats**, not vendor features, so Absence owns
-discovery once and each adapter consumes it:
+Absence bundles no runtime. `runtimes/config.ts` persists a profile id →
+launch-line map to `~/.absence/runtimes.json`, editable from the project picker;
+`AgentCatalog` resolves it over the shipped data and any user entries. When a
+chosen profile cannot start (not installed, wrong path), the session fails with
+a clear message — there is **no fallback to the mock runtime**.
 
-| | Format | Where every runtime looks |
-|---|---|---|
-| Skill | a directory with `SKILL.md` (`name` + `description` frontmatter, the [Agent Skills](https://agentskills.io) spec) | `~/.agents/skills`, `~/.pi/agent/skills`, `~/.codex/skills`, `~/.dsh/skills`, `<project>/.agents/skills` (ancestors up to the repo root), `<project>/.pi/skills` |
-| MCP | an `mcpServers` entry (`command`/`args`/`env`, or `url`/`headers`) | `~/.pi/agent/mcp.json`, `<project>/.pi/mcp.json`; Codex's `~/.codex/config.toml` `[mcp_servers.*]` (converted by a small TOML reader) |
+## History and resume
 
-`capabilities/discover.ts` reads those files and returns `skills` + `mcpServers`
-+ diagnostics. It executes nothing. `AgentAdapter.getCapabilities()` returns the
-result as `CapabilityState`, which rides `session_state` to the web app.
-`capabilities/manage.ts` is the writable half, reached from the chat dock as
-`/skill` and `/mcp` (where Pi and Codex also put them) rather than from a
-Settings pane — see "Chat commands".
-
-What each adapter does with it:
-
-- **Pi** — the deciding detail: **`createAgentSession` does not load the CLI's
-  built-in extensions.** A naive embedding therefore loses `mcp`, `codemode` and
-  `tool_search` (so `mcp.json` is never read and no `mcp__<server>__<tool>` ever
-  exists), and the `~/.agents/skills` locations are only reached by the CLI's
-  package manager. `capabilities/piResources.ts` supplies them:
-  `DefaultResourceLoader.extensionFactories` gets `createCodemodeExtension()`,
-  `createToolSearchExtension()` and `createMcpExtension()`; discovered skills are
-  injected through `skillsOverride`; Codex-only servers are registered with
-  `pi.registerMcpServer`. The adapter then calls **`session.bindExtensions({})`**
-  — the MCP extension connects on `session_start`, which only fires once bindings
-  exist. Every member is probed, so an older or newer installed Pi degrades to
-  the previous behaviour instead of failing to start. `ABSENCE_MCP=0` skips the
-  MCP half.
-- **Codex** — reads the same files itself and exposes both over the app-server it
-  already speaks: `skills/list` and `mcpServerStatus/list`. Those requests win
-  when they work (Codex resolves plugin skills and layered config); the file scan
-  is the fallback for older app-server builds.
-- **DSH** — discovery over `<DSH_HOME>/skills`; its tool calls (MCP-backed or not)
-  already arrive as `tool_call`, so they render on the Stage unchanged.
-
-One trap is worth recording, because it looks like "Absence cannot connect to
-MCP". Pi's `_isActivatable` keeps an MCP tool that a session's allowlist does not
-name registered — but only lets it become *active* (declared to the model) for
-non-`direct` exposure. `ABSENCE_PI_TOOLS` used to default to
-`read,bash,edit,write,grep,find,ls`, so every session carried an allowlist: a
-`direct` server connected, registered its tools, and was never declared. The
-variable is now unset by default and `createAgentSession` receives no `tools`,
-so Pi's own `defaultTools` selection applies and `direct` works as documented.
-`scripts/dev/probe-absence-mcp.ts` reproduces the end-to-end check against a
-live server.
-
-MCP tool calls need **no new event type**: Pi's `createMcpExtension` registers
-its tools through the normal pipeline, so a call arrives as
-`tool_execution_start` / `tool_execution_end` with the tool named
-`mcp__<server>__<tool>` and lands in the Activity stream like `read` or `bash`.
-A connected server's tools are counted from the runtime's own registry
-(`getAllTools`), which is why the panel's "connected / tools" figures can change
-during a run.
-
-## Runtime paths (client, not vendor)
-
-Absence bundles no runtime. `agents/PiBin.ts` and `agents/CodexBin.ts` resolve
-what to run and report the source (`configured` / `env` / `global` / `path` /
-`bundled` / `none`); `runtimes/config.ts` persists overrides to
-`~/.absence/runtimes.json`, editable from the project picker. When a chosen
-runtime cannot start (not installed, wrong path), the session fails with a clear
-message — there is **no fallback to the mock runtime**.
+History is Absence's own archive (SQLite). No agent-private session file is read
+or merged. The agent's opaque ACP resume handle is stored with the archive and
+reused on reopen, so the client resumes by `absenceSessionId` alone.
 
 ## AbsenceEvent
 
@@ -382,8 +272,8 @@ Extensions over the original v0.1 spec:
   outside the agent's own tools (bash, sed, …).
 - **`process`** — an OS process the agent laid, reported by the process watcher
   (see Agent Eggs).
-- **`approval`** — the runtime (Codex) asking the user for permission; recorded as
-  an `APPROVE?` activity and answered from the Stage.
+- **`approval`** — the agent asking the user for permission; recorded as
+  an `APPROVE?` activity and answered from the Stage verbatim.
 - **`mcp`** — a call into an MCP server, reported *in addition to* its
   `tool_start`/`tool_end` pair. Those carry no result and no notion of a server,
   so a person watching could not tell an MCP call from a built-in one. The event
@@ -392,9 +282,9 @@ Extensions over the original v0.1 spec:
   `MCP  filesystem › list_directory` (and `MCP!` when the server said no); the
   Stage renders it through the terminal view — `mcp <server> › <tool>` with an
   `mcp` chip, the arguments, the output, and a text/json toggle when the server
-  returned structured content. Pi (`tool_execution_end` for `mcp__*`), Codex
-  (`McpToolCall` items) and DSH (a `mcp__*` tool name) all emit it, so the run
-  looks the same whichever runtime produced it. The Absence Report folds them per
+  returned structured content. Any ACP agent that reports an `mcp__*` tool call
+  emits it, so the run looks the same whichever agent produced it. The Absence
+  Report folds them per
   server — calls, failures, tools — because an MCP-heavy run would otherwise
   look idle: it changed no files and ran no shell commands.
 
@@ -432,9 +322,8 @@ Context usage, status, model and the file tree ride a separate
 | `GET` | `/avatar/:status` | The active skin's media for a status (206 Range supported; 404 = no upload) |
 | `WS` | `/ws/sessions/:id` | `{type:"snapshot"}` then `{type:"event"}` / `{type:"session_state"}` |
 
-`session_state` also carries `capabilities` (skills + MCP servers), which is
-what `/skill` completes from and what `/mcp list` reports; it updates live as
-servers connect.
+`session_state` also carries the agent's advertised `agentCommands` and auth
+methods, so the palette only lists what the agent itself exposes.
 
 The file endpoint refuses paths outside the project, refuses non-files, caps size
 at 512 KB and rejects binaries.
@@ -442,56 +331,37 @@ at 512 KB and rejects binaries.
 ## Chat commands
 
 The chat dock at the bottom of the Stage doubles as a small terminal. A line
-starting with `/` is a command; anything else is an ordinary prompt. The `/`
-button on the left of the input opens a filterable palette above it — ↑/↓ to
-move, Enter or click to run, Esc to clear.
+starting with `/` is **still a normal prompt**: the agent owns its meaning.
+Absence does not parse or implement `/model`, `/skill`, `/skill:<name>`, `/mcp`
+or any other product command. The line is forwarded verbatim, and the agent
+decides whether it recognises it.
 
-| Command | What it does |
+The `/` button opens a filterable palette above the input. It is a completer,
+not an interpreter: it lists exactly the commands the agent advertised
+(`available_commands_update`) plus the one ACP action Absence performs:
+
+| Command | Who owns it |
 |---|---|
-| `/model [provider/id]` | List and switch the model |
-| `/thinking [level]` | Show or set the thinking level |
-| `/compact [instructions]` | Compact the conversation context |
-| `/name [name]` | Set the session display name |
-| `/session` | Show session info and stats |
-| `/export [html\|jsonl]` | Export the session under `~/.absence/exports/` |
-| `/skill [name]` | List the skills the session can load; `/skill <name> [request]` loads one. Pi adds `/skill:<name>`, which the input passes straight through as a prompt |
-| `/mcp [subcommand]` | `list` (default) · `reconnect [server]` — the session-scoped surface only |
+| `/auth [methodId]` | Absence: the ACP `authenticate` call, with the methods the agent advertised. |
+| anything the agent advertises (`/compact`, `/review`, …) | The agent: the whole line is sent as prompt text. |
+| `/model`, `/skill`, `/mcp`, an unknown `/foo` | The agent: still forwarded as prompt text; Absence never drops the line. |
 
-`/skill` and `/mcp` match the runtimes' own commands. A skill is *loaded* by
-naming it (`/skill:demo-skill fix the flaky test`), not configured in a dialog.
-`/mcp` is session-scoped exactly like Pi's: list and reconnect. Adding,
-removing, enabling or disabling a server edits the shared `mcp.json`, which
-every runtime deliberately keeps outside the session — `pi mcp add …`,
-`codex mcp add …`, or a file edit, then `/mcp reconnect` here applies it (the
-transport belongs to Pi's MCP extension, so Absence reloads the session's
-extensions — which re-emits `session_start` and makes the extension redial —
-and reports the state that follows). The input completes skill names after
-`/skill:`.
-
-Switching the model is **session-scoped** — Pi's global default is left alone.
-Results are printed back into the chat as system messages and archived with the
-session, so they come back on resume.
-
-Commands dispatch through the runtime-agnostic `AgentAdapter`, so a different
-runtime only has to implement those few methods (the web UI does not change).
-Pi's own built-in slash commands live in its interactive TUI rather than the
-SDK, so these are mapped onto SDK calls (`setModel`, `setThinkingLevel`,
-`compact`, `setSessionName`, `getSessionStats`, `exportToHtml`/`exportToJsonl`)
-rather than delegated to Pi.
+`SessionStore.forwardCommand(text)` is the whole implementation — it records the
+line as a user message and sends it as a prompt. Results come back as ordinary
+run events and are archived with the session, so they return on resume.
 
 ## Desktop shell internals
 
 What the Electron shell adds over the browser, and what packaging produces:
 
-- **Electron must bundle Node ≥ 22.19.** Electron ships its own Node, and the
-  owned runtime is what runs the in-process server and Pi — not the `node` on
-  `PATH`. Pi's package declares `engines.node >= 22.19` and imports `globSync`
-  from `node:fs`, which only exists from Node 22. On an older Electron the shell
-  loads, then the session fails with `pi runtime could not start` (it no longer
-  silently falls back to the mock runtime). As of writing, Electron **37.x
-  bundles Node 22.21.1** (Electron
-  33 bundles Node 20.18, which is too old). If you bump Electron, check the
-  bundled Node in the release notes, not just the version number.
+- **Electron must bundle Node ≥ 22.19.** Electron ships its own Node, and it is
+  what runs the in-process server — not the `node` on `PATH`. Some ACP agents
+  declare `engines.node >= 22.19` and import `globSync` from `node:fs`, which
+  only exists from Node 22. On an older Electron the shell loads, then the
+  session fails with a readable runtime error (there is no silent fallback to
+  the mock runtime). As of writing, Electron **37.x bundles Node 22.21.1**
+  (Electron 33 bundles Node 20.18, which is too old). If you bump Electron,
+  check the bundled Node in the release notes, not just the version number.
 - **Electron is installed separately**, into `apps/desktop/node_modules` (it is
   deliberately *not* a workspace member). It carries its own `tsx` + esbuild so
   the Windows shell never picks up the Linux-built `esbuild` in the root
@@ -508,9 +378,9 @@ desktop-only):
 - **`bundle-server.mjs`** compiles ABSENCE's own server (and `@absence/core`)
   into `dist/desktop/build/server.cjs`. A shipped app has no `tsx`, so the
   TypeScript can no longer be loaded at runtime. Third-party packages stay
-  *external* and are resolved from a pruned `node_modules` instead — notably
-  `@earendil-works/pi-coding-agent`, which ships a `.wasm` asset and loads
-  parts of itself dynamically, so bundling it would break it.
+  *external* and are resolved from a pruned `node_modules` instead, because some
+  of them ship assets (`.wasm`) or load parts of themselves dynamically, so
+  bundling them would break them.
 - **`stage-desktop.mjs`** runs that bundle and installs the server's
   production dependencies (`npm install --omit=dev`) into
   `dist/desktop/build/node_modules`. It installs fresh rather than filtering the

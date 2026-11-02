@@ -1,21 +1,22 @@
-# 解耦：从「agent 客户端」到「agent 观察器」
+# 解耦：Absence 只做观察与转发
 
-> 分支 `feat/observer-decoupling`。这份文档是这套改动的设计来源，先读这里，
-> 再读代码。
+> 分支 `acp2`。P0–P6 落地后的最终形态：一个 ACP 客户端 + 一个观察器，
+> 没有第二种驱动路径。
 
-## 问题
+## 一句话
 
-现在的 Absence 有两副面孔：
+**Agent 的接口由 agent 自己的终端软件提供。Absence 启动它、用 ACP 和它对话、
+把发生的事投影成事件；不读它的配置，不接管它的 shell，不实现它的 `/` 命令。**
 
-| 面孔 | 依赖 | 稳定性 |
-|---|---|---|
-| **观察者** — 进程、文件、终端 | 操作系统 | 稳定，不会随 agent 版本变化 |
-| **客户端** — tool 语义、skills、MCP 配置 | 某个 pi / codex / dsh 版本的私有实现 | 脆弱，每次升级都可能坏 |
-
-第二副面孔是债务的源头。`apps/server/src/agents/` 下 4700 行（PiAdapter 812、
-CodexAdapter 1169、DshAdapter 746、AppServerClient 420、CodexCommands 372 …）
-全部是在回答「我能从你的实现里读到什么」。这些实现没有对外承诺任何稳定协议，
-所以问题不在于这些代码写得如何，而在于**这个位置本身不该存在**。
+```
+                  ┌───────────────────────────────┐
+  Browser ──WS──▶ │ Absence Server                │
+                  │  SessionStore                 │
+                  │    ├─ AcpAdapter ── ACP ──────┼──▶ 任意 ACP agent 进程
+                  │    ├─ ProcessWatcher（OS）     │      (pi-acp / codex-acp /
+                  │    └─ FileWatcher（OS）        │       claude-code-acp / dsh / …)
+                  └───────────────────────────────┘
+```
 
 ## 三层事件模型
 
@@ -23,118 +24,92 @@ CodexAdapter 1169、DshAdapter 746、AppServerClient 420、CodexCommands 372 …
 Layer 0  OS 事实流 —— 必需，零耦合，永远可用
          进程出现/退出、文件创建/修改/删除
          来源：ProcessWatcher（Job Object / eBPF）、FileWatcher
-         带「概率精度」标注：exact（内核事件）/ sampled（轮询）
+         精度标注：exact（内核事件）/ sampled（轮询）
 
 Layer 1  终端流量镜像 —— 低耦合，通用
-         agent 进程写出的原始 stdout/stderr 字节流
-         来源：pty 旁路或管道转发，不解析内容
+         agent 进程写出的原始 stdout/stderr 字节流（pty 旁路），不解析内容
 
-Layer 2  语义事件 —— 可选，每 runtime 一个插件
+Layer 2  ACP 语义事件 —— 可选，协议层
          tool_start / file_read / mcp / thinking / approval …
-         来源：runtime adapter；接得到就接，接不到就退化
+         来源：AcpAdapter 的 MonitorEvent 投影
 ```
 
-**核心不变量：Layer 2 缺失时，Stage 必须依然可用、依然好看。**
-今天是反的——没有 Layer 2 就什么都看不到。本分支先修这一点。
+**核心不变量：Layer 2 缺失时，Stage 依然可用、依然好看。**
 
-## 本分支做了什么
+## 唯一驱动路径
 
-### 1. `session` 来源标注（这次改动的地基）
+1. `AgentCatalog` 从数据里解析出一个 profile（`~/.absence/agents.json` →
+   shipped data → ACP registry 缓存），启动命令就是 profile 的 launch line。
+2. `AcpAdapter` 起进程、`initialize`、`session/new`（或在 agent 声明
+   `resume`/`load` 时恢复）、`session/prompt`、`session/cancel`、`session/close`。
+3. `AcpToolMapper` / `ToolRules` 把 ACP 的 `tool_call` 按 **kind 和形状**
+   投影成 AbsenceEvent；`ToolRules` 只认字段形状和内容类型，不认标题或产品名。
+4. 审批是 `session/request_permission` → UI 的 `approval` 事件 →
+   `respondPermission` 把用户选中的 option id **原样**回传。没有自动决策。
 
-`SessionRuntimeState` 新增必填字段 `source: SessionSource`：
+没有 `PiAdapter`、`CodexAdapter`、`DshAdapter`，也没有 `ABSENCE_LEGACY_*`
+开关；没有永久回退路径。
 
-```ts
-{ kind: "runtime", runtime: "pi" | "codex" | "dsh" | ... }   // 由 adapter 驱动
-{ kind: "observe", targetPid, label }                         // 只观察别人的进程
-```
+## `/` 命令：删功能，不删入口
 
-UI 用它决定怎么说这件事：
+`/model`、`/skill`、`/skill:<name>`、`/mcp` 以及 agent 自己 advertise 的
+任何命令，都不再由 Absence 解析：
 
-- `runtime` → 能做的都做
-- `observe` → 不显示「撤回/审批/model 切换」这些按钮，因为**它不拥有那个进程**；
-  状态栏写「观察中」，Stage 只画 Layer 0/1
+- 输入框照常接受 `/` 开头的行；
+- 命令面板只做补全：列出 agent `available_commands_update` 里的命令，
+  再加上 Absence 唯一的本地动作 `/auth`；
+- 回车后整行文本作为 prompt 发给 agent，由它决定认不认；
+- 服务端 `SessionStore.forwardCommand(text)` 只有一行：
+  `this.prompt(text)`。`/auth` 走 ACP 的 `authenticate`。
 
-没有这个字段，UI 就只能靠猜 runtime 名字来判断能力——那又是耦合。
+因此 agent 新增/改名命令时，Absence 不需要改代码，也不会“吃掉”一条它不认识的
+斜杠命令。
 
-### 2. `observe` 模式：`absence watch`
+## 审批
 
-```
-absence watch --pid 1234
-absence watch --project . -- cmd /c "pi" ...   # 后置阶段
-```
+- UI 展示 agent 给出的 options；
+- 用户的选择经 `respondPermission` 逐字转成 ACP outcome；
+- `approvalAutomatic` 之类只可能是 UI 偏好，服务端不替用户决策。
 
-服务端起一个 `AbsenceSession`，其 source 为 `observe`：
+## observe 模式不受影响
 
-- **没有 adapter**：不启动、不发送提示、不改配置
-- `ProcessWatcher` 以被观察进程为根（`rootPid`），因此它的整棵子树都算作
-  「agent 的工作」，与 runtime 由谁启动无关
-- `FileWatcher` 照常观察项目目录
-- Stage / Activity / Report 全部由 Layer 0 事件驱动
+`absence watch` 不连 agent、不建 adapter：
 
-这意味着：**任何 agent、任何版本，只要它是个进程，就能被观察**，
-一行适配代码都不用写。
+- `ProcessWatcher` 以被观察 pid 为根，只报告它新起的子树；
+- `FileWatcher` 观察项目目录；
+- 如果找到 agent 自己的 transcript，就把它记录的 tool call 变成事件
+  （这是观察能力，不是驱动能力）。
 
-### 3. 进程事件的归因（observe 模式下唯一的证据源）
+把 `apps/server/src/agents/` 整个目录删掉，`absence watch` 仍然能用。
 
-observe 模式**不能**用内核观察器。Windows 的 Job Object 观察器是挂在
-**Absence 自己**进程上的：它只报告 Absence 创建的进程，一个在我们启动之前就
-存在于别的终端里的 agent 根本不在那个 Job 里，永远不会被报告。所以 observe
-模式**只轮询进程表**（`OBSERVE_TICK_MS`），这也解释了为什么它的精度标注是
-`sampled`。
+## 删掉了什么
 
-归因规则（`ProcessWatcher.discoverObserved`）：
+| 模块 | 原职责 |
+|---|---|
+| `agents/PiAdapter.ts` | 进程内加载 Pi SDK，接管其 shell |
+| `agents/CodexAdapter.ts` `AppServerClient.ts` `CodexCommands.ts` `CodexBin.ts` | 驱动 `codex app-server` 私有协议 |
+| `agents/DshAdapter.ts` `DshClient.ts` | DSH 专用 ACP 客户端（已泛化为 `AcpConnection`） |
+| `agents/PiBin.ts` | 定位 Pi SDK |
+| `process/AbsenceShell.ts` | 包装 Pi 的 bash/powershell 操作 |
+| `process/ExecServer.ts` `CodexShell.ts` `ShellEnvironment.ts` | Codex exec-server 接管、env_policy、去壳 |
+| `capabilities/discover.ts` `manage.ts` `piResources.ts` | 读写 agent 的 mcp.json / skills / config.toml |
+| `api/sessions.ts` 的 Pi session-file 合并 | 读 Pi 私有会话文件补历史 |
 
-1. 启动时从被观察 pid **向下走一遍**进程表，把它当时已经拥有的进程记为
-   「已知」（`seedObservedAncestry`）。这些进程是**上下文，不是行为**，不上报。
-   —— 绝不能把整张表都记为已知：第一版这么做了，结果 services.exe、QQ.exe、
-   所有 shell 全被当成 agent 的工作。
-2. 之后每个 tick 只看新出现的进程。父进程属于被观察树 → 是根进程（egg）；
-   父进程是我们已经上报的 egg → 折叠进它（子进程计数 +1）。
-3. 父进程不在树里（同级应用、某个 service）→ **不是我们的**，无论它起多少进程。
-
-这一条是本次花时间最多的地方，`check-observer.ts` 用假进程表把它钉住了。
-
-### 4. 观察流也要能构成 run
-
-History / Replay / Absence Report 全都建立在「run」上，而 run 原本由用户
-发出的 `message` 开启。被观察的 agent 不会收到我们的 message，所以
-`buildHistory` 与增量版 `applyEvent` 都增加了一条规则：
-
-> 在一段没有任何 `agent_start` / 用户 `message` 的流里，
-> **run 从最后一个 run 之后最老的那个事件开启**，prompt 写作 `observed activity`。
-
-判断依据是流本身（`isObservedStream`），不是会话标志——因为 `buildHistory`
-被 memo、Report、Replay 三个地方调用，传标志等于把同一知识写四遍。
-一旦流里出现 `agent_start` 或用户 message，它立即回到原来的规则，
-驱动式会话的行为**逐字节不变**。
-
-### 4. 后续阶段（不在本分支完成，接口留好）
-
-| 阶段 | 内容 | 依赖 |
-|---|---|---|
-| 2 | 事件协议对外公开 + `POST /api/ingest` | 本分支的 `source` |
-| 3 | adapter 插件化：内置 pi/codex/dsh 改走插件路径 | 本分支 |
-| 4 | 删除 skills/MCP 配置管理（`capabilities/manage.ts`） | 阶段 3 |
-| 5 | PTY passthrough 的 `absence run`（Layer 1） | 本分支 |
-
-## 已经成立的证据
-
-`npm run check:observer`（27 条）在进程内验证：
-
-- `canDriveSession()`：驱动 / 观察 / 老服务器三种输入
-- registry 在**只 import 应用**时是空的 —— 这就是「删掉 agents/ 还能跑」的可测部分
-- `parseWatchArgs()` 独立于服务器，不 import 任何 agent 代码（故意拆到 `cliArgs.ts`）
-- observe 模式的进程归因（假进程表）：既有子树不上报、新子进程上报、
-  其子进程折叠、同级应用忽略
-- 观察流构成 run，驱动流行为不变
-
-实测（真实进程树）：`absence watch --pid <agent>` 能观察到 agent 新起的子进程、
-它们退出、以及项目内文件变化，全程没有向 agent 进程写过一个字节。
+`process/CodexShell.ts` 里通用的 shell 去壳逻辑保留为
+`process/CommandLine.ts`：观察器靠它把 `bash -lc "…"` 还原成模型真正执行的命令，
+这是 Layer 0 的显示质量，不是产品耦合。
 
 ## 判断标准
 
-衡量解耦是否成功的唯一标准：
+1. `apps/server/src` 里没有 `pi` / `codex` / `dsh` 的**名字分支**；
+   `profiles.ts` 的数据除外。
+2. 没有 `@earendil-works/pi-coding-agent` 的 import。
+3. ACP 层不出现 `codex app-server`。
+4. 历史只来自 Absence 自己的归档；resume 用归档里的 ACP handle。
+5. 把 `agents/` 删掉，`absence watch` 仍可用。
 
-> **把 `apps/server/src/agents/` 整个目录删掉，`absence watch` 还能不能用？**
+## 检查
 
-本分支之后，答案是能。
+`check-acp` / `check-acp-lifecycle` / `check-acp-transport` /
+`check-acp-mapping` / `check-acp-proxy` / `check-agent-catalog` /
+`check:mock-agent` / `check:observer` 覆盖上面每一条。

@@ -7,10 +7,10 @@ import type { ChatInput } from "./useChatInput";
 /* ══════════════════════════════════════════════════════════════════════════
    The `/` overlay, as one implementation.
 
-   It sits above the input row and opens the moment a line starts with `/`:
-   command names first, then the command's arguments (a static list, or the
-   session's models / thinking levels fetched from the server), or the skill
-   list for `/skill:`.
+   It sits above the input row and opens the moment a line starts with `/`.
+   It is a completer, not an interpreter: it suggests the commands the agent
+   advertised, and the methods for the one ACP action Absence performs (`/auth`).
+   The line itself is always sent to the agent verbatim.
 
    Every face draws exactly this, so it is one component rather than one copy
    per face. It is written against the desk tokens, which `.mon-root`
