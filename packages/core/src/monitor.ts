@@ -10,7 +10,7 @@
 import type { AbsenceEvent } from "./events";
 
 /** Which observer produced the fact. */
-export type MonitorSource = "acp" | "os" | "terminal" | "legacy";
+export type MonitorSource = "acp" | "acp-proxy" | "os" | "terminal" | "legacy";
 
 /**
  * How the fact was obtained:

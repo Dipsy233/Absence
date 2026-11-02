@@ -9,16 +9,18 @@
  *   absence serve                start it explicitly
  *   absence watch --pid N        observe a process somebody else started
  *   absence watch -- <cmd> …     start an agent, then observe it
+ *   absence proxy -- <cmd> …     sit between an ACP client and an agent
  */
 import { spawn } from "node:child_process";
 import { existsSync, fstatSync } from "node:fs";
 import { join } from "node:path";
-import { parseWatchArgs, type WatchArgs } from "./cliArgs";
+import { parseProxyArgs, parseWatchArgs, type ProxyArgs, type WatchArgs } from "./cliArgs";
 import { startServer, type RunningServer } from "./index";
+import { proxySessions, createProcessTransport } from "./agents/acp/proxy";
 import { TerminalMirror } from "./sessions/TerminalMirror";
 import { registerTerminalMirror } from "./sessions/terminalRegistry";
 
-export { parseWatchArgs, type WatchArgs };
+export { parseProxyArgs, parseWatchArgs, type ProxyArgs, type WatchArgs };
 
 const NL = String.fromCharCode(10);
 
@@ -29,6 +31,8 @@ const USAGE = [
   "  absence watch --pid <pid>     observe a running agent",
   "  absence watch [--project DIR] [--label NAME] -- <command> …",
   "                                start an agent and observe it",
+  "  absence proxy [--project DIR] [--label NAME] -- <command> …",
+  "                                forward an ACP client to an agent (tap only)",
   "",
   "  --project DIR   the directory the agent works in (default: cwd)",
   "  --pid PID       the process to watch (its whole subtree is the agent's work)",
@@ -142,6 +146,77 @@ async function watchCommand(
     restore();
     mirror.end();
   }
+}
+
+/**
+ * `absence proxy -- <agent command>`: transparent ACP proxy.
+ *
+ * The client launched this process and speaks NDJSON on our stdin/stdout, so
+ * stdout belongs to the protocol from the first byte. Everything Absence itself
+ * has to say goes to stderr; even `console.log` is redirected, because one
+ * stray line on stdout would corrupt the client's JSON-RPC stream.
+ *
+ * The monitoring server is best-effort: if it cannot start, the proxy still
+ * forwards. The tap keeps publishing into its own bus either way.
+ */
+async function proxyCommand(
+  command: string[],
+  projectPath: string,
+  label: string | undefined,
+): Promise<void> {
+  const restoreStdout = keepStdoutForProtocol();
+
+  let server: RunningServer | undefined;
+  try {
+    server = await startServer({ quiet: true });
+    process.stderr.write(`ABSENCE proxy: monitoring server at ${server.url}${NL}`);
+  } catch (error) {
+    process.stderr.write(
+      `ABSENCE proxy: monitoring server unavailable (${messageOf(error)}) — forwarding only${NL}`,
+    );
+  }
+
+  const client = createProcessTransport();
+  const session = proxySessions.startStdio({ command, cwd: projectPath, label }, client);
+  process.stderr.write(
+    `ABSENCE proxy: session ${session.id} — ${command.join(" ")} in ${projectPath}${NL}`,
+  );
+
+  const stop = () => session.close("interrupted");
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+
+  const exit = await session.waitForExit();
+  process.off("SIGINT", stop);
+  process.off("SIGTERM", stop);
+
+  try {
+    await server?.close();
+  } catch {
+    // The proxy already finished; a slow server shutdown must not change the code.
+  }
+  restoreStdout();
+  // The agent's own exit code is the client's answer. A client-side close (the
+  // parent went away) is a normal end and keeps its code when there is one.
+  process.exitCode = exit.side === "agent" ? (exit.code ?? 1) : (exit.code ?? 0);
+}
+
+/**
+ * Reserve stdout for JSON-RPC. `console.log` is the one writer Absence's own
+ * dependencies use; sending it to stderr keeps the protocol stream byte-clean.
+ */
+function keepStdoutForProtocol(): () => void {
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    try {
+      process.stderr.write(args.map((value) => String(value)).join(" ") + NL);
+    } catch {
+      // No console left; a lost log line is preferable to a corrupted stream.
+    }
+  };
+  return () => {
+    console.log = original;
+  };
 }
 
 /** Open an observe session for `pid`, on a server we start, until Ctrl-C. */
@@ -335,6 +410,24 @@ export async function runCli(argv: string[]): Promise<void> {
     await serveUntilStopped();
     return;
   }
+  if (first === "proxy") {
+    let args: ProxyArgs;
+    try {
+      args = parseProxyArgs(rest);
+    } catch (error) {
+      const message = messageOf(error);
+      process.stderr.write(`${message === "help" ? "" : `${message}${NL}`}${USAGE}${NL}`);
+      process.exitCode = message === "help" ? 0 : 2;
+      return;
+    }
+    if (!args.command) {
+      process.stderr.write(`proxy needs a command after --${NL}${USAGE}${NL}`);
+      process.exitCode = 2;
+      return;
+    }
+    await proxyCommand(args.command, args.projectPath, args.label);
+    return;
+  }
   if (first !== "watch") {
     process.stderr.write(`unknown command: ${first}${NL}${USAGE}${NL}`);
     process.exitCode = 2;
@@ -398,4 +491,8 @@ function resolveExecutable(name: string, env: Record<string, string>): string {
 function extnameOf(file: string): boolean {
   const base = file.slice(Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\")) + 1);
   return base.includes(".");
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

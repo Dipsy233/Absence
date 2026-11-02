@@ -11,6 +11,8 @@ import { eggFilterRoutes } from "./api/eggFilter";
 import { avatarSkinRoutes } from "./api/avatarSkins";
 import { soundRoutes } from "./api/sounds";
 import { runtimeRoutes } from "./api/runtimes";
+import { acpProxyRoutes } from "./api/acpProxy";
+import { proxySessions } from "./agents/acp/proxy";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
 import { applyRuntimePaths } from "./runtimes/config";
@@ -84,6 +86,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   await app.register(avatarSkinRoutes);
   await app.register(soundRoutes);
   await app.register(runtimeRoutes);
+  await app.register(acpProxyRoutes);
   await app.register(wsRoutes);
 
   // Serve the built web app when it exists (production / single-origin).
@@ -144,6 +147,8 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
     url,
     close: async () => {
       clearInterval(expireTimer);
+      // Proxy sessions own child processes; none should outlive the server.
+      proxySessions.closeAll("server closing");
       await app.close();
       // Flush metrics before the database handle is closed, then the 50ms
       // event buffer and WAL checkpoint.
