@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Shape-based classification for ACP tool calls whose kind is 'other' or missing. A real ACP kind always wins and is never overridden. Rules only look at generic field names (command / path / old_string / url …), never at an agent name, a private tool name or a product-specific title. A new agent therefore needs no code change: if it sends an ACP-shaped call, these rules already cover it.",
+  "note": "Shape-based classification for ACP tool calls whose kind is 'other' or missing. A real ACP kind always wins and is never overridden. Rules only look at generic field names (command / path / old_string / url …) or a protocol content-block type (diff), never at an agent name, a private tool name or a product-specific title. A new agent therefore needs no code change: if it sends an ACP-shaped call, these rules already cover it.",
   "fields": {
     "command": ["command", "cmd", "script", "shell_command", "commandLine"],
     "path": ["path", "file_path", "filePath", "file", "filename", "target_file", "abs_path"],
@@ -20,6 +20,11 @@
       "id": "edit-with-replacement",
       "kind": "edit",
       "when": { "anyField": "oldContent" }
+    },
+    {
+      "id": "diff-content",
+      "kind": "edit",
+      "when": { "contentType": "diff" }
     },
     {
       "id": "write-with-content",

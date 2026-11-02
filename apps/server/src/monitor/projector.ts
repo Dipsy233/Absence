@@ -342,6 +342,9 @@ function factsOf(update: any, previous?: AcpToolFacts): AcpToolFacts {
     locations: Array.isArray(update.locations) ? update.locations : previous?.locations,
     content: update.content !== undefined ? update.content : previous?.content,
     rawOutput: update.rawOutput !== undefined ? update.rawOutput : previous?.rawOutput,
+    // ACP's extension bag carries `terminal_exit` on agents that report the
+    // exit code outside rawOutput.
+    meta: update._meta !== undefined ? update._meta : previous?.meta,
     permissionDenied:
       update.permissionDenied === true || previous?.permissionDenied === true,
   };

@@ -22,9 +22,34 @@ import {
 } from "./ToolRules";
 
 /** One event the ACP layer decided to emit for a finished tool call. */
-export type MappedEvent = {
-  [K in AbsenceEventType]: { type: K; payload: AbsenceEventPayloadMap[K] };
-}[AbsenceEventType];
+export type CommandEventPayload = AbsenceEventPayloadMap["command"] & {
+  /**
+   * ACP's `{type:"terminal", terminalId}` block. It is a reference to the
+   * agent's terminal, not a pid: Absence never resolves it into a process.
+   */
+  terminalId?: string;
+};
+
+export type FileEditEventPayload = Omit<AbsenceEventPayloadMap["file_edit"], "fullContent"> & {
+  /**
+   * `true` when the agent sent the whole old/new file in a `diff` block;
+   * `false` when only a snippet could be kept. Absent means Absence rebuilt the
+   * whole file from disk and consumers may treat it as complete.
+   */
+  fullContent?: boolean;
+  /** The reported path was relative and has been preserved verbatim. */
+  pathRelative?: true;
+};
+
+export type MappedEvent =
+  | { type: "command"; payload: CommandEventPayload }
+  | { type: "file_edit"; payload: FileEditEventPayload }
+  | {
+      [K in Exclude<AbsenceEventType, "command" | "file_edit">]: {
+        type: K;
+        payload: AbsenceEventPayloadMap[K];
+      };
+    }[Exclude<AbsenceEventType, "command" | "file_edit">];
 
 /**
  * A mapped event plus its provenance, so the monitor layer can say whether the
@@ -106,8 +131,9 @@ export class AcpToolMapper {
         const denied =
           facts.permissionDenied === true ||
           (failed && facts.rawOutput === undefined && permissionDeniedText(content));
-        const reportedCode = denied ? undefined : reportedExitCode(facts.rawOutput);
+        const reportedCode = denied ? undefined : reportedExitCode(facts);
         const exitCode = denied ? 1 : reportedCode ?? (failed ? 1 : 0);
+        const terminalId = terminalIdOf(facts.content);
         const event: MappedEvent = {
           type: "command",
           payload: {
@@ -119,14 +145,18 @@ export class AcpToolMapper {
             stderr: failed ? content : "",
             exitCode,
             // ACP only carries completed/failed; the real code has to come
-            // from `rawOutput`. When it is absent the numeric fallback is a
-            // status inference, and the event says so instead of pretending.
+            // from `rawOutput` or the agent's `_meta.terminal_exit`. When it is
+            // absent the numeric fallback is a status inference, and the event
+            // says so instead of pretending.
             ...(denied || reportedCode === undefined ? { exitCodeKnown: false as const } : {}),
             ...(denied ? { permissionDenied: true as const } : {}),
+            // Carry the terminal reference verbatim; do not guess a process.
+            ...(terminalId !== undefined ? { terminalId } : {}),
           },
         };
         // A denial is reported by the client; an unknown exit code is inferred
-        // from the call status, so the fidelity follows the weakest fact.
+        // from the call status, so the fidelity follows the weakest fact. An
+        // exit code read from `_meta` is agent-reported, never `exact`.
         return [denied || reportedCode !== undefined ? reported(event) : inferred(event)];
       }
       case "search":
@@ -242,17 +272,25 @@ export class AcpToolMapper {
       }
     }
     if (!after) return [];
+    // Some agents' edit sends the whole old/new file in the `diff` block. When
+    // the reported text *is* the file on disk, say so explicitly; otherwise
+    // this was a snippet and `fullContent` stays false.
+    const wholeFile = diff !== undefined && disk !== null && (diff.before === disk || diff.after === disk);
+    const pathRelative = !path.isAbsolute(resolved.path.replace(/^@/, ""));
     return [
       reported({
         type: "file_edit",
         payload: {
+          // Keep the agent's relative path verbatim — Absence does not turn it
+          // into an absolute path just because it knows the session cwd.
           path: this.display(resolved.path),
+          ...(pathRelative ? { pathRelative: true as const } : {}),
           before,
           after,
           diff: unifiedDiff(before, after, resolved.path, resolved.path),
-          // Still an edit the agent reported, but only a snippet: consumers
-          // must not present it as the file's complete content.
-          ...(fullContent ? {} : { fullContent: false as const }),
+          // A reconstructed edit has full content; a diff that was already the
+          // whole file is marked `true`; an unreconstructable snippet is false.
+          ...(fullContent ? { ...(wholeFile ? { fullContent: true } : {}) } : { fullContent: false as const }),
         },
       }),
     ];
@@ -273,10 +311,15 @@ export class AcpToolMapper {
     return path.isAbsolute(value) ? value : path.join(this.cwd, value);
   }
 
-  /** Project-relative when inside the project, otherwise as reported. */
+  /**
+   * The path as reported. A relative path is kept verbatim (and marked
+   * `pathRelative` on the event); only an absolute path inside the project is
+   * shown project-relative, and an absolute path outside is left as reported.
+   */
   private display(p: string): string {
-    const absolute = this.abs(p);
-    const rel = path.relative(this.cwd, absolute);
+    const value = p.replace(/^@/, "");
+    if (!path.isAbsolute(value)) return p;
+    const rel = path.relative(this.cwd, value);
     return rel && !rel.startsWith("..") ? toPosix(rel) : p;
   }
 }
@@ -296,20 +339,85 @@ function exact(event: MappedEvent): MappedEventRecord {
 }
 
 /**
- * The real exit code an ACP `rawOutput` carried. Agents put it at the top level
- * (`{ exitCode: 3 }`), as a numeric string, or under a nested result/meta
- * object. Anything else is not a code and must not be invented.
+ * The real exit code an ACP call carried, in protocol priority order:
+ *
+ *   1. `rawOutput.exitCode`
+ *   2. `rawOutput.exit_code`
+ *   3. `rawOutput.code`
+ *   4. `_meta.terminal_exit.exit_code` (update-level or a content block)
+ *
+ * Nested `result` / `data` / `meta` / `output` / `process` objects are still
+ * accepted between 3 and 4 for adapters that wrap the code. Anything else is
+ * not a code and must not be invented.
  */
-function reportedExitCode(raw: unknown): number | undefined {
-  const direct = exitCodeValue(raw);
+function reportedExitCode(facts: AcpToolFacts): number | undefined {
+  const raw = facts.rawOutput;
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    const record = raw as Record<string, unknown>;
+    for (const key of ["exitCode", "exit_code", "code"]) {
+      const code = exitCodeValue(record[key]);
+      if (code !== undefined) return code;
+    }
+    for (const key of ["result", "data", "meta", "output", "process"]) {
+      const nested = exitCodeValue(record[key]);
+      if (nested !== undefined) return nested;
+    }
+  } else {
+    const direct = exitCodeValue(raw);
+    if (direct !== undefined) return direct;
+  }
+  return terminalExitCode(facts);
+}
+
+/** `_meta.terminal_exit.exit_code` on the update or on any content block. */
+function terminalExitCode(facts: AcpToolFacts): number | undefined {
+  const update = terminalExitFromMeta(facts.meta);
+  if (update !== undefined) return update;
+  for (const block of contentBlocks(facts.content)) {
+    const fromBlock = terminalExitFromMeta(block);
+    if (fromBlock !== undefined) return fromBlock;
+    if (block !== null && typeof block === "object") {
+      const direct = exitCodeValue((block as Record<string, unknown>)["terminal_exit"]);
+      if (direct !== undefined) return direct;
+    }
+  }
+  return terminalExitFromMeta(facts.rawOutput);
+}
+
+function terminalExitFromMeta(value: unknown): number | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  // The update-level `_meta` is passed as its contents already; a content
+  // block still carries the `_meta` wrapper.
+  const direct = exitCodeValue(record["terminal_exit"]);
   if (direct !== undefined) return direct;
-  if (!raw || typeof raw !== "object") return undefined;
-  const record = raw as Record<string, unknown>;
-  for (const key of ["result", "data", "meta", "output", "process"]) {
-    const nested = exitCodeValue(record[key]);
-    if (nested !== undefined) return nested;
+  const meta = record["_meta"] ?? record["meta"];
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return undefined;
+  return exitCodeValue((meta as Record<string, unknown>)["terminal_exit"]);
+}
+
+/** `{type:"terminal", terminalId}` — a reference, never resolved into a pid. */
+function terminalIdOf(content: unknown): string | undefined {
+  for (const block of contentBlocks(content)) {
+    if (block === null || typeof block !== "object" || Array.isArray(block)) continue;
+    const record = block as Record<string, unknown>;
+    if (record["type"] === "terminal" && typeof record["terminalId"] === "string" && record["terminalId"].length > 0) {
+      return record["terminalId"];
+    }
   }
   return undefined;
+}
+
+/** Content blocks, unwrapping the `{type:"content", content:{…}}` envelope. */
+function contentBlocks(content: unknown): unknown[] {
+  if (!Array.isArray(content)) return [];
+  return content.map((item) => {
+    if (item !== null && typeof item === "object" && !Array.isArray(item) && "content" in item) {
+      const inner = (item as { content?: unknown }).content;
+      if (inner !== undefined) return inner;
+    }
+    return item;
+  });
 }
 
 function exitCodeValue(value: unknown): number | undefined {

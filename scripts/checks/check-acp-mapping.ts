@@ -146,6 +146,19 @@ async function main(): Promise<void> {
     });
     check("the shared mcp__ convention is recognised", mcp.mcp?.server === "filesystem" && mcp.mcp?.tool === "read_file" && mcp.rule === "mcp");
 
+    const diffByShape = resolveTool({
+      toolCallId: "k12",
+      name: "Edit",
+      rawInput: {},
+      content: [{ type: "diff", path: "src/index.ts", oldText: "a", newText: "b" }],
+    });
+    check(
+      "no kind + a diff content block is edit",
+      diffByShape.kind === "edit" && diffByShape.rule === "diff-content",
+      JSON.stringify(diffByShape),
+    );
+    check("the diff block supplies the file path", diffByShape.path === "src/index.ts");
+
     for (const title of ["read_file", "bash", "apply_patch", "todowrite"]) {
       const byTitle = resolveTool({ toolCallId: `t-${title}`, name: title, rawInput: {} });
       check(`the title "${title}" alone classifies nothing`, byTitle.kind === "other", JSON.stringify(byTitle));
@@ -159,6 +172,7 @@ async function main(): Promise<void> {
     const disk = "alpha\nbeta\ngamma\n";
     await fs.writeFile(path.join(dir, "src.txt"), disk);
     await fs.writeFile(path.join(dir, "main.ts"), "export function main() {\n  return 0;\n}\n");
+    await fs.mkdir(path.join(dir, "src"), { recursive: true });
 
     const unknownRange = await mapper.mapCompletedDetailed({
       toolCallId: "r1",
@@ -248,6 +262,36 @@ async function main(): Promise<void> {
         snippet.event.payload.after !== "unrelated contents\n",
     );
 
+    const wholeOld = "export const value = 1;\nexport const other = 2;\n";
+    const wholeNew = "export const value = 3;\nexport const other = 2;\n";
+    await fs.writeFile(path.join(dir, "src", "deep.ts"), wholeOld);
+    const wholeDiff = await mapper.mapCompletedDetailed({
+      toolCallId: "e3",
+      name: "Edit",
+      kind: "edit",
+      content: [{ type: "diff", path: "src/deep.ts", oldText: wholeOld, newText: wholeNew }],
+    });
+    const whole = firstOf(wholeDiff, "file_edit");
+    check(
+      "a whole-file diff maps to file_edit with fullContent=true",
+      whole?.event.type === "file_edit" &&
+        (whole.event.payload as { fullContent?: boolean }).fullContent === true,
+      whole?.event.type === "file_edit" ? JSON.stringify(whole.event.payload) : "no file_edit",
+    );
+    check(
+      "the whole old/new text is kept verbatim",
+      whole?.event.type === "file_edit" &&
+        whole.event.payload.before === wholeOld &&
+        whole.event.payload.after === wholeNew,
+    );
+    check(
+      "a relative diff path is preserved, not turned absolute",
+      whole?.event.type === "file_edit" &&
+        whole.event.payload.path === "src/deep.ts" &&
+        (whole.event.payload as { pathRelative?: true }).pathRelative === true,
+      whole?.event.type === "file_edit" ? whole.event.payload.path : "no file_edit",
+    );
+
     const write = await mapper.mapCompletedDetailed({
       toolCallId: "w1",
       name: "write_file",
@@ -295,6 +339,99 @@ async function main(): Promise<void> {
         reportedCommand.event.payload.exitCode === 3 &&
         reportedCommand.event.payload.exitCodeKnown === undefined &&
         reportedCommand.fidelity === "reported",
+    );
+
+    const snakeExit = await mapper.mapCompletedDetailed({
+      toolCallId: "c2b",
+      name: "Run",
+      kind: "execute",
+      status: "completed",
+      rawInput: { command: "echo snake" },
+      rawOutput: { exit_code: 4 },
+    });
+    const snakeCommand = firstOf(snakeExit, "command");
+    check(
+      "rawOutput.exit_code is honoured when exitCode is absent",
+      snakeCommand?.event.type === "command" &&
+        snakeCommand.event.payload.exitCode === 4 &&
+        snakeCommand.event.payload.exitCodeKnown === undefined,
+    );
+
+    const shortExit = await mapper.mapCompletedDetailed({
+      toolCallId: "c2c",
+      name: "Run",
+      kind: "execute",
+      status: "completed",
+      rawInput: { command: "echo short" },
+      rawOutput: { code: 5 },
+    });
+    const shortCommand = firstOf(shortExit, "command");
+    check(
+      "rawOutput.code is honoured when the other keys are absent",
+      shortCommand?.event.type === "command" &&
+        shortCommand.event.payload.exitCode === 5 &&
+        shortCommand.event.payload.exitCodeKnown === undefined,
+    );
+
+    const priorityExit = await mapper.mapCompletedDetailed({
+      toolCallId: "c2d",
+      name: "Run",
+      kind: "execute",
+      status: "completed",
+      rawInput: { command: "echo priority" },
+      rawOutput: { exitCode: 6, exit_code: 7, code: 8 },
+    });
+    const priorityCommand = firstOf(priorityExit, "command");
+    check(
+      "rawOutput.exitCode outranks exit_code and code",
+      priorityCommand?.event.type === "command" &&
+        priorityCommand.event.payload.exitCode === 6 &&
+        priorityCommand.event.payload.exitCodeKnown === undefined,
+    );
+
+    const metaExit = await mapper.mapCompletedDetailed({
+      toolCallId: "c2e",
+      name: "Run",
+      kind: "execute",
+      status: "completed",
+      rawInput: { command: "echo meta" },
+      meta: { terminal_exit: { exit_code: 0 } },
+    });
+    const metaCommand = firstOf(metaExit, "command");
+    check(
+      "_meta.terminal_exit.exit_code supplies the exit code without rawOutput",
+      metaCommand?.event.type === "command" &&
+        metaCommand.event.payload.exitCode === 0 &&
+        metaCommand.event.payload.exitCodeKnown === undefined,
+      metaCommand?.event.type === "command" ? JSON.stringify(metaCommand.event.payload) : "no command",
+    );
+    check(
+      "a _meta exit code is reported, never exact",
+      metaCommand?.fidelity === "reported",
+      metaCommand?.fidelity,
+    );
+
+    const blockMetaExit = await mapper.mapCompletedDetailed({
+      toolCallId: "c2f",
+      name: "Run",
+      kind: "execute",
+      status: "completed",
+      rawInput: { command: "echo terminal" },
+      content: [
+        { type: "terminal", terminalId: "term-1", _meta: { terminal_exit: { exit_code: 2 } } },
+      ],
+    });
+    const blockCommand = firstOf(blockMetaExit, "command");
+    check(
+      "a content block's _meta exit code is read too",
+      blockCommand?.event.type === "command" &&
+        blockCommand.event.payload.exitCode === 2 &&
+        blockCommand.event.payload.exitCodeKnown === undefined,
+    );
+    check(
+      "the terminal block becomes a terminalId reference, not a guessed process",
+      blockCommand?.event.type === "command" &&
+        (blockCommand.event.payload as { terminalId?: string }).terminalId === "term-1",
     );
 
     const denied = await mapper.mapCompletedDetailed({
@@ -493,6 +630,53 @@ async function main(): Promise<void> {
     await fs.rm(dir, { recursive: true, force: true });
   }
 
+  section("AcpMonitorProjector: agent-reported exit code and terminal reference");
+  {
+    const dir = await tempDir();
+    const projector = new AcpMonitorProjector({ sessionId: "s4", cwd: dir });
+
+    await projector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "m1",
+        title: "Run node",
+        kind: "execute",
+        status: "in_progress",
+        rawInput: { command: "node x.js" },
+      },
+    });
+    const done = await projector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "m1",
+        status: "completed",
+        content: [{ type: "terminal", terminalId: "term-1" }],
+        _meta: { terminal_exit: { exit_code: 0 } },
+      },
+    });
+    const command = done.find((event) => event.event.type === "command");
+    check(
+      "an update-level _meta exit code reaches the command event",
+      command?.event.type === "command" &&
+        command.event.payload.exitCode === 0 &&
+        command.event.payload.exitCodeKnown === undefined,
+      command?.event.type === "command" ? JSON.stringify(command.event.payload) : "no command",
+    );
+    check(
+      "the _meta exit code is reported, not exact",
+      command?.fidelity === "reported",
+      command?.fidelity,
+    );
+    check(
+      "the terminal block is carried as terminalId",
+      command?.event.type === "command" &&
+        (command.event.payload as { terminalId?: string }).terminalId === "term-1",
+    );
+
+    projector.dispose();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+
   section("AcpMonitorProjector: plan, mode and text chunks");
   {
     const projector = new AcpMonitorProjector({ sessionId: "s3", cwd: repoRoot });
@@ -569,12 +753,19 @@ async function main(): Promise<void> {
       rules: Array<{ id: string; when: Record<string, unknown> }>;
     };
     check(
-      "every shipped rule matches on field shape only",
+      "every shipped rule matches on field shape or a protocol content type",
       json.rules.every((rule) => {
         const keys = Object.keys(rule.when);
-        return keys.length > 0 && keys.every((key) => key === "anyField" || key === "allFields");
+        return (
+          keys.length > 0 &&
+          keys.every((key) => key === "anyField" || key === "allFields" || key === "contentType")
+        );
       }),
       JSON.stringify(json.rules.map((rule) => rule.when)),
+    );
+    check(
+      "no rule matches on a title or a name pattern",
+      json.rules.every((rule) => !("namePattern" in rule.when)),
     );
 
     const files = await fs.readdir(acpDir);

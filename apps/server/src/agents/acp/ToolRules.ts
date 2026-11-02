@@ -29,7 +29,7 @@ interface RuleSet {
     id: string;
     kind: string;
     as?: "write";
-    when: { anyField?: string; allFields?: string[] };
+    when: { anyField?: string; allFields?: string[]; contentType?: string };
   }>;
 }
 
@@ -47,6 +47,7 @@ const FALLBACK: RuleSet = {
   rules: [
     { id: "shell-command", kind: "execute", when: { anyField: "command" } },
     { id: "edit-with-replacement", kind: "edit", when: { anyField: "oldContent" } },
+    { id: "diff-content", kind: "edit", when: { contentType: "diff" } },
     { id: "write-with-content", kind: "edit", as: "write", when: { allFields: ["path", "content"] } },
     { id: "search-with-query", kind: "search", when: { anyField: "query" } },
     { id: "fetch-with-url", kind: "fetch", when: { anyField: "url" } },
@@ -79,9 +80,11 @@ export interface AcpToolFacts {
   rawInput?: unknown;
   status?: string;
   locations?: Array<{ path?: string; line?: number }>;
-  /** ACP's `content` (text blocks, or `{type:"diff", oldText, newText}`). */
+  /** ACP's `content` (text blocks, `{type:"diff"}`, `{type:"terminal"}`, …). */
   content?: unknown;
   rawOutput?: unknown;
+  /** The update-level `_meta` (ACP's extension bag), e.g. `terminal_exit`. */
+  meta?: unknown;
   /** The client answered the permission request with a reject option. */
   permissionDenied?: boolean;
 }
@@ -175,7 +178,7 @@ export function resolveTool(facts: AcpToolFacts): ResolvedTool {
   if (usable) return resolved;
 
   for (const rule of rules.rules) {
-    if (!matches(rule, hasField)) continue;
+    if (!matches(rule, hasField, facts.content)) continue;
     resolved.kind = normalizeKind(rule.kind);
     resolved.rule = rule.id;
     if (rule.as === "write") resolved.write = true;
@@ -184,11 +187,25 @@ export function resolveTool(facts: AcpToolFacts): ResolvedTool {
   return resolved;
 }
 
-function matches(rule: RuleSet["rules"][number], hasField: (bucket: string) => boolean): boolean {
+function matches(
+  rule: RuleSet["rules"][number],
+  hasField: (bucket: string) => boolean,
+  content: unknown,
+): boolean {
   const { when } = rule;
   if (when.anyField && !hasField(when.anyField)) return false;
   if (when.allFields && !when.allFields.every((bucket) => hasField(bucket))) return false;
+  if (when.contentType && !hasContentType(content, when.contentType)) return false;
   return true;
+}
+
+/** A content array carries a block of this protocol type (`diff`, `terminal`). */
+export function hasContentType(content: unknown, type: string): boolean {
+  if (!Array.isArray(content)) return false;
+  return content.some((item) => {
+    const block = (item as { content?: unknown })?.content ?? item;
+    return isRecord(block) && block.type === type;
+  });
 }
 
 function normalizeKind(kind: string | undefined): ToolKind {
