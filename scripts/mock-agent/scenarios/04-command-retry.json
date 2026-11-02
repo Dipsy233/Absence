@@ -1,0 +1,83 @@
+{
+  "id": "04-command-retry",
+  "label": "执行命令：失败后重试、真实退出码、审批",
+  "agent": "claude-code",
+  "note": "Commands really run. The mock agent's first command exits 3, then the same command is retried successfully. The real code travels through ACP rawOutput, so Absence must preserve 3 and leave exitCodeKnown unset for all three calls. A failed execute without rawOutput is covered separately by the rejection scenario.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "run the check, and retry if it fails",
+  "approvalAnswer": "allow-once",
+  "turns": [
+    {
+      "name": "retry",
+      "match": "retry",
+      "steps": [
+        { "type": "thought", "text": "Run the failing command once, then retry it.", "chunk": 22, "delay": 15 },
+        {
+          "type": "tool",
+          "toolCallId": "cmd_fail",
+          "title": "Run the failing check",
+          "kind": "execute",
+          "runCommand": { "command": "{{NODE}}", "args": ["-e", "process.exit(3)"] },
+          "permission": {
+            "options": [
+              { "optionId": "allow-once", "name": "Allow once", "kind": "allow_once" },
+              { "optionId": "reject-once", "name": "Deny", "kind": "reject_once" }
+            ]
+          },
+          "duration": 140
+        },
+        {
+          "type": "tool",
+          "toolCallId": "cmd_retry",
+          "title": "Retry the check",
+          "kind": "execute",
+          "runCommand": { "command": "{{NODE}}", "args": ["-e", "console.log('retry ok')"] },
+          "duration": 120
+        },
+        {
+          "type": "tool",
+          "toolCallId": "cmd_shell",
+          "title": "Run a shell-wrapped command",
+          "kind": "execute",
+          "runCommand": "{{NODE}} -e \"console.log('shell path ok')\"",
+          "duration": 100
+        },
+        { "type": "message", "text": "The first check exited non-zero; the retry passed. I left the three runs in the activity log.", "chunk": 26, "delay": 12 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "tool_start": 3,
+      "tool_end": 3,
+      "command": 3,
+      "approval": 1
+    },
+    "forbids": ["error"],
+    "commands": [
+      { "stdoutContains": "retry ok", "min": 1 },
+      { "stdoutContains": "shell path ok", "min": 1 },
+      { "exitCode": 3, "min": 1 },
+      { "exitCodeKnownAbsent": true, "min": 3 }
+    ],
+    "commandExitCodes": [3, 0, 0],
+    "toolErrors": [true, false, false],
+    "approvals": { "count": 1, "answered": "allow-once" },
+    "messages": [{ "contains": "retry passed", "min": 1 }]
+  }
+}

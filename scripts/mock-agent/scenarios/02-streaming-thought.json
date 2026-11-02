@@ -1,0 +1,68 @@
+{
+  "id": "02-streaming-thought",
+  "label": "思考与输出流：小块、慢速、长文本",
+  "agent": "claude-code",
+  "note": "Exercises the coalescing path: the agent emits many small ACP chunks, while Absence must fold them into a small number of message/thinking events without losing the final text.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "analyze the observer pipeline in detail",
+  "turns": [
+    {
+      "name": "stream",
+      "match": "observer pipeline",
+      "steps": [
+        {
+          "type": "thought",
+          "text": "Reasoning step: the observer must not drive the agent; it only reads protocol frames and OS events. ",
+          "repeat": 30,
+          "chunk": 40,
+          "delay": 14
+        },
+        {
+          "type": "message",
+          "text": "Streaming answer: Absence folds many small chunks into one growing message, and the final non-streaming event is the authoritative copy. ",
+          "repeat": 40,
+          "chunk": 48,
+          "delay": 10
+        },
+        {
+          "type": "message",
+          "text": "Done. This final short message proves the stream settled instead of being cut off.",
+          "chunk": 30,
+          "delay": 8
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "thinking": { "min": 1 },
+      "message": { "min": 2 }
+    },
+    "forbids": ["error"],
+    "messages": [
+      { "contains": "Streaming answer:", "min": 1 },
+      { "contains": "proves the stream settled", "min": 1 }
+    ],
+    "streaming": {
+      "thoughtChunks": { "min": 60 },
+      "messageChunks": { "min": 80 },
+      "thoughtChars": { "min": 2500 },
+      "messageChars": { "min": 4000 }
+    }
+  }
+}

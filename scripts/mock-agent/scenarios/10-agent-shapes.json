@@ -1,0 +1,115 @@
+{
+  "id": "10-agent-shapes",
+  "label": "跨 agent 形状：kind 缺失的 Qwen 风格 + 散文标题的 Claude 风格",
+  "agent": "mixed",
+  "note": "Two call shapes in one turn: ACP `kind` filled, and `kind` omitted with snake_case names. The classifier must reach the same Absence events either way, using only ACP fields and generic shape rules — never a product name.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "qwen3-coder",
+        "options": [{ "value": "qwen3-coder", "name": "Qwen3 Coder" }]
+      },
+      {
+        "id": "mode",
+        "name": "Approval mode",
+        "category": "mode",
+        "type": "select",
+        "currentValue": "auto",
+        "options": [
+          { "value": "default", "name": "Ask before running" },
+          { "value": "auto", "name": "Auto" }
+        ]
+      }
+    ]
+  },
+  "initialPrompt": "compare the two call shapes",
+  "turns": [
+    {
+      "name": "shapes",
+      "match": "call shapes",
+      "steps": [
+        { "type": "thought", "text": "First a Claude-style read with an explicit kind, then a Qwen-style read with no kind.", "chunk": 24, "delay": 14 },
+        {
+          "type": "tool",
+          "toolCallId": "shape_read_kind",
+          "title": "Read src/index.ts",
+          "kind": "read",
+          "rawInput": { "file_path": "src/index.ts", "offset": 1, "limit": 40 },
+          "locations": [{ "path": "src/index.ts", "line": 1 }],
+          "readFile": { "path": "src/index.ts", "startLine": 1 },
+          "duration": 90
+        },
+        {
+          "type": "tool",
+          "toolCallId": "shape_read_no_kind",
+          "title": "read_file",
+          "rawInput": { "file_path": "src/main.ts", "offset": 0, "limit": 20 },
+          "locations": [{ "path": "src/main.ts", "line": 1 }],
+          "readFile": { "path": "src/main.ts", "startLine": 1 },
+          "duration": 90
+        },
+        {
+          "type": "tool",
+          "toolCallId": "shape_cmd_kind",
+          "title": "Run the test suite",
+          "kind": "execute",
+          "rawInput": { "command": "node -e \"console.log('kind ok')\"" },
+          "runCommand": { "command": "{{NODE}}", "args": ["-e", "console.log('kind ok')"] },
+          "duration": 100
+        },
+        {
+          "type": "tool",
+          "toolCallId": "shape_cmd_no_kind",
+          "title": "run_shell_command",
+          "rawInput": { "command": "node -e \"console.log('no kind ok')\"" },
+          "runCommand": { "command": "{{NODE}}", "args": ["-e", "console.log('no kind ok')"] },
+          "duration": 100
+        },
+        {
+          "type": "tool",
+          "toolCallId": "shape_edit_kind",
+          "title": "Update src/index.ts",
+          "kind": "edit",
+          "rawInput": { "file_path": "src/index.ts", "old_string": "return 0;", "new_string": "return 1;" },
+          "editFile": { "path": "src/index.ts", "oldString": "return 0;", "newString": "return 1;", "diffStyle": "full" },
+          "duration": 100
+        },
+        {
+          "type": "tool",
+          "toolCallId": "shape_edit_no_kind",
+          "title": "replace",
+          "rawInput": { "file_path": "src/main.ts", "old_string": "() => 0", "new_string": "() => 1" },
+          "editFile": { "path": "src/main.ts", "oldString": "() => 0", "newString": "() => 1", "diffStyle": "full" },
+          "duration": 100
+        },
+        { "type": "message", "text": "Both shapes mapped to the same kinds of Absence events.", "chunk": 28, "delay": 12 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "tool_start": 6,
+      "tool_end": 6,
+      "file_read": 2,
+      "file_edit": 2,
+      "command": 2
+    },
+    "forbids": ["error"],
+    "files": [
+      { "path": "src/index.ts", "contains": "return 1;" },
+      { "path": "src/main.ts", "contains": "() => 1" }
+    ],
+    "commands": [
+      { "stdoutContains": "kind ok", "min": 1 },
+      { "stdoutContains": "no kind ok", "min": 1 }
+    ]
+  }
+}

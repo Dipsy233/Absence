@@ -1,0 +1,82 @@
+{
+  "id": "13-overlapping-executes",
+  "label": "并发 execute 归属：两个重叠命令窗口不串线",
+  "agent": "claude-code",
+  "note": "Two execute tool calls run at the same time, so their ProcessWatcher command windows overlap. Attribution must use each process's own command line against the window's command text (commandForExact), not the order in which the windows were opened.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "run two overlapping commands",
+  "turns": [
+    {
+      "name": "overlap",
+      "match": "overlapping",
+      "steps": [
+        {
+          "type": "parallel",
+          "steps": [
+            {
+              "type": "tool",
+              "toolCallId": "overlap_alpha",
+              "title": "Run alpha",
+              "kind": "execute",
+              "runCommand": {
+                "command": "{{NODE}}",
+                "args": ["{{AGENT_DIR}}/helpers/tick.mjs", "900", "overlap-alpha"],
+                "timeoutMs": 10000
+              },
+              "duration": 0
+            },
+            {
+              "type": "tool",
+              "toolCallId": "overlap_beta",
+              "title": "Run beta",
+              "kind": "execute",
+              "runCommand": {
+                "command": "{{NODE}}",
+                "args": ["{{AGENT_DIR}}/helpers/tick.mjs", "700", "overlap-beta"],
+                "timeoutMs": 10000
+              },
+              "duration": 0
+            }
+          ]
+        },
+        { "type": "message", "text": "Both overlapping commands finished.", "chunk": 26, "delay": 10 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "tool_start": 2,
+      "tool_end": 2,
+      "command": 2
+    },
+    "forbids": ["error"],
+    "commands": [
+      { "stdoutContains": "overlap-alpha", "min": 1 },
+      { "stdoutContains": "overlap-beta", "min": 1 }
+    ],
+    "processes": {
+      "exact": { "minPids": 2, "minRunningAtAnyPoint": 2 },
+      "sampled": { "minPids": 1 },
+      "pairs": [
+        { "commandLineContains": "overlap-alpha", "commandContains": "overlap-alpha" },
+        { "commandLineContains": "overlap-beta", "commandContains": "overlap-beta" }
+      ],
+      "allExited": true
+    }
+  }
+}

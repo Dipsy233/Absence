@@ -1,0 +1,88 @@
+{
+  "id": "08-concurrent-tools",
+  "label": "并发工具调用：四个 in-flight call，完成顺序打乱",
+  "agent": "claude-code",
+  "note": "A single parallel step starts four tool calls before any of them finishes. This is the case where command windows overlap and the classifier must still keep one tool_call_id per call.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "run the four inspections in parallel",
+  "turns": [
+    {
+      "name": "parallel",
+      "match": "parallel",
+      "steps": [
+        {
+          "type": "parallel",
+          "steps": [
+            {
+              "type": "tool",
+              "toolCallId": "par_read_1",
+              "title": "Read src/index.ts",
+              "kind": "read",
+              "readFile": { "path": "src/index.ts" },
+              "duration": 320
+            },
+            {
+              "type": "tool",
+              "toolCallId": "par_search_1",
+              "title": "Search for TODO",
+              "kind": "search",
+              "rawInput": { "pattern": "TODO", "path": "src" },
+              "content": "src/main.ts:3: export const TODO = \"wire the observer\";",
+              "duration": 420
+            },
+            {
+              "type": "tool",
+              "toolCallId": "par_cmd_1",
+              "title": "Run a short command",
+              "kind": "execute",
+              "runCommand": { "command": "{{NODE}}", "args": ["-e", "console.log('parallel cmd')"] },
+              "duration": 380
+            },
+            {
+              "type": "tool",
+              "toolCallId": "par_mcp_1",
+              "title": "mcp__filesystem__read_file",
+              "kind": "other",
+              "rawInput": { "path": "README.md" },
+              "content": "# Mock workspace\n",
+              "duration": 260
+            }
+          ]
+        },
+        { "type": "message", "text": "All four inspections finished; two were reads, one was a command.", "chunk": 28, "delay": 12 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "tool_start": 4,
+      "tool_end": 4,
+      "file_read": 1,
+      "search": 1,
+      "command": 1,
+      "mcp": 1
+    },
+    "forbids": ["error"],
+    "concurrency": { "maxActiveTools": { "min": 4 } },
+    "messages": [{ "contains": "All four", "min": 1 }],
+    "processes": {
+      "exact": { "minPids": 1 },
+      "sampled": { "minPids": 1 }
+    }
+  }
+}

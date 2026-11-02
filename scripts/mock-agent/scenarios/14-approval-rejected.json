@@ -1,0 +1,64 @@
+{
+  "id": "14-approval-rejected",
+  "label": "审批拒绝：不执行工具，退出码标记为未知",
+  "agent": "claude-code",
+  "note": "The runner answers the permission card with reject-once. The mock agent must not run the command (no process is laid). It reports the call as failed with the denial text and no rawOutput, so Absence must keep tool_end isError and mark the command exitCodeKnown=false instead of inventing a real code.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "try a command the user will deny",
+  "approvalAnswer": "reject-once",
+  "turns": [
+    {
+      "name": "deny",
+      "match": "deny",
+      "steps": [
+        {
+          "type": "tool",
+          "toolCallId": "denied_cmd",
+          "title": "Run a denied command",
+          "kind": "execute",
+          "runCommand": {
+            "command": "{{NODE}}",
+            "args": ["-e", "console.log('SHOULD-NOT-RUN')"],
+            "timeoutMs": 10000
+          },
+          "permission": true,
+          "duration": 100
+        },
+        { "type": "message", "text": "The command was denied; nothing was executed.", "chunk": 26, "delay": 10 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "tool_start": 1,
+      "tool_end": 1,
+      "command": 1,
+      "approval": 1
+    },
+    "forbids": ["error", "process"],
+    "commands": [
+      { "exitCode": 1, "min": 1 },
+      { "exitCodeKnown": false, "min": 1 },
+      { "stderrContains": "Permission denied", "min": 1 }
+    ],
+    "commandExitCodes": [1],
+    "toolErrors": [true],
+    "approvals": { "count": 1, "answered": "reject-once" },
+    "messages": [{ "contains": "denied", "min": 1 }]
+  }
+}

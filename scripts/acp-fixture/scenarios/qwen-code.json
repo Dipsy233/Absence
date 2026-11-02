@@ -1,0 +1,53 @@
+{
+  "agent": "qwen-code",
+  "note": "Qwen Code's ACP mode uses snake_case tool names and often omits `kind`, so the shape rules in toolRules.json decide. This is the scenario that proves no agent-specific branch is needed.",
+  "configOptions": [
+    {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "qwen3-coder",
+      "options": [
+        { "value": "qwen3-coder", "name": "Qwen3 Coder" },
+        { "value": "qwen3-235b", "name": "Qwen3 235B" }
+      ]
+    },
+    {
+      "id": "mode",
+      "name": "Approval mode",
+      "category": "mode",
+      "type": "select",
+      "currentValue": "auto",
+      "options": [
+        { "value": "default", "name": "Ask before running" },
+        { "value": "auto", "name": "Auto" },
+        { "value": "yolo", "name": "YOLO" }
+      ]
+    }
+  ],
+  "commands": [
+    { "name": "compact", "description": "Compress the context" },
+    { "name": "memory", "description": "Show memory" }
+  ],
+  "turns": [
+    {
+      "match": "fix",
+      "steps": [
+        { "type": "thought", "text": "先看一下这个文件再改。" },
+        { "type": "tool", "toolCallId": "qw_read", "title": "read_file", "rawInput": { "file_path": "src/main.ts", "offset": 0, "limit": 20 }, "locations": [{ "path": "src/main.ts", "line": 1 }], "content": [{ "type": "content", "content": { "type": "text", "text": "export const main = () => 0;\n" } }] },
+        { "type": "tool", "toolCallId": "qw_glob", "title": "glob", "rawInput": { "pattern": "**/*.test.ts", "path": "." }, "content": [{ "type": "content", "content": { "type": "text", "text": "src/main.test.ts\n" } }] },
+        { "type": "tool", "toolCallId": "qw_shell", "title": "run_shell_command", "rawInput": { "command": "node -e \"console.log('qwen ok')\"" }, "runCommand": "node -e \"console.log('qwen ok')\"" },
+        { "type": "tool", "toolCallId": "qw_replace", "title": "replace", "rawInput": { "file_path": "src/main.ts", "old_string": "() => 0", "new_string": "() => 1" }, "content": [{ "type": "diff", "path": "src/main.ts", "oldText": "() => 0", "newText": "() => 1" }] },
+        { "type": "tool", "toolCallId": "qw_write", "title": "write_file", "rawInput": { "file_path": "src/result.ts", "content": "export const result = 1;\n" } },
+        { "type": "tool", "toolCallId": "qw_search", "title": "search_file_content", "rawInput": { "pattern": "main", "path": "src" }, "content": [{ "type": "content", "content": { "type": "text", "text": "src/main.ts:1: export const main = () => 0;\n" } }] },
+        { "type": "tool", "toolCallId": "qw_fetch", "title": "web_fetch", "rawInput": { "url": "https://example.com" }, "content": [{ "type": "content", "content": { "type": "text", "text": "Example Domain\n" } }] },
+        { "type": "usage", "used": 9600, "size": 131072 },
+        { "type": "message", "text": "改动完成：main 现在返回 1，测试文件已经生成。" }
+      ]
+    }
+  ],
+  "defaultTurn": {
+    "steps": [{ "type": "message", "text": "发送包含 'fix' 的提示词来回放 Qwen Code 场景。" }]
+  }
+}

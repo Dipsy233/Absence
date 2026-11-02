@@ -1,0 +1,101 @@
+{
+  "id": "03-file-ops",
+  "label": "事件驱动捕获：读文件、改文件、写文件、搜索、MCP",
+  "agent": "claude-code",
+  "note": "Every change is announced through ACP first (tool_call + tool_call_update with a diff), then applied to disk. That is the event-driven path; the FileWatcher must not double-report the writes the agent already declared.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "fix the return value and leave a note",
+  "turns": [
+    {
+      "name": "file-ops",
+      "match": "fix the return value",
+      "steps": [
+        { "type": "thought", "text": "Read the entry point before editing anything.", "chunk": 24, "delay": 18 },
+        {
+          "type": "tool",
+          "toolCallId": "file_read_1",
+          "title": "Read src/index.ts",
+          "kind": "read",
+          "readFile": { "path": "src/index.ts", "startLine": 1 },
+          "startLine": 1,
+          "duration": 80
+        },
+        {
+          "type": "tool",
+          "toolCallId": "file_search_1",
+          "title": "Search for TODO",
+          "kind": "search",
+          "rawInput": { "pattern": "TODO", "path": "src" },
+          "content": "src/main.ts:3: export const TODO = \"wire the observer\";",
+          "duration": 60
+        },
+        {
+          "type": "tool",
+          "toolCallId": "file_edit_1",
+          "title": "Update src/index.ts",
+          "kind": "edit",
+          "editFile": { "path": "src/index.ts", "oldString": "return 0;", "newString": "return 1;", "diffStyle": "full" },
+          "diskWriteDelayMs": 180,
+          "duration": 120
+        },
+        {
+          "type": "tool",
+          "toolCallId": "file_write_1",
+          "title": "Create notes/mock-summary.md",
+          "kind": "edit",
+          "writeFile": {
+            "path": "notes/mock-summary.md",
+            "text": "# Mock summary\n\nThe return value is now 1.\n\nWritten by the Absence mock agent.\n"
+          },
+          "diskWriteDelayMs": 180,
+          "duration": 100
+        },
+        {
+          "type": "tool",
+          "toolCallId": "file_mcp_1",
+          "title": "mcp__filesystem__read_file",
+          "kind": "other",
+          "rawInput": { "path": "README.md" },
+          "content": "# Mock workspace\n\nThis project exists only for the Absence mock agent.\n",
+          "duration": 80
+        },
+        { "type": "usage", "used": 18200, "size": 200000 },
+        { "type": "message", "text": "Fixed: main() now returns 1. The note is in notes/mock-summary.md.", "chunk": 28, "delay": 12 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "tool_start": 5,
+      "tool_end": 5,
+      "file_read": 1,
+      "file_edit": 1,
+      "file_write": 1,
+      "search": 1,
+      "mcp": 1,
+      "file_change": { "min": 1 }
+    },
+    "forbids": ["error"],
+    "files": [
+      { "path": "src/index.ts", "contains": "return 1;" },
+      { "path": "notes/mock-summary.md", "contains": "Written by the Absence mock agent." }
+    ],
+    "messages": [{ "contains": "Fixed:", "min": 1 }],
+    "usage": { "minUsed": 18200, "total": 200000 }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "id": "07-cancel-midway",
+  "label": "中途取消：session/cancel 打断流和真实子进程",
+  "agent": "claude-code",
+  "note": "The runner posts session/prompt and then aborts while a real command is running. The mock agent must stop streaming, kill the child tree it laid, and answer session/prompt with stopReason=cancelled.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "start a long job",
+  "cancelAfterMs": 1200,
+  "turns": [
+    {
+      "name": "cancel",
+      "match": "long job",
+      "steps": [
+        { "type": "thought", "text": "Start the long job and wait for it.", "chunk": 20, "delay": 12 },
+        {
+          "type": "tool",
+          "toolCallId": "cancel_cmd",
+          "title": "Run a long job",
+          "kind": "execute",
+          "runCommand": {
+            "command": "{{NODE}}",
+            "args": ["{{AGENT_DIR}}/helpers/tick.mjs", "60000", "cancel-me"],
+            "timeoutMs": 90000
+          },
+          "duration": 0
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["interrupted"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "tool_start": 1,
+      "tool_end": 1,
+      "command": 1
+    },
+    "agentEndReasons": ["aborted"],
+    "stopReasons": ["cancelled"],
+    "forbids": ["error"],
+    "processes": {
+      "sampled": { "minPids": 1 },
+      "exact": { "minPids": 2 },
+      "allExited": true
+    }
+  }
+}

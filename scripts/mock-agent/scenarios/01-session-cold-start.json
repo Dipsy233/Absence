@@ -1,0 +1,110 @@
+{
+  "id": "01-session-cold-start",
+  "label": "会话初始化：超长初始提示词 + 大 system prompt + 上下文塞满",
+  "agent": "claude-code",
+  "note": "ACP has no system-prompt field, so the big system prompt is simulated: the agent reports a large pre-filled usage at session creation. The long initial prompt is real — the runner sends it through session/prompt.",
+  "workspace": "fixture",
+  "init": {
+    "sessionDelayMs": 60,
+    "systemPromptChars": 180000,
+    "systemPromptTokens": 42000,
+    "contextWindow": 131072,
+    "usageOnCreate": { "used": 42000, "size": 131072 },
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [
+          { "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" },
+          { "value": "claude-opus-4-1", "name": "Claude Opus 4.1" }
+        ]
+      },
+      {
+        "id": "thought_level",
+        "name": "Thinking",
+        "category": "thought_level",
+        "type": "select",
+        "currentValue": "medium",
+        "options": [
+          { "value": "low", "name": "Low" },
+          { "value": "medium", "name": "Medium" },
+          { "value": "high", "name": "High" }
+        ]
+      }
+    ],
+    "plan": {
+      "entries": [
+        { "content": "Read the project conventions", "priority": "medium", "status": "pending" },
+        { "content": "Answer the session prompt", "priority": "high", "status": "pending" }
+      ]
+    }
+  },
+  "commands": [
+    { "name": "compact", "description": "Compact the conversation" },
+    { "name": "model", "description": "Switch model" },
+    { "name": "mcp", "description": "Manage MCP servers" }
+  ],
+  "initialPrompt": {
+    "text": "SESSION INIT — you are the coding agent inside a long-running session. Follow the project conventions, read before you edit, and keep the final answer short.\n\n",
+    "fillChars": 300000,
+    "fillText": "Project context block: the repository has a server, a web app and a shared package; tests are acceptance scripts; the observer must never drive the agent it watches.\n"
+  },
+  "conversation": [
+    "continue with the task",
+    "one more turn after the context filled"
+  ],
+  "turns": [
+    {
+      "name": "cold-start",
+      "match": "SESSION INIT",
+      "steps": [
+        { "type": "thought", "text": "The session starts with a very large initial prompt. I should acknowledge it without repeating it back.", "chunk": 26, "delay": 18 },
+        { "type": "message", "text": "Loaded the long session brief. I have the project conventions and will keep the answer short.", "chunk": 28, "delay": 14 },
+        { "type": "usage", "used": 129500, "size": 131072 },
+        { "type": "message", "text": "Context is at 129500/131072 tokens (98.8%).", "chunk": 30, "delay": 10 }
+      ]
+    },
+    {
+      "name": "continue",
+      "match": "continue with the task",
+      "steps": [
+        { "type": "thought", "text": "This is the second turn; the context is still nearly full.", "chunk": 22, "delay": 16 },
+        { "type": "usage", "used": 130100, "size": 131072 },
+        { "type": "message", "text": "Second turn answered from the same nearly-full context.", "chunk": 30, "delay": 12 }
+      ]
+    },
+    {
+      "name": "context-full",
+      "match": "one more turn",
+      "stopReason": "max_tokens",
+      "steps": [
+        { "type": "thought", "text": "The next completion cannot fit in the remaining window.", "chunk": 20, "delay": 12 },
+        { "type": "usage", "used": 131000, "size": 131072 },
+        { "type": "message", "text": "[truncated by max_tokens]", "chunk": 24, "delay": 8 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed", "completed", "error"],
+    "events": {
+      "agent_start": 3,
+      "agent_end": 3,
+      "message": { "min": 4 }
+    },
+    "forbids": ["error"],
+    "usage": { "minUsed": 129500, "total": 131072 },
+    "promptCharsReceived": { "min": 300000 },
+    "streaming": {
+      "messageChunks": { "min": 8 },
+      "thoughtChunks": { "min": 6 }
+    },
+    "stopReasons": ["end_turn", "end_turn", "max_tokens"],
+    "init": {
+      "systemPromptChars": { "min": 100000 },
+      "contextWindow": 131072
+    }
+  }
+}

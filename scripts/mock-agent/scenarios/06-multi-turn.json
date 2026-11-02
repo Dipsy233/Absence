@@ -1,0 +1,95 @@
+{
+  "id": "06-multi-turn",
+  "label": "多轮问答：三步独立 run，上下文与统计跨轮累积",
+  "agent": "claude-code",
+  "note": "Each prompt is its own run. The mock agent answers by matching a trigger in the prompt, so this also proves session/prompt is reusable and the adapter resets its message/thinking accumulators per turn.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "first turn: inspect the project",
+  "conversation": [
+    "second turn: edit the file",
+    "third turn: run the check"
+  ],
+  "turns": [
+    {
+      "name": "inspect",
+      "match": "first turn",
+      "steps": [
+        { "type": "thought", "text": "Turn one: read the entry point.", "chunk": 22, "delay": 14 },
+        {
+          "type": "tool",
+          "toolCallId": "turn1_read",
+          "title": "Read src/index.ts",
+          "kind": "read",
+          "readFile": { "path": "src/index.ts" },
+          "duration": 80
+        },
+        { "type": "usage", "used": 12000, "size": 200000 },
+        { "type": "message", "text": "Turn 1: read src/index.ts.", "chunk": 24, "delay": 10 }
+      ]
+    },
+    {
+      "name": "edit",
+      "match": "second turn",
+      "steps": [
+        { "type": "thought", "text": "Turn two: change the return value.", "chunk": 22, "delay": 14 },
+        {
+          "type": "tool",
+          "toolCallId": "turn2_edit",
+          "title": "Update src/index.ts",
+          "kind": "edit",
+          "editFile": { "path": "src/index.ts", "oldString": "return 0;", "newString": "return 1;", "diffStyle": "full" },
+          "duration": 100
+        },
+        { "type": "usage", "used": 24800, "size": 200000 },
+        { "type": "message", "text": "Turn 2: the file now returns 1.", "chunk": 24, "delay": 10 }
+      ]
+    },
+    {
+      "name": "check",
+      "match": "third turn",
+      "steps": [
+        { "type": "thought", "text": "Turn three: prove the edit with a command.", "chunk": 22, "delay": 14 },
+        {
+          "type": "tool",
+          "toolCallId": "turn3_cmd",
+          "title": "Run the check",
+          "kind": "execute",
+          "runCommand": { "command": "{{NODE}}", "args": ["-e", "console.log('turn 3 ok')"] },
+          "duration": 100
+        },
+        { "type": "usage", "used": 31200, "size": 200000 },
+        { "type": "message", "text": "Turn 3: the check printed 'turn 3 ok'.", "chunk": 24, "delay": 10 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed", "completed", "completed"],
+    "events": {
+      "agent_start": 3,
+      "agent_end": 3,
+      "file_read": 1,
+      "file_edit": 1,
+      "command": 1
+    },
+    "userMessages": 3,
+    "forbids": ["error"],
+    "messages": [
+      { "contains": "Turn 1:", "min": 1 },
+      { "contains": "Turn 2:", "min": 1 },
+      { "contains": "Turn 3:", "min": 1 }
+    ],
+    "streaming": { "messageChunks": { "min": 4 } }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "id": "05-long-output",
+  "label": "长输出：200KB 命令输出 + 120KB 流式回答",
+  "agent": "claude-code",
+  "note": "A single tool result and a single assistant message both get very large. This is where payload size, event-window memory and JSON encoding are exercised without a model.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "generate a very large report",
+  "turns": [
+    {
+      "name": "long-output",
+      "match": "very large report",
+      "steps": [
+        { "type": "thought", "text": "The command will print about 200KB; the answer itself will be about 120KB.", "chunk": 26, "delay": 12 },
+        {
+          "type": "tool",
+          "toolCallId": "long_output_1",
+          "title": "Generate a long report",
+          "kind": "execute",
+          "runCommand": {
+            "command": "{{NODE}}",
+            "args": ["{{AGENT_DIR}}/helpers/long-output.mjs", "--bytes", "200000"],
+            "timeoutMs": 20000,
+            "maxBytes": 400000
+          },
+          "duration": 120
+        },
+        {
+          "type": "message",
+          "text": "Long answer block: ",
+          "fillChars": 120000,
+          "fillText": "the observer must carry this much text without losing the tail; ",
+          "chunk": 4096,
+          "delay": 0
+        },
+        { "type": "message", "text": "END-OF-LONG-OUTPUT", "chunk": 32, "delay": 8 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "tool_start": 1,
+      "tool_end": 1,
+      "command": 1,
+      "message": { "min": 3 }
+    },
+    "forbids": ["error"],
+    "commands": [{ "minStdoutChars": 190000, "min": 1 }],
+    "messages": [
+      { "contains": "END-OF-LONG-OUTPUT", "min": 1 },
+      { "minChars": 100000, "min": 1 }
+    ]
+  }
+}

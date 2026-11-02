@@ -1,0 +1,91 @@
+{
+  "id": "09-process-tree",
+  "label": "全量 shell 捕获：孙进程、后台常驻进程、短命助手进程",
+  "agent": "claude-code",
+  "note": "All commands are really spawned by the mock agent, which the server spawned inside its Job Object. The tree process lays a grandchild and a 25 ms helper; a background daemon outlives its command; a 15 ms helper is short enough that polling would miss it. The runner reports `exact` vs `sampled` and only asserts the ephemeral case when the kernel observer is available.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "inspect the process tree and start a daemon",
+  "postWaitMs": 6500,
+  "turns": [
+    {
+      "name": "process-tree",
+      "match": "process tree",
+      "steps": [
+        { "type": "thought", "text": "Lay a tree, a background daemon, and a helper that lives only a few milliseconds.", "chunk": 24, "delay": 14 },
+        {
+          "type": "tool",
+          "toolCallId": "tree_1",
+          "title": "Run the tree helper",
+          "kind": "execute",
+          "runCommand": {
+            "command": "{{NODE}}",
+            "args": ["{{AGENT_DIR}}/helpers/tree.mjs", "--ms", "2500", "--grandchild", "1600", "--brief", "25"],
+            "timeoutMs": 10000
+          },
+          "duration": 60
+        },
+        {
+          "type": "tool",
+          "toolCallId": "daemon_1",
+          "title": "Start a background daemon",
+          "kind": "execute",
+          "runCommand": {
+            "command": "{{NODE}}",
+            "args": ["{{AGENT_DIR}}/helpers/tick.mjs", "5000", "background-daemon"],
+            "background": true
+          },
+          "duration": 60
+        },
+        {
+          "type": "tool",
+          "toolCallId": "brief_1",
+          "title": "Run a 15ms helper",
+          "kind": "execute",
+          "runCommand": {
+            "command": "{{NODE}}",
+            "args": ["{{AGENT_DIR}}/helpers/tick.mjs", "15", "ephemeral-helper"],
+            "timeoutMs": 10000
+          },
+          "duration": 60
+        },
+        { "type": "message", "text": "Started the tree, the daemon and the short-lived helper.", "chunk": 26, "delay": 12 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "tool_start": 3,
+      "tool_end": 3,
+      "command": 3
+    },
+    "forbids": ["error"],
+    "processes": {
+      "exact": {
+        "minPids": 3,
+        "minChildren": 2,
+        "commandLineIncludes": ["ephemeral-helper"],
+        "minRunningAtAnyPoint": 1
+      },
+      "sampled": {
+        "minPids": 1,
+        "minRunningAtAnyPoint": 1
+      },
+      "allExited": true
+    }
+  }
+}

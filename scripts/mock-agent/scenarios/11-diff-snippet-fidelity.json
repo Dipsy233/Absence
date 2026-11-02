@@ -1,0 +1,65 @@
+{
+  "id": "11-diff-snippet-fidelity",
+  "label": "diff 片段保真：FileWatcher 不补发第二条 file_edit",
+  "agent": "claude-code",
+  "note": "Claude Code's ACP adapter sends `content: [{type:\"diff\", oldText, newText}]` with only the replaced snippet. AcpToolMapper must reconstruct the whole before/after from disk, so SessionStore stores real file content and the FileWatcher has nothing to echo. This scenario is the formal regression guard for that behavior.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "apply the snippet-shaped patch",
+  "turns": [
+    {
+      "name": "snippet-diff",
+      "match": "snippet-shaped",
+      "steps": [
+        {
+          "type": "tool",
+          "toolCallId": "snippet_read",
+          "title": "Read src/index.ts",
+          "kind": "read",
+          "readFile": { "path": "src/index.ts" },
+          "duration": 70
+        },
+        {
+          "type": "tool",
+          "toolCallId": "snippet_edit",
+          "title": "Update src/index.ts",
+          "kind": "edit",
+          "editFile": { "path": "src/index.ts", "oldString": "return 0;", "newString": "return 1;" },
+          "diskWriteDelayMs": 180,
+          "duration": 100
+        },
+        { "type": "message", "text": "Applied the snippet-shaped patch.", "chunk": 26, "delay": 10 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "file_read": 1,
+      "file_edit": 1
+    },
+    "forbids": ["error"],
+    "fileEdits": [
+      {
+        "path": "src/index.ts",
+        "beforeContains": "greeting",
+        "afterContains": "return 1;"
+      }
+    ],
+    "files": [{ "path": "src/index.ts", "contains": "return 1;" }],
+    "messages": [{ "contains": "snippet-shaped", "min": 1 }]
+  }
+}

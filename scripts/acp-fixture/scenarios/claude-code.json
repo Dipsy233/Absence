@@ -1,0 +1,58 @@
+{
+  "agent": "claude-code",
+  "note": "Real event shapes from Claude Code's ACP adapter: tool titles are prose, kinds are read/edit/execute/search/other. Absence must map them by kind, never by title.",
+  "configOptions": [
+    {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "claude-sonnet-4-5",
+      "options": [
+        { "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" },
+        { "value": "claude-opus-4-1", "name": "Claude Opus 4.1" },
+        { "value": "claude-haiku-4-5", "name": "Claude Haiku 4.5" }
+      ]
+    },
+    {
+      "id": "thought_level",
+      "name": "Thinking",
+      "category": "thought_level",
+      "type": "select",
+      "currentValue": "medium",
+      "options": [
+        { "value": "low", "name": "Low" },
+        { "value": "medium", "name": "Medium" },
+        { "value": "high", "name": "High" }
+      ]
+    }
+  ],
+  "commands": [
+    { "name": "compact", "description": "Compact the conversation" },
+    { "name": "model", "description": "Switch model" },
+    { "name": "mcp", "description": "Manage MCP servers" }
+  ],
+  "turns": [
+    {
+      "match": "fix",
+      "steps": [
+        { "type": "thought", "text": "I should read the entry point before editing anything." },
+        { "type": "tool", "toolCallId": "cc_read_1", "title": "Read src/index.ts", "kind": "read", "rawInput": { "file_path": "src/index.ts", "offset": 1, "limit": 40 }, "locations": [{ "path": "src/index.ts", "line": 1 }], "content": [{ "type": "content", "content": { "type": "text", "text": "export function main() {\n  return 0;\n}\n" } }] },
+        { "type": "tool", "toolCallId": "cc_grep_1", "title": "Search for TODO", "kind": "search", "rawInput": { "pattern": "TODO", "path": "src" }, "content": [{ "type": "content", "content": { "type": "text", "text": "src/index.ts:7: // TODO: wire the observer\n" } }] },
+        { "type": "tool", "toolCallId": "cc_bash_1", "title": "Run npm test", "kind": "execute", "rawInput": { "command": "node -e \"console.log('tests ok')\"", "description": "Run the test suite" }, "runCommand": "node -e \"console.log('tests ok')\"", "permission": { "options": [{ "optionId": "allow-once", "name": "Allow once", "kind": "allow_once" }, { "optionId": "allow-always", "name": "Always allow npm test", "kind": "allow_always" }, { "optionId": "reject-once", "name": "Deny", "kind": "reject_once" }] } },
+        { "type": "tool", "toolCallId": "cc_edit_1", "title": "Update src/index.ts", "kind": "edit", "rawInput": { "file_path": "src/index.ts", "old_string": "  return 0;", "new_string": "  return 1;" }, "content": [{ "type": "diff", "path": "src/index.ts", "oldText": "  return 0;", "newText": "  return 1;" }] },
+        { "type": "tool", "toolCallId": "cc_write_1", "title": "Create notes/fix.md", "kind": "edit", "rawInput": { "file_path": "notes/fix.md", "content": "# Fix\n\nReturn 1 instead of 0.\n" } },
+        { "type": "tool", "toolCallId": "cc_mcp_1", "title": "mcp__filesystem__read_file", "kind": "other", "rawInput": { "path": "README.md" }, "content": [{ "type": "content", "content": { "type": "text", "text": "# Absence\n" } }] },
+        { "type": "tool", "toolCallId": "cc_todo_1", "title": "Update todos", "kind": "other", "rawInput": { "todos": [{ "content": "Fix return value", "status": "completed" }] } },
+        { "type": "tool", "toolCallId": "cc_bash_fail", "title": "Run typecheck", "kind": "execute", "rawInput": { "command": "node -e \"process.exit(3)\"" }, "runCommand": "node -e \"process.exit(3)\"" },
+        { "type": "usage", "used": 18200, "size": 200000 },
+        { "type": "message", "text": "Fixed: main() now returns 1. The test command passed; the typecheck command exited 3, which I left for you to look at." }
+      ]
+    }
+  ],
+  "defaultTurn": {
+    "steps": [
+      { "type": "message", "text": "Send a prompt containing 'fix' to replay the Claude Code fixture scenario." }
+    ]
+  }
+}

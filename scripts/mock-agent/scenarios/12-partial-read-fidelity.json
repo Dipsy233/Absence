@@ -1,0 +1,73 @@
+{
+  "id": "12-partial-read-fidelity",
+  "label": "部分读取保真：命令改盘时 diff 的 before 是完整改前文件",
+  "agent": "claude-code",
+  "note": "A read with offset/limit carries only the requested lines. SessionStore must keep that as an observed range and load a full-file baseline from disk, so a later shell command's FileWatcher diff has the real before. This scenario is the formal regression guard for that behavior.",
+  "workspace": "fixture",
+  "init": {
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-sonnet-4-5",
+        "options": [{ "value": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" }]
+      }
+    ]
+  },
+  "initialPrompt": "read a slice and then a command appends a line",
+  "turns": [
+    {
+      "name": "partial-read",
+      "match": "read a slice",
+      "steps": [
+        {
+          "type": "tool",
+          "toolCallId": "partial_read",
+          "title": "Read the first two lines",
+          "kind": "read",
+          "readFile": { "path": "src/index.ts", "startLine": 1, "lines": 2 },
+          "duration": 80
+        },
+        {
+          "type": "tool",
+          "toolCallId": "append_cmd",
+          "title": "Append a line through a command",
+          "kind": "execute",
+          "runCommand": {
+            "command": "{{NODE}}",
+            "args": [
+              "-e",
+              "const fs=require('fs');fs.appendFileSync('src/index.ts','\\n// appended by a command\\n');console.log('appended');"
+            ],
+            "timeoutMs": 10000
+          },
+          "duration": 120
+        },
+        { "type": "message", "text": "Read two lines, then appended one through a command.", "chunk": 28, "delay": 10 }
+      ]
+    }
+  ],
+  "expect": {
+    "runs": ["completed"],
+    "events": {
+      "agent_start": 1,
+      "agent_end": 1,
+      "file_read": 1,
+      "command": 1,
+      "file_change": 1,
+      "file_edit": 1
+    },
+    "forbids": ["error"],
+    "fileEdits": [
+      {
+        "path": "src/index.ts",
+        "beforeContains": "greeting",
+        "afterContains": "appended by a command"
+      }
+    ],
+    "files": [{ "path": "src/index.ts", "contains": "appended by a command" }],
+    "messages": [{ "contains": "appended one", "min": 1 }]
+  }
+}
