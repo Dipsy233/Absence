@@ -8,6 +8,9 @@
  *   ABSENCE_ACP_TEST_MODE=hang      session/prompt never answers and cancel is
  *                                   ignored, so the abort watchdog must settle.
  *   ABSENCE_ACP_TEST_MODE=commands  prompt advertises agent-owned `/` commands.
+ *   ABSENCE_ACP_TEST_MODE=silent-overflow
+ *                                   over-window usage then a bare end_turn with
+ *                                   no text (the provider-failure shape).
  */
 import { createInterface } from "node:readline";
 
@@ -95,6 +98,17 @@ input.on("line", async (line) => {
 
     case "session/prompt":
       if (mode === "hang") break; // deliberately never settle, ignore cancel
+      if (mode === "silent-overflow") {
+        // The shape a provider failure takes: over-window usage, then a bare
+        // end_turn with no assistant text at all.
+        update(message.params?.sessionId, {
+          sessionUpdate: "usage_update",
+          used: 9000,
+          size: 8192,
+        });
+        respond(message.id, { stopReason: "end_turn" });
+        break;
+      }
       if (mode === "deny") {
         const sessionId = message.params?.sessionId;
         const toolCallId = "denied_cmd";

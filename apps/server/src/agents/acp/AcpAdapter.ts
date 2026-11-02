@@ -68,6 +68,8 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
   private availableCommands: AgentCommandInfo[] = [];
   private aborted = false;
   private closed = false;
+  /** True once this turn emitted any assistant text. */
+  private producedAssistantText = false;
   private countedMessageId = "";
   private stats = {
     userMessages: 0,
@@ -354,6 +356,7 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
     session.ensurePromptable();
 
     this.aborted = false;
+    this.producedAssistantText = false;
     this.resetMessage();
     this.resetThinking();
     this.stats.userMessages += 1;
@@ -363,6 +366,11 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
       const reason = await session.prompt(blocks);
       this.flushMessage();
       this.flushThinking();
+      // Some agents turn a provider failure into a bare `end_turn` (pi-acp
+      // does), which used to read as a successful empty turn. When the context
+      // is over its window and the turn produced no text at all, say so before
+      // closing the run: an error is a fact, a made-up reply would not be.
+      this.reportSilentOverflow();
       this.emitAbsence("agent_end", {
         reason: stopReasonToReason(reason, this.aborted),
       });
@@ -462,8 +470,30 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
     }
   }
 
+  /** Raise a visible error when a turn ends "successfully" with no output. */
+  private reportSilentOverflow(): void {
+    if (this.producedAssistantText) return;
+    const usage = this.getContextUsage();
+    const used = usage?.used;
+    const total = usage?.total;
+    if (used === null || used === undefined || total === null || total === undefined || total <= 0) {
+      return;
+    }
+    if (used <= total) return;
+    this.emitAbsence("error", {
+      message: `Agent reported end_turn without output; context ${used}/${total} exceeds the window.`,
+    });
+  }
+
   /** Tag an adapter-originated event with the monitor provenance. */
   protected override emit(event: AbsenceEvent): void {
+    if (
+      event.type === "message" &&
+      event.payload.role === "assistant" &&
+      event.payload.content.trim().length > 0
+    ) {
+      this.producedAssistantText = true;
+    }
     this.bus.publish({
       sessionId: event.sessionId,
       at: event.timestamp,

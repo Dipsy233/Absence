@@ -407,6 +407,11 @@ export class AcpSession {
 
   /** Settle the hung run and drop the connection the agent left open. */
   private forceAbortNow(): void {
+    // A forced settlement is not a normal abort: the agent ignored
+    // `session/cancel` for the whole watchdog window. Report that, so the user
+    // sees why the run ended instead of a silent "aborted".
+    const window = ABORT_TIMEOUT_MS >= 1000 ? `${Math.round(ABORT_TIMEOUT_MS / 1000)}s` : `${ABORT_TIMEOUT_MS}ms`;
+    this.options.onError(`Agent did not respond to session/cancel within ${window}; forced settlement.`);
     this.forceAbort?.();
     this.connection?.dispose();
     this.connection = undefined;

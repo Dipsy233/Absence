@@ -295,10 +295,70 @@ async function main(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 120));
     await adapter.abort();
     await run;
-    check("the run settles as aborted", events.some((event) => event.type === "agent_end" && event.payload.reason === "aborted"));
-    check("no error row is added on top of the abort", !events.some((event) => event.type === "error"));
+    const errorIndex = events.findIndex((event) => event.type === "error");
+    const endIndex = events.findIndex((event) => event.type === "agent_end");
+    check("the run settles as aborted", endIndex >= 0 && (events[endIndex] as any).payload.reason === "aborted");
+    check(
+      "the forced settlement is visible as an error, not silent",
+      errorIndex >= 0 &&
+        (events[errorIndex] as any).payload.message.includes("did not respond to session/cancel"),
+      errorIndex >= 0 ? (events[errorIndex] as any).payload.message : "no error",
+    );
+    check(
+      "the forced-settlement error names the watchdog and precedes agent_end",
+      errorIndex >= 0 && errorIndex < endIndex && (events[errorIndex] as any).payload.message.includes("forced settlement"),
+      `${errorIndex} vs ${endIndex}`,
+    );
     check("the adapter is not busy after the watchdog", !adapter.isBusy());
     check("the hung connection was closed", adapter.getSessionFile() === undefined);
+    adapter.dispose();
+  }
+
+  section("silent overflow: end_turn with no output and used > total becomes an error");
+  {
+    const adapter = new AcpAdapter(profileFor("silent-overflow"));
+    const events: AbsenceEvent[] = [];
+    adapter.subscribe((event) => events.push(event));
+    await adapter.start({ sessionId: "overflow-check", cwd: repoRoot });
+    await adapter.prompt("too much context please");
+    const errorIndex = events.findIndex((event) => event.type === "error");
+    const endIndex = events.findIndex((event) => event.type === "agent_end");
+    check(
+      "the empty over-window turn raises an error",
+      errorIndex >= 0 && (events[errorIndex] as any).payload.message.includes("without output"),
+      errorIndex >= 0 ? (events[errorIndex] as any).payload.message : "no error",
+    );
+    check(
+      "the error states the real context numbers",
+      errorIndex >= 0 && (events[errorIndex] as any).payload.message.includes("9000/8192"),
+      errorIndex >= 0 ? (events[errorIndex] as any).payload.message : "no error",
+    );
+    check(
+      "the error precedes the completed agent_end",
+      errorIndex >= 0 &&
+        errorIndex < endIndex &&
+        (events[endIndex] as any).payload.reason === "completed",
+      `${errorIndex} vs ${endIndex}`,
+    );
+    adapter.dispose();
+  }
+
+  section("a normal turn with real output never raises the overflow error");
+  {
+    const adapter = new AcpAdapter(profileFor("commands", "normal-no-error"));
+    const events: AbsenceEvent[] = [];
+    adapter.subscribe((event) => events.push(event));
+    await adapter.start({ sessionId: "normal-check", cwd: repoRoot });
+    await adapter.prompt("hello");
+    check(
+      "a normal short turn has no error event",
+      !events.some((event) => event.type === "error"),
+      events.filter((event) => event.type === "error").map((event) => JSON.stringify(event.payload)).join(","),
+    );
+    check(
+      "a normal short turn still ends completed",
+      events.some((event) => event.type === "agent_end" && (event.payload as any).reason === "completed"),
+    );
     adapter.dispose();
   }
 
