@@ -29,13 +29,19 @@ import {
   getProfile,
   listProfiles,
   parseLaunchLine,
+  pickerRow,
+  pickerRows,
   readAgentsFile,
   removeCustomAgent,
   updateCustomAgent,
   writeLaunchOverrides,
   type CatalogEntry,
 } from "../../apps/server/src/agents/acp/AgentCatalog";
-import { builtinProfileData, builtinProfiles } from "../../apps/server/src/agents/acp/profiles";
+import {
+  adapterInstall,
+  builtinProfileData,
+  builtinProfiles,
+} from "../../apps/server/src/agents/acp/profiles";
 import { createAdapter } from "../../apps/server/src/agents/createAdapter";
 import { runtimeStatuses } from "../../apps/server/src/runtimes/config";
 import { check, finish, section } from "./harness";
@@ -183,6 +189,38 @@ try {
       codex?.stateReason,
     );
     check("codex never launches npx either", codex?.launch.command !== "npx", codex?.launch.command);
+
+    // The probe view shows only what was found: pi is the single row here.
+    const rows = pickerRows(listProfiles());
+    check(
+      "only the pi row is listed",
+      rows.length === 1 && rows[0]?.kind === "pi",
+      rows.map((row) => row.kind).join(","),
+    );
+    check("the row keeps needs-adapter", rows[0]?.state === "needs-adapter", rows[0]?.stateReason);
+    check("the row carries the adapter package", rows[0]?.adapter?.packages[0] === "pi-acp", JSON.stringify(rows[0]?.adapter));
+    check(
+      "the install command is copyable data",
+      rows[0]?.adapter?.command === "npm install -g pi-acp",
+      rows[0]?.adapter?.command,
+    );
+    check(
+      "the prefilled entry points at the adapter binary",
+      rows[0]?.adapter?.suggestedEntry.command === "pi-acp",
+      rows[0]?.adapter?.suggestedEntry.command,
+    );
+    check("needs-adapter is not advertised as a download", rows[0]?.willDownload !== true);
+    check("an unavailable profile has no picker row", codex !== undefined && pickerRow(codex) === undefined);
+    check("an empty probe yields the empty state", pickerRows([]).length === 0);
+
+    // The install recipe comes from the profile data, not a UI branch.
+    const piData = builtinProfileData.find((entry) => entry.id === "pi");
+    const install = piData ? adapterInstall(piData) : undefined;
+    check(
+      "adapter install is derived from profiles.ts",
+      install?.command === "npm install -g pi-acp" && install?.bins[0] === "pi-acp",
+      JSON.stringify(install),
+    );
   }
 
   section("discovery: a PATH ACP entry → ready");
@@ -248,6 +286,14 @@ try {
       "gemini launches --acp",
       (gemini?.launch.args ?? []).join(" ") === "--acp",
       (gemini?.launch.args ?? []).join(" "),
+    );
+
+    const rows = pickerRows(listProfiles());
+    const qwenRow = rows.find((row) => row.kind === "qwen-code");
+    check(
+      "unknown auth stays ready, never needs-auth",
+      qwenRow?.state === "ready" && qwenRow?.auth === "unknown",
+      qwenRow ? `${qwenRow.state}/${qwenRow.auth}` : "missing",
     );
   }
 
@@ -550,6 +596,22 @@ try {
     };
     walk(agentsDir);
     check("agents/** has no product-name equality branch", offenders.length === 0, offenders.join("\n"));
+
+    // The picker renders server rows; it must not decide anything per product.
+    const pickerFile = path.join(
+      repoRoot,
+      "apps",
+      "web",
+      "src",
+      "components",
+      "ProjectPicker",
+      "ProjectPicker.tsx",
+    );
+    const pickerSource = fs.readFileSync(pickerFile, "utf8");
+    check(
+      "the picker has no product-name branch",
+      !/(===|!==|case)\s*["'](pi|codex|dsh|claude|qwen|gemini)["']/.test(pickerSource),
+    );
   }
 } finally {
   for (const [name, value] of Object.entries(savedEnv)) {
