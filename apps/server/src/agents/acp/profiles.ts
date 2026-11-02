@@ -92,6 +92,51 @@ export interface AgentInspect {
   credentialEnvKeys?: string[];
 }
 
+/**
+ * What the "complete ACP" panel tells the user to install. It is data copied
+ * into the UI — Absence never runs it and never downloads a package itself.
+ */
+export interface AdapterInstall {
+  /** npm package(s) that provide the ACP entry. */
+  packages: string[];
+  /** Executable name(s) the package installs. */
+  bins: string[];
+  /** A copyable global install command. */
+  command: string;
+  /** A copyable project-local install command, when the package exists. */
+  localCommand?: string;
+  /** A short note: what to do after installing. */
+  note: string;
+}
+
+/**
+ * The install recipe for a profile, derived from its discovery data — the UI
+ * never branches on a product name to decide what to install.
+ */
+export function adapterInstall(profile: AgentProfile): AdapterInstall | undefined {
+  const discovery = profile.discovery;
+  if (!discovery) return undefined;
+  const packages =
+    discovery.acpPackages ?? (discovery.npxPackage ? [discovery.npxPackage] : []);
+  const bins = discovery.acpBins ?? [];
+  if (packages.length === 0 && bins.length === 0) return undefined;
+  if (packages.length > 0) {
+    return {
+      packages,
+      bins,
+      command: `npm install -g ${packages[0]}`,
+      localCommand: `npm install -D ${packages[0]}`,
+      note: "安装后确认命令在 PATH 上，或装在项目的 node_modules 中；Absence 不会替你安装。",
+    };
+  }
+  return {
+    packages: [],
+    bins,
+    command: bins[0] ?? "",
+    note: "把该可执行文件放到 PATH 上；Absence 不会替你安装。",
+  };
+}
+
 export interface AgentProfile {
   /** The runtime kind Absence stores in a session (`claude-code`, `qwen-code`, …). */
   id: string;

@@ -7,7 +7,7 @@ import type {
   AgentModels,
   AgentProfile,
 } from "./profiles";
-import { builtinProfiles } from "./profiles";
+import { adapterInstall, builtinProfiles, type AdapterInstall } from "./profiles";
 
 /**
  * The agent catalog — every ACP agent Absence can start on *this* machine.
@@ -148,6 +148,81 @@ export function getProfile(id: string): CatalogEntry | undefined {
     profiles.find((profile) => profile.id === id) ??
     profiles.find((profile) => (profile.aliases ?? []).includes(id))
   );
+}
+
+/**
+ * One row of the picker's probe view. There is no row for `unavailable`: the
+ * picker only lists what was actually found on this machine.
+ */
+export interface PickerRow {
+  kind: string;
+  label: string;
+  state: Exclude<AgentReadiness, "unavailable">;
+  stateReason: string;
+  source: LaunchOrigin;
+  discoveredFrom?: string;
+  auth: AgentAuthStatus;
+  authReason: string;
+  models: AgentModels;
+  /** Only true when the npx fallback is explicitly enabled. */
+  willDownload?: boolean;
+  capabilities?: string;
+  /** Only for `needs-adapter`: what to install, and a prefilled custom entry. */
+  adapter?: AdapterInstall & { suggestedEntry: { command: string; args: string[] } };
+}
+
+/**
+ * The pure state→row mapping: `unavailable` and fixtures disappear, everything
+ * found stays. ACP session models override the agent's static config list.
+ * Exported so the offline check can exercise it without a browser.
+ */
+export function pickerRow(entry: CatalogEntry, sessionModel?: string): PickerRow | undefined {
+  if (entry.state === "unavailable" || entry.source === "fixture") return undefined;
+  const models: AgentModels = sessionModel
+    ? { state: "session", items: [sessionModel] }
+    : entry.models;
+  const install = entry.state === "needs-adapter" ? adapterInstall(entry) : undefined;
+  return {
+    kind: entry.id,
+    label: entry.label,
+    state: entry.state,
+    stateReason: entry.stateReason,
+    source: entry.origin,
+    ...(entry.discoveredFrom ? { discoveredFrom: entry.discoveredFrom } : {}),
+    auth: entry.authStatus,
+    authReason: entry.authReason,
+    models,
+    ...(entry.willDownload ? { willDownload: true } : {}),
+    ...(entry.capabilities ? { capabilities: entry.capabilities } : {}),
+    ...(install
+      ? {
+          adapter: {
+            ...install,
+            suggestedEntry: {
+              command:
+                entry.discovery?.acpBins?.[0] ?? entry.launch.command,
+              args: [],
+            },
+          },
+        }
+      : {}),
+  };
+}
+
+/** Rows for the probe view, in catalog order. */
+export function pickerRows(
+  entries: CatalogEntry[],
+  liveModels: Record<string, string> = {},
+): PickerRow[] {
+  return entries.flatMap((entry) => {
+    const row = pickerRow(entry, liveModels[entry.id]);
+    return row ? [row] : [];
+  });
+}
+
+/** Ids a custom entry may not reuse (shipped rows and their aliases). */
+export function reservedAgentIds(): string[] {
+  return [...reservedIds()];
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
