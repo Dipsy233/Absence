@@ -11,6 +11,8 @@ export type StageMode =
   | "terminal"
   | "replay"
   | "thought"
+  | "speech"
+  | "error"
   | "process"
   | "approval";
 
@@ -20,6 +22,7 @@ export type StageItemType =
   | "terminal"
   | "thought"
   | "speech"
+  | "error"
   | "process"
   | "approval";
 
@@ -100,6 +103,8 @@ export type StagePayload =
   | { kind: "thought"; text: string; streaming?: boolean }
   /** The agent's reply to the user, streamed as it arrives. */
   | { kind: "speech"; text: string; streaming?: boolean }
+  /** An error the agent or its adapter reported. */
+  | { kind: "error"; message: string }
   /** An OS process the agent laid (an "egg"). */
   | {
       kind: "process";

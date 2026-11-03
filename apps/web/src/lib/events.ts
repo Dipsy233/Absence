@@ -36,6 +36,7 @@ export const STAGE_EVENT_TYPES = new Set<AbsenceEvent["type"]>([
   "search",
   "approval",
   "mcp",
+  "error",
 ]);
 
 /** ``mcp__<server>__<tool>`` — the tool name every runtime gives an MCP call. */
@@ -372,6 +373,11 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
         event,
       };
     }
+    case "error":
+      return baseItem(event, "error", "Error", {
+        kind: "error",
+        message: event.payload.message,
+      });
     default:
       return undefined;
   }
@@ -697,7 +703,7 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
     case "agent_end":
       return { id, event, time, action: "END", primary: event.payload.reason, tone: "lifecycle" };
     case "error":
-      return { id, event, time, action: "ERROR", primary: event.payload.message, tone: "error" };
+      return { id, event, time, action: "ERROR", primary: event.payload.message, tone: "error", stageItem };
     default:
       return undefined;
   }

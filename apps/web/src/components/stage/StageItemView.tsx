@@ -4,6 +4,7 @@ import { DiffStage } from "./DiffStage";
 import { TerminalStage } from "./TerminalStage";
 import { ThoughtStage } from "./ThoughtStage";
 import { SpeechStage } from "./SpeechStage";
+import { ErrorStage } from "./ErrorStage";
 import { ProcessStage } from "./ProcessStage";
 import { ApprovalStage } from "./ApprovalStage";
 
@@ -54,6 +55,8 @@ export function StageItemView({ item, showToolbar = true }: { item: StageItem; s
       return <ThoughtStage text={payload.text} streaming={payload.streaming} event={item.event} />;
     case "speech":
       return <SpeechStage text={payload.text} streaming={payload.streaming} event={item.event} />;
+    case "error":
+      return <ErrorStage message={payload.message} event={item.event} />;
     case "process":
       return (
         <ProcessStage

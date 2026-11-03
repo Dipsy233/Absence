@@ -23,6 +23,7 @@ export type ActivityViewKind =
   | "terminal"
   | "thought"
   | "speech"
+  | "error"
   | "process"
   | "approval";
 
@@ -38,6 +39,7 @@ export function activityViews(item: StageItem | undefined): ActivityViews {
   if (
     item.type === "thought" ||
     item.type === "speech" ||
+    item.type === "error" ||
     item.type === "process" ||
     item.type === "approval"
   ) {

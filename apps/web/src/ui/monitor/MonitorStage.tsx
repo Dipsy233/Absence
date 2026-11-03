@@ -404,6 +404,14 @@ function describe(
         sub: payload.streaming ? t("still streaming…") : t("{n} chars", { n: payload.text.length }),
         time,
       };
+    case "error":
+      return {
+        chip: <Chip tone="err">{t("ERROR")}</Chip>,
+        chipText: t("ERROR"),
+        title: item.title,
+        sub: t("{n} chars", { n: payload.message.length }),
+        time,
+      };
     case "process":
       return {
         chip: <Chip tone="egg">{t("EGG")}</Chip>,

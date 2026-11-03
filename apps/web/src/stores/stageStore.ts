@@ -11,6 +11,10 @@ function modeForItem(item: StageItem): StageMode {
       return "terminal";
     case "thought":
       return "thought";
+    case "speech":
+      return "speech";
+    case "error":
+      return "error";
     case "process":
       return "process";
     case "approval":

@@ -23,6 +23,7 @@ import {
   createStageItem,
   eventToActivityRow,
   eventToStageItem,
+  isStageEvent,
   lastStageAction,
   STAGE_EVENT_TYPES,
 } from "../../apps/web/src/lib/events";
@@ -348,6 +349,70 @@ const run = async () => {
   useStageStore.getState().setMode("live");
   assert("LIVE takes over again after METRICS", useStageStore.getState().following === true);
   useStageStore.getState().reset();
+
+  /**
+   * An agent reply (including a `/` command's returned text) is a normal
+   * assistant `message`. It must be openable from Activity and must pin a
+   * speech page, not fall through to METRICS.
+   */
+  {
+    const replyEvent: AbsenceEvent = {
+      id: "evt_reply",
+      sessionId: "s",
+      timestamp: Date.now(),
+      type: "message",
+      payload: { role: "assistant", content: "Session: sample stats", streaming: false },
+    };
+    const replyRow = eventToActivityRow(replyEvent);
+    const replyItem = eventToStageItem(replyEvent);
+    assert("a reply row is openable from Activity", replyRow?.stageItem?.type === "speech");
+    useStageStore.getState().openStage(replyItem!);
+    assert(
+      "a reply pins the speech page, not METRICS",
+      useStageStore.getState().mode === "speech" &&
+        useStageStore.getState().activeItem?.id === replyItem!.id,
+      `mode=${useStageStore.getState().mode}`,
+    );
+    useStageStore.getState().reset();
+  }
+
+  /**
+   * An error the agent reported is also a readable Stage page. Its text is
+   * kept verbatim and the row opens as the error view, never as METRICS.
+   */
+  {
+    const errorText =
+      "agent rejected /unknown-agent-command: the command is not available in this session";
+    const errorEvent: AbsenceEvent = {
+      id: "evt_error",
+      sessionId: "s",
+      timestamp: Date.now(),
+      type: "error",
+      payload: { message: errorText },
+    };
+    const errorRow = eventToActivityRow(errorEvent);
+    const errorItem = eventToStageItem(errorEvent);
+    assert("an error enters the live Stage rule", STAGE_EVENT_TYPES.has("error") && isStageEvent(errorEvent));
+    assert(
+      "the live action becomes the error",
+      lastStageAction([errorEvent])?.id === errorEvent.id,
+      `got ${lastStageAction([errorEvent])?.type ?? "none"}`,
+    );
+    assert("an error row is openable from Activity", errorRow?.stageItem?.type === "error");
+    assert(
+      "the error text is carried verbatim",
+      errorItem?.payload.kind === "error" && errorItem.payload.message === errorText,
+      errorItem?.payload.kind === "error" ? errorItem.payload.message : "wrong payload",
+    );
+    useStageStore.getState().openStage(errorItem!);
+    assert(
+      "an error pins the error page, not METRICS",
+      useStageStore.getState().mode === "error" &&
+        useStageStore.getState().activeItem?.id === errorItem!.id,
+      `mode=${useStageStore.getState().mode}`,
+    );
+    useStageStore.getState().reset();
+  }
 
   // 8. the two FILE slots are independent, and a partial read stays partial
   const partialRead: AbsenceEvent = {
