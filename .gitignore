@@ -46,3 +46,6 @@ apps/server/src/process/sound-sets/
 # Release notes generated from commit subjects by `npm run release:notes` (the
 # release workflow writes this in CI; the committed notes live in docs/).
 release-notes.md
+
+# Local docs audit scratch space.
+.tmp-docs-audit/
