@@ -197,8 +197,10 @@ export interface ProcessWatcherOptions {
  * lived and died inside one long command is still something the agent created,
  * and it is reported as it is seen, then marked `exited` when it goes.
  *
- * The agent's shell is Absence's own (see AbsenceShell), so Absence knows when every
- * command starts and finishes — that window is the evidence. Snapshots are never
+ * The agent runs commands in its own terminal software; Absence learns the
+ * window from the ACP layer, which opens one when a tool call with
+ * `kind: "execute"` starts and closes it when the call settles. That window is
+ * the evidence. Snapshots are never
  * taken on the agent's path: `begin` is free, and the sampling happens while the
  * command runs and after it has returned, off to the side.
  *
@@ -215,8 +217,12 @@ export class ProcessWatcher {
   /** Every pid we have ever claimed — a re-parented child must still read as ours. */
   private readonly seen = new Set<number>();
   /**
-   * Markers Absence put at the head of the commands it drove (see AbsenceShell). Any
-   * process carrying one is plumbing — the shell and its launcher — never an egg.
+   * Markers reported through `noteMarker`. Production never sets one —
+   * Absence no longer drives the agent's shell — so this set stays empty in a
+   * real session. The kernel acceptance checks (check-agentwatch,
+   * check-docker*) mark the processes they spawn so the watcher under test can
+   * tell its own plumbing apart. Any process carrying a marker is plumbing —
+   * the shell and its launcher — never an egg.
    */
   private readonly markers = new Set<string>();
   private readonly open = new Map<number, CommandWindow>();
@@ -574,7 +580,11 @@ export class ProcessWatcher {
     return false;
   }
 
-  /** Absence put this marker at the head of a command it drove. */
+  /**
+   * Mark a process as Absence's own plumbing so it can never become an egg.
+   * Only the kernel acceptance checks call this (check-agentwatch,
+   * check-docker*); no production code path marks anything.
+   */
   noteMarker(marker: string): void {
     this.markers.add(marker);
   }
@@ -885,9 +895,8 @@ export class ProcessWatcher {
     // deliberately not a *requirement*: the Linux observer (eBPF) reports no
     // marker at all, and the shell wrapper is a comment on the command line
     // rather than an environment variable, so an unmarked process is judged by
-    // the window and its ancestry below, exactly as it always was for Pi. When
-    // Codex delegates execution (see CodexExecServer) every command is Absence's
-    // own child, so that ancestry is complete.
+    // the window and its ancestry below. The agent process itself sits inside
+    // Absence's Job Object, so the whole subtree it spawns is seen regardless.
     const session = this.sessionVerdict(event);
     if (session === "foreign") {
       this.jobSeen.add(pid);
@@ -1143,7 +1152,7 @@ export class ProcessWatcher {
    *
    *   - "ours"     — the marker matches `beginSession`; the runtime laid it.
    *   - "foreign"  — the marker is a *different* session's; not ours to report.
-   *   - "unmarked" — no marker was reported. In session mode (Codex) that is
+   *   - "unmarked" — no marker was reported. In session mode that is usually
    *                  the server's own infrastructure; outside it, the older
    *                  heuristics (ancestry, the command window) still decide.
    */
@@ -1286,10 +1295,10 @@ export class ProcessWatcher {
       pid: egg.info.pid,
       ppid: egg.info.ppid,
       name: egg.info.name,
-      // The reported command line is the human-facing one: for a command Codex
-      // wrapped in a shell (`pwsh -NoProfile -Command "<preamble>node x"`) this
-      // is the model's own command, so the egg panel shows what was asked for,
-      // not the plumbing. Matching and classification used the raw line already.
+      // The reported command line is the human-facing one: for a command the
+      // agent wrapped in a shell (`pwsh -NoProfile -Command "<preamble>node x"`)
+      // this is the model's own command, so the egg panel shows what was asked
+      // for, not the plumbing. Matching and classification used the raw line.
       commandLine: unwrapCommandText(egg.info.commandLine),
       status: egg.status,
       startedAt: egg.startedAt,

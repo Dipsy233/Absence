@@ -80,7 +80,11 @@ export interface SessionHistoryEntry {
   id: string;
   /** ABSENCE's archive id — resume restores events, files and chat. */
   absenceSessionId?: string;
-  /** Pi's session file — resume reconnects the model's conversation. */
+  /**
+   * Historical field names (pre-ACP), kept so old archives keep loading: since
+   * v0.5.0 they carry the agent's generic ACP resume handle and its runtime
+   * session id — resume reconnects the model's conversation through them.
+   */
   piSessionFile?: string;
   piSessionId?: string;
   projectPath: string;
@@ -246,59 +250,12 @@ export interface SessionRuntimeState {
   source?: SessionSource;
   context?: ContextState;
   tree?: FileTreeNode;
-  /**
-   * The MCP servers and skills the runtime has (or could have). Optional:
-   * a runtime that reports neither omits it, and the UI hides the panel.
-   */
-  capabilities?: CapabilityState;
   /** `/` commands the agent advertised; the palette merges these with Absence's own. */
   agentCommands?: AgentCommandInfo[];
   /** ACP authentication methods, when the agent advertised any. */
   authMethods?: AuthMethodInfo[];
   /** True when the agent requires authentication before a session can be created. */
   authRequired?: boolean;
-}
-
-/** One skill the runtime can load (a directory with a SKILL.md). */
-export interface SkillInfo {
-  name: string;
-  description: string;
-  /** Absolute path to the SKILL.md. */
-  filePath: string;
-  /** `user` (home) or `project` (inside the session's workspace). */
-  scope: string;
-}
-
-/** One MCP server, however the runtime reaches it. */
-export interface McpServerInfo {
-  name: string;
-  /** `stdio` (a spawned process) or `http` (streamable HTTP). */
-  type: string;
-  /** Which config defined it: user, project, or another runtime's own file. */
-  source?: string;
-  /** How its tools reach the model (`codemode` / `deferred` / `direct` / `hidden`). */
-  exposure?: string;
-  enabled: boolean;
-  description?: string;
-  /** True once the runtime connected the server and registered its tools. */
-  connected?: boolean;
-  /** How many `mcp__<server>__*` tools the runtime registered. */
-  toolCount?: number;
-  /**
-   * True when those tools are declared to the model directly (exposure
-   * `direct`). A connected server with `declared: false` is reachable through
-   * codemode or tool_search instead — connected, but not in the model's tool
-   * list. Undefined when the runtime does not distinguish the two.
-   */
-  declared?: boolean;
-}
-
-/** What a session *can* do beyond its built-in tools: MCP servers and skills. */
-export interface CapabilityState {
-  skills: SkillInfo[];
-  mcp: McpServerInfo[];
-  /** Config problems worth telling the user about (bad entry, unreadable skill). */
-  diagnostics: Array<{ type: string; message: string; path?: string }>;
 }
 
 /** Response body of GET /api/sessions/:id. */

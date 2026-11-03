@@ -5,11 +5,11 @@
 // pre-compile the server (and @absence/core, which it imports as TypeScript) into
 // one CommonJS file the Electron main process can `require` directly.
 //
-// Third-party packages stay external: `@earendil-works/pi-coding-agent` ships
-// a .wasm asset and loads parts of itself dynamically, and the server's own
-// dependencies (fastify, chokidar, …) are ordinary node_modules that are
-// copied into the app as-is. Bundling only *our* code keeps the output small
-// and avoids breaking anything with a dynamic loader.
+// Third-party packages stay external: the server's own dependencies (fastify,
+// chokidar, node-pty, …) are ordinary node_modules that are copied into the app
+// as-is, and some of them load native or lazily-required pieces that bundling
+// would break. Bundling only *our* code keeps the output small and avoids
+// breaking anything with a dynamic loader.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

@@ -3,7 +3,6 @@ import type {
   AgentCommandInfo,
   AgentStatus,
   AuthMethodInfo,
-  CapabilityState,
   ContextState,
   AbsenceEvent,
   Session,
@@ -92,12 +91,6 @@ interface SessionStore {
   /** The most recent event that owns the Stage (read02 §14). */
   currentAction?: AbsenceEvent;
   context?: ContextState;
-  /**
-   * What the runtime can do beyond its built-in tools — MCP servers and skills.
-   * Pushed with every `session_state` (see SessionRuntimeState), so it grows
-   * during a run as servers connect; undefined for a runtime that reports none.
-   */
-  capabilities?: CapabilityState;
   /** `/` commands the agent advertised; merged into the palette. */
   agentCommands?: AgentCommandInfo[];
   /** ACP authentication methods, when the agent advertised any. */
@@ -143,7 +136,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   eventWindowSize: MAX_SESSION_EVENTS,
   currentAction: undefined,
   context: undefined,
-  capabilities: undefined,
   agentCommands: undefined,
   authMethods: undefined,
   authRequired: undefined,
@@ -229,7 +221,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       eggState: { eggs: new Map(), version: 0, retired: 0 },
       currentAction: undefined,
       context: undefined,
-      capabilities: undefined,
       agentCommands: undefined,
       authMethods: undefined,
       authRequired: undefined,
@@ -259,7 +250,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       session: snapshot.session,
       agent: snapshot.agent,
       context: snapshot.context,
-      capabilities: snapshot.capabilities,
       agentCommands: snapshot.agentCommands,
       authMethods: snapshot.authMethods,
       authRequired: snapshot.authRequired,
@@ -278,7 +268,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       session: state.session,
       agent: state.agent,
       context: state.context,
-      capabilities: state.capabilities,
       agentCommands: state.agentCommands,
       authMethods: state.authMethods,
       authRequired: state.authRequired,

@@ -6,7 +6,6 @@ import {
   type AgentSessionPort,
   type AgentStartContext as CoreAgentStartContext,
   type AuthMethodInfo,
-  type CapabilityState,
   type CommandOption,
   type ConfigOptionSnapshot,
   type ConfigOptionValue,
@@ -25,11 +24,14 @@ import {
 import type { ProcessWatcher } from "../process/ProcessWatcher";
 
 /**
- * The legacy runtime boundary (read.md §7) and its bridge to the new port.
+ * The legacy runtime boundary and its bridge to the new port.
  *
- * New code targets `AgentSessionPort` in `@absence/core`. This module now holds
- * only the deprecated legacy interface and a temporary compatibility shim; P5
- * removes both. The rest of Absence only ever sees AbsenceEvent / MonitorEvent.
+ * New code targets `AgentSessionPort` in `@absence/core`. This module is the
+ * compatibility shell kept for v0.5.0: `AcpAdapter` (the only production
+ * adapter) and `MockAdapter` still implement the legacy interface below, and
+ * the SessionStore still talks to them through it. It has no new callers and
+ * is scheduled for removal in the next release. The rest of Absence only ever
+ * sees AbsenceEvent / MonitorEvent.
  */
 /** Re-exported so existing imports keep working; new code uses `resumeHandle`. */
 export type AgentStartContext = CoreAgentStartContext;
@@ -43,14 +45,8 @@ export interface AgentStartResult {
 /** Everything an adapter needs from the session that owns it. */
 export interface AdapterOptions {
   /**
-   * Pi's tool allowlist (`ABSENCE_PI_TOOLS`), or undefined to use Pi's own
-   * `defaultTools` selection. See `AbsenceConfig.piTools` for why the
-   * difference matters to MCP servers with `exposure: "direct"`.
-   */
-  tools?: string[];
-  /**
-   * Present when Absence owns the shell (see process/AbsenceShell), so a process the
-   * agent leaves running can be reported back as a `process` event.
+   * Present so a process the agent leaves running can be reported back as a
+   * `process` event.
    */
   processWatcher?: ProcessWatcher;
   /**
@@ -62,15 +58,13 @@ export interface AdapterOptions {
 }
 
 /**
- * @deprecated Temporary legacy adapter surface. Pi / Codex / DSH implement it
- * only so the migration can land without a rewrite in one step.
- * **P5 deletes this interface and every implementation behind it** (including
- * the shell takeover and capability-management code); nothing new may depend
- * on it. New code targets `AgentSessionPort`.
+ * @deprecated Legacy adapter surface, kept in v0.5.0 as the compatibility shell
+ * behind `AcpAdapter` and `MockAdapter`. It has no new callers and is scheduled
+ * for removal in the next release; nothing new may depend on it. New code
+ * targets `AgentSessionPort`.
  *
- * An automatic approval policy (for example CodexAdapter's
- * `approvalAutomatic`) is a UI preference inside a legacy adapter. It is not
- * part of the agent contract and must never move into `AgentSessionPort`.
+ * An automatic approval policy is a UI preference, not part of the agent
+ * contract, and must never move into `AgentSessionPort`.
  */
 export interface AgentAdapter {
   readonly runtime: string;
@@ -81,14 +75,7 @@ export interface AgentAdapter {
   subscribe(fn: (event: AbsenceEvent) => void): () => void;
   /** Context window usage, or undefined when the runtime cannot report it. */
   getContextUsage(): ContextState | undefined;
-  /**
-   * The MCP servers and skills this session has. Optional: a runtime with no
-   * such concept omits it and the UI hides the panel. Pi reports it from
-   * Absence's own discovery (capabilities/discover.ts) plus the tools its
-   * extension registered; a live view, not a snapshot taken at start.
-   */
-  getCapabilities?(): CapabilityState | undefined;
-  /** The runtime's own persisted session file, when it keeps one (Pi does). */
+  /** The runtime's own persisted session file, when it keeps one. */
   getSessionFile?(): string | undefined;
   /** The runtime's own session id, when it has one. */
   getRuntimeSessionId?(): string | undefined;
@@ -156,8 +143,8 @@ export interface AgentAdapter {
 }
 
 /**
- * @deprecated Temporary overrides for the legacy compatibility shim.
- * Removed in P5 with `AgentAdapter` itself.
+ * @deprecated Overrides for the legacy compatibility shim, removed together
+ * with `AgentAdapter` in the next release.
  *
  * Optional overrides for the legacy compatibility shim. Everything the legacy
  * interface cannot express (arbitrary config selectors, monitor provenance)
@@ -172,16 +159,17 @@ export interface LegacyAgentPortOptions {
 }
 
 /**
- * @deprecated Temporary bridge; **P5 deletes this shim together with every
- * legacy adapter**. Nothing new may call it.
+ * @deprecated Bridge kept for v0.5.0 compatibility. It has no production
+ * caller — the only adapter is `AcpAdapter`, which implements
+ * `AgentSessionPort` natively — and is scheduled for removal in the next
+ * release. Nothing new may call it.
  *
  * Minimal legacy → `AgentSessionPort` shim.
  *
- * Pi / Codex / DSH keep compiling and running unchanged; callers that want the
- * new contract wrap them here. The shim owns no runtime semantics: it forwards
- * text prompts, lifecycle calls and permission answers, and maps the legacy
- * event stream into `MonitorEvent`. It deliberately exposes no automatic
- * approval path — the UI's `PermissionAnswer` is forwarded verbatim.
+ * The shim owns no runtime semantics: it forwards text prompts, lifecycle
+ * calls and permission answers, and maps the legacy event stream into
+ * `MonitorEvent`. It deliberately exposes no automatic approval path — the
+ * UI's `PermissionAnswer` is forwarded verbatim.
  */
 export function toAgentSessionPort(
   adapter: AgentAdapter,

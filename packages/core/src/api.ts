@@ -29,6 +29,7 @@ export interface RuntimeStatus {
 /** What to reopen when resuming a persisted session (POST /api/sessions). */
 export interface ResumeTarget {
   absenceSessionId?: string;
+  /** Historical names kept for compatibility: the generic ACP resume handle. */
   piSessionFile?: string;
   piSessionId?: string;
 }

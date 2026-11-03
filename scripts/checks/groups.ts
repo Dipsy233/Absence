@@ -152,6 +152,10 @@ export const GROUPS: CheckGroup[] = [
       { script: "check-observer.ts", timeout: 120_000 },
       { script: "check-acp.ts", timeout: 120_000 },
       { script: "check-acp-lifecycle.ts", timeout: 180_000 },
+      { script: "check-acp-transport.ts", timeout: 120_000 },
+      { script: "check-acp-mapping.ts", timeout: 120_000 },
+      { script: "check-acp-proxy.ts", timeout: 120_000 },
+      { script: "check-agent-catalog.ts", timeout: 120_000 },
     ],
   },
   {

@@ -40,6 +40,9 @@ apps/server/src/process/sound-sets/
 # esbuild scratch dir used by the launcher (kept out of the scanned system temp)
 .tmp-build/
 
+# One-off build scratch from local experiments (safe to delete; never committed)
+.tmpbuild/
+
 # Release notes generated from commit subjects by `npm run release:notes` (the
 # release workflow writes this in CI; the committed notes live in docs/).
 release-notes.md

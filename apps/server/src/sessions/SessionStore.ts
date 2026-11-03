@@ -623,8 +623,7 @@ export class AbsenceSession {
 
   runtimeState(options: { includeTree?: boolean } = {}): SessionRuntimeState {
     // ACP carries the agent's own command list and auth state; Absence never
-    // scans an agent's config for capabilities.
-    const capabilities = this.adapter?.getCapabilities?.();
+    // scans an agent's config for skills/MCP lists.
     const agentCommands = this.adapter?.getAvailableCommands?.();
     const authMethods = this.adapter?.getAuthMethods?.();
     const authRequired = this.adapter?.isAuthRequired?.() === true;
@@ -635,7 +634,6 @@ export class AbsenceSession {
       source: this.source(),
       context: this.context,
       ...(includeTree && this.tree ? { tree: this.tree } : {}),
-      ...(capabilities ? { capabilities } : {}),
       ...(agentCommands && agentCommands.length > 0 ? { agentCommands } : {}),
       ...(authMethods && authMethods.length > 0 ? { authMethods } : {}),
       ...(authRequired ? { authRequired } : {}),

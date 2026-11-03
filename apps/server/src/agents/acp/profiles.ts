@@ -171,13 +171,6 @@ export interface AgentProfile {
   configurable?: boolean;
   /** The env var that overrides the launch command, named in errors/notes. */
   commandEnv?: string;
-  /**
-   * Ask Absence's shared, cross-runtime file scan for the skills/MCP panel.
-   * ACP carries no catalog request, so this is explicit opt-in and defaults
-   * off: a profile that does not set it gets no panel rather than a list of
-   * another runtime's servers. It is a data policy, not a product branch.
-   */
-  discoverCapabilities?: boolean;
   /** How to find an installed entry; absent for custom/registry profiles. */
   discovery?: AgentDiscovery;
   /** Where the agent's own settings live, read-only; absent means unknown. */
@@ -434,9 +427,6 @@ export function builtinProfiles(): AgentProfile[] {
       ...(data.capabilities !== undefined ? { capabilities: data.capabilities } : {}),
       ...(data.configurable !== undefined ? { configurable: data.configurable } : {}),
       ...(data.commandEnv !== undefined ? { commandEnv: data.commandEnv } : {}),
-      ...(data.discoverCapabilities !== undefined
-        ? { discoverCapabilities: data.discoverCapabilities }
-        : {}),
       ...(discovery !== undefined ? { discovery } : {}),
       ...(data.inspect !== undefined ? { inspect: data.inspect } : {}),
     };

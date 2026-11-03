@@ -49,7 +49,11 @@ export interface ArchiveMeta {
   updatedAt: number;
   model?: string;
   runtime: string;
-  /** Pi's session file, when the session ran on the Pi runtime. */
+  /**
+   * Historical column names, kept for archive compatibility: since v0.5.0 they
+   * store the generic ACP resume handle and the runtime's session id for *any*
+   * agent, not just Pi. Do not rename — old archives must keep loading.
+   */
   piSessionFile?: string;
   piSessionId?: string;
   messageCount: number;
