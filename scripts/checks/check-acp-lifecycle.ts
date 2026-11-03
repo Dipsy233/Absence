@@ -362,6 +362,52 @@ async function main(): Promise<void> {
     adapter.dispose();
   }
 
+  section("startup agent_message_chunk is metadata, not an assistant turn");
+  {
+    const adapter = new AcpAdapter(profileFor("startup-chunk", "startup-check"));
+    const events: AbsenceEvent[] = [];
+    adapter.subscribe((event) => events.push(event));
+    await adapter.start({ sessionId: "startup-check", cwd: repoRoot });
+
+    check(
+      "session/new startup text is not published as an assistant message",
+      !events.some(
+        (event) =>
+          (event.type === "message" || event.type === "thinking") &&
+          String((event.payload as any).content ?? "").includes("Skills"),
+      ),
+      events.map((event) => event.type).join(","),
+    );
+    check(
+      "no fake run starts and no agent_start/agent_end is emitted",
+      !events.some((event) => event.type === "agent_start" || event.type === "agent_end"),
+      events.map((event) => event.type).join(","),
+    );
+    // session/new's result resolves before its follow-up notifications are
+    // read; give the transport one tick.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    check(
+      "the skill still arrives as an agent command",
+      adapter.getAvailableCommands().some((command) => command.name === "skill:playwright-cli"),
+      JSON.stringify(adapter.getAvailableCommands()),
+    );
+
+    // A real prompt afterwards must still stream normally; the startup
+    // suppression must not swallow conversational output.
+    await adapter.prompt("hello");
+    check(
+      "a following real turn still produces its assistant message",
+      events.some(
+        (event) =>
+          event.type === "message" &&
+          (event.payload as any).role === "assistant" &&
+          String((event.payload as any).content).includes("test agent replied"),
+      ),
+      events.map((event) => event.type).join(","),
+    );
+    adapter.dispose();
+  }
+
   section("registry: sync writes a usable cache, offline fails readably");
   {
     const body = {

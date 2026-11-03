@@ -534,7 +534,17 @@ async function fetchArchivedEvents(ctx: ServerContext, sessionId: string): Promi
 function mergeEvents(live: Json[], archived: Json[]): Json[] {
   const byId = new Map<string, Json>();
   for (const event of live) if (event?.id) byId.set(event.id, event);
-  for (const event of archived) if (event?.id) byId.set(event.id, event);
+  for (const event of archived) {
+    if (!event?.id) continue;
+    // The archive stores a preview of large text fields; the live frame is the
+    // full value. Never let the preview overwrite a complete live event.
+    const current = byId.get(event.id);
+    const currentIsPreview = current?.previewTruncated === true || current?.payload?.previewTruncated === true;
+    const archivedIsPreview =
+      event.previewTruncated === true || event.payload?.previewTruncated === true;
+    if (current && !currentIsPreview && archivedIsPreview) continue;
+    byId.set(event.id, event);
+  }
   return [...byId.values()].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 }
 

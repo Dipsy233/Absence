@@ -70,6 +70,8 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
   private closed = false;
   /** True once this turn emitted any assistant text. */
   private producedAssistantText = false;
+  /** True only while `session/prompt` is in flight. */
+  private promptActive = false;
   private countedMessageId = "";
   private stats = {
     userMessages: 0,
@@ -362,6 +364,7 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
     this.stats.userMessages += 1;
     this.emitAbsence("agent_start", { model: this.model });
 
+    this.promptActive = true;
     try {
       const reason = await session.prompt(blocks);
       this.flushMessage();
@@ -374,8 +377,10 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
       this.emitAbsence("agent_end", {
         reason: stopReasonToReason(reason, this.aborted),
       });
+      this.promptActive = false;
       return reason;
     } catch (error) {
+      this.promptActive = false;
       this.flushMessage();
       this.flushThinking();
       if (this.aborted) {
@@ -459,10 +464,18 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
         content?: string;
       };
       if (event.event.type === "message" && payload.streaming === true) {
+        // Startup info (pi-acp sends `## Skills ...` as an
+        // `agent_message_chunk` right after `session/new`) is metadata, not a
+        // conversational turn. Streaming it as an assistant message flips the
+        // avatar to speaking forever because no `session/prompt` — and hence
+        // no `agent_end` — will ever follow. Drop it; skill commands still
+        // arrive via `available_commands_update`.
+        if (!this.promptActive) continue;
         this.emitMessageDelta(String(payload.delta ?? payload.content ?? ""));
         continue;
       }
       if (event.event.type === "thinking" && payload.streaming === true) {
+        if (!this.promptActive) continue;
         this.emitThinkingDelta(String(payload.delta ?? payload.content ?? ""));
         continue;
       }

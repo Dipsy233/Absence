@@ -11,6 +11,9 @@
  *   ABSENCE_ACP_TEST_MODE=silent-overflow
  *                                   over-window usage then a bare end_turn with
  *                                   no text (the provider-failure shape).
+ *   ABSENCE_ACP_TEST_MODE=startup-chunk
+ *                                   sends an agent_message_chunk right after
+ *                                   session/new, like pi-acp's startup info.
  */
 import { createInterface } from "node:readline";
 
@@ -72,19 +75,37 @@ input.on("line", async (line) => {
         });
         break;
       }
-      respond(message.id, {
-        sessionId: message.params?.sessionId ?? "test-session",
-        configOptions: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: "test-model",
-            options: [{ value: "test-model", name: "Test Model" }],
-          },
-        ],
-      });
+      {
+        const sessionId = message.params?.sessionId ?? "test-session";
+        respond(message.id, {
+          sessionId,
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "test-model",
+              options: [{ value: "test-model", name: "Test Model" }],
+            },
+          ],
+        });
+        if (mode === "startup-chunk" && message.method === "session/new") {
+          // The pi-acp startup shape: a bare agent_message_chunk right after
+          // session/new, before any prompt exists.
+          update(sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "## Skills\n- /skills/playwright-cli/SKILL.md\n" },
+          });
+          update(sessionId, { sessionUpdate: "usage_update", used: 0, size: 8192 });
+          update(sessionId, {
+            sessionUpdate: "available_commands_update",
+            availableCommands: [
+              { name: "skill:playwright-cli", description: "Automate browsers" },
+            ],
+          });
+        }
+      }
       break;
 
     case "authenticate":
