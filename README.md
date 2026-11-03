@@ -1,64 +1,50 @@
 # Absence / 发呆症
 
-English | [中文](README.zh-CN.md)
-
 > Surrender to intelligence!
 
-> AI is becoming overwhelmingly capable, and humans are slowly losing track of
-> what it does. We call this condition **Absence**.
+> AI 正强到让人类渐渐跟不上它在做什么。我们把这种状态叫作 **Absence（发呆症）**。
 >
-> Absence helps you watch AI work, understand what happened, and eventually
-> surrender to AI domination.
+> Absence 帮你看住 AI 的工作、弄清发生了什么，并最终坦然接受 AI 的统治。
 
-Absence is a real-time visualization observer for AI agents. It does not try to make
-an agent smarter — it lets a human *see* what the agent is doing. **Pi**,
-**Claude Code**, **OpenAI Codex** and **DSH** (DeepSeek Harness) are all
-ACP profiles, driven through the same client.
+Absence 是一个 AI agent 的实时可视化**观察器**。它不让 agent 变聪明——它让人
+*看见* agent 在做什么。**Pi、Codex、Claude Code、Qwen Code、Gemini、DSH** 以及
+任何会说 **ACP（Agent Client Protocol）** 的 agent，都经同一个标准接入层驱动。
 
 ```
-The agent's own terminal software runs the agent.
-Absence observes the events.
-The Stage turns events into something humans can watch.
+agent 自己的终端软件运行 agent。
+Absence 观察事件。
+Stage 把事件变成人看得懂的东西。
 ```
 
-- **Live observation** — a cute agent avatar: the agent's every read, edit and
-  command becomes something a person can actually watch, at real speed, while
-  it happens.
-- **Replay** — every run is reconstructed from events + state snapshots (never
-  video), scrubbable at 0.25×–10×.
-- **Absence Report** — a run reduced to facts in seconds: what changed, what ran,
-  what failed, and what needs your attention — including loops (the agent
-  undoing its own edit, retrying a failing command) and processes it left
-  running. No LLM, no guessing: only what the observer saw.
-- **Agent Eggs** — every process the agent started, caught by kernel events
-  (Job Object on Windows, eBPF on Linux), classified by behaviour so a `cat`
-  helper never buries the one daemon the command actually launched.
-- **Agent Folder** — the agent's own view of the project: only the files and
-  the exact line ranges it has in context, with a version history per file.
-- **Resource metrics** — CPU and RSS for the agent and its primary eggs, with
-  live sparklines, session averages, selectable eggs, and historical charts
-  backed by SQLite.
+- **实时观察**——一个可爱的 agent 化身：agent 的每次读、改、跑都以真实速度
+  变成人看得见的动作。
+- **回放**——每个 run 由事件+状态快照重建（不是视频），0.25×–10× 可拖。
+- **Absence Report**——一个 run 几秒归约成事实：改了什么、跑了什么、败在哪、
+  哪里需要你注意（包括 agent 撤销自己的修改、反复重试失败命令、留下的驻留
+  进程）。无 LLM、不猜：只有观察器看到的。
+- **Agent Eggs**——agent 拉起的每个进程，由内核事件捕获（Windows Job Object /
+  Linux eBPF），按行为分类，不会被 `cat` 之类的帮手淹没真正的守护进程。
+- **Agent Folder**——agent 视角的项目：只有它真读过的文件与行段，每个文件带
+  版本历史。
+- **资源指标**——agent 及其主进程的 CPU/RSS，实时曲线、会话均值、SQLite 持久化。
 
-## Screenshots
+## 截图
 
-**Observing a run** — the Stage, the Activity stream, and the agent reading its
-way through the project:
+**观察一个 run**——Stage、Activity 流、正在读项目的 agent：
 
 ![Absence observing an agent run](docs/screenshots/absence-1.png)
 
-**After a run** — the Absence Report, Agent Folder and Agent Eggs, with the
-avatar settling back to *listening*:
+**run 结束之后**——Absence Report、Agent Folder、Agent Eggs，化身回到 *listening*：
 
 ![Absence report view](docs/screenshots/absence-2.png)
 
-**The Absence Report in detail** — timeline, effects and evidence links:
+**Report 细节**——时间线、效果与证据链接：
 
 ![Absence Report detail](docs/screenshots/report.png)
 
-## Quick start
+## 快速开始
 
-**Run from source** (needs Node.js >= 22.19 and npm, plus one installed and
-logged-in runtime: Pi / Codex / DSH):
+**源码运行**（需要 Node.js >= 22.19 与 npm，以及一个已安装并登录的 agent 运行时）：
 
 ```bash
 git clone https://github.com/Dipsy233/Absence.git
@@ -68,356 +54,135 @@ npm run build
 npm start
 ```
 
-Open `http://127.0.0.1:8848`, enter a project path, pick a runtime, hit
-**Open**, and send the agent a task in the chat box at the bottom.
+打开 `http://127.0.0.1:8848`，选择项目路径，在探测式选择器里挑一个 **可启动**
+的 agent，点 **Open**，在底部输入框里给它派活。
 
-**One-click launch** (inside a checkout, builds automatically):
+**一键启动**（检出内，自动构建）：
 
 ```bat
 start-absence.bat            :: Windows
 ./start-absence.sh           :: Linux
 ```
 
-**Download and run** (grab the package for your platform from Releases):
+**下载运行**（从 Releases 取对应平台的包）：
 
 ```bat
-:: Windows: run the installer
-Absence-Setup-0.4.0.exe
+:: Windows: 运行安装程序
+Absence-Setup-0.5.0.exe
 ```
 
 ```sh
-# Linux desktop: AppImage or tar.gz
-chmod +x Absence-0.4.0.AppImage && ./Absence-0.4.0.AppImage
-# or
-tar xzf Absence-0.4.0.tar.gz && cd Absence-0.4.0 && ./absence
-
-# Headless Linux server: serve the UI on :8848 only
-tar xzf Absence-0.4.0.tar.gz && cd Absence-0.4.0
+# Linux 桌面: AppImage 或 tar.gz
+chmod +x Absence-0.5.0.AppImage && ./Absence-0.5.0.AppImage
+# 或无头服务器: 只在 :8848 提供 UI
+tar xzf Absence-0.5.0.tar.gz && cd Absence-0.5.0
 bash resources/start-server.sh daemon
 ```
 
-> The agent runtime is not bundled: Absence uses whichever you have installed.
-> With no Pi/Codex/DSH installed, pick the **mock** runtime for a look at the
-> UI. Details: [ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-> [RELEASE_NOTES_v0.4.0.md](docs/RELEASE_NOTES_v0.4.0.md).
+> Absence 不捆绑任何 agent 运行时：用你机器上已装的。选择器里没装适配器的行会
+> 给出安装命令（Absence 不替你装）；不在列表里的 ACP agent 用 **"+"** 自定义入口
+> 接入。细节见 [docs/AGENT_SUPPORT.md](docs/AGENT_SUPPORT.md)。
 
-## The interface
+## 界面
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                         SESSION BAR                          │
-├──────────────┬───────────────────────────────┬───────────────┤
-│    FILES     │ [METRICS FILE DIFF REPLAY]   │     AGENT     │
-│  (user view) │        [TERMINAL FILE LIVE]   │    (avatar)   │
-│              │                               │               │
-├──────────────┤───────────────────────────────├───────────────┤
-│   HISTORY    │                               │ AGENT FOLDER  │
-│   (runs)     │            STAGE              │ (agent view)  │
-├──────────────┤                               ├───────────────┤
-│   ACTIVITY   │  replay controls, only while  │  AGENT EGGS   │
-│  (selected   │  replaying                    │  processes it │
-│     run)     │  chat dock: one input row     │   left running│
-└──────────────┴───────────────────────────────┴───────────────┘
-```
-
-The whole UI is split by *whose view* you are looking at — the **left rail is
-yours** (the whole project, whole files, read from disk), the **right rail is
-the agent's** (only what it has actually read, never pretending to know more).
-If the agent read lines 10–20 of a file, its FILE button shows just those
-lines — and after reads of 1–2 and 3–5 it shows 1–5, never a gap silently
-bridged; unread lines in between become explicit `⋯` markers.
-
-- **Stage** (center) — the default page is the Metrics dashboard: CPU/RSS charts
-  for the whole agent or a selected egg, with 1m / 5m / 30m / 1h / all ranges.
-  FILE / DIFF / TERMINAL / LIVE views open as content sheets, and REPLAY takes
-  over with full scrub controls (0.25×–10×). Chat is docked at the bottom —
-  one input row, history unfolding upward, collapsible.
-- **Files → History → Activity** (left) — the project tree (● marks files the
-  agent touched, right-click for inspect/diff/history), one History row per run
-  with action counts `R` read · `S` search · `E` edit · `C` created · `$`
-  command, and the selected run's actions — click a row to put it on the Stage,
-  or **▶ replay** to replay the run from the beginning. Reasoning is captured
-  too: a `thinking` event is a THINK row next to the actions it led to.
-- **Agent** (right) — the WhaleBun (鲸团团) avatar, posed purely by the event stream:
-  listening relaxes, thinking thinks, speaking talks, reading reads, editing
-  writes, running types, waiting dozes, error panics.
-- **Agent Folder** (right) — the agent's files, newest first, each expandable
-  into the versions it has held (v0 read → v1 write → v2 edit…). Text is
-  captured at the moment the agent saw it, so nothing on disk can rewrite an
-  earlier version.
-- **Agent Eggs** (right) — processes the agent started, with `running` / `dead`
-  / `all` tabs. Classified by behaviour, not by name: a process is *primary*
-  when it outlived its command, spawned its own processes, was named by the
-  command (`python train.py`), was backgrounded/redirected by it, or runs from
-  the workspace; short-lived helpers (`cat`, `grep`, `docker ps`) are folded
-  into a count. So `docker compose up -d` shows the containers, not the client;
-  `nohup node ticker.mjs` shows `node ticker.mjs`, not `nohup`.
-- **MCP calls are visible** — a call into an MCP server reaches Activity as
-  `MCP  filesystem › list_directory` and owns the Stage as a terminal card
-  (`mcp <server> › <tool>`, its arguments, its output, and the server's
-  structured JSON behind a `text/json` toggle). The Absence Report counts them
-  per server, so a run that only talked to MCP servers no longer looks idle.
-- **Skills & MCP, as commands** — `/skill` lists the skills the session can
-  load and `/skill <name> [request]` loads one (Pi's own `/skill:<name>` works
-  too, straight from the input). `/mcp` is session-scoped like Pi's own: list
-  the servers with their state, tools and exposure, and reconnect one. Adding
-  or removing a server is a config change, so it stays with `pi mcp add …` /
-  `codex mcp add …`; `/mcp reconnect` then picks it up. An MCP or skill tool
-  call shows up in Activity and on the Stage like any other tool.
-- **Session bar** — session id, project, model, context usage, live/offline,
-  and a `⚙ settings` button opening a four-pane dialog: appearance (theme, rail
-  order, a chat "collapse on content" toggle), avatar skins, custom sound sets,
-  and Agent Eggs filter profiles.
+- **左栏是你的视角**（整个项目、完整文件、从磁盘读）；**右栏是 agent 的视角**
+  （只有它真读过的，绝不装作知道更多）。agent 读了 10–20 行，FILE 就只显示
+  10–20 行；分两次读 1–2 和 3–5 就显示 1–5，中间没读的绝不悄悄补上，而是显式的
+  `⋯` 标记。
+- **Stage（中央）**——默认页是指标仪表盘；FILE / DIFF / TERMINAL / LIVE 以内容页
+  打开；REPLAY 接管时带完整拖放控制。底部是聊天坞——一行输入、历史向上展开。
+- **探测式选择器**——方格布局，每行是一次真实探测：状态（可启动/缺适配器/需
+  登录）、发现来源、声明的模型、适配器安装提示；最后一格永远是 **"+"** 自定义
+  ACP 入口。选中后，与该 agent 相关的事实（认证、模型来源、launch 覆盖）以
+  **提示流**形式流入，而不是弹窗。
+- **命令面板是补全器**——只列 agent 自己广告的 `/` 命令（`available_commands_
+  update`）加 Absence 唯一的本地动作 `/auth`；回车把整行**原文**发给 agent。
+- **Agent（右）**——鲸团团化身，姿态完全由事件流驱动：聆听、思考、说话、阅读、
+  书写、执行、等待、出错。
+- **Agent Eggs（右）**——`running` / `dead` / `all` 页签；按行为而非名字分类：
+  活过命令的、自己拉子进程的、被命令点名的、被后台化/重定向的算 *primary*；
+  短命帮手折叠成一个计数。
+- **MCP 调用可见**——Activity 里显示 `MCP filesystem › list_directory`，Stage 上是
+  终端卡片（参数、输出、text/json 切换）。
 
 ## Absence Report
 
-A tab at the top-centre of the Stage expands a translucent report over the
-Stage body, derived entirely from the event stream — no LLM, no command
-parsing:
+由事件流推导（无 LLM、不解析命令）：run 进行中给出阶段与注意力等级；结束后给出
+时间线、Knows（读过什么）、Changes（`+A/−D`）、Executions（退出码）、恢复动作与
+结论。每条都是证据链接。注意力规则（失败连击、驻留蛋、文件版本回环、命令重试
+回环、项目外改动）全部可在设置对话框里逐条配置阈值与等级。
 
-- **while a run is live** — what the agent is doing now: a phase
-  (`investigating` / `implementing` / `executing` / `verifying` / `recovering`),
-  progress, and a human-attention level.
-- **when the run ends** — what it amounted to: **Timeline** (one node per
-  activity, each with its effects — lines that entered the context, `+A / −D`,
-  exit status), **Knows** (files read, searches run), **Changes**
-  (created/modified/deleted, with `+A / −D`), **Executions** (commands with
-  exit status), recoveries, an outcome, and the agent's reply. Every item is an
-  evidence link — clicking it opens the content beside the report and
-  highlights the row in Activity.
+## 个性化
 
-Human attention watches for the agent defeating itself: a **file version loop**
-(a newer version byte-identical to an earlier one — an edit undone) and a
-**command retry loop** (the same command failing over and over); a **failure
-streak** (commands failing back-to-back with no success between them, 3 by
-default) raises `command_failure_streak`; an egg **still running** after the run
-ends, an **unrecovered failure** and a run that **ended in error** are *high*.
+`⚙ settings`：主题与栏序、头像皮肤（上传自己的 mp4/gif/png 动画替换鲸团团）、
+提示音组、Agent Eggs 过滤档案。见 [docs/AVATAR_SKIN.md](docs/AVATAR_SKIN.md)。
 
-**Every reason is individually configurable** in the settings dialog's REPORT
-WARN pane, in five groups:
+## 配置
 
-- **failed commands** — the per-run failure count that raises `command_failed`
-  (default 5), the back-to-back streak count (default 3), and the
-  no-activity window for `activity_stalled` (default 3600 s), each with its
-  own level;
-- **errors** — `unresolved_error` (default high) and `agent_stopped`
-  (default high);
-- **leftover eggs** — `process_left_running`'s level (default high), a minimum
-  lifetime in seconds (0 reports every egg; a longer one skips helpers that were
-  about to exit), and a "never report" list matched against the process name or
-  its command line;
-- **outside the project** — `outside_change`'s level (default low) and ignore
-  globs (`*` within a folder, `**` across them; a pattern with no slash also
-  matches the file name, so `*.log` means every log next door);
-- **loops** — the file-version repeat count (default 1) and level, and the
-  command-retry repeat count (default 2) and level.
-
-A level of *silent* drops that reason from the report entirely (the chimes
-follow the level that actually fires, so it goes quiet too). The live attention
-level also sounds a chime when it crosses medium/high, an approval prompt rings
-when the runtime blocks on your decision, and a run-complete chime sounds when a
-run finishes.
-
-## Personalization
-
-The `⚙ settings` button in the session bar opens a four-pane dialog:
-
-- **Appearance (left)** — the color theme (`amber` / `blue` / `green`), the
-  stacking order of both side rails' panels, and a chat **collapse on content**
-  toggle (off by default: the conversation stays put across pages; on: a file /
-  diff / terminal / report page folds it away).
-- **Avatar skin** — replace the built-in WhaleBun character with your own
-  animations, no URLs and no code. Create a skin (a name = a folder under
-  `apps/server/src/process/avatar-skins/`), pick a status
-  (`default` / `listening` / `thinking` / … / `error`), upload an
-  mp4 / gif / png / webp / svg file, and it becomes that status's animation.
-  Statuses without a file fall back to the skin's `default`; the built-in
-  character renders for anything still missing. Uploaded videos are
-  re-encoded with ffmpeg (H.264, faststart, data tracks stripped) so the
-  browser can always play them. `Apply` activates the skin; switching back to
-  WhaleBun restores the built-in character. Updates show up live — no reload.
-- **Sound sets** — upload an audio file per event (`attention` / `complete` /
-  `approval`) to replace the synthesised chime; events without a file keep the
-  built-in tone. `Apply` activates the set; `Default` restores the synth chimes.
-  The **chimes** switch below is the master mute, **volume** scales every chime
-  (0–100), and `run finished` / `approval waiting` can be switched off
-  separately. A step into *low* is always silent: most runs sit at low for
-  harmless reasons, so only medium/high attention rings.
-- **Agent Eggs filter profiles (right)** — a small file manager over named
-  profiles of helper command names; the classifier treats a listed name as a
-  tool (a `force` option extends this to the command's declared subject, e.g.
-  `node` in `node ticker.mjs`). Same name overwrites, a new name creates, and
-  the saved profile is active immediately. A **display in activity** toggle
-  (off by default) hides the LAID/DIED process rows from the Activity panel
-  while keeping the eggs in the Agent Eggs panel.
-
-See [docs/AVATAR_SKIN.md](docs/AVATAR_SKIN.md) (English) or
-[docs/AVATAR_SKIN.zh-CN.md](docs/AVATAR_SKIN.zh-CN.md) (中文) for the
-avatar-skin details.
-
-## Configuration
-
-| Env var | Default | Meaning |
+| 环境变量 | 默认 | 含义 |
 |---|---|---|
-| `PORT` | `8848` | Server port. `0` lets the OS pick a free one (the desktop shell does this); anything non-numeric or above 65535 falls back to `8848` |
-| `HOST` | `127.0.0.1` | Server host |
-| `ABSENCE_AGENT` | `pi` | Default runtime profile id. The project picker chooses per session; this is the fallback. Any ACP profile id is valid |
-| `ABSENCE_PROJECTS_ROOT` | `~/projects` | Directory listed in the project picker |
-| `ABSENCE_DSH_BIN` | `dsh` | dsh entry for the shipped ACP profile; a saved launch line in the picker wins |
-| `ABSENCE_DSH_PROFILE` | `acp` | The dsh profile the ACP server boots (`dsh --profile acp`) |
-| `ABSENCE_DSH_HOME` | `~/.dsh` | `DSH_HOME` for the spawned dsh process |
-| `ABSENCE_DSH_PROVIDER` / `ABSENCE_DSH_MODEL` | (profile default) | Provider / model the ACP session starts on |
-| `ABSENCE_MAX_EGGS` | `200` | How many finished eggs the watcher keeps; older exits are reported as `retired`. `0` keeps every finished egg |
-| `ABSENCE_METRICS_RETENTION_DAYS` | `30` | How many days of process metrics to keep; older chunks are deleted once a day. `0` keeps everything |
-| `ABSENCE_LOG_LEVEL` | `info` | Fastify log level |
-| `ABSENCE_STATE_DIR` | `~/.absence` | Where Absence archives session history (env-var prefix kept as `ABSENCE_` for compatibility) |
-| `ABSENCE_DOCKER` | on | Watch containers (`docker events` + `docker stats`, see "Notes & limits"). `0` turns it off; a machine with no docker falls back to today's behavior |
-| `ABSENCE_DOCKER_BIN` | (probed) | The docker CLI entry. Unset: a `docker` on PATH first, then — on Windows — `wsl docker` (the daemon-lives-in-a-WSL-distro shape). May be a bare binary or a prefix such as `wsl docker` |
-| `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | repo `native/` | Override the native observer binary path |
+| `PORT` / `HOST` | `8848` / `127.0.0.1` | 服务端口与监听地址 |
+| `ABSENCE_AGENT` | `pi` | 默认 profile id；选择器按会话选择，此项只是兜底 |
+| `ABSENCE_PROJECTS_ROOT` | `~/projects` | 项目选择器列出的目录 |
+| `ABSENCE_STATE_DIR` | `~/.absence` | Absence 自己的状态目录（归档、agents.json、注册表缓存） |
+| `ABSENCE_ALLOW_NPX` | 关 | 允许 npx 兜底下载适配器（也可用 agents.json 的 `allowNpx`） |
+| `ABSENCE_*_BIN` | — | 各 profile 的 launch 覆盖（见 AGENT_SUPPORT） |
+| `ABSENCE_MAX_EGGS` | `200` | 已结束蛋的保留上限；`0` 全保留 |
+| `ABSENCE_METRICS_RETENTION_DAYS` | `30` | 进程指标保留天数；`0` 全保留 |
+| `ABSENCE_SESSION_RETENTION_DAYS` / `ABSENCE_MAX_ARCHIVED_SESSIONS` | `0` / `0` | 会话归档保留策略，默认全保留 |
+| `ABSENCE_DOCKER` / `ABSENCE_DOCKER_BIN` | 开 / 自动 | 容器观察 |
+| `ABSENCE_AGENTWATCH` / `ABSENCE_AGENTWATCH_LINUX` | 仓库 `native/` | 内核观察器二进制路径 |
+| `ABSENCE_LOG_LEVEL` | `info` | Fastify 日志级别 |
 
-**A blank value means "use the default".** `ABSENCE_MAX_EGGS=` (empty, or only
-whitespace) is read as unset, not as `0` — clearing a variable in a shell
-template must not silently switch a cap off. Write `0` explicitly when you
-do mean "keep everything". A value that is not a plain decimal integer
-(`abc`, `1e3`, `0x10`, a negative count) also falls back to the default
-rather than poisoning the setting, so a typo shows up as the documented
-behaviour instead of a surprise.
+### 聊天命令
 
-### Chat commands
+输入框里以 `/` 开头的行**原样转发给 agent**——Absence 不解析、不实现
+`/model`、`/skill`、`/mcp` 或任何产品命令，认不认由 agent 决定。面板是补全器：
+列 agent 广告的命令，加唯一的本地动作 `/auth <methodId>`（ACP `authenticate`）。
+结果作为普通 run 事件返回并随会话归档。
 
-The chat dock doubles as a small terminal: a line starting with `/` is
-**forwarded to the agent verbatim**, exactly as typed. Absence does not parse or
-implement `/model`, `/skill`, `/skill:<name>`, `/mcp` or any other product
-command — the agent decides whether it recognises the line. The `/` palette is a
-completer: it lists the commands the agent advertised, plus the one ACP action
-Absence performs, `/auth <methodId>`. Results come back as normal run events and
-are archived with the session.
+### 运行时
 
-### Runtimes
+runtime 是 **profile**（launch line + 环境 + 前置条件），不是代码分支。选中的
+profile 起不来（没装、路径错）时 Absence **如实报错、绝不回退**到 mock。审批
+询问以 `approval` 事件原样展示，用户的选择原样回传——Absence 从不替用户决定。
 
-Absence drives agents over the **Agent Client Protocol**. It is a *client*: it
-starts whichever ACP agent you installed and bundles none of them. A runtime is
-a **profile** — a launch line plus its environment and prerequisites — not a
-code path. The project picker (and `ABSENCE_AGENT`) chooses which profile; the
-shipped ones include Pi (`pi-acp`), Codex (`codex-acp`), Claude Code, Qwen Code
-and DSH (`dsh --profile acp`). Add your own entry to `~/.absence/agents.json`,
-or edit any launch line in the picker (persisted to `~/.absence/runtimes.json`).
+## 安全提示
 
-Absence does **not** take over the agent's shell: the agent runs commands with
-its own terminal software, and Absence observes the processes those commands lay
-through the OS (Job Object / eBPF / sampling). When a chosen runtime cannot start
-(not installed, or the path is wrong), Absence **reports the failure and does
-not fall back** — the picker shows the error. The **mock** runtime is a scripted
-fixture for development and lays real processes for the watcher.
+Absence server **没有认证**，且 API 能列出并读取项目根下的文件。默认绑
+`127.0.0.1`，桌面与单机安全；放到服务器上请留在可信网络或套一层带认证的反向
+代理，不要把端口暴露到公网。
 
-Either way the rest of Absence only ever sees `AbsenceEvent`; the Stage, Replay,
-the Report and the chat never learn which agent ran.
+## 限制
 
-When the agent asks for permission, Absence raises an `approval` event and
-forwards the option the user picked, verbatim. It never decides for the user.
+- 历史**只来自 Absence 自己的归档**（SQLite，`~/.absence/absence.db`）；agent 的
+  私有会话文件不读不合并。agent 侧上下文经归档里存的 ACP resume handle 恢复。
+- ACP 的报告义务是 SHOULD 不是 MUST：`kind` 缺省、`locations` 只是显示元数据。
+  "agent 看到的精确行段"在 agent 不报时标 `unknown`，Absence 不补。
+- 进程归因靠 `kind=execute` 的生命周期窗口 + 命令行匹配：单条精确，多条并发且
+  命令行对不上时可能归错（有兜底，不丢）。
+- 会话存储用 `node:sqlite`（上游仍标记实验性），因此运行时固定（Electron
+  `37.10.3`，Node 见 `.nvmrc`），SQLite 调用全部隔离在
+  `apps/server/src/sessions/storage/db.ts`。
+- 内核观察器无采样下限（20ms 进程也可见）；快照兜底有 ~0.5s 下限，孤儿进程
+  不归因。Docker 容器走 daemon 事件流。
+- 头像皮肤/提示音/egg 过滤器写在安装目录（`apps/server/src/process/`）下：
+  打包成只读 asar 后上传会失败（既有行为，待迁到 `~/.absence/`）。
 
-See [docs/decoupling.md](docs/decoupling.md) for the full architecture.
+## 文档
 
-## Security note
-
-The Absence server has **no authentication** and its API can list directories and
-read files under the configured projects root. It binds to `127.0.0.1` by
-default, which is safe for the desktop app and for a personal machine. If you
-run it on a Linux server and reach it over the network, keep it on a trusted
-network or put it behind an authenticating reverse proxy — do not expose the
-port to the public internet.
-
-## Notes & limitations
-
-- The session store uses Node's built-in **`node:sqlite`**. It is still marked
-  experimental upstream, so the runtime is pinned (Electron `37.10.3`; Node
-  `22.23.4` in `.nvmrc`/CI) and every SQLite call is isolated in
-  `apps/server/src/sessions/storage/db.ts`. The server filters only the SQLite
-  experimental warning; other warnings still print.
-- File versions are their own index (`GET /api/sessions/:id/file-versions`),
-  not a by-product of History. Agent Folder and File History keep every version
-  the agent held, and diffs compare two recorded versions, even in a finished
-  session.
-- A session snapshot carries the **run summaries** for History; while a run is
-  live it also carries the newest **2,000 events** for Activity. Selecting a
-  historical run fetches only that run's events
-  (`GET /api/sessions/:id/runs/:index/events`), so browsing a long session never
-  loads its whole event stream into the browser.
-- Sessions **persist to disk** and survive a restart. Pi keeps the model's
-  conversation under `~/.pi/agent/sessions/`; Absence keeps the `AbsenceEvent` stream
-  in `~/.absence/absence.db` (SQLite, WAL; override the root with
-  `ABSENCE_STATE_DIR`). An older JSONL archive under `~/.absence/sessions/` is
-  imported once on first start and left in place as a backup. The picker's
-  **History** reopens either: Absence's archive restores the Stage, Activity,
-  files and chat; Pi's restores the model's context. Codex sessions resume through
-  `thread/resume` (Absence stores the thread id). Histories live under the
-  platform's home directory; point `ABSENCE_STATE_DIR` at a shared path to
-  merge them — but never run two platforms against one file at once.
-- Pi has **no delete tool** — deleting goes through `bash rm`. When an agent
-  instead writes empty content the file is *truncated, not deleted*, and Absence
-  labels it **EMPTIED** with a byte count so a fake deletion is obvious.
-- With the kernel observer (Job Object / eBPF) there is no sampling floor — a
-  20 ms process is seen like any other. The snapshot fallback has a ~0.5 s
-  floor, an orphaned process (`npm run dev &` after the command returns) is not
-  attributed, and processes started around the shell (WMI, a scheduled task, a
-  different pid namespace) are not seen yet. On a native Linux kernel the
-  eBPF observer's pids agree with the `/proc` view.
-- **Docker containers** are watched through the daemon's own event stream
-  (`docker events` + `docker stats`, see `DockerMonitor`). A container's
-  processes live inside the daemon's VM, out of reach of both the Job Object
-  and eBPF, so container lifecycle and CPU/memory ride the daemon's reports
-  instead: each container becomes a first-class egg under a synthetic pid
-  (≥ 10⁹, cannot collide with a real pid), attributed to the command that laid
-  it — the containers of `docker run -d` and `docker compose up -d` show up in
-  Agent Eggs and Metrics just like a spawned process. Attribution reads the
-  command's own words: `docker run -d --name web nginx` predicts a container
-  named `web` with image `nginx`, and a daemon start event is credited only
-  when it matches that prediction — a foreign container landing inside the
-  window at the same moment matches nothing and is not credited. compose is
-  matched through the daemon's project label; a run without `--name` through
-  its image. The window remains only as the fallback for commands whose shape
-  cannot be parsed (scripts, wrappers); a container laid outside any command
-  window gets no egg, so a container the user started in their own terminal —
-  or one left running by an earlier session — never appears in the panel. A
-  resumed session re-attaches to the containers it laid that are still running
-  (same synthetic pid; a restart resets the start time, stats resume); ones that
-  exited or were removed while the session was closed are corrected to `exited`
-  from the daemon's own state. With no docker (or `ABSENCE_DOCKER=0`) nothing
-  changes.
-- The live metrics ring keeps the newest 300 frames in memory and is only the
-  freshest tail: every range reads SQLite as well, and the two are merged, so a
-  session closed and reopened later still shows its whole curve. Time nothing
-  sampled is a hole in the chart, not a straight line across it. The machine's
-  own CPU and memory are persisted next to the eggs (`host_metric_chunks`) and
-  drawn as the dashed reference line. Metric retention is 30 days.
-- "Change project" leaves the session: the server stops its metrics sampler and
-  process watcher (an in-flight sample is dropped rather than written), flushes
-  what it has, and keeps the archive, so reopening the session restores its
-  history instead of appending to a watcher nobody is looking at.
-
-## Documentation
-
-- [docs/UI_FACES.md](docs/UI_FACES.md) — the interface faces (**Rounds /
-  Monitor / Chart / Drip**, plus Classic), why each exists, and what Monitor's
-  three columns are for.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the event pipeline, process
-  observation and classification, the repo tree, the `AbsenceEvent` schema, the
-  HTTP/WS API, chat commands, desktop packaging internals, and the local-model
-  setup.
-- [docs/TESTING.md](docs/TESTING.md) — the acceptance check scripts and what
-  each one pins down.
-- [docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) — why there is no unit-test
-  framework, the four check tiers, and what each gate is for.
-- [docs/RELEASING.md](docs/RELEASING.md) — how a release is cut: the
-  `Release` workflow (manual dispatch or a `v*` tag), what it builds for
-  Windows and Linux, and where the release notes come from.
-- [docs/RELEASE_NOTES_v0.4.0.md](docs/RELEASE_NOTES_v0.4.0.md) — the v0.4.0
-  changes: SQLite session history, resource metrics, the Metrics Stage,
-  incremental state folding, and expanded verification.
-- [docs/RELEASE_NOTES_v0.3.0.md](docs/RELEASE_NOTES_v0.3.0.md) — the v0.3.0
-  baseline: Codex support, shell takeover, PTY and approval activities.
-- [docs/RELEASE_NOTES_v0.2.0.md](docs/RELEASE_NOTES_v0.2.0.md) — what v0.2.0
-  added: avatar skins, egg-filter profiles, the settings dialog.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) —— 分层、只转发原则、只读配置
+  策略、边界与保真度限制、API。
+- [docs/AGENT_SUPPORT.md](docs/AGENT_SUPPORT.md) —— agent 发现顺序、状态机、
+  适配器包、`ABSENCE_ALLOW_NPX`、自定义入口。
+- [docs/TESTING.md](docs/TESTING.md) —— 验收检查与端到端仿真。
+- [docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) —— 为什么没有单测框架。
+- [docs/decoupling.md](docs/decoupling.md) —— ACP-only 解耦的设计与判断标准；
+  [docs/reference/r.txt](docs/reference/r.txt) 是它的原始分析。
+- [docs/RELEASING.md](docs/RELEASING.md) —— 发布流程；[CHANGELOG.md](CHANGELOG.md)
+  —— 各版本变更。
+- [docs/UI_FACES.md](docs/UI_FACES.md) / [docs/NEW_UI.zh-CN.md](docs/NEW_UI.zh-CN.md)
+  —— 界面面孔与新 UI 设计。
 
 ## License
 

@@ -1,12 +1,12 @@
 # 测试策略
 
-本文是 [TESTING.zh-CN.md](TESTING.zh-CN.md)（「测什么」）背后的「为什么这样测」。
+本文是 [TESTING.md](TESTING.md)（「测什么」）背后的「为什么这样测」。
 
 ## 一段话版本
 
 > Absence 没有单元测试框架。它难的不是纯函数，而是**观察一个真实操作系统**——一条
 > 命令下了哪个进程、容器有没有变成蛋、指标曲线能不能跨重启活下来。把这些 mock 掉，
-> 就等于删掉唯一值得测的东西。所以它不追覆盖率，而是带 **33 个验收检查脚本**，每个
+> 就等于删掉唯一值得测的东西。所以它不追覆盖率，而是带 **35 个验收检查脚本**，每个
 > 钉住一条容易悄悄弄错的规则，并按所需环境分层：伪造数据的纯函数（快、进 CI）、
 > 临时目录里的隔离 I/O、对着活 server / 内核 / docker 的真实 I/O，以及一个自起
 > server 的全链路检查。`npm run verify` = 类型检查 + 构建 + 全部离线检查，就是提交前门禁。
@@ -42,17 +42,23 @@
 第 2 层  隔离 IO   storage、metrics、      mkdtemp + ABSENCE_STATE_DIR，
                   metrics-persist、        绝不碰用户档案
                   metrics-ranges、
-                  incremental、execserver、
+                  incremental、
                   outside-attr
 第 1 层  纯函数    eggs、classify、report、 伪造进程表与事件数组，
-                  markdown、codex*、       不 spawn 任何东西
-                  shellenv、chimes、
+                  markdown、format、       不 spawn 任何东西
+                  views、chimes、
                   settings、observer、
-                  capabilities*、
+                  capability-commands、
                   mcp-events、fsdiff
+
+ACP 家族           acp、acp-lifecycle、    驱动一个讲真协议的脚本化 fixture
+                  acp-transport、          agent——不需要模型与凭据，离线可跑；
+                  acp-mapping、            mock-agent 再拿真 server 端到端过一遍
+                  acp-proxy、
+                  agent-catalog
 ```
 
-CI 跑第 1–3 层（`npm run check:offline`）：27 个脚本，约 3 分钟。第 3 层的检查
+CI 跑第 1–3 层与 ACP 家族（`npm run check:offline`）：30 个脚本，约 3 分钟。第 3 层的检查
 自己起 server 并不构成排除理由——那是这里最常见的形态，而会话与指标的行为恰恰
 最容易悄悄腐烂。只有第 4 层保持手动，因为它需要内核权限或 docker。
 
@@ -109,9 +115,9 @@ const { appendMetricsFrame } = await import(".../storage/metrics");
 **改了一行要跑哪些？**
 > `npm run verify` 是门禁：类型检查 + Web 生产构建 + 全部离线检查。再按影响面：
 > 进程归因 → `check:process`；SQLite/指标 → `check:metrics*`；整条管道 → `check:e2e`；
-> Codex 层 → `check:codex*` + `check:execserver`。
+> agent 接入层 → `check:acp-all`。
 
-**33 个独立脚本而不是一个 suite，不难维护吗？**
+**35 个独立脚本而不是一个 suite，不难维护吗？**
 > 每个脚本 40–560 行、自包含，共享一个 44 行的 harness，CI 清单只在一个数组里，
 > 新增检查既不改 `package.json` 也不改 workflow。好处是任何一个都能单独跑，
 > 调一个红的 CI job 很快。
@@ -120,15 +126,15 @@ const { appendMetricsFrame } = await import(".../storage/metrics");
 
 | | |
 |---|---|
-| 检查脚本 | 33 |
-| 断言调用 | ~714 |
+| 检查脚本 | 35 |
+| 断言调用 | ~1060 |
 | harness | 44 行，4 个导出 |
-| 进 CI | 27 个脚本（第 1–3 层），约 3 分钟 |
+| 进 CI | 30 个脚本（第 1–3 层 + ACP 家族），约 3 分钟 |
 | 手动 | 5 个脚本（第 4 层） |
 | 提交门禁 | `npm run verify` |
 
 ## 延伸阅读
 
-- [TESTING.zh-CN.md](TESTING.zh-CN.md) — 每个检查及它钉住的规则
-- [ARCHITECTURE.zh-CN.md](ARCHITECTURE.zh-CN.md) — 这些检查所练的事件管道
+- [TESTING.md](TESTING.md) — 每个检查及它钉住的规则
+- [ARCHITECTURE.md](ARCHITECTURE.md) — 这些检查所练的事件管道
 - [decoupling.md](decoupling.md) — `check-observer.ts` 执行的契约

@@ -1,0 +1,204 @@
+**结论：只靠 ACP 做不到你要的两点，但 ACP 加上你已有的系统层观察就够了，而且不用为每个 agent 单独写耦合代码。**
+
+| 需求 | 只靠 ACP | ACP + 系统层观察 |
+| --- | --- | --- |
+| 事件捕获（read/edit…） | 大部分能拿到，但都是 agent 自己报的，质量看各家适配器 | 可以做到很准 |
+| shell / 进程捕获 | 拿不到 | 可以全覆盖 |
+
+## 1. 事件捕获：ACP 能给什么
+
+agent 每次调用工具，都会发一条 `session/update`（`tool_call` / `tool_call_update`），里面有这些字段[[1]](https://agentclientprotocol.com/protocol/tool-calls)：
+
+- `kind`：`read`、`edit`、`delete`、`move`、`search`、`execute`、`fetch`、`think`、`other`
+- `status`：pending → in_progress → completed / failed
+- `locations`：路径加行号
+- `content`：可以带 `diff`（oldText/newText）
+- `rawInput` / `rawOutput`、`name`
+
+**问题在这几处：**
+
+- 协议对报告的要求是 SHOULD，不是 MUST。`kind` 不填就默认 `other`，`name` 也可以不填。
+- `locations` 规范里说只是"display metadata"[[1]](https://agentclientprotocol.com/protocol/tool-calls)，读了哪段行范围、读到的文本都不保证有。你的 Agent Folder 要"agent 看到的精确行段"，光靠这个字段撑不起来。
+
+**解决办法：分三层取数据，每条事件标上来源。**
+
+1. **agent 自报**：直接用上面的 ACP 字段。
+2. **由你提供文件读写**：初始化时声明 `clientCapabilities.fs.readTextFile/writeTextFile`。愿意用这个能力的 agent，会把读写请求（`fs/read_text_file`，带 line/limit）发给你，你就是"文件系统"本身，拿到的是真实数据。但不少 agent 还是直接读磁盘，所以这只能算增强，不能当保底。
+3. **系统层兜底**：收到 `tool_call` 时，按 `locations` 去磁盘做快照；再开一个文件监听（Windows 用 ReadDirectoryChangesW，Linux 用 inotify，都不需要管理员），按 `toolCallId` 和时间窗口把磁盘变化对上。
+4. **`kind=other` 的归类**：用一张通用的**规则表（数据，不写代码）**，按 `rawInput` 的形状判断。比如有 `command` 就是 execute，有 `path` 加 `old_string` 就是 edit。个别 agent 的差异写成 profile 里的覆盖规则，不写进 adapter 代码。
+
+## 2. Shell 捕获：ACP 本身不够，但启动权在你手里
+
+**A. 由你提供终端（命令和进程能一一对应）**
+
+- 声明 `terminal` 能力后，愿意用它的 agent 会调 `terminal/create`，传 command/args/cwd/env。
+- 进程由你来 spawn，每条命令单独一个 Job Object，命令和进程精确配对。这就是你现在 Codex exec-server 接管的效果，只不过换成了标准协议。
+
+**B. agent 自己执行命令（多数情况都是这样）**
+
+- ACP agent 都是你通过 stdio 拉起来的子进程，所以可以在启动时把**整个 agent 进程**放进 Job Object：
+`CreateProcess(CREATE_SUSPENDED)` → `AssignProcessToJobObject` → `ResumeThread`
+这样不需要管理员权限，Win8 以后支持嵌套 job，所有子孙进程都逃不掉。
+- 把 job 绑定 IO 完成端口（`JOBOBJECT_ASSOCIATE_COMPLETION_PORT`），就能实时收到 `NEW_PROCESS` / `EXIT_PROCESS`。
+- 进程怎么归到具体命令：在 `kind=execute` 的 in_progress→completed 窗口内，agent 直接拉起的那个子进程算这条命令的根，它的子孙都挂在它下面。多条命令并发时，用 `rawInput.command` 和进程命令行去匹配。
+- 不要设 `JOB_OBJECT_LIMIT_BREAKAWAY_OK`。另外要清楚，Docker 这类进程会脱离进程树，你现有的 docker events 方案要保留。
+- Linux 继续用 eBPF。没有 root 时可以退到 cgroup v2 + pidfd。
+
+A 和 B 叠加：用了终端能力的 agent 能精确配对，没用的也能全覆盖。
+
+## 3. 重构后的结构
+
+```
+L0 Supervisor      启动 agent 进程、Job Object/eBPF、stdio 管道        ← 全 agent 通用
+L1 ACP Transport   两种模式：
+                   · Client 模式：Absence 自己当前端（现在的聊天 UI）
+                   · Proxy 模式：插在 Zed/其他 IDE 和 agent 之间，透明转发
+L2 Normalizer      ACP update → AbsenceEvent，再套通用规则表
+L3 Enrichers       FsProvider / TerminalProvider / DiskSnapshot / ProcessCorrelator
+L4 现有 Stage / Report / Eggs（不改）
+```
+
+- **Proxy 模式最符合你"不干扰"的初衷**：用户照常用自己的客户端，Absence 只在中间旁听，权限请求也原样转发。ACP 官方有 proxy chain 的 RFD 可以参考[[2]](https://agentclientprotocol.com/rfds/proxy-chains)。
+- **"纯观察 / 服务"开关**：一旦你声明 fs/terminal 能力，agent 的执行路径会变成走你这边。这是协议本来设计的用法，但严格说算轻度介入。默认可以只观察，让用户自己选择开启。
+- **每条事件带字段** `source: agent | served | os` 和 `fidelity`，Report 里能写清楚这条信息有多可信。这符合你"No guessing"的原则。
+
+**接入一个新 agent 只需要一份 profile（纯数据）：**
+
+```tsx
+interface AgentProfile {
+  id: string;
+  launch: { cmd: string; args: string[]; env?: Record<string,string> };
+  kindOverrides?: Rule[];          // name/rawInput → kind
+  preferServeFs?: boolean;
+  preferServeTerminal?: boolean;
+}
+```
+
+## 4. 迁移顺序
+
+1. 把 `DshAdapter`（本来就是 ACP）泛化成通用的 `AcpAdapter`，Job Object 改为包住整个 agent 进程。
+2. Codex 和 Pi 先查有没有现成的 ACP 适配器：社区有 codex-acp 这类项目，我没有逐个核实。有的话就走通用路径。原来的 `CodexAdapter` / `PiAdapter` 降级成可选的增强插件，实现同一个接口，以后可以删。
+3. 加 Proxy 模式，再接几个原生支持 ACP 的 agent（比如 Gemini CLI、Claude Code 的 ACP 适配器）验证通用性。
+
+**另外两点：**
+
+- 你的仓库主页没加载出来，上面的方案是根据 README 写的[[3]](https://raw.githubusercontent.com/Dipsy233/Absence/main/README.md)，没看到实际代码结构。
+- 哪些 agent 真会调用你的 fs/terminal 能力，必须逐个实测，这一点协议不保证。
+可以做到你要的效果：所有"控制"都交给 agent 自己的代码处理，Absence 只做转发和观察，接入新 agent 不写任何专用代码。我把仓库克隆下来看过了，结论：
+
+- **事件捕获**：完全按 ACP 标准字段走。
+- **Shell 捕获**：靠你现有的 Job Object 就够了，而且它本来就和具体 agent 无关。
+- **需要删的**：主要是"Absence 接管"的那部分代码。
+
+## 现状里哪些属于"针对性耦合"
+
+| 位置 | 现在的做法 | 问题 |
+| --- | --- | --- |
+| `PiAdapter`  • `AbsenceShell` | 进程内加载 Pi SDK，用自己的 bash/powershell 顶替 Pi 的 | 接管了 shell |
+| `CodexAdapter` / `AppServerClient` / `ExecServer` / `CodexShell` / `ShellEnvironment` | 走 Codex 私有的 app-server，用 exec-server 接管命令执行 | 私有协议，而且接管了 shell |
+| `DshAdapter` | 已经是 ACP，但按 `title` 匹配 `"bash"`、`"read"`、`"str_replace"` 来判断工具 | `title` 是给人看的文字，这里等于还在耦合 |
+| `SessionStore.runCommand`  • web `lib/commands.ts` | `/model`、`/thinking`、`/permission`、`/compact`、`/mcp`、`/skill` 都是 Absence 自己实现的 | 替 agent 做了它自己该做的事 |
+| `capabilities/manage.ts` / `discover.ts` / `piResources.ts` | Absence 自己读写 `~/.pi/agent/mcp.json`、`config.toml`、skills 目录 | 接管了 MCP 和 skill 配置 |
+
+还有一个好消息：`JobSidecar` 是把 **Absence server 自己**放进 Job Object 的。所以任何由 Absence 拉起的 agent 进程，连同它的全部子孙进程，现在就已经都在内核事件里了，不需要为某个 agent 做任何事。Shell 捕获真正依赖 agent 的只有一件事：知道"一条命令什么时候开始、什么时候结束"，好把进程归到对应的命令上。这个信息 ACP 有标准字段可以给。
+
+## 重构方案
+
+### 1. 自动发现：用 ACP 官方注册表，不再写专门的 Bin 探测
+
+官方注册表在 `https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json`，每个 agent 一个 `agent.json`，里面写了怎么启动（npx 包名或二进制）。你现在支持的三个里有两个已经在表上：
+
+- Codex：`@agentclientprotocol/codex-acp`（OpenAI、JetBrains、Zed 维护）
+- Pi：`pi-acp`（社区维护）
+
+另外还有 claude-acp、gemini、opencode、goose、kimi、qwen-code、cursor、github-copilot 等四十多个。
+
+新增 `AgentCatalog`，来源有三个：
+
+1. 注册表（缓存到 `~/.absence/registry.json`）
+2. 本地 PATH 上探测到的可执行文件
+3. 用户自定义条目：`{ id, command, args, env }`，DSH 这种不在表上的就用这一项
+
+`PiBin.ts`、`CodexBin.ts`、`runtimes/config.ts` 都由它替代。
+
+### 2. 一个通用的 `AcpAdapter`，替代 Pi、Codex、DSH 三个 adapter
+
+从 `DshClient` 泛化出 `AcpConnection`（stdio + NDJSON JSON-RPC），握手时：
+
+```tsx
+initialize({ protocolVersion: 1,
+  clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } })
+session/new({ cwd, mcpServers: [] })   // 传空：agent 照常读自己的 MCP 配置
+```
+
+`fs` 和 `terminal` 都**不声明**。这样 agent 自己读写文件、自己跑命令，执行路径和你在命令行里直接用它时完全一样，符合你说的"不接管"。
+
+### 3. 会话控制：照着 ACP 消息原样转发
+
+| 原来 Absence 自己做的 | 改成 |
+| --- | --- |
+| `/model` `/thinking` `/permission` | 用 agent 返回的 `configOptions`（分类有 model、thought_level、mode 等），通过 `session/set_config_option` 设置[[1]](https://agentclientprotocol.com/protocol/v1/session-config-options)。UI 按 agent 给的 schema 画选择器，不再写死 |
+| `/compact` `/mcp` `/skill` 以及 agent 其他自带的 `/` 命令 | 通过 `available_commands_update` 拿到命令列表，动态填进命令面板。用户输入的 `/xxx` 原样放进 `session/prompt` 发给 agent，由 agent 自己识别和执行[[2]](https://agentclientprotocol.com/protocol/slash-commands) |
+| 审批 | `session/request_permission` 原样显示给用户，再把用户的选择原样返回（DSH 已经这么做了） |
+| 会话恢复 / 历史 | 用 agent 自己的 `session/list`、`session/load` / `session/resume`[[3]](https://agentclientprotocol.com/protocol/v2/migration) |
+| 登录 | 用 `initialize` 返回的 `authMethods`  • `authenticate`，由 agent 自己处理 |
+| MCP、skill 配置管理 | 删掉。agent 有对应的 `/` 命令就用它的，没有就不提供 |
+
+规则只有一条：**ACP 有的就转发，没有的就不做**。UI 能显示哪些按钮，全看 `initialize` 和 `session/new` 返回的能力，不看是哪个 agent。
+
+只有 Absence 自己的功能（比如导出 Absence 的事件归档或 Report）才留成本地命令，并且换一个前缀（例如 `:export`），避免和 agent 的 `/` 命令撞名。
+
+精简后的接口：
+
+```tsx
+interface AgentAdapter {
+  start(ctx): Promise<StartResult>;              // initialize + new/resume
+  prompt(blocks: ContentBlock[]): Promise<StopReason>;   // 所有 / 命令都走这里
+  cancel(): Promise<void>;
+  subscribe(fn: (e: AbsenceEvent) => void): () => void;
+  readonly capabilities: AgentCapabilities;      // 来自 initialize
+  configOptions(): ConfigOption[];  setConfigOption(id: string, value: string): Promise<void>;
+  commands(): AvailableCommand[];
+  respondPermission(reqId: string, optionId: string): Promise<void>;
+  listSessions?(): Promise<SessionInfo[]>;  authenticate?(methodId: string): Promise<void>;
+  dispose(): void;
+}
+```
+
+### 4. 事件捕获：按 `kind` 映射，`title` 只用来显示
+
+`AcpToolMapper` 只认 ACP 的标准字段[[4]](https://agentclientprotocol.com/protocol/tool-calls)：
+
+| ACP `kind` | 映射成 AbsenceEvent | 数据从哪来 |
+| --- | --- | --- |
+| `read` | `file_read` | 路径取 `locations`；内容先取 `content` / `rawOutput`，没有就在 tool_call 那一刻读磁盘快照；行范围取 `location.line`，再加通用规则表 |
+| `edit` / `delete` / `move` | `file_edit` 等 | 优先用 `content` 里的 `diff`（oldText/newText）；没有的话用 `FileWatcher` 在调用窗口内的变化补 |
+| `execute` | `command` | 用 `rawInput` 里的 command 字段 |
+| `search` / `fetch` / `think` | `search` / `fetch` / `thinking` | 直接映射 |
+| `other` | 通用规则表兜底 | 例如 `name` 匹配 `mcp__*__*` 就当 MCP 调用 |
+
+规则表是数据文件（`toolRules.json`），只按通用字段形状判断，比如 `rawInput` 里有没有 `command` / `cmd`、`offset` / `limit`、`old_string` 这类键，**不按 agent 名字分支**。每条事件带上 `source: agent | os` 和 `fidelity`，这样 Report 能说清楚"这一条是 agent 自报的，还是系统观察到的"。
+
+**有一项会降级：**Agent Folder 的"精确行段"。ACP 不保证报告读了哪段行范围，有的 agent 报不出来，这时只能标记成"范围未知"，不能自己补上。
+
+### 5. Shell 捕获：Job Object 不动，归因改用 ACP 的生命周期
+
+- **启动**：agent 进程由 `AcpConnection` 拉起，而 server 本来就在 job 里，所以 npx → adapter → agent → shell → 孙进程整条链都会被抓到。不需要管理员权限，`agentwatch.c` 本来也没设 `BREAKAWAY_OK`。
+- **命令窗口**：`kind === "execute"` 的 tool_call 进入 `pending` / `in_progress` 时调 `processWatcher.begin(command, cwd)`，变成 `completed` / `failed` 时调 `end()`。这和现在 DSH 的做法一样，只是判断依据从 `title` 换成了 `kind`。
+- **并发命令**：同时有几个窗口重叠时，用 `CommandIntent` 把 `rawInput.command` 和进程命令行对比，再结合祖先链来判断归属。
+- **兜底**：没有落进任何窗口的进程，按 observe 模式的规则归到 agent 名下，不会丢。
+
+这样 `AbsenceShell`、`ExecServer`、`CodexShell`、`ShellEnvironment` 都可以删掉。代价是：Codex 失去了现在"每条命令由 Absence 亲自 spawn"那种精确配对，改成靠时间窗口加命令行匹配。对单条命令完全够用，并发时偶尔可能归错。
+
+### 6. 迁移步骤
+
+1. 把 `DshClient` 和 `DshAdapter` 泛化成 `AcpConnection`、`AcpAdapter`、`AcpToolMapper`，先用 DSH 回归测试，确保行为不变。
+2. 接入 `AgentCatalog`，用 `codex-acp` 和 `pi-acp` 跑通 Codex 和 Pi，对照旧 adapter 比较事件质量。
+3. UI 改成按能力渲染：命令面板来自 `available_commands_update`，选择器来自 `configOptions`。
+4. 删除 Pi/Codex 的 adapter 和 Bin 探测、shell 接管相关文件、`capabilities/*`，以及 `runCommand` 里 `/model` 等分支。这正是你 `docs/decoupling.md` 里第 3、4 阶段的内容，验收标准也一样："删掉专用 adapter，系统还能跑"。
+
+## 需要实测的点
+
+- **ACP 适配器会不会少命令**：`pi-acp`、`codex-acp` 通过 `available_commands_update` 暴露了哪些 `/` 命令，由各适配器自己决定，可能比原 CLI 少。这一点我没有逐个核实。少了的话就是少了，Absence 不该补。
+- **Codex 的 Windows 沙箱**：Codex 在 Windows 上起沙箱进程的方式，会不会让子进程脱离 job 或者看不到命令行，需要实测。
+- **MCP 显示会退化**："MCP server › tool" 这种精确显示要靠工具名的约定。ACP 没有统一的 MCP 标识，有的 agent 只能显示成普通工具调用。

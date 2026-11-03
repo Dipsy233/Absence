@@ -1,462 +1,93 @@
-# Testing & checks
+# 测试与验收检查
 
-Absence has no unit-test framework; instead it ships a set of **acceptance check
-scripts** (`scripts/checks/`), each a standalone harness that pins the rules
-that are easy to get silently wrong. For architecture background, see
-[ARCHITECTURE.md](ARCHITECTURE.md); for why it is built this way, see
-[TESTING-STRATEGY.md](TESTING-STRATEGY.md).
+Absence 没有单元测试框架。它难的不是纯函数，而是**观察一个真实操作系统**与
+**讲一个真实协议**，所以仓库带一组自包含的验收检查脚本，每个钉住一条容易悄悄
+弄错的规则。策略与分层理念见 [TESTING-STRATEGY.md](TESTING-STRATEGY.md)；
+本文是"跑什么、怎么跑"。
 
-Why not vitest/jest: what is hard in Absence is not a pure function but
-**observing a real operating system** — which process a command laid, whether a
-container became an egg, whether a curve survives a restart. Those cannot be
-faked without deleting the thing worth testing. So the checks are layered by
-what environment they need, and the top two layers are run manually.
+> 自 v0.5.0 起本文以中文为准（原 `TESTING.zh-CN.md` 已合并删除）。
 
-```
-tier 4  full pipeline   check-e2e — boots its own server + mock session
-tier 3  real I/O        real WebSocket / SQLite / kernel observer / docker
-tier 2  isolated I/O    a throwaway temp dir, never the user's archive
-tier 1  pure            fake process tables and event arrays, nothing spawned
-```
-
-Only **tier 1 and tier 2** run in CI (`npm run check:offline`). Tiers 3 and 4
-need a live server, kernel access, elevated rights or docker, so they stay
-manual and are listed below as *live*.
-
-## The gate
+## 门禁
 
 ```bash
-node scripts/make-demo.mjs [dir] [--force]   # scaffold a demo project (default: ./absence-demo)
-npm run check:offline                        # every offline check in one go (what CI runs)
-npm run check:group -- affected              # only the checks owning the files you changed
-npm run verify                               # typecheck + web build + every offline check
+npm run typecheck       # core / server / web 三个 workspace 的 tsc
+npm run build           # web 生产构建（产物在 dist/web）
+npm run check:acp-all   # ACP 接入层门禁（见下）
+npm run check:mock-agent  # 端到端仿真（mock agent + 真 server）
+npm run check:offline   # 全部离线检查（CI 跑的就是它）
 ```
 
-`npm run verify` is the complete pre-commit gate. A single check is always one
-command:
+`npm run verify` = typecheck + build + check:offline。
 
-> **Windows build note.** `npm run build` can fail with `[vite:worker] remove
-> … Access is denied` while esbuild deletes its temporary Monaco worker file.
-> That is an external lock (indexer / security software), not a source error.
-> Retry, or point `TEMP`/`TMP` at a writable repo-adjacent directory; if it
-> still fails, exclude that temp directory from the indexer/AV. Typecheck and
-> the offline checks are unaffected.
+## `check:acp-all` —— 标准接入层门禁
+
+一条命令按序跑完以下八个检查（任一失败即红）：
+
+| 检查 | 钉住的规则 |
+|---|---|
+| `check:acp` | ACP 驱动面：会话生命周期、tool call 映射、审批原样回传、模型/命令来自 agent 而非 Absence；并断言代码里不存在按产品名分支、不存在对 agent 配置的扫描（如 `discoverCapabilities` 字样不得出现在 profile 数据里） |
+| `check:acp-lifecycle` | 能力门控：`session/resume` / `load` / `close` 只在 `initialize` 声明后发送；取消顺序与看门狗了结 |
+| `check:acp-transport` | NDJSON/JSON-RPC 传输：Windows shim 解析（PATHEXT）、批处理安全 spawn、错误 `data` 透传、退出清理 |
+| `check:acp-mapping` | 投影保真：`kind`/形状规则、流式输出累计、不发明行号、source/fidelity 标注、溢出与强制了结如实报错 |
+| `check:acp-proxy` | 透明代理模式：字节原样转发、两端关闭后退出并释放句柄 |
+| `check:agent-catalog` | 发现顺序、状态机、`+` 自定义入口、注册表缓存、`ABSENCE_ALLOW_NPX` 门控 |
+| `check:observer` | 观察器契约：删掉 `apps/server/src/agents/` 后 `absence watch` 仍可用 |
+| `check:mock-agent` | 端到端仿真（见下） |
+
+单独跑某一个：`npx tsx scripts/checks/check-acp.ts`（其余同理）。
+
+## 端到端仿真（mock agent）
+
+`scripts/mock-agent/` 是一个**讲真 ACP 协议的脚本化 agent**（`agent.mjs`，不需要
+模型和凭据）加一组场景（`scenarios/*.json`）。runner（`run.ts`）为每个场景造一个
+一次性 home/state/workspace，用自定义 profile 让**真 server** 拉起 mock agent
+进程（包在 Job Object 里，和真实 agent 一模一样），然后同时从 WebSocket 与
+SQLite 两端核对 `AbsenceEvent`。
 
 ```bash
-npx tsx scripts/checks/check-<name>.ts
+npm run mock:agent                          # 全部场景
+npm run mock:agent -- --list                # 列出场景
+npm run mock:agent -- --scenario 03-file-ops
 ```
 
-## Groups — run what changed, not everything
-
-The full sweep is measured in minutes (the session and metrics checks boot real
-servers and sleep through sampling windows), so the checks are grouped by the
-code they exercise. The registry is `scripts/checks/groups.ts`: each group has
-a name, the source paths it owns, and its checks with per-check timeouts.
-`run-offline.ts` derives its list from the same file — a new check script is
-registered in exactly one place, then every runner sees it.
-
-```bash
-npm run check:group -- list                 # what exists, what each group owns
-npm run check:group -- report views         # named groups (overlap is deduped)
-npm run check:group -- affected             # only groups owning changed files
-npm run check:group -- affected --base main # …against a base ref instead of HEAD
-npm run check:group -- eggs --all           # …including the group's platform checks
-```
-
-`affected` maps `git diff --name-only` (plus untracked files; against `--base`
-when given) through the groups' path globs. A script runs when its group's
-paths *or the script's own file* changed. A change that matches no group — a
-README, a screenshot — prints that typecheck and the build cover it and exits 0,
-so the command is safe to wire into a pre-commit hook. The twelve groups:
-
-| Group | Owns | Offline checks |
-|---|---|---|
-| `report` | report engine, markdown, formatters | report, markdown, format |
-| `views` | the faces' shared view model (lib/history, lib/metrics, lib/viewMode, ui/shared) | views |
-| `history` | run rebuild, sliding window, event caches | history, incremental |
-| `settings` | settingsStore normalisation, i18n | settings |
-| `chimes` | attentionChimeFor | chimes |
-| `eggs` | process detection, classification, filters | eggs, classify, outside-attr |
-| `metrics` | sampler, ring, persistence, ranges | metrics, metrics-persist, metrics-ranges, metrics-restart, observed-lifetime |
-| `agent` | runtime adapters, capabilities, MCP, observer contract | codex, codexshell, shellenv, capabilities, capability-commands, mcp-events, observer |
-| `session` | sessions, storage, config, server lifecycle | storage, session-dwell, session-close, lifecycle |
-| `io` | fsdiff engine, exec server | fsdiff, execserver |
-| `pipeline` | everything, end to end | — (e2e is platform-tier) |
-| `docker` | docker eggs | — (both platform-tier) |
-
-`check-views.ts` is the faces' own regression suite (no UI automation — the
-*logic* behind the faces): the replay cursor row, LIVE/REPLAY, the feed's
-grouping/fold/anchors, the cost-panel derivation, the shared vocabularies
-(i18n completeness for run words and attention reasons), and the view-mode
-fallbacks. It runs whenever anything under `ui/shared/` or the shared libs
-changes.
-
-### Tier 1 — pure (no server, no spawning, no credentials)
-
-```bash
-npm run check:eggs             # process detection: command window, ancestry, marker, orphans
-npm run check:classify         # command intent + primary/tool split
-npm run check:report           # Absence Report engine + the loop/attention rules
-npm run check:markdown         # the chat's Markdown reader
-npm run check:fsdiff           # the file-diff engine
-npm run check:codex            # Codex command parsing + approval decisions
-npm run check:codexshell       # undoing Codex's shell wrapper
-npm run check:shellenv         # Codex env_policy → the command's environment
-npm run check:chimes           # when an attention change is audible
-npm run check:settings         # the settings store's load/normalise rules
-npm run check:observer         # the decoupling contract (observe vs drive)
-npm run check:capabilities     # skills + MCP discovery, and Pi's own loader
-npm run check:capability-commands  # the /skill and /mcp chat commands
-npm run check:mcp              # an MCP call reaches Activity and the Stage
-npx tsx scripts/checks/check-outside-attr.ts  # outside-change attribution
-```
-
-### Tier 2 — isolated I/O (SQLite / fs in a throwaway directory)
-
-```bash
-npm run check:storage          # SQLite session store: import, round-trip, filters
-npm run check:metrics          # metric chunks, resampling, the exited-egg rule
-npm run check:metrics-persist  # eggs + the host series come back from SQLite
-npm run check:metrics-ranges   # each dashboard range is its own window
-npm run check:incremental      # incremental folding == a full rebuild
-npm run check:execserver       # Codex exec-server over a real loopback WebSocket
-```
-
-### Tier 3 — self-hosting (boots its own server, still unattended)
-
-```bash
-npm run check:history          # the web client's History/Replay against a real session
-npm run check:lifecycle        # `absence serve` orphan/port lifecycle
-npm run check:session-dwell    # session duration is dwell time
-npm run check:session-close    # "change project" leaves the session
-npm run check:metrics-restart  # the curve survives a server restart
-npm run check:observed-lifetime  # "observed for" is the process's lifetime
-```
-
-Each of these spawns the server on an ephemeral port with an isolated
-`ABSENCE_STATE_DIR` and kills it in a `finally`, so nothing has to be running
-beforehand and the user's archive is never touched. `check-history` also honours
-`ABSENCE_PORT` if you want to point it at a server you already have open.
-
-On a machine with no kernel observer binary the watcher falls back to `ps` /
-PowerShell snapshots, so these pass on a plain CI runner — which is exactly what
-they are for: the session and metrics behaviour that quietly rots.
-
-### Tier 4 — manual (needs the kernel, docker, or a real runtime)
-
-```bash
-npx tsx scripts/checks/check-agentwatch.ts     # kernel process observer (Windows)
-npx tsx scripts/checks/check-ebpf.ts           # kernel process observer (Linux)
-npx tsx scripts/checks/check-docker.ts         # process boundary of docker commands
-npx tsx scripts/checks/check-docker-eggs.ts    # container eggs: attribution + stats + resume
-npx tsx scripts/checks/check-e2e.ts            # full pipeline incl. container eggs
-```
-
-These are the only ones left outside CI, and for a real reason: they need the
-`agentwatch` binary with its kernel privileges, a docker daemon, or both.
-`check-e2e` is included here because its container assertions are the point of
-it — without docker it can only prove the plain process half.
-
-Other:
-
-```bash
-npm run check:process          # every process harness together (observer checks self-skip off-platform)
-npm run bench:incremental      # a timing report, not a check: asserts nothing
-node scripts/gen-whalebun-css.mjs            # regenerate the avatar's stylesheet
-```
-
-`bench:incremental` lives in `scripts/dev/`, not `scripts/checks/`: it prints
-ms/event and a speedup but can never fail, and a check that cannot go red is not
-a check. Its correctness counterpart is `check-incremental.ts`, which does
-assert that the incremental fold agrees with a full rebuild.
-
-## How a check is written
-
-Every check except `check-history.ts` shares `scripts/checks/harness.ts`:
-
-```ts
-check(label, condition, detail?)   // prints "ok" or "FAIL <label> — <detail>", counts
-section(title)                     // a readable header between groups
-waitFor(predicate, timeoutMs?)     // poll with a deadline, for async checks
-finish(name?)                      // prints "N/M passed", exits non-zero on failure
-```
-
-`finish()` refuses to pass a run that asserted nothing — a wrong import or a
-body skipped by a guard reports `0/0` and would otherwise be green with nothing
-checked, which is the one failure mode a check harness must not have. That is
-also why the checks that do not use the harness (`check-history.ts` and the
-`node:assert/strict` ones) had to be brought in line: `check-history.ts` now
-counts its own assertions and fails on zero, and the metrics checks were
-converted to `check()` so their failures read like every other failure.
-
-Three habits make a failure readable:
-
-- **The label is the product rule, in plain words** — `"the shell Absence drove
-  is not an egg"`, not `assertEquals(claimed.length, 2)`. A red line names the
-  rule that broke.
-- **`detail` carries the actual value** — `\`got ${primary.length}\`` — so a
-  failure shows what happened, not only that something did.
-- **The comment above a block says which bug it pins.** Most checks were a real
-  regression once; `check-chimes.ts` puts it plainly: *"every branch below was a
-  bug once — a step into low rang when it should have been silent"*.
-
-A check that needs the real database sets its own state dir **before** importing
-the module, which is why it uses a dynamic `import()`:
-
-```ts
-const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "absence-metrics-"));
-process.env.ABSENCE_STATE_DIR = stateDir;      // must precede the import
-const { appendMetricsFrame } = await import(".../storage/metrics");
-```
-
-### Adding a check
-
-Write `scripts/checks/check-<name>.ts` using the harness, register it (with a
-timeout) in the best-matching group in `scripts/checks/groups.ts` — `checks` is
-the offline list, `platform` the manual one — and add an `npm run` alias if it
-is worth typing. Neither `package.json`'s aliases nor the CI workflow need to
-change for CI to pick it up — the list lives in exactly one place, and each
-entry carries its own timeout because the self-hosting checks sleep through
-real sampling windows.
-
-The CI workflow (`.github/workflows/ci.yml`) runs the workspace typechecks and
-`npm run check:offline` on every push and pull request, on Node 22 to match
-`engines.node`. That is 29 scripts and roughly 3 minutes, five of them booting a
-real server; the four kernel/docker checks stay manual.
-
-A check belongs in the list if it needs nothing but Node: no observer binary, no
-docker, no elevated rights, no server somebody else started. Booting its own
-server on an ephemeral port does not disqualify it — that is the normal shape
-here, and it is where the session and metrics value is.
-
-## What each check pins down
-
-`make-demo.mjs` writes a small project shaped so ordinary prompts exercise every
-panel: reads with line ranges, a runnable `npm test`, a `TODO.md` for the agent to
-read, and `notes.txt` for the delete-vs-truncate case. The mock runtime runs its
-shell command for real, so a mock run also lays an egg — which is how the Agent
-Eggs panel is exercised without Pi credentials.
-
-### Pipeline & session (live)
-
-`check-e2e.ts` is the fast answer to *"did the whole pipeline survive my
-change"*: one command, ~30 s, no model. It is manual, not CI: its container
-assertions need a docker daemon and the kernel observer, so without them it can
-only prove the plain process half. It boots a real server on an ephemeral
-port with an isolated state dir, opens a **mock** session, and drives it with a
-scripted prompt (`$ `-prefixed lines — `MockAdapter` runs each through the same
-`AbsenceShell` a real agent uses). It then asserts the whole chain: command
-events → process eggs (Job Object) → container eggs (docker events, when docker
-is reachable) → metrics frames → SQLite persistence. Without docker it falls
-back to a plain `node` process egg and says so in its output.
-
-`check-history.ts` boots its own server and runs **75 assertions** against a
-real mock session: the
-paginated events API and its cursor, the run index, run grouping, per-run
-activity scoping, deterministic stage item ids (a random id used to freeze the
-replay Stage), snapshot seek, the Stage returning to its default page,
-search→terminal mapping, thinking capture (a streamed thought stays one Stage
-item, so replay does not re-mount it), the two independent FILE slots, read
-accumulation and gap markers, per-version recording, and the created file count.
-
-`check-lifecycle.ts` pins a real incident: a dev server orphaned when its parent
-npm died kept running wedged — listening, 0% CPU, answering no request — and
-held port 8848 until it was killed by hand. The server must notice that nobody
-is above it and leave: stdin EOF exits it (the cheapest "parent is gone"
-signal), a dead parent pid is caught by the liveness watchdog (speeded up here
-through `ABSENCE_ORPHAN_TICK_MS`), and a second server on an occupied port fails
-with instructions instead of a bare `EADDRINUSE` stack.
-
-`check-execserver.ts` drives the real Codex exec-server over a loopback
-WebSocket: `initialize`, then `process/start`/`output`/`exited`/`closed`, a
-`tty: true` command streaming on the `pty` stream and stopping on a written
-Ctrl+C, and `process/signal interrupt` stopping a running command first-hand.
-
-### Metrics & sessions
-
-`check-metrics.ts` verifies metric chunk round-tripping, resampling at a
-different step, session averages, and the rule that an exited egg does not
-extend its lifetime or keep accumulating resources.
-
-`check-metrics-persist.ts` verifies the dashboard's history path: eggs and the
-machine's own counters (the dashed host line) come back from SQLite, and a
-window with no samples returns no points, read through the same call the UI
-makes. No server is started — it appends, flushes, and reads back in one
-process, which is the cheap half; the restart case below is the half it cannot
-reach.
-
-`check-metrics-restart.ts` (~20 s) boots a real server, runs a workload,
-**restarts the server**, and reads the same session back — the curve and the
-host line must still be there. This is the case `check-metrics-persist.ts`
-cannot reach.
-
-`check-metrics-ranges.ts` imports the dashboard's own `RANGES` / `rangeStart`
-(rather than copying them) and pins that 30m, 1h and `all` are their own
-windows on a *young* session — the case where all three used to collapse onto
-1m's few seconds — while the window stays stable inside a step and moves when
-the step turns over.
-
-`check-session-close.ts` (~25 s) pins "change project" as *leaving* the
-session: after `POST /api/sessions/:id/close` the sample count stops growing
-(an in-flight sample is dropped, not written), the recorded samples survive, and
-reopening the session restores them.
-
-`check-session-dwell.ts` (~19 s) pins session duration as *dwell* time:
-open → watch → leave → come back continues the clock, the gap while closed is
-not counted, and the original creation time survives.
-
-`check-observed-lifetime.ts` (~19 s) pins "observed for" as the process's
-own lifetime: an egg's clock starts at its `startedAt`, stops at `exitedAt`, and
-the recorded lifetime does not keep growing after the process ends.
-
-`check-incremental.ts` verifies that eggs, History, and Activity remain
-consistent with a full rebuild while the event window slides, and pins
-per-event work away from a window-sized product. Its timing counterpart is
-`scripts/dev/bench-incremental.ts`: it prints old vs. new ms/event and the
-speedup, and asserts nothing — which is why it is not a check and does not live
-in `scripts/checks/`.
-
-`check-storage.ts` pins the SQLite seam the rest of the server relies on: the
-legacy JSONL archive imports once and streaming prefixes are dropped,
-`readEvents` rebuilds the full `AbsenceEvent` envelope rather than the payload
-alone, new writes round-trip and a batch flushes on drain, `listArchives` filters
-by project path, and re-running the importer does not duplicate events.
-
-### Processes & containers
-
-`check-eggs.ts` is the pure harness for process detection (no server, nothing
-spawned): the command window decides what is a candidate, the ancestor chain
-decides what is ours, the marker Absence puts on its own shells decides what is
-plumbing, an orphan is refused rather than guessed at, a subtree collapses to its
-root with its descendants counted, and the eggs panel folds repeated pids into one
-egg with `running` / `dead` / `all` filters. The trick is that it feeds a
-**fabricated process table** into the real `candidatePids` / `attributeProcesses`
-/ `buildEggs`, so the risky attribution logic is testable in milliseconds.
-
-`check-classify.ts` is the pure harness for the primary/tool split: the command's
-subjects are read from its text (`./daemon.sh`, `python train.py`, `powershell
--File run.ps1`) while an inline interpreter stays a tool, a query tool with a
-redirect is not a subject, and classification is structural — a `cat` that
-outlived its command is primary, a short git-bash helper is a tool, a process
-inside the workspace is primary, and an ephemeral process from an unknown
-directory (`fd.exe` in Pi's own bin) is a tool.
-
-`check-agentwatch.ts` exercises the Windows observer for real: it starts the
-helper against the test process, drives the real `ProcessWatcher`, and asserts
-that short-lived children are all caught, carry a command line, are attributed to
-the command that laid them, and that Absence's own marked shell is never an egg.
-
-`check-ebpf.ts` does the same for the Linux observer: it starts
-`agentwatch-linux`, drives the real `ProcessWatcher`, and asserts that
-short-lived children are all caught with their command line and attributed to
-the command that laid them — and that an unmarked process is still captured
-while a session id is set (the Linux attribution rule).
-
-`check-docker.ts` pins the process boundary of docker commands (Windows + WSL
-docker): what the Job Object / eBPF observer sees around `docker run`, so the
-client and the container are not confused with each other.
-
-`check-docker-eggs.ts` pins container eggs end to end: a container start event is
-credited to the command whose own words predicted it (`--name`, image, compose
-project label), a foreign container landing in the same window is not,
-stats become the container's metrics, and a resumed session re-attaches to the
-containers it laid while exited ones are corrected from the daemon's own state.
-
-### Report, rules & chat surface
-
-`check-report.ts` is a pure harness (no server) for the Absence Report engine: a
-failed tool with no `command` event still counts as a failed command, recovery
-consumes a failure only after intervening activity, agent writes are never
-double-counted as observed changes, `created` is relative to earlier runs,
-phases resolve to `verifying` after a recovery, and the Timeline lists one node
-per activity in event order with its effect (a streamed thought stays one node,
-an unfinished shell tool reads as a running process, and an egg laid during the
-run becomes a `LAID` node — with a still-running egg raising attention to
-high). It also pins the loop rules: a write that restores the read state is a
-`file_version_loop` at medium attention, a gapped read state is never a loop
-baseline, a twice-failed command is a `command_retry_loop` that names the
-command, one failure is not a loop, a change outside the project is an
-`outside_change` fact at low attention marked `OUTSIDE` on the Timeline, and a
-still-running egg (high) outranks an outside change (low). A settled run with a
-`FindingRecord` replays the record instead of re-judging, and the record's
-hash chain verifies while a doctored one breaks.
-
-`check-outside-attr.ts` verifies that only write-semantic tools attribute
-outside changes, path-shaped arguments do not treat file contents as paths, and
-Windows path casing/separators resolve to the same file.
-
-`check-chimes.ts` pins `attentionChimeFor` — the whole policy for when an
-attention change is audible — without an `AudioContext`. Every branch was a bug
-once: a step into `low` rang when it should have been silent, or a release out
-of `high` went quiet with it.
-
-`check-settings.ts` pins that a stale or partial `localStorage` entry loads into
-a complete, sane Settings: defaults fill in, unknown values are normalised, and
-the rail orders and chat toggles stay well-formed. It stubs a minimal
-`localStorage` so the store module's import-time read works outside a browser.
-
-`check-markdown.ts` is the pure harness for the Chat panel's Markdown reader: the
-block and inline constructs agents actually emit (headings, nested lists, task
-lists, tables, fenced code) parse, while a half-written construct — an
-unterminated fence, `**`, `[` — degrades to text instead of swallowing the rest
-of a streaming reply. It also pins what must *not* become markup: arithmetic
-(`2 * 3 * 4`), `snake_case`, raw HTML, and `javascript:` links all stay literal,
-which is what makes rendering the tree safe without an HTML sanitizer.
-
-### Runtimes: Codex, capabilities, decoupling
-
-`check-codex.ts` is the pure harness for the Codex command layer: reading a
-read/search/list out of Codex's own `commandActions` (with a text fallback), and
-the approval decisions and options derived from Codex's `availableDecisions`.
-
-`check-codexshell.ts` pins undoing Codex's shell wrapper: `pwsh -Command "…"`
-(with the UTF-8 preamble), `bash -lc "…"`, `cmd /c …`, multi-flag forms and a
-quoted exe path all reduce to the model's command; a non-shell invocation is
-left alone.
-
-`check-shellenv.ts` pins the environment build: Codex's `env_policy`
-(inherit / default excludes / custom excludes / set / include-only) is applied
-to the executor's own environment, then the request's sparse `env` wins — the
-rule that keeps `PATH` and `PATHEXT` present, so `node ticker.mjs` resolves
-`node` as it does natively.
-
-`check-capabilities.ts` builds a throwaway HOME with a `skills/` directory and an
-`mcpServers` config, then reads them back through the real discovery code and
-through Pi's own loader: every skills location is searched and ancestors stop at
-the repo root, a skill without a description is reported rather than silently
-dropped, `mcp.json` project entries override user entries by name, Codex's
-`[mcp_servers.*]` TOML is read into the same shape, Pi's `DefaultResourceLoader`
-receives the discovered skills with the MCP extension in the factory list, the
-Pi tool allowlist cannot silently disable direct MCP tools, MCP can be switched
-off, and the writable half used by the runtimes' own config tools round-trips.
-
-`check-capability-commands.ts` pins the `/skill` and `/mcp` chat commands: the
-command registry, skill invocation routing, `/mcp` list and reconnect wording
-against a fabricated capability list, and the `pi mcp add` guidance in the
-empty state. No server is dialled — the surface is session-scoped on purpose,
-matching Pi's own `/mcp`, because adding or removing a server edits the shared
-`mcp.json` and stays outside the session.
-
-`check-mcp-events.ts` pins MCP call visibility: an MCP call must reach Activity
-and the Stage as a first-class action, not vanish as an anonymous tool event. It
-feeds the shapes the adapters actually emit (Pi's `mcp__<server>__<tool>`, Codex's
-`mcpToolCall`) through `eventToActivityRow` / `eventToStageItem` / `statusForTool`
-and checks the row, the terminal card, the status, and the replay path — without
-a live MCP server.
-
-`check-observer.ts` is the offline half of the decoupling contract in
-[decoupling.md](decoupling.md), whose standard is: *delete
-`apps/server/src/agents/` entirely — does `absence watch` still work?* It pins
-that a session declaring itself `observe` cannot be driven (while an older server
-omitting `source` is treated as driven, never a regression in the field), that
-nothing is registered until the shipped adapters are imported, that the CLI's
-watch parser is standalone (`--pid`, `--project`, `--label`, pass-through `--
-command`), that an observed session's rows come from the OS rather than a
-runtime, that only the observed tree is reported, that an observed stream still
-forms runs, that the terminal mirror is bounded/coalesced/replayable, that
-commands are read off the command line, that exit codes survive the observer,
-and that Pi and Codex transcript tool calls pair and classify the same way.
-
-### File diff
-
-`check-fsdiff.ts` is the pure harness for the file-diff engine.
+场景覆盖冷启动、流式 thinking、文件操作、命令重试、长输出、多轮、中途取消、
+并发工具、进程树、各 agent 的事件形状、diff 片段保真、部分读取保真、并发
+execute、审批拒绝。两端痕迹（`agent-trace.ndjson` / `absence-events.jsonl`）写在
+`--out` 目录下便于对照。
+
+## 其他检查分组
+
+`npm run check:group -- <组名>` 只跑一个领域；`run-offline.ts` 注册的离线检查由
+`scripts/checks/groups.ts` 统一登记（唯一的注册点）：
+
+| 组 | 覆盖 |
+|---|---|
+| `report` / `views` / `history` | 事实引擎、face 视图模型、历史重建与增量 |
+| `settings` / `chimes` | 阈值归一化与 i18n、提示音策略 |
+| `eggs` | 进程识别/分类/过滤器（`agentwatch`、`ebpf` 内核检查为手动层） |
+| `metrics` | 指标采样与持久化（重启存活、区间、观察会话寿命） |
+| `agent` | 上表中的 ACP 系列 + `check-capability-commands`（`/` 转发契约）+ `check-mcp-events` |
+| `session` | 归档存储、dwell 时钟、关闭与生命周期 |
+| `io` | fsdiff 引擎 |
+| `pipeline` / `docker` | 手动层：全链路 e2e、docker eggs（需要内核观察器/docker） |
+
+手动层（tier 4）需要内核权限或 docker，不进 `check:offline`。
+
+`ProcessWatcher.noteMarker` 只被 `check-agentwatch` / `check-docker*` 这些内核检查
+用来标记自己拉起的进程；**生产代码不调用它**（Absence 不再驱动 agent 的 shell），
+这不是休眠代码，是检查专用探针。
+
+## 开发辅助
+
+- `npm run probe:acp -- <scenario>` —— 单跑一次采集管道并打印事件（可用
+  `ABSENCE_ACP_BIN` 指向真实 agent）。
+- `npm run registry:sync` —— 拉取 ACP 官方注册表到 `~/.absence/registry.json`。
+- `npm run release:notes -- v<版本>` —— 从提交记录生成发布说明草稿。
+
+## 检查的书写规则
+
+由 `scripts/checks/harness.ts`（一个 `check()` 出口）强制：
+
+1. 标签是产品规则的大白话，不是 `assertEquals`；
+2. `detail` 带实际值，红了能看见发生了什么；
+3. 块注释写明它在钉哪个历史 bug。

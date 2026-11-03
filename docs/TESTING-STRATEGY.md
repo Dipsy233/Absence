@@ -9,7 +9,7 @@ This is the *why* behind [TESTING.md](TESTING.md), which is the *what*.
 > **observing a real operating system** — which process a command laid, whether a
 > container became an egg, whether a metrics curve survives a restart. Mocking
 > that away would delete the only thing worth testing. So instead of chasing
-> coverage, the repo ships **33 acceptance check scripts** that each pin one rule
+> coverage, the repo ships **35 acceptance check scripts** that each pin one rule
 > that is easy to get silently wrong, layered by what environment they need: pure
 > functions with fabricated data (fast, in CI), isolated I/O in a throwaway temp
 > dir, real I/O against a live server / kernel / docker, and one full-pipeline
@@ -18,7 +18,7 @@ This is the *why* behind [TESTING.md](TESTING.md), which is the *what*.
 
 > Absence 没有单元测试框架。它难的不是纯函数，而是**观察一个真实操作系统**——一条命令
 > 下了哪个进程、容器有没有变成蛋、指标曲线能不能跨重启活下来。把这些 mock 掉，就等于
-> 删掉唯一值得测的东西。所以它不追覆盖率，而是带 **33 个验收检查脚本**，每个钉住一条
+> 删掉唯一值得测的东西。所以它不追覆盖率，而是带 **35 个验收检查脚本**，每个钉住一条
 > 容易悄悄弄错的规则，并按所需环境分层：伪造数据的纯函数（快、进 CI）、临时目录里的
 > 隔离 I/O、对着活 server / 内核 / docker 的真实 I/O，以及一个自起 server 的全链路检查。
 > `npm run verify` = 类型检查 + 构建 + 全部离线检查，就是提交前门禁。
@@ -50,29 +50,36 @@ tier 3  self-hosting  history, lifecycle,   each spawns the server on an
                      session-dwell,        ephemeral port with an isolated
                      session-close,        state dir and kills it again
                      metrics-restart,
-                     observed-lifetime
-tier 2  isolated I/O  storage, metrics,     mkdtemp + ABSENCE_STATE_DIR,
+                     observed-lifetime,
+                     storage
+tier 2  isolated I/O  metrics,             mkdtemp + ABSENCE_STATE_DIR,
                      metrics-persist,     never the user's archive
                      metrics-ranges,
                      incremental,
-                     execserver,
                      outside-attr
 tier 1  pure          eggs, classify,       fabricated process tables and
                      report, markdown,     event arrays, nothing spawned
-                     codex*, shellenv,
+                     format, views,
                      chimes, settings,
                      observer,
-                     capabilities*,
+                     capability-commands,
                      mcp-events, fsdiff
+
+the ACP family       acp, acp-lifecycle,    drives a *scripted* fixture agent
+(acp-transport,      acp-transport,         that speaks the real protocol —
+ acp-mapping,        acp-mapping,           no model, no credentials, runs
+ acp-proxy,          acp-proxy,             offline; mock-agent boots the real
+ agent-catalog)      agent-catalog          server against it end to end
 ```
 
-Tiers 1–3 are in CI (`npm run check:offline`): 27 scripts, about 3 minutes. A
+Tiers 1–3 plus the ACP family are in CI (`npm run check:offline`): 30 scripts,
+about 3 minutes. A
 tier-3 check spawning its own server is not a reason to exclude it — that is the
 normal shape here, and the session/metrics behaviour is exactly what rots
 silently. Only tier 4 stays manual, because it needs kernel privileges or docker.
 
-CI 只跑第 1–2 层。第 3–4 层需要活 server、内核权限、提权或 docker，保持手动，
-在 [TESTING.md](TESTING.md) 里标 *live*。
+CI 只跑第 1–3 层与 ACP 家族（`npm run check:offline`）。第 4 层需要内核权限或
+docker，保持手动，在 [TESTING.md](TESTING.md) 里标明。
 
 ### Tier 1 is where the design work is / 第 1 层才是设计功夫所在
 
@@ -164,15 +171,15 @@ exit):
 **"You changed one line — which checks do you run?" / 改了一行要跑哪些？**
 > `npm run verify` is the gate: typecheck + production web build + every offline
 > check. Then by blast radius: process/attribution → `check:process`; SQLite or
-> metrics → `check:metrics*`; whole pipeline → `check:e2e`; Codex layer →
-> `check:codex*` + `check:execserver`.
+> metrics → `check:metrics*`; whole pipeline → `check:e2e`; the agent layer →
+> `check:acp-all`.
 
 > `npm run verify` 是门禁：类型检查 + Web 生产构建 + 全部离线检查。再按影响面：
-> 进程归因 → `check:process`；SQLite/指标 → `check:metrics*`；整条管道 → `check:e2e`；
-> Codex 层 → `check:codex*` + `check:execserver`。
+> 进程归因 → `check:process`；SQLite/指标 → `check:metrics*`；整条管道 →
+> `check:e2e`；agent 接入层 → `check:acp-all`。
 
-**"33 standalone scripts instead of one suite — isn't that unmaintainable?" /
-「33 个独立脚本而不是一个 suite，不难维护吗？」**
+**"35 standalone scripts instead of one suite — isn't that unmaintainable?" /
+「35 个独立脚本而不是一个 suite，不难维护吗？」**
 > Each script is 40–560 lines and self-contained, they share one 44-line harness,
 > and the CI list lives in exactly one array (`run-offline.ts`) so adding a check
 > touches neither `package.json` nor the workflow. The upside is that any single
@@ -187,10 +194,10 @@ exit):
 
 | | |
 |---|---|
-| check scripts / 检查脚本 | 33 |
-| assertion calls / 断言调用 | ~714 |
+| check scripts / 检查脚本 | 35 |
+| assertion calls / 断言调用 | ~1060 |
 | harness / harness | 44 lines, 4 exports |
-| in CI / 进 CI | 27 scripts (tiers 1–3), ~3 min |
+| in CI / 进 CI | 30 scripts (tiers 1–3 + ACP family), ~3 min |
 | manual / 手动 | 5 scripts (tier 4) |
 | pre-commit gate / 提交门禁 | `npm run verify` |
 

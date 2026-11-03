@@ -57,9 +57,12 @@ to v0.4.0.
 
 ## 文档
 
-- [README](../README.md) / [中文 README](../README.zh-CN.md)
-- [Architecture](ARCHITECTURE.md) / [架构说明](ARCHITECTURE.zh-CN.md)
-- [Testing](TESTING.md) / [测试说明](TESTING.zh-CN.md)
+- [README](../README.md)
+- [Architecture](ARCHITECTURE.md)
+- [Testing](TESTING.md)
+
+> v0.5.0 起文档以中文为准，原先的 `README.zh-CN.md` / `ARCHITECTURE.zh-CN.md` /
+> `TESTING.zh-CN.md` 已合并进主文件并删除。
 
 ---
 

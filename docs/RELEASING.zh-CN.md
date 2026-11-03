@@ -101,4 +101,4 @@ npm run desktop:dist        # web 构建 + 服务端打包 + electron-builder
 ```
 
 产物在 `dist/desktop/release/`（已被 git 忽略）。打包目录里具体放了什么，见
-[ARCHITECTURE.zh-CN.md](ARCHITECTURE.zh-CN.md)。
+[ARCHITECTURE.md](ARCHITECTURE.md) 的「桌面壳」一节。
