@@ -6,7 +6,7 @@
 // one CommonJS file the Electron main process can `require` directly.
 //
 // Third-party packages stay external: the server's own dependencies (fastify,
-// chokidar, node-pty, …) are ordinary node_modules that are copied into the app
+// chokidar, …) are ordinary node_modules that are copied into the app
 // as-is, and some of them load native or lazily-required pieces that bundling
 // would break. Bundling only *our* code keeps the output small and avoids
 // breaking anything with a dynamic loader.

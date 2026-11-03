@@ -25,17 +25,17 @@ SQLite 访问分布在 `apps/server/src/sessions/storage/` 下的四个文件：
 
 ## 分层
 
-30 条离线检查分为三层，另有 ACP 家族；5 条手动检查构成最后一层。
+29 条离线检查分为三层，另有 ACP 家族；5 条手动检查构成最后一层。
 
 | 层 | 所需环境 | 检查 | 能确立的结论 |
 |---|---|---|---|
-| 1. 纯函数 | 伪造的进程表与事件数组；不启动进程、不写文件 | 14 条：`eggs`、`classify`、`outside-attr`、`report`、`markdown`、`format`、`views`、`chimes`、`settings`、`observer`、`capability-commands`、`mcp-events`、`incremental`、`metrics-ranges` | 归因、分类、报告归约、视图模型与策略分支，仅靠数据驱动 |
+| 1. 纯函数 | 伪造的进程表与事件数组；不启动进程、不写文件 | 13 条：`eggs`、`classify`、`outside-attr`、`report`、`markdown`、`format`、`views`、`chimes`、`settings`、`capability-commands`、`mcp-events`、`incremental`、`metrics-ranges` | 归因、分类、报告归约、视图模型与策略分支，仅靠数据驱动 |
 | 2. 隔离 I/O | 临时目录与 `ABSENCE_STATE_DIR`；在进程内引用生产存储与 diff 模块 | 4 条：`storage`、`metrics`、`metrics-persist`、`fsdiff` | 对真实 SQLite 文件的归档与指标往返，不写入用户档案 |
 | 3. 自起 server | 临时端口与隔离 state 目录；检查启动并结束真 server | 6 条：`history`、`lifecycle`、`metrics-restart`、`observed-lifetime`、`session-close`、`session-dwell` | server 生命周期、会话关闭、dwell 计时、经 HTTP 读取历史、重启后的指标 |
 | ACP 家族 | 脚本化 fixture agent 与临时目录中的子进程；不启动 server | 6 条：`acp`、`acp-lifecycle`、`acp-transport`、`acp-mapping`、`acp-proxy`、`agent-catalog` | ACP 契约：能力门控、传输、映射、代理、catalog 发现 |
 | 4. 手动 | 内核观察助手、docker daemon，或真 server 加 mock 会话 | 5 条：`agentwatch`、`ebpf`、`docker`、`docker-eggs`、`e2e` | 内核级进程捕获、容器蛋、以及一次运行内的全链路 |
 
-14 + 4 + 6 + 6 = 30 条离线检查；加上 5 条手动检查，登记总数为 35。
+13 + 4 + 6 + 6 = 29 条离线检查；加上 5 条手动检查，登记总数为 34。
 
 第 1 层把系统调用推到边界之外，使中间逻辑成为可传入数据的函数。`check-eggs` 把伪造进程表喂给真实的归因代码：
 

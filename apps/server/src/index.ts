@@ -191,8 +191,8 @@ function isAddrInUse(error: unknown): boolean {
 }
 
 /**
- * CLI entry: `tsx src/index.ts [serve|watch …]`. The server owns its own
- * process here; `watch` is the observer mode (see cli.ts).
+ * CLI entry: `tsx src/index.ts [serve|proxy …]`. The server owns its own
+ * process here (see cli.ts).
  */
 async function main(): Promise<void> {
   const { runCli } = await import("./cli");

@@ -171,24 +171,7 @@ Authentication:
 - Absence does not read tokens, fill credentials or proxy an OAuth flow. It performs only the read-only inspection described in section 4.
 - Any other `/…` line is sent as a prompt. `SessionStore.forwardCommand(text)` is `this.prompt(text)`. The command panel combines commands advertised through `available_commands_update` with the local `/auth` action.
 
-## 8. Observe mode
-
-Observe mode attaches to an existing process and does not create an adapter.
-
-- `POST /api/sessions/observe` accepts `{ projectPath, pid, label?, transcript? }`. `createObserved` requires the pid to still exist.
-- `AbsenceSession` uses the observed pid as `ProcessWatcher.rootPid`.
-- `startObserving` builds the file tree, starts `FileWatcher`, starts `SessionLogTail` and writes a system message stating that the session is observed and not driven.
-- `prompt` and `abort` return an `OBSERVE_NOTICE` system message.
-- `absence watch -- <cmd>` starts the agent in a PTY, mirrors its bytes, and observes its process tree and project files. Ctrl-C stops observation and does not kill the agent.
-
-Transcript reading:
-
-- `SessionLogTail` discovers agent transcripts only for Pi and Codex layouts (`TRANSCRIPT_SOURCES`).
-- `PiTranscriptReader` and `CodexTranscriptReader` convert recorded tool calls into `mcp` or `tool_start` events.
-- These transcript events supplement observation. Absence does not merge agent session files into History.
-- An observed agent without a supported transcript produces OS facts only.
-
-## 9. Approaches that do not work
+## 8. Approaches that do not work
 
 Dedicated adapters per product do not work as a general integration strategy:
 
@@ -196,7 +179,7 @@ Dedicated adapters per product do not work as a general integration strategy:
 - Each implementation needed its own transport, command normalization and shell handling. A private protocol is outside Absence's control, so every product change required a matching adapter change. The same lifecycle, permission and event-mapping logic was repeated per product, and shell takeover made Absence responsible for semantics that belong to the agent.
 - The ACP path replaces these implementations with profile data and one generic connection. A product that ships an ACP entry requires no Absence code; a product without one needs an adapter package or a custom `agents.json` entry.
 
-## 10. Development aids
+## 9. Development aids
 
 - `npm run probe:acp -- <scenario>` drives the collection pipeline with a scripted fixture agent and prints each `AbsenceEvent`. Point it at a real agent with `ABSENCE_ACP_BIN`.
 - `npm run check:agent-catalog` checks discovery order, readiness states, the `+` cell and registry behaviour.

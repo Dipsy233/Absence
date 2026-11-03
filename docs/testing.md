@@ -9,8 +9,8 @@ Absence has no unit-test framework. Acceptance behaviour is verified by standalo
 ```bash
 npm run typecheck       # tsc across packages/core, apps/server, apps/web
 npm run build           # production web build in dist/web
-npm run check:offline   # all 30 offline checks
-npm run check:acp-all   # 7 registered agent-layer checks, then the mock-agent simulation
+npm run check:offline   # all 29 offline checks
+npm run check:acp-all   # 6 registered agent-layer checks, then the mock-agent simulation
 npm run absence-sim     # end-to-end simulation (same runner as check:mock-agent)
 npm run verify          # typecheck + build + check:offline
 ```
@@ -19,7 +19,7 @@ npm run verify          # typecheck + build + check:offline
 
 ## Registration
 
-`scripts/checks/groups.ts` is the single registration point. It defines 12 groups and 35 registered check scripts: 30 across the groups' `checks` lists (offline) and 5 in a `platform` list (manual). `run-offline.ts` and `run-group.ts` both read that file; `package.json` only holds per-script aliases. A script that is not registered runs only when invoked by path.
+`scripts/checks/groups.ts` is the single registration point. It defines 12 groups and 34 registered check scripts: 29 across the groups' `checks` lists (offline) and 5 in a `platform` list (manual). `run-offline.ts` and `run-group.ts` both read that file; `package.json` only holds per-script aliases. A script that is not registered runs only when invoked by path.
 
 | Group | Scope | Offline checks |
 |---|---|---|
@@ -29,8 +29,8 @@ npm run verify          # typecheck + build + check:offline
 | `settings` | threshold normalization, i18n table completeness | 1: `check-settings` |
 | `chimes` | chime policy branches | 1: `check-chimes` |
 | `eggs` | process recognition, classification, filters, outside-change attribution | 3: `check-eggs`, `check-classify`, `check-outside-attr` |
-| `metrics` | sampling, ring, restart survival, ranges, observed-session lifetime | 5: `check-metrics`, `check-metrics-persist`, `check-metrics-ranges`, `check-metrics-restart`, `check-observed-lifetime` |
-| `agent` | ACP contract, command forwarding, MCP events, observer contract, catalog | 9: `check-capability-commands`, `check-mcp-events`, `check-observer`, `check-acp`, `check-acp-lifecycle`, `check-acp-transport`, `check-acp-mapping`, `check-acp-proxy`, `check-agent-catalog` |
+| `metrics` | sampling, ring, restart survival, ranges, egg lifetime | 5: `check-metrics`, `check-metrics-persist`, `check-metrics-ranges`, `check-metrics-restart`, `check-observed-lifetime` |
+| `agent` | ACP contract, command forwarding, MCP events, catalog | 8: `check-capability-commands`, `check-mcp-events`, `check-acp`, `check-acp-lifecycle`, `check-acp-transport`, `check-acp-mapping`, `check-acp-proxy`, `check-agent-catalog` |
 | `session` | archive storage, dwell clock, close, lifecycle | 4: `check-storage`, `check-session-dwell`, `check-session-close`, `check-lifecycle` |
 | `io` | fsdiff engine | 1: `check-fsdiff` |
 | `pipeline` | full pipeline with a self-started server | 0 offline; platform: `check-e2e` |
@@ -55,15 +55,15 @@ npm run check:process                           # eggs + agent + io, including p
 
 ## Offline checks
 
-30 scripts. An offline check needs nothing beyond Node: no kernel observer binary, no docker, no elevated rights, and no server started by someone else. A check may boot its own server on an ephemeral port with a private `ABSENCE_STATE_DIR`; the session checks, `check-metrics-restart` and `check-history` do this and remain offline.
+29 scripts. An offline check needs nothing beyond Node: no kernel observer binary, no docker, no elevated rights, and no server started by someone else. A check may boot its own server on an ephemeral port with a private `ABSENCE_STATE_DIR`; the session checks, `check-metrics-restart` and `check-history` do this and remain offline.
 
 Coverage by group:
 
 - **Report and UI models**: run facts, timelines, attention rules, markdown rendering, formatting, replay rows, feed folding, history rebuild and the incremental memo.
 - **Settings and sound**: threshold normalization, i18n completeness, the branches of the chime policy.
 - **Process eggs**: attribution from a fabricated process table, classification order, outside-change attribution, egg folding and retirement.
-- **Metrics**: sampling output, ring behaviour, persistence, range selection, survival across a server restart, lifetime of an observed session.
-- **Agent layer**: ACP session contract, capability gating, transport, tool mapping, transparent proxy, catalog discovery and status, slash-command forwarding, MCP events, and the observer contract that does not depend on the shipped adapters.
+- **Metrics**: sampling output, ring behaviour, persistence, range selection, survival across a server restart, egg lifetime.
+- **Agent layer**: ACP session contract, capability gating, transport, tool mapping, transparent proxy, catalog discovery and status, slash-command forwarding, and MCP events.
 - **Session and storage**: legacy import, event round-trip, buffered drain, archive listing, dwell clock, close and lifecycle.
 - **File diffs**: the fsdiff engine.
 
@@ -85,14 +85,14 @@ The kernel and docker checks call `ProcessWatcher.noteMarker` to label processes
 
 ## ACP family and the mock-agent simulation
 
-`npm run check:acp-all` runs eight steps in this order:
+`npm run check:acp-all` runs seven steps in this order:
 
 ```text
 check:acp → check:acp-lifecycle → check:acp-transport → check:acp-mapping
-→ check:acp-proxy → check:agent-catalog → check:observer → check:mock-agent
+→ check:acp-proxy → check:agent-catalog → check:mock-agent
 ```
 
-The first seven are registered offline checks from the `agent` group. The eighth is a different runner.
+The first six are registered offline checks from the `agent` group. The seventh is a different runner.
 
 `scripts/mock-agent/agent.mjs` is a scripted agent that speaks ACP; it needs no model and no credentials. `scripts/mock-agent/run.ts` builds a throwaway home, state directory and workspace per scenario, starts the real server with a custom ACP profile that launches the mock agent as a real child process, reads the resulting events over the session WebSocket and from SQLite, and checks each scenario's `expect` block. It writes `agent-trace.ndjson` and `absence-events.jsonl` side by side under `--out`.
 
@@ -112,7 +112,7 @@ Every check imports `scripts/checks/harness.ts` (51 lines, four exports: `check`
 
 - `check(label, condition, detail)` prints `ok   <label>` or `FAIL <label>  — <detail>`.
 - `finish()` prints `<passed>/<total> checks passed` and exits 1 when any check failed. It also exits 1 when zero checks ran, so a script that asserts nothing cannot pass.
-- `run-offline.ts` prints `all 30 offline checks passed`, or `<n> check script(s) failed`; a killed script is reported with its name and the timeout from `groups.ts`.
+- `run-offline.ts` prints `all 29 offline checks passed`, or `<n> check script(s) failed`; a killed script is reported with its name and the timeout from `groups.ts`.
 - `run-group.ts` prints `<n> check script(s) passed across <m> group(s)`, or `<n> check script(s) failed`.
 
 A check script is one process. Its exit status is the signal the runners consume, so one failing script cannot be hidden by another script's summary.

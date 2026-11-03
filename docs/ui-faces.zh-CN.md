@@ -94,7 +94,6 @@ apps/web/src/stores/   session、runs、files、stage、replay、metrics、ui、
 - 项目路径；
 - Drip 开关（`DripBagIcon`），紧挨在 face 切换器左侧；
 - `Rounds / Monitor / Chart` 切换器；
-- observe 会话的 `OBSERVING` chip；
 - context 仪表：已用 token、进度条、总量；
 - `online` 或 `offline` 连接 chip；
 - `⚙` 设置、`Change`（离开当前会话）、窗口按钮。
@@ -137,7 +136,7 @@ pin bar 出现在两种情况：
 
 底部是 run 的世界线：`Think`、`Files`、`Shell` 各一条 lane。只绘制有标记的 lane。块位于活动偏移处，宽度延伸到下一个活动。点击轨道会 seek；在 live 中第一次点击进入 replay。控件为 `‹`（后退一个活动）、`⏸`/`▶`、`›`（前进一个活动）、速度 chip（`0.25× / 0.5× / 1× / 2× / 5× / 10×`）、`◉`（回到 live）。
 
-输入行为一行：`Ask about this moment, or / for commands`。它没有展开开关；对话是 Stage 的 `CHAT` 页。输入 `/` 打开命令面板。observe 会话用 `observing` 提示替代输入行。
+输入行为一行：`Ask about this moment, or / for commands`。它没有展开开关；对话是 Stage 的 `CHAT` 页。输入 `/` 打开命令面板。
 
 ### 右列
 
@@ -222,8 +221,6 @@ Chart 是一页：所选 run 的 Absence Report。它读取 `useMonitorData.repo
 
 ## 界面范围
 
-- 回放重建文件内容、agent 状态与当前 Stage 动作。它不重建指标曲线、Agent Eggs 面板或终端字节。
+- 回放重建文件内容、agent 状态与当前 Stage 动作。它不重建指标曲线或 Agent Eggs 面板。
 - Agent Eggs 面板列出进程；它没有杀进程操作。
-- observe 会话在顶栏显示 `OBSERVING`，输入行显示只读提示。服务端拒绝 `prompt` 与 `abort`。
-- 终端镜像 WebSocket 存在于服务端；Web 客户端没有连接它。
 - 对比度、焦点、动效与控件状态底线见 [ui-style-interface.zh-CN.md](ui-style-interface.zh-CN.md)。

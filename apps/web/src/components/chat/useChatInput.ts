@@ -3,7 +3,7 @@ import { isAgentBusy, type CommandOption } from "@absence/core";
 import { buildPrompt } from "../../lib/context";
 import { findCommand, mergeAgentCommands, type CommandSpec } from "../../lib/commands";
 import { useChatStore } from "../../stores/chatStore";
-import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
+import { useSessionStore } from "../../stores/sessionStore";
 import type { ChatContext } from "../../types/chat";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -36,7 +36,6 @@ export interface ChatInput {
   setHighlight: (index: number) => void;
   busy: boolean;
   connected: boolean;
-  observed: boolean;
   pending: ChatContext[];
   handleChange: (value: string) => void;
   handleKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
@@ -60,7 +59,6 @@ export function useChatInput(): ChatInput {
   const commands = useMemo(() => mergeAgentCommands(agentCommands), [agentCommands]);
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
   const runCommand = useSessionStore((s) => s.runCommand);
-  const observed = useIsObserved();
 
   const [text, setText] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -231,7 +229,6 @@ export function useChatInput(): ChatInput {
     setHighlight,
     busy: isAgentBusy(status),
     connected,
-    observed,
     pending,
     handleChange,
     handleKeyDown,

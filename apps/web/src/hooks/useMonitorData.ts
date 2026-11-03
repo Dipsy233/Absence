@@ -5,7 +5,7 @@ import { useLiveItem } from "./useStage";
 import { useRunAttention } from "./useRunAttention";
 import { activityRowsVersion, memoRunRows } from "../lib/history";
 import { renderRun } from "../lib/report";
-import { useIsObserved, useSessionStore } from "../stores/sessionStore";
+import { useSessionStore } from "../stores/sessionStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { ActivityRow } from "../types/stage";
 import type { Attention, RunFacts, RunReport } from "../types/report";
@@ -56,12 +56,9 @@ export interface MonitorData {
 export function useMonitorData(): MonitorData {
   const { run, events, loading } = useSelectedRun();
   const displayInActivity = useSettingsStore((s) => s.displayInActivity);
-  const observed = useIsObserved();
   const status = useSessionStore((s) => s.agent.status);
 
-  // The rule (`settings || observed`): an observed session always shows
-  // its process rows, because for a watched agent they are the whole story.
-  const showProcessRows = displayInActivity || observed;
+  const showProcessRows = displayInActivity;
 
   const rows = useMemo(
     () => (run ? memoRunRows(events, run, showProcessRows) : []),

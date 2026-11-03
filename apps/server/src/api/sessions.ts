@@ -22,7 +22,6 @@ import { sessionStore, RuntimeUnavailableError } from "../sessions/SessionStore"
 import { hasAdapter } from "../agents/registry";
 import { getProfile } from "../agents/acp/AgentCatalog";
 import { toPosix } from "../util/paths";
-import { takeTerminalMirror } from "../sessions/terminalRegistry";
 
 async function isDirectory(candidate: string): Promise<boolean> {
   try {
@@ -147,47 +146,6 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     })();
     if (!session) return reply;
     return session.snapshot();
-  });
-
-  /**
-   * Watch an agent that is already running, instead of starting one.
-   *
-   * This is the entry point that makes Absence an observer rather than a
-   * client: any process — any agent, any version — can be watched by its pid,
-   * with no adapter and no knowledge of its internals. `absence watch` uses it.
-   */
-  app.post("/api/sessions/observe", async (request, reply) => {
-    const body = request.body as
-      | { projectPath?: string; pid?: number; label?: string; transcript?: string }
-      | undefined;
-    const pid = Number(body?.pid);
-    if (!Number.isInteger(pid) || pid <= 0) {
-      return reply.code(400).send({ error: "pid is required" });
-    }
-    const projectPath = body?.projectPath?.trim();
-    if (!projectPath) {
-      return reply.code(400).send({ error: "projectPath is required" });
-    }
-    const resolved = toPosix(path.resolve(projectPath));
-    if (!(await isDirectory(resolved))) {
-      return reply.code(400).send({ error: `not a directory: ${resolved}` });
-    }
-    try {
-      // A mirror registered by the same process (the CLI's `watch -- cmd`) is
-      // handed over here: the pid is the only shared key, and the HTTP body
-      // cannot carry an object. An agent somebody else started has none.
-      const terminal = takeTerminalMirror(pid);
-      const session = await sessionStore.createObserved(
-        resolved,
-        pid,
-        body?.label,
-        terminal,
-        body?.transcript,
-      );
-      return session.snapshot();
-    } catch (error) {
-      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
-    }
   });
 
   app.get("/api/sessions/:id", async (request, reply) => {

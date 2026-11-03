@@ -17,11 +17,6 @@ export function MonitorChat() {
         input: "mon-chat__input",
         send: "mon-btn mon-btn--pri mon-chat__send",
         stop: "mon-btn mon-btn--danger mon-chat__send",
-        observed: "mon-chat",
-        observedChip: "mon-chip mon-chip--read",
-        observedNote: "",
-        observedChipStyle: { height: 26 },
-        observedNoteStyle: { fontSize: 12, color: "var(--mon-t3)" },
         placeholder: "Ask about this moment, or / for commands",
         ariaLabel: "Ask the agent…",
       }}

@@ -16,7 +16,7 @@ import { check, finish, section } from "./harness";
 type Prompt = string;
 
 /** A bare session instance: only the fields the command handlers touch. */
-function makeSession(options: { authMethods?: Array<{ id: string; name: string }>; observed?: boolean } = {}) {
+function makeSession(options: { authMethods?: Array<{ id: string; name: string }> } = {}) {
   const prompts: Prompt[] = [];
   const authenticated: string[] = [];
   const notices: string[] = [];
@@ -28,19 +28,17 @@ function makeSession(options: { authMethods?: Array<{ id: string; name: string }
   };
   session.flushMeta = async () => undefined;
   session.scheduleState = () => undefined;
-  session.adapter = options.observed
-    ? undefined
-    : {
-        getAvailableCommands: () => [],
-        isBusy: () => false,
-        prompt: async (text: string) => {
-          prompts.push(text);
-        },
-        getAuthMethods: () => options.authMethods ?? [],
-        authenticate: async (methodId: string) => {
-          authenticated.push(methodId);
-        },
-      };
+  session.adapter = {
+    getAvailableCommands: () => [],
+    isBusy: () => false,
+    prompt: async (text: string) => {
+      prompts.push(text);
+    },
+    getAuthMethods: () => options.authMethods ?? [],
+    authenticate: async (methodId: string) => {
+      authenticated.push(methodId);
+    },
+  };
   return { session, prompts, authenticated, notices };
 }
 
@@ -103,14 +101,6 @@ section("/auth stays an ACP action");
     bare.notices.at(-1)?.includes("test-login") === true,
     bare.notices.at(-1),
   );
-}
-
-section("observed sessions never forward a command");
-{
-  const { session, prompts, notices } = makeSession({ observed: true });
-  await session.runCommand("model", "x");
-  check("nothing is sent to an agent Absence only watches", prompts.length === 0);
-  check("and the chat says why", notices.at(-1)?.includes("only observes") === true, notices.at(-1));
 }
 
 finish("command forwarding checks");

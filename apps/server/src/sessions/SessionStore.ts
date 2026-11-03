@@ -32,8 +32,6 @@ import {
 import { appendMetricsFrame, drainMetrics } from "./storage/metrics";
 import { EventBus } from "../events";
 import type { AgentAdapter } from "../agents/AgentAdapter";
-import { TerminalMirror } from "./TerminalMirror";
-import { SessionLogTail } from "./SessionLogTail";
 import { OutsideAttribution } from "./OutsideAttribution";
 import { createAdapter } from "../agents/createAdapter";
 import { formatAgentCommand } from "../agents/slashCommands";
@@ -41,7 +39,6 @@ import { FileWatcher } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
 import { ProcessWatcher } from "../process/ProcessWatcher";
 import { ProcessMetricsSampler } from "../process/ProcessMetrics";
-import { snapshotProcesses } from "../process/ProcessTable";
 import { JobMonitor } from "../process/JobMonitor";
 import { DockerMonitor } from "../process/DockerMonitor";
 import { DockerEggs } from "../process/DockerEggs";
@@ -75,14 +72,6 @@ const OUTSIDE_ATTRIBUTION_WINDOW_MS = 120_000;
 
 /** Newline, kept as a constant so multi-line notices read the same on Windows. */
 const NL = String.fromCharCode(10);
-
-/**
- * What an observed session says when the UI asks it to do something only the
- * owner of a process can do. One sentence, because it is the same sentence for
- * every action: watch, do not drive.
- */
-const OBSERVE_NOTICE =
-  "This session only observes: the agent runs in a terminal Absence did not start, so it cannot be prompted, stopped or reconfigured from here.";
 
 /**
  * Thrown when the requested agent runtime cannot start — not installed, the
@@ -132,35 +121,16 @@ export interface AbsenceResume {
 }
 
 /**
- * One open workspace, observed (read.md §24). Live state is in memory; the
+ * One open workspace (read.md §24). Live state is in memory; the
  * AbsenceEvent stream is also archived to disk, so a session survives a restart.
  */
 export class AbsenceSession {
   readonly id: string;
   readonly bus = new EventBus<AbsenceEvent>();
   readonly stateBus = new EventBus<SessionRuntimeState>();
-  /**
-   * The agent's terminal output, mirrored. Present only when Absence started
-   * the agent under a PTY (see cli.ts `watchCommand`); an agent somebody else
-   * started has a terminal we can never see. Deliberately *not* part of the
-   * event stream — a redraw would flush the History window in seconds. See
-   * TerminalMirror.
-   */
-  readonly terminal?: TerminalMirror;
-  /**
-   * Reads the agent's own session transcript and turns the tool calls it
-   * records into `mcp` / `tool_start` events.
-   *
-   * The transcript is the only surface that sees *every* MCP call — stdio, HTTP
-   * and in-process alike — because all of them end up written down as a tool
-   * call. It needs no change to the agent's config and no proxy in the middle,
-   * so observing cannot break what it observes. Present only in observe mode;
-   * a driven session gets the same facts from its adapter.
-   */
-  private transcriptTail?: SessionLogTail;
   readonly session: Session;
 
-  private adapter: AgentAdapter | undefined;
+  private adapter: AgentAdapter;
   private watcher?: FileWatcher;
   /** Reports the OS processes the agent lays; Absence owns the shell (v0.3). */
   private processWatcher: ProcessWatcher;
@@ -196,8 +166,8 @@ export class AbsenceSession {
   private diffingFiles = new Set<string>();
   /**
    * Which outside file changes are the agent's own doing (see the class doc):
-   * fed by adapter write events when driving, transcript tool calls when
-   * observing, consulted by the outside watcher before it reports.
+   * fed by adapter write events, consulted by the outside watcher before it
+   * reports.
    */
   private outsideAttribution = new OutsideAttribution(OUTSIDE_ATTRIBUTION_WINDOW_MS);
   private chat: ChatMessage[] = [];
@@ -226,20 +196,10 @@ export class AbsenceSession {
   private treeTimer?: NodeJS.Timeout;
   private disposed = false;
 
-  /**
-   * The agent Absence is only *watching* — somebody else's process tree.
-   *
-   * Set instead of an adapter (see `createObserved`). Everything that needs a
-   * runtime is then unavailable by construction rather than by a guard that
-   * someone will forget to add.
-   */
-  private readonly observe?: { pid: number; label: string; terminal?: TerminalMirror; transcript?: string };
-
   constructor(
     projectPath: string,
     kind: AgentKind,
     private readonly resume?: AbsenceResume,
-    observe?: { pid: number; label: string; terminal?: TerminalMirror; transcript?: string },
   ) {
     this.id = resume?.absenceSessionId ?? newId("sess");
     // Dwell time is accrued across visits: a session reopened later continues
@@ -258,14 +218,7 @@ export class AbsenceSession {
     };
     this.resumeHandle = resume?.resumeHandle;
     this.runtimeSessionId = resume?.runtimeSessionId;
-    // A driven session's egg tree ends at the server process that spawned the
-    // agent; an observed one is rooted at the pid it was handed.
-    this.observe = observe;
-    this.terminal = observe?.terminal;
     this.processWatcher = new ProcessWatcher({
-      // In observe mode the agent is somebody else's child, so its subtree is
-      // rooted at the agent's pid, not at ours (see ProcessWatcher.rootPid).
-      rootPid: observe?.pid,
       onProcess: (payload) => this.handleEvent(createEvent(this.id, "process", payload)),
       // Bound the live egg view: running eggs always stay, only the oldest
       // exits beyond the cap are retired. See ProcessWatcher.retireOverflow.
@@ -273,13 +226,10 @@ export class AbsenceSession {
     });
     // Say how precise process watching is, so the UI can be honest about it.
     this.session.processPrecision = JobMonitor.get().available ? "exact" : "sampled";
-    // An observed session never gets an adapter: there is no runtime to drive.
-    if (!observe) {
-      this.adapter = createAdapter(kind, {
-        processWatcher: this.processWatcher,
-        onStateChange: () => this.scheduleState(),
-      });
-    }
+    this.adapter = createAdapter(kind, {
+      processWatcher: this.processWatcher,
+      onStateChange: () => this.scheduleState(),
+    });
     // Baseline now: what is already running before the agent starts. The snapshot
     // costs half a second, so it has to be taken here rather than when the first
     // command begins.
@@ -320,93 +270,6 @@ export class AbsenceSession {
     this.lastActiveAt = this.session.startedAt;
   }
 
-  /**
-   * Observe mode: no runtime, no prompt surface — just the OS.
-   *
-   * The process watcher is already rooted at the observed agent's pid, so every
-   * process it spawns is reported as its work; the file watcher reports what it
-   * writes. That is the whole session. Absence is a viewer here in the literal
-   * sense: it never sends the agent a byte.
-   */
-  private async startObserving(): Promise<void> {
-    const target = this.observe!;
-    this.setStatus("listening");
-    this.session.model = undefined;
-    this.tree = await buildTree(this.session.projectPath);
-    this.treeDirty = true;
-    this.watcher = new FileWatcher(
-      this.session.projectPath,
-      (kind, abs) => this.onFsChange(kind, abs),
-      (kind, abs) => this.onOutsideFsChange(kind, abs),
-    );
-    await this.watcher.start();
-
-    // The agent's own transcript. This is a poll over a file that only grows
-    // when a tool call happens — nothing like enumerating the process table.
-    //
-    // Why not a proxy on the MCP door: that door is only the stdio spec's
-    // `{command, args}`, so it misses HTTP and in-process servers, and it has
-    // to be written into the agent's config. The transcript covers all three
-    // and leaves the agent untouched.
-    const tail = new SessionLogTail(
-      this.session.projectPath,
-      {
-        onCall: (call) => {
-          // The transcript is also how an outside file change is attributed:
-          // the watched parent directory holds sibling projects, and only a
-          // path the agent itself *wrote through a write-semantics tool* may
-          // read as this agent's activity (see WRITE_TOOL).
-          if (WRITE_TOOL.test(call.toolName)) {
-            for (const p of pathsInJson(call.args)) this.outsideAttribution.note(p);
-          }
-          // A call the model made to a server is an `mcp` event; a built-in
-          // tool recorded in the same transcript is a plain `tool_start`.
-          if (call.server) {
-            this.handleEvent(
-              createEvent(this.id, "mcp", {
-                server: call.server,
-                tool: call.tool,
-                toolName: call.toolName,
-                toolCallId: call.id,
-                args: call.args,
-                result: call.result,
-                isError: call.isError,
-                durationMs: call.durationMs,
-              }),
-            );
-          }
-        },
-        onSkills: (skills) => {
-          // The agent stated which skills it can load. Recording one event per
-          // skill turns "what is available" into something the Stage can show
-          // happening, without reading the agent's config.
-          for (const skill of skills) {
-            this.handleEvent(
-              createEvent(this.id, "tool_start", {
-                toolCallId: `skill:${skill.name}`,
-                toolName: "skill",
-                args: { name: skill.name, file: skill.filePath, description: skill.description },
-              }),
-            );
-          }
-        },
-      },
-      undefined,
-      this.observe?.transcript,
-    );
-    tail.start();
-    this.transcriptTail = tail;
-    this.handleEvent(
-      createEvent(this.id, "message", {
-        role: "system",
-        content: `Observing ${target.label} (pid ${target.pid}) in ${this.session.projectPath}. Absence watches what it does — processes, files — and never drives it.`,
-        streaming: false,
-      }),
-    );
-    await this.flushMeta();
-    this.scheduleState();
-  }
-
   async start(): Promise<void> {
     // Bring ABSENCE's own history back first, so the UI already has the Stage,
     // Activity, files and chat from before the restart.
@@ -427,11 +290,6 @@ export class AbsenceSession {
       // holds their eggs, but the live observer that sampled them died with the
       // old session (or the server); re-attach before the snapshot is served.
       await this.dockerEggs?.restore(events);
-    }
-
-    if (this.observe) {
-      await this.startObserving();
-      return;
     }
 
     const ctx = {
@@ -492,12 +350,6 @@ export class AbsenceSession {
 
   /** Fire-and-forget: the run streams over the bus, the HTTP call returns at once. */
   prompt(text: string): void {
-    // An observed agent is not ours to prompt. Say so in the chat rather than
-    // dropping the message on the floor.
-    if (!this.adapter) {
-      this.handleEvent(createEvent(this.id, "message", { role: "system", content: OBSERVE_NOTICE, streaming: false }));
-      return;
-    }
     this.handleEvent(
       createEvent(this.id, "message", { role: "user", content: text, streaming: false }),
     );
@@ -511,12 +363,6 @@ export class AbsenceSession {
   }
 
   async abort(): Promise<void> {
-    // Absence never kills an agent it does not own — not even on abort. Watching
-    // is a promise that we leave the thing we watch alone.
-    if (!this.adapter) {
-      this.handleEvent(createEvent(this.id, "message", { role: "system", content: OBSERVE_NOTICE, streaming: false }));
-      return;
-    }
     await this.adapter.abort();
   }
 
@@ -569,10 +415,6 @@ export class AbsenceSession {
    * Every other `/…` line is forwarded to the agent untouched.
    */
   async runCommand(name: string, args: string): Promise<void> {
-    if (!this.adapter) {
-      this.handleEvent(createEvent(this.id, "message", { role: "system", content: OBSERVE_NOTICE, streaming: false }));
-      return;
-    }
     if (name.trim() !== "auth") {
       this.forwardCommand(formatAgentCommand(name, args));
       return;
@@ -611,9 +453,6 @@ export class AbsenceSession {
 
   /** Where this session's events come from — see SessionSource. */
   private source(): SessionSource {
-    if (this.observe) {
-      return { kind: "observe", targetPid: this.observe.pid, label: this.observe.label };
-    }
     return { kind: "runtime", runtime: this.session.agentRuntime };
   }
 
@@ -723,8 +562,6 @@ export class AbsenceSession {
     this.dockerEggs?.dispose();
     this.unsubAdapter?.();
     this.adapter?.dispose();
-    this.terminal?.dispose();
-    this.transcriptTail?.dispose();
     await this.watcher?.close();
     await this.flushMeta();
     await drainArchive();
@@ -773,9 +610,7 @@ export class AbsenceSession {
     // one reply and makes resume replay every prefix. The final non-streaming
     // event carries the whole value, so that is what the archive keeps.
     if (!isStreamingEvent(event)) {
-      appendEvents(this.session.projectPath, this.id, [event], {
-        observed: this.observe !== undefined,
-      });
+      appendEvents(this.session.projectPath, this.id, [event]);
     }
     this.scheduleMeta();
   }
@@ -1277,58 +1112,9 @@ function statusForTool(toolName: string): AgentStatus {
   }
 }
 
-/**
- * The executable name for a pid, or undefined when it is gone.
- *
- * Used only to label an observed session. A missing pid is not an error the
- * caller has to interpret: it is the agent having already finished.
- */
-async function describeProcess(pid: number): Promise<{ name: string } | undefined> {
-  const table = await snapshotProcesses();
-  const info = table.get(pid);
-  if (!info) return undefined;
-  return { name: info.name };
-}
-
 /** In-memory registry of live sessions. */
 export class SessionStore {
   private sessions = new Map<string, AbsenceSession>();
-
-  /**
-   * Open a session that only *watches* an agent somebody else started.
-   *
-   * This is the decoupled end of Absence: no adapter, no runtime version to
-   * match, no skills or MCP config to read. The agent's pid is the root of the
-   * process tree Absence reports, and the project directory is what it watches
-   * for file changes. Every agent is observable this way — see
-   * docs/decoupling.md.
-   */
-  async createObserved(
-    projectPath: string,
-    pid: number,
-    label?: string,
-    terminal?: TerminalMirror,
-    transcript?: string,
-  ): Promise<AbsenceSession> {
-    const target = await describeProcess(pid);
-    if (!target) {
-      throw new Error(`No process with pid ${pid} — it may already have exited.`);
-    }
-    const session = new AbsenceSession(
-      projectPath,
-      "observe" as unknown as AgentKind,
-      undefined,
-      { pid, label: label?.trim() || target.name, terminal, transcript },
-    );
-    this.sessions.set(session.id, session);
-    try {
-      await session.start();
-    } catch (error) {
-      this.sessions.delete(session.id);
-      throw error;
-    }
-    return session;
-  }
 
   async create(projectPath: string, kind: AgentKind, resume?: AbsenceResume): Promise<AbsenceSession> {
     // Reopening a session that is still live just returns it.
@@ -1379,77 +1165,3 @@ export const sessionStore = new SessionStore();
 
 export { readFileSafe };
 
-/**
- * Tools whose semantics are writing a file. Only these may make an outside
- * file change attributable: their arguments name the paths they target. The
- * first cut of this rule was a *blacklist* of read-ish tools, and it leaked:
- * `bash` sat outside the list, so a `bash cat E:/other/x.txt` — a read —
- * attributed the path, and the sibling agent's later write of that file read
- * as this agent's outside change. A whitelist is the honest polarity: an MCP
- * tool with unknown semantics, a shell command whose effect on files is not
- * proven, none of them earn attribution. A shell write outside the project is
- * still visible in its run row; it just cannot claim the watcher's echo.
- */
-export const WRITE_TOOL =
-  /^(write|edit|multiedit|apply_patch|patch|save|create|remove|delete|unlink|move|rename|str_replace|insert|notebook_edit)\b/i;
-
-/**
- * Absolute paths in a write tool's arguments JSON — but only where paths live.
- *
- * Write tools name their targets in different fields per runtime (`path`,
- * `file_path`, a changes map, a patch body), so the shape is not pinned;
- * instead a string is scanned only when its *key* is path-shaped (path, file,
- * dir, patch, diff, changes, target, source, dest…) or when an object's key is
- * itself an absolute path (the `changes` map). Everything else — a written
- * file's `content`, an edit's `oldText`, a shell `command` — is skipped on
- * purpose: a config that *mentions* other absolute paths must not attribute
- * them, or the next write by whoever owns those paths reads as this agent's.
- *
- * Relative paths are skipped: the outside watcher only reports absolute paths
- * outside the project, and a relative argument cannot be one.
- */
-export function pathsInJson(json: string): string[] {
-  if (!json) return [];
-  const found: string[] = [];
-  const PATHY_KEY = /(path|file|dir|folder|target|source|src|dest|patch|diff|changes|location)/i;
-  const ABSOLUTE = /[A-Za-z]:[\\/][^\s"'`\]}]*|(?:\/[^\s"'`\]}]{2,})+/g;
-  const consider = (candidate: string): void => {
-    // A URL is not a filesystem path (`https://host/x`), and the unix branch
-    // happily matches the tail of one.
-    if (candidate.includes("://")) return;
-    // A unix path must have a directory separator beyond the leading slash,
-    // so a bare word or a URL's `//` does not match.
-    if (/^[A-Za-z]:/.test(candidate) || candidate.split("/").length > 2) found.push(candidate);
-  };
-  const scan = (text: string): void => {
-    for (const match of text.matchAll(ABSOLUTE)) consider(match[0]);
-  };
-  const walk = (value: unknown, key: string, depth: number): void => {
-    if (depth > 6) return;
-    if (typeof value === "string") {
-      // The value's own key decides whether its strings can hold a target. A
-      // patch body is included whole: the target sits after `*** Update
-      // File:` inside it, and `patch` is a pathy key.
-      if (PATHY_KEY.test(key)) scan(value);
-      return;
-    }
-    if (Array.isArray(value)) {
-      for (const item of value) walk(item, key, depth + 1);
-      return;
-    }
-    if (value && typeof value === "object") {
-      for (const [childKey, item] of Object.entries(value)) {
-        // A key that is itself an absolute path is a file the tool targets —
-        // Codex's `changes` map is keyed by path.
-        scan(childKey);
-        walk(item, childKey, depth + 1);
-      }
-    }
-  };
-  try {
-    walk(JSON.parse(json), "", 0);
-  } catch {
-    // Unparseable arguments name no paths we can trust.
-  }
-  return found;
-}

@@ -126,7 +126,7 @@ export const GROUPS: CheckGroup[] = [
   },
   {
     name: "metrics",
-    label: "指标采样与持久化（环 / 重启 / 区间 / 观察会话寿命）",
+    label: "指标采样与持久化（环 / 重启 / 区间 / 进程寿命）",
     paths: [
       "apps/server/src/process/metricSample.ts",
       "apps/server/src/process/ProcessMetrics.ts",
@@ -144,12 +144,11 @@ export const GROUPS: CheckGroup[] = [
   },
   {
     name: "agent",
-    label: "agent 适配层（ACP 契约 / 命令转发 / 观察器契约）",
+    label: "agent 适配层（ACP 契约 / 命令转发）",
     paths: ["apps/server/src/agents/**"],
     checks: [
       { script: "check-capability-commands.ts", timeout: 60_000 },
       { script: "check-mcp-events.ts", timeout: 60_000 },
-      { script: "check-observer.ts", timeout: 120_000 },
       { script: "check-acp.ts", timeout: 120_000 },
       { script: "check-acp-lifecycle.ts", timeout: 180_000 },
       { script: "check-acp-transport.ts", timeout: 120_000 },

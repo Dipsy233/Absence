@@ -7,7 +7,7 @@ import { JobMonitor } from "./JobMonitor";
 import type { MetricsTarget } from "./ProcessMetrics";
 import type { WatchExit, WatchStart } from "./observer";
 import { snapshotProcesses, type ProcessTable, type ProcInfo } from "./ProcessTable";
-import { detectCommand, unwrapCommandText } from "./CommandLine";
+import { unwrapCommandText } from "./CommandLine";
 
 /** How long after a command returns we take the final look. */
 const SETTLE_MS = 2500;
@@ -27,17 +27,6 @@ const SETTLE_MS = 2500;
  * and a long-running command is then sampled slowly, because anything it laid is
  * long-lived and any sample will do.
  */
-/**
- * How often an observed agent's tree is re-read.
- *
- * Slower than the command-window sampling: an observed agent has no command we
- * are waiting on, so there is no deadline to meet — but its work (a dev server,
- * a build) lasts, and a second or so late is a second nobody notices. A process
- * that lives and dies inside one poll is missed; that is the honest limit of
- * watching from the outside without a kernel hook, and the UI says `sampled`.
- */
-const OBSERVE_TICK_MS = 1200;
-
 const TICK_FAST_MS = 1100;
 const TICK_SLOW_MS = 4000;
 const TICK_FAST_WINDOW_MS = 8000;
@@ -171,11 +160,6 @@ export function retiredPids(
 export interface ProcessWatcherOptions {
   /** Every egg state change, ready to become a `process` AbsenceEvent. */
   onProcess: (payload: ProcessPayload) => void;
-  /**
-   * The process every egg descends from. Defaults to the server itself, which
-   * is where Pi — and therefore every tool — runs in-process.
-   */
-  rootPid?: number;
   /** Injectable for tests. */
   snapshot?: () => Promise<ProcessTable>;
   now?: () => number;
@@ -281,32 +265,8 @@ export class ProcessWatcher {
    */
   private jobSessionId?: string;
 
-  /**
-   * Observe mode: `rootPid` is an agent Absence did not start.
-   *
-   * Then there is no command window to speak of — nobody told Absence a command
-   * began — so attribution has to come from the outside in: anything whose
-   * ancestor chain reaches the observed process is its work, and its direct
-   * children are the roots worth reporting. That is deliberate: an agent's
-   * own command runner is plumbing (like Absence's marked shell is for Pi), so
-   * the thing it runs is the egg, not the runner.
-   */
-  private readonly observedRoot: boolean;
-  /**
-   * True when the observed root is one of *our* descendants (Absence started
-   * it), so the kernel Job Object reports its whole tree and nothing has to be
-   * sampled. False means the root is somebody else's process: the job cannot
-   * see it, and sampling the process table is the only option left.
-   *
-   * Decided once in `seedObservedAncestry`, before any attribution happens.
-   */
-  private observedInJob = false;
-  /** True once the process table at attach time has been folded into `jobSeen`. */
-  private observedSeeded = false;
-
   constructor(private readonly options: ProcessWatcherOptions) {
-    this.rootPid = options.rootPid ?? process.pid;
-    this.observedRoot = options.rootPid !== undefined && options.rootPid !== process.pid;
+    this.rootPid = process.pid;
     this.snapshot = options.snapshot ?? snapshotProcesses;
     this.now = options.now ?? Date.now;
     this.maxFinishedEggs = Math.max(0, options.maxFinishedEggs ?? 0);
@@ -321,9 +281,7 @@ export class ProcessWatcher {
   private attachJobObserver(): void {
     // The Windows observer is a Job Object placed on *our* process: it reports
     // every descendant we create, and nothing that existed before us or belongs
-    // to somebody else. Whether that covers the observed root cannot be known
-    // here (the walk needs an async snapshot), so observe mode subscribes
-    // either way and `warm()` decides — `observedInJob` is the answer.
+    // to somebody else.
     const monitor = JobMonitor.get();
     if (!monitor.available && monitor.status === "unavailable") {
       // The helper did not start (missing binary, no rights). Stay on polling.
@@ -334,10 +292,7 @@ export class ProcessWatcher {
 
   /** True while events, rather than snapshots, drive this watcher. */
   private get jobMode(): boolean {
-    if (this.jobUnsubscribe === undefined) return false;
-    // An observed root rides on kernel events only when it is our descendant;
-    // otherwise the job sees nothing of it and sampling takes over.
-    return !this.observedRoot || this.observedInJob;
+    return this.jobUnsubscribe !== undefined;
   }
 
   /**
@@ -347,30 +302,6 @@ export class ProcessWatcher {
    */
   warm(): void {
     void this.ensureBaseline();
-    // Observe mode: whatever already exists when Absence attaches is not the
-    // observed agent's *new* work — but it is the set its future children will
-    // appear under. Remembering every pid in the table makes the ancestry check
-    // in `onObservedStart` work for processes started before we looked (which
-    // is most of a real agent's tree: it was launched by a shell, its runner may
-    // pre-date us), without ever reporting them as eggs of their own.
-    if (this.observedRoot) {
-      void this.seedObservedAncestry().then(() => {
-        if (this.observedInJob) {
-          // The kernel is already reporting this tree — the baseline above is
-          // all that is needed to attribute children that predate the attach.
-          return;
-        }
-        // The root is somebody else's process: no kernel source can see it, so
-        // sampling is the only option left (see `attachJobObserver`).
-        this.startObservedPoll();
-      });
-    }
-  }
-
-  /** How often an observed tree is re-read. The agent's work is long-lived. */
-  private startObservedPoll(): void {
-    if (this.tickTimer !== undefined || this.disposed) return;
-    this.tickTimer = setTimeout(() => void this.pollObserved(), OBSERVE_TICK_MS);
   }
 
   /**
@@ -399,12 +330,9 @@ export class ProcessWatcher {
     return targets;
   }
 
-  /** The complete observed agent tree, including runtime plumbing and eggs. */
+  /** The complete agent tree, including runtime plumbing and eggs. */
   metricsAgentTarget(): MetricsTarget {
     const pids = new Set<number>([this.rootPid]);
-    // In observe mode, warm() seeds the already-running agent tree into
-    // jobSeen before any egg is discovered. Keep those runtime processes in
-    // the aggregate so the Agent view is meaningful even when it has no eggs.
     for (const pid of this.jobSeen) pids.add(pid);
     for (const pid of this.jobParent.keys()) pids.add(pid);
     for (const egg of this.eggs.values()) pids.add(egg.info.pid);
@@ -416,168 +344,6 @@ export class ProcessWatcher {
       startedAt: 0,
       pids: [...pids],
     };
-  }
-
-  /**
-   * One pass over the process table, in observe mode.
-   *
-   * Every process whose ancestor chain reaches the observed root (or one of the
-   * roots already found) is the agent's work. A process whose parent chain is
-   * broken — killed and reparented — is not claimed: Absence reports what it can
-   * prove. The previous table is diffed rather than the ancestry re-walked from
-   * scratch for everything, so the cost is one snapshot plus one walk per
-   * *new* process, not per process on the machine.
-   */
-  private async pollObserved(): Promise<void> {
-    this.tickTimer = undefined;
-    if (this.disposed) return;
-    try {
-      const table = await this.table();
-      if (this.disposed) return;
-      this.discoverObserved(table);
-    } catch {
-      // A failed snapshot is a missed tick, not an error worth killing the
-      // session over; the next one may work.
-    }
-    this.startObservedPoll();
-  }
-
-  /** The create side of pollObserved: new processes in the observed tree. */
-  private discoverObserved(table: ProcessTable): void {
-    for (const info of table.values()) {
-      if (this.eggs.has(info.pid)) continue;
-      if (info.pid === this.rootPid) {
-        this.jobSeen.add(info.pid);
-        continue;
-      }
-      // A descendant of an egg we already reported is folded into it. Only a
-      // *reported* egg can be a parent here: the seeded tree that existed before
-      // Absence attached is context, not an action, and must not swallow the
-      // agent's new children under it.
-      const parentEgg = this.eggs.has(info.ppid) ? info.ppid : undefined;
-      if (parentEgg !== undefined && parentEgg !== info.pid) {
-        this.jobParent.set(info.pid, parentEgg);
-        this.jobSeen.add(info.pid);
-        const egg = this.eggs.get(parentEgg);
-        if (egg) {
-          egg.children += 1;
-          if (egg.kind === "tool") {
-            egg.kind = "primary";
-            egg.kindReason = "spawns its own processes";
-          }
-          this.emit(egg);
-        }
-        continue;
-      }
-      // A root appears only under a pid that is part of the observed tree — the
-      // observed agent itself, or something it already owned. Anything else (a
-      // sibling app, a service) is none of our business, however many processes
-      // it spawns.
-      if (!this.jobSeen.has(info.ppid)) continue;
-
-      this.jobSeen.add(info.pid);
-      this.jobParent.set(info.pid, info.pid);
-      const verdict = classifyProcess({
-        name: info.name,
-        commandLine: info.commandLine,
-        cwd: this.jobCwd,
-        intent: parseCommandIntent(info.name),
-        survivedCommand: false,
-        ageMs: Math.max(0, this.now() - info.startedAt),
-        children: 0,
-        ppid: info.ppid,
-      });
-      const egg: Egg = {
-        info,
-        // The command this process came from, read off its own command line.
-        // Layer 0 (docs/decoupling.md) is the OS: a process is created with a
-        // full command line, so "what did the agent run" needs no shell shim
-        // and no knowledge of which agent it was — just the shape of
-        // `bash -lc "…"` / `pwsh -Command "…"` / `cmd /c "…"`.
-        command: observedCommand(info.name, info.commandLine),
-        startedAt: info.startedAt > 0 ? info.startedAt : this.now(),
-        children: 0,
-        status: "running",
-        kind: verdict.kind,
-        kindReason: verdict.reason,
-        cwd: this.jobCwd,
-        intent: parseCommandIntent(info.name),
-        reclassifyOnSurvive: verdict.kind === "tool",
-        survivedCommand: false,
-        namedSubject: false,
-      };
-      this.eggs.set(info.pid, egg);
-      this.emit(egg);
-      // An observed egg has no command to settle, so nothing else would ever
-      // notice it dying: the alive tick is what reports the exit.
-      this.startAliveTick();
-    }
-  }
-
-  /**
-   * Mark the processes *the observed agent already owns* at attach time.
-   *
-   * Deliberately not the whole table. Seeding every pid would make any process
-   * on the machine whose parent happens to exist look like the agent's work —
-   * which is exactly what it did the first time: services.exe, QQ.exe, every
-   * shell. What is seeded is the observed tree only: the agent's descendants,
-   * found by walking the table from the root down. Everything else stays
-   * unknown, so its children are never claimed.
-   */
-  private async seedObservedAncestry(): Promise<void> {
-    try {
-      const table = await this.table();
-      if (this.disposed) return;
-      // Which source can report this tree? One ancestor walk decides:
-      //   our descendant → the job sees it, kernel events, no sampling
-      //   somebody else → the job never will, sample the table
-      this.observedInJob = this.descendsFromUs(table, this.rootPid) === true;
-      if (process.env.ABSENCE_DEBUG_OBSERVE) {
-        process.stderr.write(
-          `[observe] root=${this.rootPid} inJob=${this.observedInJob} jobSub=${this.jobUnsubscribe !== undefined}${String.fromCharCode(10)}`,
-        );
-      }
-      // Walk down from the observed root. A single pass in parent-before-child
-      // order is enough in principle, but the table is a Map keyed by pid and
-      // not ordered by depth, so the walk repeats until it stops finding new
-      // pids (bounded by the size of the tree, not of the machine).
-      this.jobSeen.add(this.rootPid);
-      let added = 0;
-      do {
-        added = 0;
-        for (const info of table.values()) {
-          if (this.jobSeen.has(info.pid)) continue;
-          if (!this.jobSeen.has(info.ppid)) continue;
-          this.jobSeen.add(info.pid);
-          added += 1;
-        }
-      } while (added > 0);
-      this.observedSeeded = true;
-    } catch {
-      // No table (no permission): attribution falls back to "direct child of
-      // the observed root" only, which is still correct, just narrower.
-    }
-  }
-
-  /**
-   * Whether `pid`'s ancestor chain reaches Absence's own process.
-   *
-   * `true` / `false` when the table can answer, `undefined` when the chain
-   * leaves the table (a reparented process, a pid we cannot see). Callers treat
-   * that as "not ours" — the safe direction: sampling still works, whereas
-   * claiming kernel coverage that does not exist would go silent.
-   */
-  private descendsFromUs(table: ProcessTable, pid: number): boolean | undefined {
-    const visited = new Set<number>();
-    let current = pid;
-    while (current > 0 && !visited.has(current)) {
-      if (current === process.pid) return true;
-      visited.add(current);
-      const info = table.get(current);
-      if (!info) return undefined;
-      current = info.ppid;
-    }
-    return false;
   }
 
   /**
@@ -663,9 +429,8 @@ export class ProcessWatcher {
   /**
    * Terminate the command subtrees this session spawned and tracked.
    *
-   * Called when Absence closes a session it *drove*: the agent is ours, so
-   * everything under its pid is ours too. An observed session is somebody
-   * else's process and is never touched.
+   * Called when Absence closes a session it drove: the agent is ours, so
+   * everything under its pid is ours too.
    *
    * Only descendants of the runtime Absence started (plus eggs it already
    * reported) are considered — never the server, a sibling session, or an
@@ -676,7 +441,6 @@ export class ProcessWatcher {
     // `disposed` marks "stop watching", not "stop owning": the close path calls
     // this before `stop()`, and a second call is naturally idempotent because
     // the snapshot no longer contains the killed pids.
-    if (this.observedRoot) return 0;
     if (process.platform !== "win32") return this.terminateTrackedPosix(agentPid);
 
     const table = await this.table();
@@ -866,10 +630,6 @@ export class ProcessWatcher {
     if (isConsoleHost(nameOf(event))) return;
     if (this.isDockerStream(event)) {
       this.jobSeen.add(pid);
-      return;
-    }
-    if (this.observedRoot) {
-      this.onObservedStart(event);
       return;
     }
 
@@ -1156,103 +916,6 @@ export class ProcessWatcher {
    *                  the server's own infrastructure; outside it, the older
    *                  heuristics (ancestry, the command window) still decide.
    */
-  /**
-   * One process creation, in observe mode.
-   *
-   * The observed agent's direct children are roots — `node app.mjs` spawning
-   * `esbuild` reports esbuild, not node. Anything deeper is folded into the root
-   * it descends from, the same way Pi's eggs fold a subtree. Commands are not
-   * known here, so an egg is credited to its parent process instead, which is
-   * the honest thing to show: "this was started by that".
-   */
-  private onObservedStart(event: WatchStart): void {
-    const pid = event.pid;
-    const line = event.commandLine ?? event.exePath ?? "";
-    if (this.jobExec.get(pid) === line && this.jobSeen.has(pid)) return;
-    this.jobExec.set(pid, line);
-
-    // A pid we have already claimed as a root: this is a re-exec in place.
-    if (this.eggs.has(pid)) return;
-
-    const parentPid = event.ppid;
-    const parentEgg = this.eggs.has(parentPid) ? parentPid : this.jobParent.get(parentPid);
-    if (parentEgg !== undefined && parentEgg !== pid) {
-      // A descendant of an egg: fold it in rather than report it twice.
-      this.jobParent.set(pid, parentEgg);
-      this.jobSeen.add(pid);
-      const egg = this.eggs.get(parentEgg);
-      if (egg) {
-        egg.children += 1;
-        if (egg.kind === "tool") {
-          egg.kind = "primary";
-          egg.kindReason = "spawns its own processes";
-        }
-        this.emit(egg);
-      }
-      return;
-    }
-
-    // A root is a process whose parent we know: the observed agent itself, or
-    // anything that already existed when Absence attached (a shell, a terminal,
-    // the agent's own runner). A process reparented to the system (ppid 0, or a
-    // pid we never saw) is not claimed — Absence reports what it can prove.
-    const isDirectChild = event.ppid === this.rootPid;
-    // Kernel events and sampling know "who have we already seen" differently, so
-    // each asks its own question:
-    //   · job path — the kernel already proved this event is in our job, so the
-    //     parent chain is trustworthy by construction: the root's own children,
-    //     or anything under an egg we already reported. `jobSeen` is seeded with
-    //     the observed tree at attach time, which is what lets the *grand*-children
-    //     in (a `.cmd` wrapper puts the real agent one level below the root).
-    //   · sampled path — same seeding, but nothing proves job membership, so the
-    //     root's direct children are trusted until the table lands.
-    const anchored = this.observedInJob
-      ? isDirectChild || this.jobSeen.has(event.ppid) || this.jobParent.has(event.ppid)
-      : this.jobSeen.has(event.ppid) && (this.observedSeeded || isDirectChild);
-    if (!anchored) return;
-
-    this.jobSeen.add(pid);
-    this.jobParent.set(pid, pid);
-    const name = nameOf(event);
-    const verdict = classifyProcess({
-      name,
-      commandLine: line,
-      exePath: event.exePath,
-      cwd: this.jobCwd,
-      intent: parseCommandIntent(name),
-      survivedCommand: false,
-      ageMs: 0,
-      children: 0,
-      ppid: event.ppid,
-    });
-    const egg: Egg = {
-      info: {
-        pid,
-        ppid: event.ppid,
-        name,
-        commandLine: line,
-        startedAt: event.createdAt ?? this.now(),
-      },
-      // The command this process came from, read off its own command line (see
-      // `observedCommand`). Falls back to the parent's pid when the process was
-      // started directly — a daemon, not a command.
-      command: observedCommand(name, line) || `<pid ${event.ppid}>`,
-      startedAt: event.createdAt ?? this.now(),
-      children: 0,
-      status: "running",
-      kind: verdict.kind,
-      kindReason: verdict.reason,
-      cwd: this.jobCwd,
-      exePath: event.exePath,
-      intent: parseCommandIntent(name),
-      reclassifyOnSurvive: verdict.kind === "tool",
-      survivedCommand: false,
-      namedSubject: false,
-    };
-    this.eggs.set(pid, egg);
-    this.emit(egg);
-  }
-
   private sessionVerdict(event: WatchStart): "ours" | "foreign" | "unmarked" {
     if (this.jobSessionId === undefined) return "unmarked";
     const marker = event.absenceSessionId;
@@ -1577,24 +1240,4 @@ function nameOf(event: WatchStart): string {
   // best thing, and the pid is all that is left after that.
   if (event.comm) return event.comm;
   return "?";
-}
-
-/**
- * The command an observed process came from, or "" when it came from nothing.
- *
- * In observe mode there is no `begin()`/`end()` pair to name the command — the
- * agent's own tool layer runs it and Absence is not in that loop. The OS still
- * knows, because a process is created carrying its full command line. So the
- * command is read from the line itself when it looks like a shell wrapping one
- * (`bash -lc`, `pwsh -Command`, `cmd /c`, …), and is empty otherwise: a daemon
- * started directly is a process, not a command.
- *
- * This is what replaces a shell shim for the overwhelming majority of agents.
- * A shim would still be more precise (exact pairing and exit code under one
- * command, stdout attribution); this needs no configuration at all and is right
- * about which commands ran, which is the question the Stage is answering.
- */
-function observedCommand(name: string, commandLine: string): string {
-  const { wrapped, command } = detectCommand(name, commandLine);
-  return wrapped ? command : "";
 }

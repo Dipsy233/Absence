@@ -216,7 +216,7 @@ export function MonitorStage({ data }: { data: MonitorData }) {
             chip: <Chip tone="mute">{t("CHAT")}</Chip>,
             chipText: t("CHAT"),
             title: t("Conversation"),
-            sub: data.run ? `#${data.run.index} · ${data.run.prompt || t("(observed activity)")}` : t("No run yet"),
+            sub: data.run ? `#${data.run.index} · ${data.run.prompt}` : t("No run yet"),
             time: "—",
           }
         : describe(shownItem, data, t, replaying);
@@ -359,7 +359,7 @@ function describe(
       title: replaying
         ? t("Replay — before the first activity of this run")
         : data.liveHeadline ?? t("Waiting for the first activity…"),
-      sub: data.run ? `#${data.run.index} · ${data.run.prompt || t("(observed activity)")}` : t("No run yet"),
+      sub: data.run ? `#${data.run.index} · ${data.run.prompt}` : t("No run yet"),
       time,
     };
   }
@@ -623,9 +623,8 @@ function Timeline({ data }: { data: MonitorData }) {
   }
 
   if (marks.length === 0) {
-    // The run exists but every node is a re-report (an egg-heavy observed
-    // session): the lanes would all be bare, so say what the strip is waiting
-    // for instead of drawing it empty.
+    // The run exists but every node is a re-report: the lanes would all be
+    // bare, so say what the strip is waiting for instead of drawing it empty.
     return (
       <div className="mon-tl">
         <span className="mon-cap">{t("Timeline")}</span>

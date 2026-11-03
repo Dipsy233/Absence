@@ -191,40 +191,16 @@ export interface AbsenceState {
 }
 
 /**
- * Where a session's events come from — the single field the UI uses to decide
- * how much of itself to offer.
- *
- * Absence is an observer first. A runtime it *drives* (`pi`, `codex`, `dsh`)
- * can also be asked to do things: send a prompt, answer an approval, switch a
- * model. A runtime it merely *watches* cannot — it is somebody else's process,
- * and pretending otherwise is how a viewer becomes an intrusive client.
- *
- * The distinction is deliberately not `runtime === "..."`: that would put the
- * list of supported agents back into the UI, which is exactly the coupling this
- * field exists to remove. `observe` works for any agent, at any version, with
- * no adapter at all (see docs/decoupling.md).
+ * Where a session's events come from. Absence owns the child process and
+ * drives it through an ACP adapter; `runtime` names the profile so the UI can
+ * label the session without hard-coding the supported-agent list.
  */
-export type SessionSource =
-  | {
-      /** Absence owns the child process and drives it through an adapter. */
-      kind: "runtime";
-      /** `pi` / `codex` / `dsh` / `mock`, or a plugin's name. */
-      runtime: string;
-    }
-  | {
-      /** Absence only watches an agent that somebody else started. */
-      kind: "observe";
-      /** The root process whose subtree is the agent's work. */
-      targetPid: number;
-      /** Human label for the observed agent (`pi`, `node app.js`, a pid). */
-      label: string;
-    };
-
-/** The subset of a session the UI checks before offering an action. */
-export function canDriveSession(source: SessionSource | undefined): boolean {
-  // An older server that does not send `source` was always a driven runtime.
-  return source === undefined || source.kind === "runtime";
-}
+export type SessionSource = {
+  /** Absence owns the child process and drives it through an adapter. */
+  kind: "runtime";
+  /** `pi` / `codex` / `dsh` / `mock`, or a plugin's name. */
+  runtime: string;
+};
 
 /** One `/` command the agent itself advertised over ACP. */
 export interface AgentCommandInfo {

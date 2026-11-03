@@ -3,7 +3,6 @@ import type {
   AbsenceEvent,
   SessionClientMessage,
   SessionServerMessage,
-  TerminalServerMessage,
 } from "@absence/core";
 import { sessionStore } from "../sessions/SessionStore";
 import { readEventsPageForward } from "../sessions/archive";
@@ -35,7 +34,7 @@ function parsePositiveInt(value: string | undefined): number | undefined {
 const EVENT_FLUSH_MS = 50;
 const EVENT_BATCH_MAX = 200;
 
-function send(socket: ClientSocket, message: SessionServerMessage | TerminalServerMessage): void {
+function send(socket: ClientSocket, message: SessionServerMessage): void {
   if (socket.readyState !== OPEN) return;
   try {
     socket.send(JSON.stringify(message));
@@ -140,39 +139,5 @@ export async function wsRoutes(app: FastifyInstance): Promise<void> {
       unsubscribeState();
       unsubscribeMetrics();
     });
-  });
-
-  /**
-   * WS /ws/sessions/:id/terminal — the agent's terminal, mirrored.
-   *
-   * A separate socket from the event stream on purpose. Terminal output is a
-   * byte firehose (a redrawing spinner's hundreds of writes a second); sharing
-   * the event socket would make the event stream back up behind it, and every
-   * client would need to demultiplex two very different traffic shapes. Here a
-   * slow reader only loses its own frames.
-   *
-   * There is no input direction: this is a mirror of a terminal somebody else
-   * owns. Typing into the agent happens in the agent's own terminal.
-   */
-  app.get("/ws/sessions/:id/terminal", { websocket: true }, (socket, request) => {
-    const { id } = request.params as { id: string };
-    const session = sessionStore.get(id);
-    const client = socket as unknown as ClientSocket;
-    if (!session) {
-      send(client, { type: "error", message: "session not found" });
-      client.close();
-      return;
-    }
-    if (!session.terminal) {
-      // An agent somebody else started: its terminal is not ours to read. Say
-      // so once and close, rather than leaving a socket that never speaks.
-      send(client, { type: "unavailable", reason: "this agent's terminal is not visible to Absence" });
-      client.close();
-      return;
-    }
-    const mirror = session.terminal;
-    const unsubscribe = mirror.subscribe((chunk) => send(client, { type: "output", chunk }));
-    if (mirror.finished) send(client, { type: "ended" });
-    client.on("close", unsubscribe);
   });
 }

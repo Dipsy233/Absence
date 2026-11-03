@@ -171,24 +171,7 @@ profile 说明：
 - Absence 不读取 token，不代填凭据，不代理 OAuth 流程。它只执行第 4 节描述的只读探测。
 - 其他 `/…` 行作为 prompt 发送。`SessionStore.forwardCommand(text)` 的实现是 `this.prompt(text)`。命令面板合并 `available_commands_update` 广告的命令与本地 `/auth` 动作。
 
-## 8. observe 模式
-
-observe 模式附着到已有进程，不创建 adapter。
-
-- `POST /api/sessions/observe` 接受 `{ projectPath, pid, label?, transcript? }`。`createObserved` 要求 pid 仍然存在。
-- `AbsenceSession` 用被观察 pid 作为 `ProcessWatcher.rootPid`。
-- `startObserving` 建立文件树、启动 `FileWatcher`、启动 `SessionLogTail`，并写入一条说明该会话只观察、不驱动的系统消息。
-- `prompt` 与 `abort` 返回 `OBSERVE_NOTICE` 系统消息。
-- `absence watch -- <cmd>` 在 PTY 中启动 agent，镜像其字节，并观察其进程树与项目文件。Ctrl-C 停止观察，不杀 agent。
-
-transcript 读取：
-
-- `SessionLogTail` 只发现 Pi 与 Codex 布局的 agent transcript（`TRANSCRIPT_SOURCES`）。
-- `PiTranscriptReader` 与 `CodexTranscriptReader` 把记录的 tool call 转换成 `mcp` 或 `tool_start` 事件。
-- 这些 transcript 事件补充观察。Absence 不把 agent 会话文件合并进 History。
-- 没有受支持 transcript 的被观察 agent 只产生 OS 事实。
-
-## 9. 无效的接入方式
+## 8. 无效的接入方式
 
 按产品编写专用 adapter 作为通用接入策略无效：
 
@@ -196,7 +179,7 @@ transcript 读取：
 - 每种实现都需要自己的传输、命令规整与 shell 处理。私有协议不在 Absence 的控制范围内，产品每次变更都需要对应的 adapter 变更。同一套生命周期、权限与事件映射逻辑按产品重复实现，shell 接管又让 Absence 承担了属于 agent 的语义。
 - ACP 路径用 profile 数据与一个通用连接替代这些实现。自带 ACP 入口的产品不需要 Absence 代码；没有 ACP 入口的产品需要适配器包，或一条自定义 `agents.json` 条目。
 
-## 10. 开发辅助
+## 9. 开发辅助
 
 - `npm run probe:acp -- <scenario>` 用脚本化 fixture agent 驱动采集管道，并打印每条 `AbsenceEvent`。用 `ABSENCE_ACP_BIN` 指向真实 agent。
 - `npm run check:agent-catalog` 检查发现顺序、就绪状态、`+` 格子与 registry 行为。

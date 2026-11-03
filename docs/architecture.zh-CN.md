@@ -32,12 +32,7 @@ OS 事实                                                │
 
 projector 读取 `session/update` 并写入 `AbsenceEvent`。进程与文件 watcher 直接写入 `AbsenceEvent`。`SessionStore` 把两个来源合并成一条有序事件流，通过 WebSocket 广播，并缓冲写入 SQLite。回放与 Absence Report 是 Web 端对该事件流某个切片的归约；服务端不计算它们。
 
-会话来源：
-
-| `SessionSource.kind` | 行为 |
-|---|---|
-| `runtime` | Absence 拥有子进程，并通过 ACP adapter 驱动它：`session/new`、`session/prompt`、审批应答、`/auth`。 |
-| `observe` | Absence 观察由其他程序启动的进程。它不创建 adapter，也不发送 prompt 或审批。 |
+会话通过 ACP adapter 驱动：Absence 拥有子进程，并发送 `session/new`、`session/prompt`、审批响应与 `/auth`。
 
 ## 2. 仓库结构
 
@@ -70,7 +65,7 @@ projector 读取 `session/update` 并写入 `AbsenceEvent`。进程与文件 wat
 
 ### 3.2 会话与归档 — `apps/server/src/sessions`
 
-`SessionStore.ts` 持有实时会话状态：有序事件列表、当前 run、Stage 动作、聊天消息、文件状态、终端镜像、进程 watcher 与指标采样器。`storage/**` 负责持久化。实时状态的权威来源是内存中的 `SessionStore`；SQLite 只负责持久化。
+`SessionStore.ts` 持有实时会话状态：有序事件列表、当前 run、Stage 动作、聊天消息、文件状态、进程 watcher 与指标采样器。`storage/**` 负责持久化。实时状态的权威来源是内存中的 `SessionStore`；SQLite 只负责持久化。
 
 ### 3.3 进程观察 — `apps/server/src/process`
 
@@ -224,12 +219,11 @@ Absence Report 完全由 Web 端的 `apps/web/src/lib/report.ts` 计算，输入
 
 `JobMonitor` 在 server 进程内创建一次，早于任何会话存在。Windows 使用 `native/agentwatch` 把 server 进程放入 Job Object，并报告后代进程的创建与退出。Linux 使用 `native/agentwatch-linux` 的 eBPF tracepoint，需要 `CAP_BPF`/`CAP_PERFMON` 或 root。
 
-助手不可用，或被观察的根进程不在 Job Object 内时，`ProcessWatcher` 退化为进程表快照。Windows 使用 PowerShell `Get-CimInstance Win32_Process`，其他平台使用 `ps`。采样下限约为 0.5 秒，指标精度标记为 `sampled`。来自已持有句柄的内核数值标记为 `exact`。
+助手不可用，或根进程不在 Job Object 内时，`ProcessWatcher` 退化为进程表快照。Windows 使用 PowerShell `Get-CimInstance Win32_Process`，其他平台使用 `ps`。采样下限约为 0.5 秒，指标精度标记为 `sampled`。来自已持有句柄的内核数值标记为 `exact`。
 
 归因：
 
 - 驱动会话：projector 在出现 `kind=execute` 的 `tool_call` 时开启命令窗口，在终态更新时关闭。内核事件按祖先链认领；命令窗口决定事件属于哪条命令。
-- 观察会话：被观察 pid 是根。只认领该根的后代。根不在 Job Object 内时改用采样。
 - 上报的进程是子树根。后代计入 `children`，不单独成为 egg。
 - 父链断裂或父 pid 未知的孤儿进程不被认领。
 
@@ -253,8 +247,6 @@ Drip 在桌面壳中作为独立的透明置顶窗口打开。在浏览器构建
 - `kind` 缺失或无法使用的工具调用走 `ToolRules` 的字段形状规则。部分工具载荷无法按形状归类。
 - 并发命令的命令行不匹配时，进程归因可能出错。兜底策略保留该进程，不丢弃。
 - 快照模式可能漏掉短命进程。
-- transcript 读取只覆盖 Pi 与 Codex 的 transcript 布局。observe 模式下，其他 agent 只有 OS 事实，没有 ACP 工具事件。
-- 终端 WebSocket 存在于服务端，但当前 Web 代码没有连接它。
 - Codex 的 Windows 沙箱是否把子进程留在 Job Object 内取决于 agent 实现。Absence 不对这一点作断言。
 </content>
 </file_path>

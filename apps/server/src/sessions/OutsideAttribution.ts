@@ -13,11 +13,10 @@ import { toPosix } from "../util/paths";
  *
  * So attribution is earned: a path counts as the agent's only when the agent
  * itself recently wrote through a tool Absence could see — an adapter
- * `file_write`/`file_edit` when driving, a transcript tool call when observing.
- * A change on such a path is the agent's echo; anything else is somebody else's
- * work and is not reported. A shell write outside the project (`sed -i` on a
- * temp file) is therefore not echoed as a `file_change` — the run row already
- * shows the command that carried it.
+ * `file_write`/`file_edit`. A change on such a path is the agent's echo;
+ * anything else is somebody else's work and is not reported. A shell write
+ * outside the project (`sed -i` on a temp file) is therefore not echoed as a
+ * `file_change` — the run row already shows the command that carried it.
  */
 export class OutsideAttribution {
   private readonly writtenAt = new Map<string, number>();

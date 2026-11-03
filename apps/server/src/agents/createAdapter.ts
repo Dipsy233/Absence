@@ -41,7 +41,7 @@ export function createAdapter(kind: AgentKind, options: AdapterOptions): AgentAd
   throw new Error(
     `No ACP profile or registered adapter for runtime "${kind}". ` +
       `Add an entry to ~/.absence/agents.json or install a shipped profile — ` +
-      `see docs/decoupling.md.`,
+      `see docs/agent-support.md.`,
   );
 }
 

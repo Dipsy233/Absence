@@ -3,12 +3,10 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 Absence 是 agent 行为观察器与 ACP 客户端。它启动一个使用 Agent Client Protocol
-（ACP）的 agent，或附着到由其他进程启动的 agent 进程，并在 agent 工作期间展示它
-做了什么。
+（ACP）的 agent，并在 agent 工作期间展示它做了什么。
 
-会话有两种来源。Absence 可以启动已配置的 agent profile 并通过 ACP 驱动它：发送
-提示词、把 agent 的审批请求交给用户、执行 ACP 认证调用。另一种模式只观察一个正在
-运行的进程，不向 agent 发送任何内容，agent 保持在自己的终端和自己的交互方式中。
+Absence 启动已配置的 agent profile 并通过 ACP 驱动它：发送提示词、把 agent 的
+审批请求交给用户、执行 ACP 认证调用。
 
 ACP 消息与 OS 事实被投影为同一类事件 `AbsenceEvent`：agent 消息与思考、工具调用
 及其映射出的文件、diff、命令、搜索或 MCP 内容、进程创建与退出、文件变化。界面、
@@ -107,11 +105,6 @@ Linux：运行 `Absence-0.5.0.AppImage`，或解压 `Absence-0.5.0.tar.gz` 后�
    为带角色与故事链的场景；Chart 是报告页。
 6. run 结束后在 Chart 中查看 Absence Report。更早的会话列在选择器历史中，打开时
    带回已归档的事件。
-
-观察由其他进程启动的 agent 时，使用命令行入口的观察模式：
-`watch --pid <pid>` 附着到正在运行的进程，`watch -- <command>` 以 PTY 启动 agent
-并观察它。该模式不向 agent 发送任何内容，用 Ctrl-C 停止观察后 agent 继续运行。细节
-见 [architecture.zh-CN.md](docs/architecture.zh-CN.md)。
 
 ## 界面
 

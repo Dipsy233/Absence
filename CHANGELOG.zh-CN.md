@@ -30,7 +30,7 @@ Absence 从 v0.2.0 到 v0.5.0 的版本索引。每条是摘要，完整说明�
   Appearance、Report WARN、Personalization 与 Agent Eggs 过滤四栏。
 - SQLite 归档支持分页回放、归档删除与会话保留；指标、Agent Eggs、Agent Folder、
   Replay 与 Absence Report 使用归档事件。
-- 提供 Docker 容器蛋、`absence watch` observe 模式与透明 ACP 代理。
+- 提供 Docker 容器蛋与透明 ACP 代理。
 - Windows 发布包含免安装 ZIP。
 - 移除：各产品专用适配器（`PiAdapter`、`CodexAdapter`、`DshAdapter`）、
   `codex app-server`、exec-server shell 接管、`AbsenceShell`、`ExecServer`、

@@ -110,14 +110,9 @@ const ZH: Record<string, string> = {
 
   // ── Stage chips / empty ────────────────────────────────────────────────
   "● LIVE": "● 实时",
-  "◇ OBSERVING": "◇ 观察中",
-  "Absence is observing this process; it never drives or stops it":
-    "发呆症正在观察此进程;它从不驱动或终止它",
   "Press ▶ to replay this run.": "按 ▶ 回放这次运行。",
 
   // ── Desk captions ──────────────────────────────────────────────────────
-  "Watching {label} work. Its terminal is the one to type in.": "正在观察 {label} 干活。要输入请到它的终端。",
-  "Watching {label} — nothing it started is running.": "正在观察 {label} ——它启动的东西都没有在运行。",
   "The agent is working…": "智能体正在干活…",
   "The agent is listening.": "智能体在听。",
 
@@ -142,9 +137,6 @@ const ZH: Record<string, string> = {
     "让智能体做点什么,或输入 <slash> 使用命令。可从文件、动态或选区附加上下文。",
   You: "你",
   Agent: "智能体",
-  observing: "观察中",
-  "Absence is watching this agent's terminal. Prompt it there — here it only shows what it does.":
-    "发呆症正在观察这个智能体的终端。请在那边对它说话——这里只展示它做的事。",
   context: "上下文",
   "loading…": "加载中…",
   "no options": "无选项",
@@ -185,8 +177,6 @@ const ZH: Record<string, string> = {
   "Replay run #{index}": "回放运行 #{index}",
   "Nothing to replay": "没有可回放的内容",
   "run #{index}": "运行 #{index}",
-  "Nothing yet. An observed agent's processes and file changes appear here as they happen.":
-    "暂无内容。被观察智能体的进程和文件变更会在这里实时出现。",
   "Nothing yet. Send the agent a task.": "暂无内容。给智能体安排个任务。",
   "No steps in this run.": "这一轮还没有步骤。",
   "Scrub to this event": "拖动到此事件",
@@ -218,7 +208,6 @@ const ZH: Record<string, string> = {
   partial: "不完整",
   "The beginning of this run is no longer in the live event window — its counts and the Stage cover only what is still loaded.":
     "这次运行的开头已不在实时事件窗口内——计数和 Stage 只覆盖仍加载的部分。",
-  "No runs yet. A run starts when the observed agent does.": "还没有运行。被观察的智能体开始工作时,一次运行就开始了。",
   "No runs yet. Send the agent a task.": "还没有运行。给智能体安排个任务。",
   "files read": "读取文件",
   searches: "搜索",

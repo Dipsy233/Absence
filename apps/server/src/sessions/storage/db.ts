@@ -109,7 +109,7 @@ let runIndex: RunIndex | undefined;
 let fileIndex: FileIndex | undefined;
 let pending = new Map<
   string,
-  { cwd: string; events: AbsenceEvent[]; observed: boolean }
+  { cwd: string; events: AbsenceEvent[] }
 >();
 let flushTimer: NodeJS.Timeout | undefined;
 /** Next `seq` per session, cached so a batch does not re-query MAX(seq). */
@@ -546,19 +546,16 @@ export function appendEvents(
   cwd: string,
   id: string,
   events: AbsenceEvent[],
-  options: { observed?: boolean } = {},
 ): void {
   const durable = events.filter((event) => !isStreamingEvent(event));
   if (durable.length === 0) return;
   const projectPath = toPosix(path.resolve(cwd));
-  const observed = options.observed === true;
   const entry = pending.get(id);
   if (entry) {
     entry.cwd = projectPath;
-    entry.observed = observed;
     entry.events.push(...durable);
   } else {
-    pending.set(id, { cwd: projectPath, events: durable, observed });
+    pending.set(id, { cwd: projectPath, events: durable });
   }
   scheduleFlush();
 }
@@ -637,7 +634,7 @@ function flushPending(): void {
         runEvents.push({ seq, event });
         seq += 1;
       }
-      runIndex?.ingest(id, entry.observed, runEvents);
+      runIndex?.ingest(id, runEvents);
       fileIndex?.ingest(id, entry.events);
       committed.set(id, seq);
       touch.run(entry.events[entry.events.length - 1]!.timestamp, id);
@@ -1156,10 +1153,10 @@ export async function readRunEvents(
 /**
  * One forward page of a run's events, oldest → newest.
  *
- * A long run (an observed session's heuristic boundary can span tens of
- * thousands of events) is fetched in chunks: the client asks for the page
- * after its last seq until `hasMore` is false, rendering each page as it
- * arrives, instead of one unbounded response it must parse whole.
+ * A long run can span tens of thousands of events, so it is fetched in
+ * chunks: the client asks for the page after its last seq until `hasMore`
+ * is false, rendering each page as it arrives, instead of one unbounded
+ * response it must parse whole.
  */
 export async function readRunEventsPage(
   id: string,

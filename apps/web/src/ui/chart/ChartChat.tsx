@@ -15,9 +15,6 @@ export function ChartChat() {
         input: "chart-chat__input",
         send: "chart-chat__send",
         stop: "chart-chat__stop",
-        observed: "chart-chat",
-        observedChip: "mon-chip mon-chip--read",
-        observedNote: "chart-chat__note",
         placeholder: "Ask about this moment, or / for commands",
         ariaLabel: "Ask the agent…",
       }}

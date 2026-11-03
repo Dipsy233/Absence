@@ -1,4 +1,4 @@
-import type { CSSProperties, FormEvent } from "react";
+import type { FormEvent } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useT } from "../../lib/i18n";
 import { ContextChip } from "../../components/chat/ContextChip";
@@ -26,12 +26,6 @@ export interface FaceChatSkin {
   input: string;
   send: string;
   stop: string;
-  /** The observed-session branch's classes and their per-face tweaks. */
-  observed: string;
-  observedChip: string;
-  observedNote: string;
-  observedChipStyle?: CSSProperties;
-  observedNoteStyle?: CSSProperties;
   /** Rounds draws the slash button inside the input box; Monitor before it. */
   slashInsideBox?: boolean;
   /** Glyph before the stop word ("■" in Rounds). */
@@ -43,22 +37,9 @@ export interface FaceChatSkin {
 export function FaceChat({ skin }: { skin: FaceChatSkin }) {
   const t = useT();
   const input = useChatInput();
-  const { text, handleChange, handleKeyDown, inputRef, showPalette, commandMode, busy, connected, observed, pending, submit } =
+  const { text, handleChange, handleKeyDown, inputRef, showPalette, commandMode, busy, connected, pending, submit } =
     input;
   const abort = useSessionStore((s) => s.abort);
-
-  if (observed) {
-    return (
-      <div className={skin.observed}>
-        <span className={skin.observedChip} style={skin.observedChipStyle}>
-          {t("observing")}
-        </span>
-        <span className={skin.observedNote} style={skin.observedNoteStyle}>
-          {t("Absence is watching this agent's terminal. Prompt it there — here it only shows what it does.")}
-        </span>
-      </div>
-    );
-  }
 
   const slash = <SlashButton input={input} />;
 

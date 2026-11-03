@@ -25,17 +25,17 @@ A storage change can therefore touch any of the four. `check-storage` exercises 
 
 ## Layers
 
-The 30 offline checks fall into three layers, plus the ACP family. The 5 manual checks form the last layer.
+The 29 offline checks fall into three layers, plus the ACP family. The 5 manual checks form the last layer.
 
 | Layer | What it needs | Checks | What it establishes |
 |---|---|---|---|
-| 1. Pure | Fabricated process tables and event arrays; no process spawned, no file written | 14: `eggs`, `classify`, `outside-attr`, `report`, `markdown`, `format`, `views`, `chimes`, `settings`, `observer`, `capability-commands`, `mcp-events`, `incremental`, `metrics-ranges` | Attribution, classification, report reduction, view models and policy branches, driven by data alone |
+| 1. Pure | Fabricated process tables and event arrays; no process spawned, no file written | 13: `eggs`, `classify`, `outside-attr`, `report`, `markdown`, `format`, `views`, `chimes`, `settings`, `capability-commands`, `mcp-events`, `incremental`, `metrics-ranges` | Attribution, classification, report reduction, view models and policy branches, driven by data alone |
 | 2. Isolated I/O | A temporary directory and `ABSENCE_STATE_DIR`; production storage and diff modules imported in-process | 4: `storage`, `metrics`, `metrics-persist`, `fsdiff` | Archive and metrics round-trips against real SQLite files, without touching the user archive |
 | 3. Self-hosting | An ephemeral port and an isolated state directory; the check starts and kills the real server | 6: `history`, `lifecycle`, `metrics-restart`, `observed-lifetime`, `session-close`, `session-dwell` | Server lifecycle, session close, dwell accounting, history over HTTP, metrics after restart |
 | ACP family | A scripted fixture agent and child processes in temporary directories; no server | 6: `acp`, `acp-lifecycle`, `acp-transport`, `acp-mapping`, `acp-proxy`, `agent-catalog` | The ACP contract: capabilities, transport, mapping, proxy, catalog discovery |
 | 4. Manual | A kernel observer helper, a docker daemon, or a full server plus mock session | 5: `agentwatch`, `ebpf`, `docker`, `docker-eggs`, `e2e` | Kernel-level process capture, container eggs, and the full pipeline in one run |
 
-14 + 4 + 6 + 6 = 30 offline checks; with the 5 manual checks, the registry holds 35.
+13 + 4 + 6 + 6 = 29 offline checks; with the 5 manual checks, the registry holds 34.
 
 Layer 1 pushes the system call to the boundary so the middle of the code becomes a pure function. `check-eggs` feeds a fabricated process table into the real attribution code:
 

@@ -5,7 +5,7 @@ import { useSelectedRun } from "../../hooks/useSelectedRun";
 import { useRunAttention } from "../../hooks/useRunAttention";
 import { useStageView } from "../../hooks/useStage";
 import { useEggs } from "../../hooks/useEggs";
-import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
+import { useSessionStore } from "../../stores/sessionStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import type { ActivityRow, StageItem, StageMode } from "../../types/stage";
@@ -50,13 +50,12 @@ export interface RoundsData {
 export function useRoundsData(): RoundsData {
   const { run, events, loading } = useSelectedRun();
   const displayInActivity = useSettingsStore((s) => s.displayInActivity);
-  const observed = useIsObserved();
   const status = useSessionStore((s) => s.agent.status);
   const files = useFileStore((s) => s.files);
   const { item, following, mode } = useStageView();
   const { attention } = useRunAttention(run, events, status);
 
-  const showProcessRows = displayInActivity || observed;
+  const showProcessRows = displayInActivity;
   const rows = useMemo(
     () => (run ? memoRunRows(events, run, showProcessRows) : []),
     [events, run, showProcessRows],

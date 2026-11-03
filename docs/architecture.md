@@ -32,12 +32,7 @@ OS facts                                                │
 
 The projector reads `session/update` and writes `AbsenceEvent`. Process and file watchers write `AbsenceEvent` directly. `SessionStore` merges both sources into one ordered stream, broadcasts it over the WebSocket, and buffers it for SQLite. Replay and the Absence Report are web-side reductions over a slice of that stream; the server does not compute them.
 
-Session sources:
-
-| `SessionSource.kind` | Behaviour |
-|---|---|
-| `runtime` | Absence owns the child process and drives it through the ACP adapter: `session/new`, `session/prompt`, approval responses, `/auth`. |
-| `observe` | Absence watches a process started elsewhere. It does not create an adapter and does not send prompts or approvals. |
+A session is driven through the ACP adapter: Absence owns the child process and sends `session/new`, `session/prompt`, approval responses and `/auth`.
 
 ## 2. Repository layout
 
@@ -70,7 +65,7 @@ The root workspace contains `packages/*`, `apps/server` and `apps/web`. `apps/de
 
 ### 3.2 Sessions and archive — `apps/server/src/sessions`
 
-`SessionStore.ts` owns live session state: the ordered event list, current run, Stage action, chat messages, file state, terminal mirror, process watcher and metrics sampler. `storage/**` persists that state. The live store is authoritative; SQLite only persists it.
+`SessionStore.ts` owns live session state: the ordered event list, current run, Stage action, chat messages, file state, process watcher and metrics sampler. `storage/**` persists that state. The live store is authoritative; SQLite only persists it.
 
 ### 3.3 Process observation — `apps/server/src/process`
 
@@ -224,12 +219,11 @@ Metrics and eggs are separate live views. The terminal mirror is not replayed.
 
 `JobMonitor` is created once per server process, before any session exists. On Windows it uses `native/agentwatch` to place the server process in a Job Object and reports descendant creation and exit. On Linux it uses `native/agentwatch-linux` eBPF tracepoints, which require `CAP_BPF`/`CAP_PERFMON` or root.
 
-When the helper is unavailable, or when an observed root is outside the Job Object, `ProcessWatcher` falls back to process-table snapshots. On Windows the snapshot uses PowerShell `Get-CimInstance Win32_Process`; elsewhere it uses `ps`. The fallback has a sampling floor of about 0.5 seconds, and the metric precision is marked `sampled`. Kernel-sourced values are marked `exact` when they come from a held handle.
+When the helper is unavailable, or when a root process is outside the Job Object, `ProcessWatcher` falls back to process-table snapshots. On Windows the snapshot uses PowerShell `Get-CimInstance Win32_Process`; elsewhere it uses `ps`. The fallback has a sampling floor of about 0.5 seconds, and the metric precision is marked `sampled`. Kernel-sourced values are marked `exact` when they come from a held handle.
 
 Attribution:
 
 - Driven sessions: the projector opens a command window when a `tool_call` of `kind=execute` appears and closes it at the terminal update. Kernel events are claimed by ancestry; the command window decides which command they belong to.
-- Observed sessions: the observed pid is the root. Only descendants of that root are claimed. If the root is outside the Job Object, sampling takes over.
 - A reported process is a subtree root. Descendants are counted in `children` and do not become separate eggs.
 - Orphaned processes, with a broken parent chain or unknown parent pid, are not claimed.
 
@@ -253,7 +247,5 @@ Drip opens as a separate transparent, always-on-top window in the desktop shell.
 - Tool calls with a missing or unhelpful `kind` go through field-shape rules in `ToolRules`. Some tool payloads cannot be classified by shape.
 - Process attribution for concurrent commands can misattribute when command lines do not match. The fallback keeps the process.
 - Short-lived processes can be missed in snapshot mode.
-- Transcript reading covers Pi and Codex transcript layouts only. Other agents in observe mode produce OS facts without ACP tool events.
-- The terminal WebSocket exists on the server, but no current web code connects to it.
 - Whether Codex's Windows sandbox keeps child processes inside the Job Object depends on the agent implementation. Absence does not assert it.
 </content>

@@ -33,8 +33,7 @@ notes are under `docs/releases/`. The release process is described in
 - SQLite archive with paged replay, archive deletion and session retention;
   metrics, Agent Eggs, Agent Folder, replay and Absence Report use the archived
   events.
-- Docker container eggs, `absence watch` observe mode and the transparent ACP
-  proxy are available.
+- Docker container eggs and the transparent ACP proxy are available.
 - Windows releases include a portable ZIP.
 - Removed: per-product adapters (`PiAdapter`, `CodexAdapter`, `DshAdapter`),
   `codex app-server`, exec-server shell takeover, `AbsenceShell`, `ExecServer`,

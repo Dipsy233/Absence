@@ -39,24 +39,6 @@ export interface RunSummary {
   eventCount?: number;
 }
 
-/**
- * Events that open a run in a session Absence only observes. Everything the OS
- * reports about the agent's work qualifies; a driven runtime opens its run with
- * a user message instead.
- */
-export const OBSERVED_OPENING_EVENT_TYPES = new Set<AbsenceEvent["type"]>([
-  "process",
-  "file_change",
-  "file_write",
-  "file_edit",
-  "file_read",
-  "command",
-  "search",
-  "mcp",
-  "tool_start",
-  "thinking",
-]);
-
 /** One event's contribution to a run's counts. */
 export function applyRunCount(
   counts: RunCounts,
@@ -98,18 +80,4 @@ export function applyRunCount(
 /** A fresh all-zero counts object. */
 export function emptyRunCounts(): RunCounts {
   return { read: 0, search: 0, edit: 0, run: 0, created: 0 };
-}
-
-/**
- * Whether a window has no driven-runtime marker (`agent_start` / a user
- * message). An observed session opens its runs from activity instead. Shared by
- * the web history builder and the server's legacy run rebuild so both group the
- * same stream the same way.
- */
-export function isObservedStream(events: AbsenceEvent[]): boolean {
-  for (const event of events) {
-    if (event.type === "agent_start") return false;
-    if (event.type === "message" && event.payload.role === "user") return false;
-  }
-  return events.length > 0;
 }

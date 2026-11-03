@@ -2,9 +2,9 @@
  * The runtime-neutral agent session contract.
  *
  * This is the only surface the session layer and the UI may depend on. ACP
- * agents, legacy adapters and the observe mode all land here; none of them
- * leaks a product's private protocol or tool vocabulary past this boundary.
- * See docs/decoupling.md and the ACP+ architecture map.
+ * agents and legacy adapters all land here; none of them leaks a product's
+ * private protocol or tool vocabulary past this boundary.
+ * See docs/architecture.md and the ACP+ architecture map.
  */
 import type { AuthMethodInfo } from "./types";
 import type { MonitorEvent } from "./monitor";
@@ -84,7 +84,6 @@ export interface McpCapabilities {
 export type AgentPortSource =
   | "acp-client"
   | "acp-proxy"
-  | "observe"
   | "legacy-adapter";
 
 /**

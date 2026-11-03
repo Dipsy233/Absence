@@ -3,14 +3,12 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 Absence is an agent behaviour observer and an ACP client. It launches an agent that
-speaks the Agent Client Protocol (ACP), or attaches to an agent process started
-elsewhere, and shows what that agent does while it works.
+speaks the Agent Client Protocol (ACP) and shows what that agent does while it
+works.
 
-A session has one of two sources. Absence can start a configured agent profile and
-drive it over ACP: it sends prompts, passes the agent's permission requests to the
-user, and performs the ACP authentication call. Alternatively, Absence observes a
-running process and sends nothing, leaving the agent in its own terminal and its
-own interaction.
+Absence starts a configured agent profile and drives it over ACP: it sends
+prompts, passes the agent's permission requests to the user, and performs the
+ACP authentication call.
 
 ACP messages and OS facts are projected into one event type, `AbsenceEvent`: agent
 messages and thoughts, tool calls with their mapped file, diff, command, search or
@@ -129,12 +127,6 @@ authenticates requests.
    chain. Chart is the report page.
 6. After the run, read the Absence Report in Chart. Earlier sessions are listed in
    the picker history and reopen with their archived events.
-
-To watch an agent that Absence did not start, use the observe mode of the command
-line entry point: `watch --pid <pid>` attaches to a running process, and
-`watch -- <command>` starts an agent under a PTY and observes it. In this mode
-nothing is sent to the agent, and stopping the observation with Ctrl-C leaves the
-agent running. Details are in [architecture.md](docs/architecture.md).
 
 ## Interface
 

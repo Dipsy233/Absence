@@ -295,7 +295,7 @@ export function ChartUI() {
                         </span>
                         <span className="chart-runmenu__time chart-mono">{formatClock(entry.startedAt)}</span>
                       </span>
-                      <span className="chart-runmenu__prompt">{entry.prompt || t("(observed activity)")}</span>
+                      <span className="chart-runmenu__prompt">{entry.prompt}</span>
                     </button>
                   </li>
                 ))}
@@ -639,7 +639,7 @@ export function ChartUI() {
             <div className="chart-body chart-io">
               <section className="chart-io__sec" ref={ioARef}>
                 <div className="chart-io__cap">{t("Request")}</div>
-                <p className="chart-io__text">{run.prompt || t("(observed activity)")}</p>
+                <p className="chart-io__text">{run.prompt}</p>
               </section>
               <section className="chart-io__sec" ref={ioBRef}>
                 <div className="chart-io__cap">{t("Response")}</div>

@@ -115,7 +115,6 @@ apps/web/src/stores/   session, runs, files, stage, replay, metrics, ui,
 - the project path;
 - the Drip toggle (`DripBagIcon`), immediately left of the face switcher;
 - the `Rounds / Monitor / Chart` switcher;
-- an `OBSERVING` chip for observed sessions;
 - the context meter: used tokens, a progress bar, and the total;
 - an `online` or `offline` connection chip;
 - `⚙` Settings, `Change` (leave the session), and the window controls.
@@ -189,8 +188,7 @@ click in live enters replay. The controls are `‹` (one activity back),
 
 The input row is one line: `Ask about this moment, or / for commands`. It has
 no expand toggle; the conversation is the Stage's `CHAT` page. Typing `/` opens
-the command palette. Observed sessions replace the input with an `observing`
-notice.
+the command palette.
 
 ### Right column
 
@@ -350,11 +348,7 @@ avatar skins are in [avatar-skin.md](avatar-skin.md).
 ## Scope of the interface
 
 - Replay rebuilds file content, agent status, and the current Stage action. It
-  does not rebuild metrics curves, the Agent Eggs panel, or terminal bytes.
+  does not rebuild metrics curves or the Agent Eggs panel.
 - The Agent Eggs panel lists processes; it has no kill action.
-- Observed sessions show `OBSERVING` in the bar and a read-only notice in the
-  input row. `prompt` and `abort` are refused by the server.
-- The terminal mirror WebSocket exists on the server; the web client does not
-  connect to it.
 - Contrast, focus, motion, and control-state floors are specified in
   [ui-style-interface.md](ui-style-interface.md).

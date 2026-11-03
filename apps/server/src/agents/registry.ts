@@ -12,7 +12,7 @@ import type { AdapterOptions, AgentAdapter } from "./AgentAdapter";
  * The point is not extensibility for its own sake. It is that the coupling to a
  * specific agent's internals becomes *opt-in and replaceable*: when Pi ships a
  * breaking change, one entry in the registry is wrong, not the application.
- * See docs/decoupling.md.
+ * See docs/architecture.md.
  */
 export type AdapterFactory = (options: AdapterOptions) => AgentAdapter;
 

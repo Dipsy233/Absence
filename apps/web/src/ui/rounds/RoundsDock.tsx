@@ -406,7 +406,7 @@ function RunPanel({ data, onOpenEvent }: { data: RoundsData; onOpenEvent: (item:
                 selectRun(run.id);
                 setExpanded(open ? undefined : run.id);
               }}
-              title={run.prompt || t("(observed activity)")}
+              title={run.prompt}
             >
               <span className="rounds-run__r1">
                 <i className="rounds-dot" data-tone={RUN_TONE[run.status]} aria-hidden />
@@ -417,7 +417,7 @@ function RunPanel({ data, onOpenEvent }: { data: RoundsData; onOpenEvent: (item:
                   {formatDuration((run.endedAt ?? now) - run.startedAt)} · {formatClock(run.startedAt)}
                 </span>
               </span>
-              <span className="rounds-run__prompt">{run.prompt || t("(observed activity)")}</span>
+              <span className="rounds-run__prompt">{run.prompt}</span>
               <span className="rounds-run__counts mon-mono">
                 R{run.counts.read} S{run.counts.search} E{run.counts.edit} ${run.counts.run}
               </span>

@@ -9,8 +9,8 @@ Absence 没有单元测试框架。验收行为由一组以 `tsx` 运行的独�
 ```bash
 npm run typecheck       # packages/core、apps/server、apps/web 的 tsc
 npm run build           # Web 生产构建，产物在 dist/web
-npm run check:offline   # 全部 30 条离线检查
-npm run check:acp-all   # 7 条已登记的 agent 层检查，随后跑 mock agent 仿真
+npm run check:offline   # 全部 29 条离线检查
+npm run check:acp-all   # 6 条已登记的 agent 层检查，随后跑 mock agent 仿真
 npm run absence-sim     # 端到端仿真（与 check:mock-agent 同一 runner）
 npm run verify          # typecheck + build + check:offline
 ```
@@ -19,7 +19,7 @@ npm run verify          # typecheck + build + check:offline
 
 ## 登记
 
-`scripts/checks/groups.ts` 是检查登记位置，定义 12 个组、35 条已登记检查：30 条分布在各组的 `checks` 列表中（离线），5 条在 `platform` 列表中（手动）。`run-offline.ts` 与 `run-group.ts` 都读取该文件；`package.json` 只保留逐脚本别名。未登记的脚本只能按路径直接调用。
+`scripts/checks/groups.ts` 是检查登记位置，定义 12 个组、34 条已登记检查：29 条分布在各组的 `checks` 列表中（离线），5 条在 `platform` 列表中（手动）。`run-offline.ts` 与 `run-group.ts` 都读取该文件；`package.json` 只保留逐脚本别名。未登记的脚本只能按路径直接调用。
 
 | 组 | 覆盖范围 | 离线检查 |
 |---|---|---|
@@ -29,8 +29,8 @@ npm run verify          # typecheck + build + check:offline
 | `settings` | 阈值归一化、i18n 表完整性 | 1 条：`check-settings` |
 | `chimes` | 提示音策略分支 | 1 条：`check-chimes` |
 | `eggs` | 进程识别、分类、过滤器、项目外改动归属 | 3 条：`check-eggs`、`check-classify`、`check-outside-attr` |
-| `metrics` | 采样、ring、重启存活、区间、观察会话寿命 | 5 条：`check-metrics`、`check-metrics-persist`、`check-metrics-ranges`、`check-metrics-restart`、`check-observed-lifetime` |
-| `agent` | ACP 契约、命令转发、MCP 事件、观察器契约、catalog | 9 条：`check-capability-commands`、`check-mcp-events`、`check-observer`、`check-acp`、`check-acp-lifecycle`、`check-acp-transport`、`check-acp-mapping`、`check-acp-proxy`、`check-agent-catalog` |
+| `metrics` | 采样、ring、重启存活、区间、进程蛋寿命 | 5 条：`check-metrics`、`check-metrics-persist`、`check-metrics-ranges`、`check-metrics-restart`、`check-observed-lifetime` |
+| `agent` | ACP 契约、命令转发、MCP 事件、catalog | 8 条：`check-capability-commands`、`check-mcp-events`、`check-acp`、`check-acp-lifecycle`、`check-acp-transport`、`check-acp-mapping`、`check-acp-proxy`、`check-agent-catalog` |
 | `session` | 归档存储、dwell 时钟、关闭、生命周期 | 4 条：`check-storage`、`check-session-dwell`、`check-session-close`、`check-lifecycle` |
 | `io` | fsdiff 引擎 | 1 条：`check-fsdiff` |
 | `pipeline` | 自起 server 的全链路 | 0 条离线；手动：`check-e2e` |
@@ -55,15 +55,15 @@ npm run check:process                           # eggs + agent + io，含手动�
 
 ## 离线检查
 
-30 条脚本。离线检查只需要 Node：不需要内核观察器二进制、不需要 docker、不需要提权，也不需要预先启动的 server。检查可以在临时端口上启动自己的 server，并使用私有的 `ABSENCE_STATE_DIR`；会话检查、`check-metrics-restart` 与 `check-history` 采用这种方式，仍属于离线集合。
+29 条脚本。离线检查只需要 Node：不需要内核观察器二进制、不需要 docker、不需要提权，也不需要预先启动的 server。检查可以在临时端口上启动自己的 server，并使用私有的 `ABSENCE_STATE_DIR`；会话检查、`check-metrics-restart` 与 `check-history` 采用这种方式，仍属于离线集合。
 
 按组列出的覆盖面：
 
 - **报告与界面模型**：run 事实、时间线、注意力规则、Markdown 渲染、格式化、回放行、feed 折叠、历史重建与增量 memo。
 - **设置与声音**：阈值归一化、i18n 完整性、提示音策略的各个分支。
 - **进程蛋**：用伪造进程表核对归因、分类顺序、项目外改动归属、egg 折叠与退役。
-- **指标**：采样输出、ring 行为、持久化、区间选择、server 重启后的存活、观察会话的寿命。
-- **agent 层**：ACP 会话契约、能力门控、传输、工具映射、透明代理、catalog 发现与状态、斜杠命令转发、MCP 事件，以及不依赖随包适配器的观察器契约。
+- **指标**：采样输出、ring 行为、持久化、区间选择、server 重启后的存活、进程蛋的寿命。
+- **agent 层**：ACP 会话契约、能力门控、传输、工具映射、透明代理、catalog 发现与状态、斜杠命令转发与 MCP 事件。
 - **会话与存储**：旧归档导入、事件往返、缓冲 drain、归档列表、dwell 时钟、关闭与生命周期。
 - **文件 diff**：fsdiff 引擎。
 
@@ -85,14 +85,14 @@ npm run check:process                           # eggs + agent + io，含手动�
 
 ## ACP 家族与 mock agent 仿真
 
-`npm run check:acp-all` 按以下顺序执行八步：
+`npm run check:acp-all` 按以下顺序执行七步：
 
 ```text
 check:acp → check:acp-lifecycle → check:acp-transport → check:acp-mapping
-→ check:acp-proxy → check:agent-catalog → check:observer → check:mock-agent
+→ check:acp-proxy → check:agent-catalog → check:mock-agent
 ```
 
-前七步是 `agent` 组中的 7 条已登记离线检查，第八步使用另一个 runner。
+前六步是 `agent` 组中的 6 条已登记离线检查，第七步使用另一个 runner。
 
 `scripts/mock-agent/agent.mjs` 是一个按 ACP 协议应答的脚本化 agent，不需要模型与凭据。`scripts/mock-agent/run.ts` 为每个场景建立一次性 home、state 目录与 workspace，用自定义 ACP profile 启动真 server，由 server 把 mock agent 作为真实子进程拉起，再从会话 WebSocket 与 SQLite 两侧读取产生的事件，核对场景的 `expect` 块。它把 `agent-trace.ndjson` 与 `absence-events.jsonl` 并排写在 `--out` 目录下。
 
@@ -112,7 +112,7 @@ npm run mock:agent -- --scenario 03-file-ops
 
 - `check(label, condition, detail)` 打印 `ok   <label>` 或 `FAIL <label>  — <detail>`。
 - `finish()` 打印 `<passed>/<total> checks passed`；任一检查失败时退出码为 1。一条检查都没跑时也以退出码 1 结束，空脚本无法通过。
-- `run-offline.ts` 打印 `all 30 offline checks passed`，或 `<n> check script(s) failed`；被超时终止的脚本会连同名称与 `groups.ts` 中的超时一起报告。
+- `run-offline.ts` 打印 `all 29 offline checks passed`，或 `<n> check script(s) failed`；被超时终止的脚本会连同名称与 `groups.ts` 中的超时一起报告。
 - `run-group.ts` 打印 `<n> check script(s) passed across <m> group(s)`，或 `<n> check script(s) failed`。
 
 每个检查脚本是一个独立进程，runner 消费它的退出码；一个脚本失败不会被另一个脚本的汇总掩盖。

@@ -98,10 +98,8 @@ interface SessionStore {
   /** True when the agent is blocked until `/auth <methodId>` succeeds. */
   authRequired?: boolean;
   /**
-   * Where the events come from. `observe` means Absence only watches somebody
-   * else's agent process: the chat cannot prompt it, Stop cannot stop it, and
-   * the command palette has nothing to ask it. Undefined from an older server,
-   * which was always a driven runtime.
+   * Where the events come from: the runtime profile Absence drives. Undefined
+   * from an older server.
    */
   source?: SessionSource;
   connected: boolean;
@@ -350,17 +348,4 @@ export function useEvents(): AbsenceEvent[] {
     void s.eventsVersion;
     return s.events;
   });
-}
-
-/**
- * True when Absence only *watches* this session's agent.
- *
- * The UI uses this — never the runtime's name — to decide whether to offer
- * actions that require owning the agent: sending a prompt, stopping a run,
- * switching a model, reconnecting an MCP server. An observed agent lives in a
- * terminal Absence did not start, so none of those are Absence's to make.
- * Undefined `source` means an older server, which always drove the runtime.
- */
-export function useIsObserved(): boolean {
-  return useSessionStore((s) => s.source?.kind === "observe");
 }

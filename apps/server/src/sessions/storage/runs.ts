@@ -2,8 +2,6 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   applyRunCount,
   emptyRunCounts,
-  isObservedStream,
-  OBSERVED_OPENING_EVENT_TYPES,
   previewText,
   type AbsenceEvent,
   type RunCounts,
@@ -27,9 +25,8 @@ const PROMPT_PREVIEW_LIMIT = 200;
  * run the user selects.
  *
  * Boundaries match the web's buildHistory:
- *   - a driven runtime opens a run at a user message and closes it at agent_end
+ *   - a runtime opens a run at a user message and closes it at agent_end
  *   - a new user message before agent_end closes the previous run as interrupted
- *   - an observed session opens at its first activity and stays open
  *
  * The in-memory state is per session and only used by the writer. `list()` reads
  * the table, so a fresh process (or another client) sees the same rows.
@@ -51,7 +48,6 @@ interface OpenRun {
 }
 
 interface SessionRuns {
-  observed: boolean;
   closed: RunSummary[];
   open?: OpenRun;
   lastSeq: number;
@@ -86,9 +82,9 @@ export class RunIndex {
   }
 
   /** Feed newly written events, in seq order, into the run index. */
-  ingest(sessionId: string, observed: boolean, events: RunEvent[]): void {
+  ingest(sessionId: string, events: RunEvent[]): void {
     if (events.length === 0) return;
-    const state = this.state(sessionId, observed);
+    const state = this.state(sessionId);
     const closedNow: RunSummary[] = [];
     for (const { seq, event } of events) this.apply(state, closedNow, seq, event);
     for (const run of closedNow) this.write(sessionId, run);
@@ -102,7 +98,7 @@ export class RunIndex {
   }
 
   /** Rebuild one session from its stored events (migration). */
-  rebuild(sessionId: string, observed?: boolean): void {
+  rebuild(sessionId: string): void {
     this.deleteRuns.run(sessionId);
     this.states.delete(sessionId);
     const rows = this.db
@@ -127,10 +123,7 @@ export class RunIndex {
         // A row written by an older/broken version is skipped, as elsewhere.
       }
     }
-    // The runtime label is not enough: old test archives ran as "mock" but only
-    // contained observed file events. Use the same signal as the web builder.
-    const isObserved = observed ?? isObservedStream(events.map((entry) => entry.event));
-    const state = this.state(sessionId, isObserved);
+    const state = this.state(sessionId);
     const closedNow: RunSummary[] = [];
     for (const { seq, event } of events) this.apply(state, closedNow, seq, event);
     for (const run of closedNow) this.write(sessionId, run);
@@ -173,7 +166,7 @@ export class RunIndex {
     this.states.delete(sessionId);
   }
 
-  private state(sessionId: string, observed: boolean): SessionRuns {
+  private state(sessionId: string): SessionRuns {
     const cached = this.states.get(sessionId);
     if (cached) return cached;
 
@@ -194,7 +187,6 @@ export class RunIndex {
         : undefined;
     const closed = open ? all.slice(0, -1) : all;
     const state: SessionRuns = {
-      observed,
       closed,
       open,
       lastSeq: all.reduce((max, run) => Math.max(max, run.toSeq), 0),
@@ -211,20 +203,6 @@ export class RunIndex {
   ): void {
     const previousSeq = state.lastSeq;
     state.lastSeq = seq;
-
-    if (state.observed && !state.open && OBSERVED_OPENING_EVENT_TYPES.has(event.type)) {
-      state.open = {
-        index: state.closed.length + 1,
-        prompt: "observed activity",
-        startedAt: event.timestamp,
-        fromSeq: seq,
-        toSeq: seq,
-        counts: emptyRunCounts(),
-        touched: new Set<string>(),
-      };
-      applyRunCount(state.open.counts, event, state.open.touched);
-      return;
-    }
 
     if (event.type === "message" && event.payload.role === "user") {
       if (state.open) {

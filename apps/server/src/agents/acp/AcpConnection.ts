@@ -114,7 +114,7 @@ export interface AcpConnectionOptions {
    * What this client can do for the agent. Both fields default to "nothing":
    * Absence observes, it does not serve files or run the agent's commands. That
    * is what keeps the agent's execution path identical to running it in a
-   * terminal (see docs/decoupling.md).
+   * terminal (see docs/architecture.md).
    */
   clientCapabilities?: AcpClientCapabilities;
 }

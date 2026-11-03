@@ -4,7 +4,7 @@ import { useNow } from "../../hooks/useNow";
 import { useT } from "../../lib/i18n";
 import { VIEW_MODES } from "../../lib/viewMode";
 import { useViewModeStore } from "../../stores/viewModeStore";
-import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
+import { useSessionStore } from "../../stores/sessionStore";
 import { leaveSession } from "../../stores/reset";
 import { WindowControls } from "../common/WindowControls";
 import { SettingsDialog } from "../common/SettingsDialog";
@@ -36,7 +36,6 @@ export function FaceBar() {
   const session = useSessionStore((s) => s.session);
   const connected = useSessionStore((s) => s.connected);
   const context = useSessionStore((s) => s.context);
-  const observed = useIsObserved();
   const mode = useViewModeStore((s) => s.mode);
   const setMode = useViewModeStore((s) => s.setMode);
   const drip = useViewModeStore((s) => s.drip);
@@ -125,8 +124,6 @@ export function FaceBar() {
           </button>
         ))}
       </div>
-
-      {observed ? <Chip tone="read">{t("OBSERVING")}</Chip> : null}
 
       <div className="mon-nodrag" style={{ display: "flex", alignItems: "center", gap: 7 }} title={t("context usage")}>
         {/* The used-tokens figure arrives whenever the streaming run spends

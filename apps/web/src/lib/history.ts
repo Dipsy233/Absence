@@ -1,8 +1,6 @@
 import {
   applyRunCount,
   emptyRunCounts,
-  isObservedStream,
-  OBSERVED_OPENING_EVENT_TYPES,
   type AbsenceEvent,
   type RunCounts,
 } from "@absence/core";
@@ -10,8 +8,6 @@ import type { ActivityRow, StageItem } from "../types/stage";
 import { appendActivityRow, eventToActivityRow } from "./events";
 import type { HistoryRun } from "../types/history";
 import type { PhaseType } from "../types/report";
-
-export { isObservedStream } from "@absence/core";
 
 /**
  * Group the event stream into runs (read02-style sessions split by user input).
@@ -47,29 +43,8 @@ export function buildHistory(events: AbsenceEvent[]): HistoryRun[] {
     start = null;
   };
 
-  /**
-   * An observed agent never gets a `message` from us to send it, so the run
-   * boundary has to come from something it does: the OLDEST event after the
-   * last run is its opening. That keeps "runs" — the unit History, Replay and
-   * the Report are built on — working for a session Absence only watches, with
-   * no runtime to ask for a prompt.
-   */
-  const observed = isObservedStream(events);
-  const opening = (index: number, timestamp: number) => ({
-    from: index,
-    prompt: observed ? "observed activity" : "",
-    startedAt: timestamp,
-    counts: emptyRunCounts(),
-    touched: new Set<string>(),
-  });
-
   for (let i = 0; i < events.length; i++) {
     const event = events[i]!;
-    if (observed && !start && OBSERVED_OPENING_EVENT_TYPES.has(event.type)) {
-      start = opening(i, event.timestamp);
-      applyRunCount(start.counts, event, start.touched);
-      continue;
-    }
     if (event.type === "message" && event.payload.role === "user") {
       if (start) flush(i - 1, undefined, "interrupted");
       start = {
@@ -151,12 +126,6 @@ interface HistoryCache {
   /** Paths touched by all *closed* runs. */
   touched: Set<string>;
   open?: OpenRun;
-  /**
-   * True once a driven runtime's marker (`agent_start` / a user message) has
-   * been seen. Until then the cache also opens runs at an observed stream's
-   * first event; see applyEvent.
-   */
-  observed: boolean;
   /** The runs array handed out, reused as long as it is not mutated in place. */
   view: HistoryRun[];
 }
@@ -254,7 +223,6 @@ function fold(events: AbsenceEvent[], base: number): HistoryCache {
     consumed: base,
     runs: [],
     touched: new Set(),
-    observed: false,
     view: [],
   };
   for (let i = 0; i < events.length; i++) applyEvent(entry, events[i]!, base + i);
@@ -299,23 +267,7 @@ function rebase(entry: HistoryCache, base: number): void {
 }
 
 function applyEvent(entry: HistoryCache, event: AbsenceEvent, absoluteIndex: number) {
-  if (!entry.observed && OBSERVED_OPENING_EVENT_TYPES.has(event.type) && !entry.open) {
-    // Observe mode: the first event after the last run opens it. See
-    // buildHistory for why a watched agent cannot open a run with a prompt.
-    // A driven runtime's marker below flips `observed` and reopens the run with
-    // its own prompt instead, so this opening is replaced, not kept.
-    entry.open = {
-      prompt: "observed activity",
-      startedAt: event.timestamp,
-      fromIndex: absoluteIndex,
-      counts: emptyRunCounts(),
-      touched: new Set(),
-    };
-    applyRunCount(entry.open.counts, event, entry.open.touched);
-    return;
-  }
   if (event.type === "message" && event.payload.role === "user") {
-    entry.observed = false;
     closeOpen(entry, undefined, "interrupted", absoluteIndex - 1);
     entry.open = {
       prompt: event.payload.content,
@@ -325,12 +277,6 @@ function applyEvent(entry: HistoryCache, event: AbsenceEvent, absoluteIndex: num
       touched: new Set(),
     };
     return;
-  }
-  if (event.type === "agent_start" && entry.open && entry.open.prompt === "observed activity") {
-    // The runtime announced itself: this is a driven session, and the run starts
-    // where it said, not at the observed events that preceded it.
-    entry.observed = false;
-    entry.open = undefined;
   }
   if (!entry.open) return;
   if (event.type === "agent_end") {

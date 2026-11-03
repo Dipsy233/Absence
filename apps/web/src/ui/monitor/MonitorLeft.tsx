@@ -5,7 +5,7 @@ import { useRunsStore } from "../../stores/runsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useReplayStore } from "../../stores/replayStore";
 import { useStageStore } from "../../stores/stageStore";
-import { useIsObserved, useSessionStore } from "../../stores/sessionStore";
+import { useSessionStore } from "../../stores/sessionStore";
 import { useT } from "../../lib/i18n";
 import { FilePanel } from "../../components/files/FilePanel";
 import { AttentionList } from "../../components/attention/AttentionNotice";
@@ -81,7 +81,6 @@ export function MonitorLeft({
   }, [stageMode, data.rows, data.rowsVersion, replayTime]);
   const focusedEventId = useUiStore((s) => s.focusedEventId);
   const focusEvent = useUiStore((s) => s.focusEvent);
-  const observed = useIsObserved();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -286,7 +285,7 @@ export function MonitorLeft({
               {/* The run's state lives here, not in the rail's agent head: this
                   is where the reader picks between rounds, so this is where
                   "which round, how did it end" is answered. */}
-              {run ? `#${run.index} · ${t(RUN_WORD[run.status])} — ${run.prompt || t("(observed activity)")}` : t("No run yet")}
+              {run ? `#${run.index} · ${t(RUN_WORD[run.status])} — ${run.prompt}` : t("No run yet")}
             </span>
             <span className="mon-runsel__c">
               {/* The count line arrives rather than changes: the live run's
@@ -345,7 +344,7 @@ export function MonitorLeft({
                         </span>
                       </span>
                     </span>
-                    <span className="mon-runmenu__prompt">{entry.prompt || t("(observed activity)")}</span>
+                    <span className="mon-runmenu__prompt">{entry.prompt}</span>
                   </button>
                 </li>
               ))}
@@ -375,11 +374,7 @@ export function MonitorLeft({
         {data.loading && data.rows.length === 0 ? (
           <p className="mon-empty">{t("loading…")}</p>
         ) : data.rows.length === 0 ? (
-          <p className="mon-empty">
-            {observed
-              ? t("Nothing yet. An observed agent's processes and file changes appear here as they happen.")
-              : t("Nothing yet. Send the agent a task.")}
-          </p>
+          <p className="mon-empty">{t("Nothing yet. Send the agent a task.")}</p>
         ) : (
           bodyRows.map((group) => (
             <div key={group.id}>
