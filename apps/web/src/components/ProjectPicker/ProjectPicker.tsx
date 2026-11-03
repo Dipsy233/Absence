@@ -129,21 +129,6 @@ function modelsLabel(models: AgentModels): string {
   return "未知（未读到 agent 配置）";
 }
 
-/** Everything worth knowing about a ready agent, for the summary line's hover tooltip. */
-function factsTitle(row: PickerRow): string {
-  const parts = [
-    `${STATE_TEXT[row.state]} · ${SOURCE_TEXT[row.source]}`,
-    row.stateReason,
-    `认证：${AUTH_TEXT[row.auth]}${row.authReason ? ` — ${row.authReason}` : ""}`,
-    `模型来源：${modelsLabel(row.models)}${
-      row.models.items.length > 0 ? ` — ${row.models.items.join("、")}` : ""
-    }`,
-    sourceLine(row),
-  ];
-  if (row.willDownload) parts.push("npx 兜底已显式开启，启动时会临时下载包。");
-  return parts.filter(Boolean).join("\n");
-}
-
 /**
  * The probe view, laid out as the original compact tiles. It lists only what
  * `/api/runtimes` found on this machine; the last tile is the single "+" that
@@ -525,92 +510,98 @@ export function ProjectPicker() {
               </button>
             </div>
 
+            {/* Everything known about the selected agent is one continuous
+                hint stream — the same note class as every other hint, never a
+                separate panel. */}
             {selected ? (
-              selected.state === "ready" ? (
-                <div className="picker__factsline">
-                  <i data-state={selected.state} />
-                  <span className="picker__factsbrief" title={factsTitle(selected)}>
-                    {STATE_TEXT[selected.state]} · {AUTH_TEXT[selected.auth]} ·{" "}
-                    {SOURCE_TEXT[selected.source]}
-                  </span>
-                </div>
-              ) : (
-                <div className="picker__factsline picker__factsline--warn">
-                  <i data-state={selected.state} />
-                  <span className="picker__factsbrief">
-                    {STATE_TEXT[selected.state]} — {selected.stateReason}
-                  </span>
-                  {selected.adapter ? (
-                    <button
-                      type="button"
-                      className="picker__link picker__factsmore"
-                      aria-label={`用 ${selected.label} 的适配器预填自定义入口`}
-                      onClick={() => prefillFromAdapter(selected)}
-                    >
-                      预填入口
-                    </button>
-                  ) : null}
-                </div>
-              )
-            ) : null}
-
-            {/* Install guidance only appears when the selected agent cannot start:
-                exactly the moment the user needs it. */}
-            {selected && selected.state !== "ready" && selected.adapter ? (
-              <div className="picker__agentfacts">
-                {selected.adapter.packages.length > 0 ? (
-                  <p className="picker__note">
-                    适配器包：<code>{selected.adapter.packages.join("、")}</code>
+              <>
+                <p className="picker__note">
+                  {STATE_TEXT[selected.state]} — {selected.stateReason}
+                </p>
+                {selected.willDownload ? (
+                  <p className="picker__note picker__warn">
+                    npx 兜底已显式开启，启动时会临时下载包。
                   </p>
                 ) : null}
-                {selected.adapter.bins.length > 0 ? (
-                  <p className="picker__note">
-                    需要的可执行文件：<code>{selected.adapter.bins.join("、")}</code>
-                  </p>
+                <p className="picker__note">{sourceLine(selected)}</p>
+                <p className="picker__note">
+                  认证：{AUTH_TEXT[selected.auth]}
+                  {selected.authReason ? ` — ${selected.authReason}` : null}
+                </p>
+                <p className="picker__note">
+                  模型来源：{modelsLabel(selected.models)}
+                  {selected.models.items.length > 0
+                    ? ` — ${selected.models.items.join("、")}`
+                    : null}
+                </p>
+                {selected.adapter ? (
+                  <>
+                    {selected.adapter.packages.length > 0 ? (
+                      <p className="picker__note">
+                        适配器包：<code>{selected.adapter.packages.join("、")}</code>
+                      </p>
+                    ) : null}
+                    {selected.adapter.bins.length > 0 ? (
+                      <p className="picker__note">
+                        需要的可执行文件：<code>{selected.adapter.bins.join("、")}</code>
+                      </p>
+                    ) : null}
+                    {selected.adapter.command ? (
+                      <p className="picker__note">
+                        安装命令：<code>{selected.adapter.command}</code>{" "}
+                        <button
+                          type="button"
+                          className="picker__link"
+                          aria-label="复制安装命令"
+                          onClick={() =>
+                            void copy(selected.adapter?.command ?? "", `${selected.kind}:install`)
+                          }
+                        >
+                          {copied === `${selected.kind}:install` ? "已复制" : "复制"}
+                        </button>
+                      </p>
+                    ) : null}
+                    {selected.adapter.localCommand ? (
+                      <p className="picker__note">
+                        项目内安装：<code>{selected.adapter.localCommand}</code>{" "}
+                        <button
+                          type="button"
+                          className="picker__link"
+                          aria-label="复制项目内安装命令"
+                          onClick={() =>
+                            void copy(
+                              selected.adapter?.localCommand ?? "",
+                              `${selected.kind}:local`,
+                            )
+                          }
+                        >
+                          {copied === `${selected.kind}:local` ? "已复制" : "复制"}
+                        </button>
+                      </p>
+                    ) : null}
+                    <p className="picker__note">{selected.adapter.note}</p>
+                    <div className="picker__customactions">
+                      <button
+                        type="button"
+                        className="picker__link"
+                        aria-label={`用 ${selected.label} 的适配器预填自定义入口`}
+                        onClick={() => prefillFromAdapter(selected)}
+                      >
+                        预填自定义入口
+                      </button>
+                      <button
+                        type="button"
+                        className="picker__save"
+                        aria-label="重新探测本机 agent"
+                        disabled={probing}
+                        onClick={() => void refreshRuntimes(true)}
+                      >
+                        {probing ? "探测中…" : "重新探测"}
+                      </button>
+                    </div>
+                  </>
                 ) : null}
-                {selected.adapter.command ? (
-                  <p className="picker__note">
-                    安装命令：<code>{selected.adapter.command}</code>{" "}
-                    <button
-                      type="button"
-                      className="picker__link"
-                      aria-label="复制安装命令"
-                      onClick={() =>
-                        void copy(selected.adapter?.command ?? "", `${selected.kind}:install`)
-                      }
-                    >
-                      {copied === `${selected.kind}:install` ? "已复制" : "复制"}
-                    </button>
-                  </p>
-                ) : null}
-                {selected.adapter.localCommand ? (
-                  <p className="picker__note">
-                    项目内安装：<code>{selected.adapter.localCommand}</code>{" "}
-                    <button
-                      type="button"
-                      className="picker__link"
-                      aria-label="复制项目内安装命令"
-                      onClick={() =>
-                        void copy(selected.adapter?.localCommand ?? "", `${selected.kind}:local`)
-                      }
-                    >
-                      {copied === `${selected.kind}:local` ? "已复制" : "复制"}
-                    </button>
-                  </p>
-                ) : null}
-                <p className="picker__note">{selected.adapter.note}</p>
-                <div className="picker__customactions">
-                  <button
-                    type="button"
-                    className="picker__save"
-                    aria-label="重新探测本机 agent"
-                    disabled={probing}
-                    onClick={() => void refreshRuntimes(true)}
-                  >
-                    {probing ? "探测中…" : "重新探测"}
-                  </button>
-                </div>
-              </div>
+              </>
             ) : null}
           </section>
           </div>

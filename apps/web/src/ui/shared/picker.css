@@ -96,41 +96,6 @@
   min-height: 0;
 }
 
-/* The one-line agent summary under the tiles: state dot and the two facts
-   that decide whether the user can act. Everything else lives in the line's
-   hover tooltip — diagnostics without taking any space. */
-.picker__factsline {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border: 1px solid var(--mon-bd);
-  border-radius: 8px;
-  background: var(--mon-s2);
-}
-
-.picker__factsline--warn {
-  border-color: var(--mon-warn, #e9b349);
-}
-
-.picker__factsbrief {
-  flex: 1;
-  overflow: hidden;
-  font: 11.5px var(--mon-sans);
-  color: var(--mon-t2);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.picker__factsline--warn .picker__factsbrief {
-  color: var(--mon-warn, #e9b349);
-}
-
-.picker__factsmore {
-  flex: none;
-}
-
 .picker__openrow {
   display: flex;
   gap: 8px;
