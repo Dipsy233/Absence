@@ -7,7 +7,9 @@
  *   - an ACP `kind` always wins; only a missing/`other` kind runs the shape table;
  *   - the shape table never branches on a tool title or an agent's private name;
  *   - a read without a reported line is `rangeKnown=false` and its content is
- *     the returned snippet, not the whole file;
+ *     the returned snippet, not the whole file — unless the returned text
+ *     matches the file on disk exactly and uniquely, which verifies the range;
+ *     an ambiguous or stale match stays unknown;
  *   - a command without `rawOutput.exitCode` is `exitCodeKnown=false`;
  *   - a denied permission is `permissionDenied`, never silently dropped;
  *   - an execute call emits one tool_start, one tool_end and one command event,
@@ -231,22 +233,82 @@ async function main(): Promise<void> {
     });
     const read = firstOf(unknownRange, "file_read");
     check(
-      "an omitted locations.line marks rangeKnown=false",
-      read?.event.type === "file_read" && read.event.payload.rangeKnown === false,
-      read ? JSON.stringify(read.event.payload) : "no file_read",
-    );
-    check(
-      "a read with no reported line has no endLine to assert",
+      "a read without coordinates is located on disk when the match is exact and unique",
       read?.event.type === "file_read" &&
+        read.event.payload.rangeKnown === undefined &&
         read.event.payload.startLine === 1 &&
-        read.event.payload.endLine === undefined,
-      read?.event.type === "file_read" ? JSON.stringify(read.event.payload) : "no file_read",
+        read.event.payload.endLine === 1,
+      read ? JSON.stringify(read.event.payload) : "no file_read",
     );
     check(
       "the read content is the snippet the agent returned, not the whole file",
       read?.event.type === "file_read" && read.event.payload.content === "alpha" && read.event.payload.content !== disk,
     );
     check("a protocol read has source acp and reported fidelity", read?.source === "acp" && read?.fidelity === "reported");
+
+    await fs.writeFile(path.join(dir, "dup.txt"), "same\nsame\nsame\n");
+    const ambiguous = await mapper.mapCompletedDetailed({
+      toolCallId: "r-dup",
+      name: "Read",
+      kind: "read",
+      rawInput: { path: "dup.txt" },
+      content: [{ type: "content", content: { type: "text", text: "same" } }],
+    });
+    const ambiguousRead = firstOf(ambiguous, "file_read");
+    check(
+      "a snippet that matches more than once stays rangeKnown=false",
+      ambiguousRead?.event.type === "file_read" && ambiguousRead.event.payload.rangeKnown === false,
+      ambiguousRead ? JSON.stringify(ambiguousRead.event.payload) : "no file_read",
+    );
+
+    const stale = await mapper.mapCompletedDetailed({
+      toolCallId: "r-stale",
+      name: "Read",
+      kind: "read",
+      rawInput: { path: "main.ts" },
+      content: [{ type: "content", content: { type: "text", text: "export function stale() {}" } }],
+    });
+    const staleRead = firstOf(stale, "file_read");
+    check(
+      "returned text the disk no longer holds stays rangeKnown=false",
+      staleRead?.event.type === "file_read" && staleRead.event.payload.rangeKnown === false,
+      staleRead ? JSON.stringify(staleRead.event.payload) : "no file_read",
+    );
+
+    const fullFile = await mapper.mapCompletedDetailed({
+      toolCallId: "r-full",
+      name: "Read",
+      kind: "read",
+      rawInput: { path: "src.txt" },
+      content: [{ type: "content", content: { type: "text", text: "alpha\nbeta\ngamma" } }],
+    });
+    const fullRead = firstOf(fullFile, "file_read");
+    check(
+      "a read whose text is the whole file is located at 1..N",
+      fullRead?.event.type === "file_read" &&
+        fullRead.event.payload.startLine === 1 &&
+        fullRead.event.payload.endLine === 3 &&
+        fullRead.event.payload.rangeKnown === undefined,
+      fullRead ? JSON.stringify(fullRead.event.payload) : "no file_read",
+    );
+
+    await fs.writeFile(path.join(dir, "crlf.txt"), "one\r\ntwo\r\nthree\r\n");
+    const crlfDisk = await mapper.mapCompletedDetailed({
+      toolCallId: "r-crlf",
+      name: "Read",
+      kind: "read",
+      rawInput: { path: "crlf.txt" },
+      content: [{ type: "content", content: { type: "text", text: "two\nthree" } }],
+    });
+    const crlfRead = firstOf(crlfDisk, "file_read");
+    check(
+      "a CRLF file still yields line coordinates for an LF read",
+      crlfRead?.event.type === "file_read" &&
+        crlfRead.event.payload.startLine === 2 &&
+        crlfRead.event.payload.endLine === 3 &&
+        crlfRead.event.payload.rangeKnown === undefined,
+      crlfRead ? JSON.stringify(crlfRead.event.payload) : "no file_read",
+    );
 
     const knownRange = await mapper.mapCompletedDetailed({
       toolCallId: "r2",
@@ -481,6 +543,53 @@ async function main(): Promise<void> {
       "an edit with whole content and no old text is file_write",
       writeEvent?.event.type === "file_write" && writeEvent.event.payload.content === "hello\n",
     );
+
+    // A failed call changed nothing on disk. Its output text is a message
+    // about the file, never the file itself — recording it would put a version
+    // that never existed into the file index.
+    const failedEdit = await mapper.mapCompletedDetailed({
+      toolCallId: "e-failed",
+      name: "edit",
+      kind: "edit",
+      status: "failed",
+      rawInput: { path: "main.ts", edits: [{ oldText: "missing text", newText: "replacement" }] },
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "Could not find edits[0] in main.ts. The oldText must match exactly." },
+        },
+      ],
+    });
+    check("a failed edit records no file version", firstOf(failedEdit, "file_edit") === undefined);
+
+    const failedWrite = await mapper.mapCompletedDetailed({
+      toolCallId: "w-failed",
+      name: "write_file",
+      kind: "edit",
+      status: "failed",
+      rawInput: { path: "notes.md", content: "hello\n" },
+      content: [{ type: "content", content: { type: "text", text: "permission denied" } }],
+    });
+    check("a failed write records no file version", firstOf(failedWrite, "file_write") === undefined);
+
+    const failedRead = await mapper.mapCompletedDetailed({
+      toolCallId: "r-failed",
+      name: "read",
+      kind: "read",
+      status: "failed",
+      rawInput: { path: "src.txt" },
+      content: [{ type: "content", content: { type: "text", text: "EISDIR: illegal operation on a directory" } }],
+    });
+    check("a failed read records no file version", firstOf(failedRead, "file_read") === undefined);
+
+    const failedDelete = await mapper.mapCompletedDetailed({
+      toolCallId: "d-failed",
+      name: "delete",
+      kind: "delete",
+      status: "failed",
+      rawInput: { path: "src.txt" },
+    });
+    check("a failed delete records no file_change", firstOf(failedDelete, "file_change") === undefined);
 
     const unknownExit = await mapper.mapCompletedDetailed({
       toolCallId: "c1",

@@ -170,7 +170,7 @@ SQLite 访问不只发生在 `db.ts`：
 | Agent Eggs | 运行中的 egg 始终保留。已结束的 egg 超过 `ABSENCE_MAX_EGGS`（默认 200）后，按退出时间淘汰最旧的，并带 `retired: true` 从实时面板移除。归档中的 `process` 事件不删除。 |
 | 终端镜像 | 256 KB ring buffer，60 ms 合批，仅流式传输。 |
 
-文件版本与 run 事件分开存储，因此 Agent Folder 与 File History 无需加载某个 run 即可工作。写入或编辑追加一个完整版本。连续读取累积成一个部分 v0 版本。读取未报告行范围时，版本保留 `rangeKnown=false`，界面将范围显示为 unknown。
+文件版本与 run 事件分开存储，因此 Agent Folder 与 File History 无需加载某个 run 即可工作。写入或编辑追加一个完整版本。连续读取累积成一个部分 v0 版本。读取未报告行范围时，Absence 会尝试用磁盘核实一个：把返回文本定位到文件里，精确且唯一的匹配即得出该次读取的行坐标。匹配有歧义、文件缺失或读取已过期时，版本保留 `rangeKnown=false`，界面将范围显示为 unknown。
 
 ## 6. Web 渲染层
 
@@ -243,7 +243,7 @@ Drip 在桌面壳中作为独立的透明置顶窗口打开。在浏览器构建
 
 ## 10. 边界
 
-- ACP 的上报义务为 `SHOULD`；协议不要求 `MUST`。`kind` 缺失时变成 `other`；`locations` 缺失时读取范围标记为 unknown。Absence 不推断缺失字段。
+- ACP 的上报义务为 `SHOULD`；协议不要求 `MUST`。`kind` 缺失时变成 `other`；`locations` 缺失时读取范围标记为 unknown，除非返回文本与磁盘文件精确且唯一地匹配——那会核实出范围。Absence 不猜测缺失字段。
 - `kind` 缺失或无法使用的工具调用走 `ToolRules` 的字段形状规则。部分工具载荷无法按形状归类。
 - 并发命令的命令行不匹配时，进程归因可能出错。兜底策略保留该进程，不丢弃。
 - 快照模式可能漏掉短命进程。

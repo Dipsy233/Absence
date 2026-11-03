@@ -170,7 +170,7 @@ Retention:
 | Agent Eggs | Running eggs are always kept. Finished eggs beyond `ABSENCE_MAX_EGGS` (default 200) are retired from the live panel, oldest exit first, with `retired: true`. Archived `process` events are not removed. |
 | Terminal mirror | 256 KB ring buffer, 60 ms batching, streamed only. |
 
-File versions are stored separately from run events so Agent Folder and File History work without loading a run. A write or edit appends a complete version. Consecutive reads accumulate into one partial v0 version. When a read reports no line range, the version keeps `rangeKnown=false` and the UI shows the range as unknown.
+File versions are stored separately from run events so Agent Folder and File History work without loading a run. A write or edit appends a complete version. Consecutive reads accumulate into one partial v0 version. When a read reports no line range, Absence tries to verify one against the file on disk: the returned text is located in the file, and an exact, unique match yields the read's line coordinates. An ambiguous match, a missing file, or a stale read keeps `rangeKnown=false`, and the UI shows the range as unknown.
 
 ## 6. Web rendering layer
 
@@ -243,7 +243,7 @@ Drip opens as a separate transparent, always-on-top window in the desktop shell.
 
 ## 10. Boundaries
 
-- ACP reporting is `SHOULD`; the protocol does not require `MUST`. A missing `kind` becomes `other`; missing `locations` leave the read range unknown. Absence does not infer missing fields.
+- ACP reporting is `SHOULD`; the protocol does not require `MUST`. A missing `kind` becomes `other`; missing `locations` leave the read range unknown unless the returned text matches the file on disk exactly and uniquely, which verifies the range. Absence does not guess missing fields.
 - Tool calls with a missing or unhelpful `kind` go through field-shape rules in `ToolRules`. Some tool payloads cannot be classified by shape.
 - Process attribution for concurrent commands can misattribute when command lines do not match. The fallback keeps the process.
 - Short-lived processes can be missed in snapshot mode.

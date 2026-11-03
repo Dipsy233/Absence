@@ -97,7 +97,8 @@ export class AcpToolMapper {
         return await this.fileEdit(facts, resolved, content);
       case "delete":
       case "move":
-        return this.fileChange(resolved, resolved.kind === "delete" ? "deleted" : "modified");
+        // A failed delete/move changed nothing; the tool pair reports it.
+        return failed ? [] : this.fileChange(resolved, resolved.kind === "delete" ? "deleted" : "modified");
       case "execute": {
         // The authoritative denial comes from the client's permission answer
         // (AcpAdapter passes `permissionDenied`). A message-only fallback covers
@@ -160,7 +161,9 @@ export class AcpToolMapper {
   /**
    * A read. The exact line range comes from ACP `locations` when the agent
    * reported one; when it did not, the range is the content that came back.
-   * Absence never claims a range the agent did not report.
+   * Absence never claims a range the agent did not report and disk cannot
+   * confirm: an unlocated read is located by matching its text against the
+   * file on disk, and an ambiguous or stale match stays unknown.
    */
   private async fileRead(
     facts: AcpToolFacts,
@@ -168,6 +171,9 @@ export class AcpToolMapper {
     content: string,
   ): Promise<MappedEventRecord[]> {
     if (!resolved.path) return [];
+    // A failed read returned an error message, not file text; recording it
+    // would place that text into the accumulated v0 known lines.
+    if (facts.status === "failed") return [];
     const abs = this.abs(resolved.path);
     const reportedContent = content.length > 0;
     const raw = reportedContent ? content : ((await readFileSafe(abs)) ?? "");
@@ -177,7 +183,15 @@ export class AcpToolMapper {
     const text = normalizeReadText(stripDecoratedRead(raw));
     const location = facts.locations?.find((l) => typeof l.line === "number");
     const lineCount = text.split("\n").length;
-    const range = declaredReadRange(facts.rawInput, location?.line, lineCount);
+    let range = declaredReadRange(facts.rawInput, location?.line, lineCount);
+    // No `locations.line` and no `offset`/`limit`: the protocol asserted no
+    // range. The returned text can still be located on disk — the same disk
+    // the read came from — and a unique, exact match verifies the range.
+    // Anything ambiguous or stale stays `rangeKnown=false`.
+    if (range.rangeKnown === false) {
+      const recovered = recoverReadRange(reportedContent ? await readFileSafe(abs) : raw, text);
+      if (recovered) range = recovered;
+    }
     const event: MappedEvent = {
       type: "file_read",
       payload: {
@@ -186,9 +200,8 @@ export class AcpToolMapper {
         language: languageFromPath(abs),
         ...(range.startLine !== undefined ? { startLine: range.startLine } : {}),
         ...(range.endLine !== undefined ? { endLine: range.endLine } : {}),
-        // No `locations.line` and no `offset`/`limit`: there is no range to
-        // assert. The number of lines the agent happened to return is not
-        // evidence of where it read; a trailing newline even adds a ghost line.
+        // The number of lines the agent happened to return is not evidence of
+        // where it read; a trailing newline even adds a ghost line.
         ...(range.rangeKnown !== undefined ? { rangeKnown: range.rangeKnown } : {}),
       },
     };
@@ -207,6 +220,11 @@ export class AcpToolMapper {
     content: string,
   ): Promise<MappedEventRecord[]> {
     if (!resolved.path) return [];
+    // A failed edit or write changed nothing on disk. The tool_start/tool_end
+    // pair already reports the attempt; emitting a file event would record the
+    // tool's error text ("could not find …") as the file's new content — a
+    // version that never existed.
+    if (facts.status === "failed") return [];
     const abs = this.abs(resolved.path);
     const diff = diffOfContent(facts.content);
     const written = inputContent(facts.rawInput);
@@ -537,6 +555,44 @@ function numericField(
     return Number.isFinite(n) ? n : undefined;
   }
   return undefined;
+}
+
+/**
+ * Locate a read's returned text inside the file on disk, to recover the line
+ * coordinates the protocol did not carry.
+ *
+ * This is a disk verification, not an inference from the content's shape:
+ * the match must be exact (per line, whitespace-trimmed to tolerate line-ending
+ * noise) and unique. A snippet that appears more than once — imports, blank
+ * lines, a repeated stanza — is ambiguous and stays unknown, as does a file
+ * that is gone, unreadable, or no longer holds the text (a stale read after a
+ * later write). Nothing is emitted for an all-blank read either.
+ */
+function recoverReadRange(
+  disk: string | null,
+  text: string,
+): { startLine: number; endLine: number } | undefined {
+  if (disk === null) return undefined;
+  const diskLines = normalizeReadText(disk).split("\n");
+  const lines = text.split("\n");
+  if (lines.length > diskLines.length) return undefined;
+  if (lines.every((line) => line.trim().length === 0)) return undefined;
+  let found: number | undefined;
+  for (let at = 0; at + lines.length <= diskLines.length; at++) {
+    let matched = true;
+    for (let i = 0; i < lines.length; i++) {
+      if (diskLines[at + i]!.trim() !== lines[i]!.trim()) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      // A second occurrence means the coordinates are a coin toss.
+      if (found !== undefined) return undefined;
+      found = at;
+    }
+  }
+  return found === undefined ? undefined : { startLine: found + 1, endLine: found + lines.length };
 }
 
 /**

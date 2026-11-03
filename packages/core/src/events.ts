@@ -54,9 +54,11 @@ export interface ToolEndPayload {
 export interface FileReadPayload {
   path: string;
   /**
-   * First line the agent read, in file coordinates. Absent when the protocol
-   * did not report a line and `rawInput` carried no `offset`: Absence never
-   * derives a range from how many lines the returned text happens to have.
+   * First line the agent read, in file coordinates. Reported by the protocol
+   * (`locations.line` or `rawInput.offset`), or verified against the file on
+   * disk when the returned text locates there exactly and uniquely. Absent
+   * when neither holds: Absence never derives a range from how many lines the
+   * returned text happens to have.
    */
   startLine?: number;
   /** Last line read. Absent for the same reason as `startLine`. */
@@ -66,7 +68,9 @@ export interface FileReadPayload {
   /**
    * `false` when no range is known at all; `true` when the range came from
    * `rawInput.offset`/`limit` — the agent *declared* it, Absence did not
-   * verify it against disk. Omitted for a `locations.line` the agent reported.
+   * verify it against disk. Omitted for a `locations.line` the agent reported,
+   * and for a range Absence verified by matching the returned text against
+   * disk — both are coordinates Absence can stand behind.
    */
   rangeKnown?: boolean;
 }
