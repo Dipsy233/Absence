@@ -18,7 +18,7 @@
 .picker {
   display: flex;
   flex-direction: column;
-  width: min(640px, 100%);
+  width: min(920px, 100%);
   /* A stable height: the history area fills the space that remains, so the
      card is the same size before and after the sessions arrive — nothing
      jumps and nothing is pushed off screen. */
@@ -55,28 +55,80 @@
   color: var(--mon-t3);
 }
 
-.picker__brand > p {
-  overflow: hidden;
-  color: var(--mon-t3);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.picker__reprobe {
+  margin-left: auto;
+  font-size: 11px;
 }
 
-/* The single column's scroll-free body: every block natural, history fills. */
+/* Two columns: the door on the left (path, recents, agent), history on the
+   right filling the full height. Diagnostics are on demand — a ready agent
+   costs one line, a broken one expands what fixing it needs. */
 .picker__body {
-  display: flex;
+  display: grid;
   flex: 1;
-  flex-direction: column;
-  gap: 18px;
+  grid-template-columns: minmax(320px, 2fr) 3fr;
+  gap: 20px;
   min-height: 0;
   padding: 20px 24px 22px;
   overflow: hidden;
 }
 
+.picker__main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.picker__side {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
 .picker__block--fill {
   flex: 1;
   min-height: 0;
+}
+
+/* The one-line agent summary under the tiles: state dot and the two facts
+   that decide whether the user can act. Everything else lives in the line's
+   hover tooltip — diagnostics without taking any space. */
+.picker__factsline {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 8px;
+  background: var(--mon-s2);
+}
+
+.picker__factsline--warn {
+  border-color: var(--mon-warn, #e9b349);
+}
+
+.picker__factsbrief {
+  flex: 1;
+  overflow: hidden;
+  font: 11.5px var(--mon-sans);
+  color: var(--mon-t2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__factsline--warn .picker__factsbrief {
+  color: var(--mon-warn, #e9b349);
+}
+
+.picker__factsmore {
+  flex: none;
 }
 
 .picker__openrow {
@@ -358,14 +410,6 @@
   color: var(--mon-t3);
 }
 
-.picker__hpath {
-  overflow: hidden;
-  font: 10.5px var(--mon-mono);
-  color: var(--mon-t3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .picker__hmeta {
   display: block;
   overflow: hidden;
@@ -382,12 +426,23 @@
 
 @media (max-width: 760px) {
   .picker {
-    grid-template-columns: 1fr;
+    height: auto;
+    max-height: calc(100vh - 48px);
   }
 
-  .picker__brand {
-    border-right: 0;
-    border-bottom: 1px solid var(--mon-bd);
+  /* Narrow screens stack the columns; the whole body scrolls instead of each
+     half, and history gets a bounded height so the door stays reachable. */
+  .picker__body {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .picker__main {
+    overflow: visible;
+  }
+
+  .picker__history {
+    max-height: 320px;
   }
 }
 
@@ -409,15 +464,6 @@
 .picker__runtimes i[data-state="unavailable"],
 .picker__pathrow i[data-state="unavailable"] {
   background: var(--mon-err);
-}
-
-.picker__runtimes button small {
-  font: 10px var(--mon-mono);
-  color: var(--mon-t3);
-}
-
-.picker__runtimes button[data-on] small {
-  color: inherit;
 }
 
 .picker__runtimes button[data-state="needs-adapter"],
@@ -503,4 +549,32 @@
 .picker__customactions {
   display: flex;
   justify-content: flex-end;
+}
+
+/* ── Custom-ACP dialog ─────────────────────────────────────────────────────
+   The form used to live inline, where opening it pushed half the history off
+   the card. It is a dialog now: the card's layout never reacts to it. */
+.picker__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 0.55);
+}
+
+.picker__dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(480px, 92vw);
+  max-height: 86vh;
+  padding: 18px 20px;
+  overflow: auto;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 14px;
+  background: var(--mon-s1);
+  box-shadow: 0 30px 70px -30px rgb(0 0 0 / 0.7);
 }

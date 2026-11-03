@@ -129,6 +129,21 @@ function modelsLabel(models: AgentModels): string {
   return "未知（未读到 agent 配置）";
 }
 
+/** Everything worth knowing about a ready agent, for the summary line's hover tooltip. */
+function factsTitle(row: PickerRow): string {
+  const parts = [
+    `${STATE_TEXT[row.state]} · ${SOURCE_TEXT[row.source]}`,
+    row.stateReason,
+    `认证：${AUTH_TEXT[row.auth]}${row.authReason ? ` — ${row.authReason}` : ""}`,
+    `模型来源：${modelsLabel(row.models)}${
+      row.models.items.length > 0 ? ` — ${row.models.items.join("、")}` : ""
+    }`,
+    sourceLine(row),
+  ];
+  if (row.willDownload) parts.push("npx 兜底已显式开启，启动时会临时下载包。");
+  return parts.filter(Boolean).join("\n");
+}
+
 /**
  * The probe view, laid out as the original compact tiles. It lists only what
  * `/api/runtimes` found on this machine; the last tile is the single "+" that
@@ -146,7 +161,6 @@ export function ProjectPicker() {
   const [error, setError] = useState<string | undefined>();
   const [runtimes, setRuntimes] = useState<PickerRow[]>([]);
   const [probing, setProbing] = useState(false);
-  const [panelKind, setPanelKind] = useState<string | undefined>();
   const [copied, setCopied] = useState<string | undefined>();
 
   const [customOpen, setCustomOpen] = useState(false);
@@ -188,7 +202,6 @@ export function ProjectPicker() {
       if (list.some((row) => row.kind === current)) return current;
       return list.find((row) => row.state === "ready")?.kind ?? list[0]?.kind ?? "";
     });
-    setPanelKind((current) => (list.some((row) => row.kind === current) ? current : undefined));
   };
 
   const refreshRuntimes = (showSpinner = false) => {
@@ -211,20 +224,18 @@ export function ProjectPicker() {
   }, []);
 
   useEffect(() => {
-    if (!panelKind && !customOpen) return;
+    if (!customOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      setPanelKind(undefined);
       setCustomOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panelKind, customOpen]);
+  }, [customOpen]);
 
   const query = path.trim().toLowerCase();
   const selected = runtimes.find((row) => row.kind === agent);
   const canStart = selected?.state === "ready";
-  const panelRow = runtimes.find((row) => row.kind === panelKind);
 
   const visibleSessions = useMemo(() => {
     const byRuntime = sessions.filter((s) => s.runtime === agent);
@@ -288,7 +299,6 @@ export function ProjectPicker() {
   const openCustomForm = () => {
     resetForm();
     setCustomOpen(true);
-    setPanelKind(undefined);
   };
 
   const editCustom = (row: CustomAgentRow) => {
@@ -306,7 +316,6 @@ export function ProjectPicker() {
     setFormError(undefined);
     setFormChecked([]);
     setCustomOpen(true);
-    setPanelKind(undefined);
   };
 
   const prefillFromAdapter = (row: PickerRow) => {
@@ -315,7 +324,6 @@ export function ProjectPicker() {
     setFormCommand(row.adapter?.suggestedEntry.command ?? "");
     setFormArgs((row.adapter?.suggestedEntry.args ?? []).join("\n"));
     setCustomOpen(true);
-    setPanelKind(undefined);
   };
 
   const validateForm = (): CustomPayload | undefined => {
@@ -421,10 +429,19 @@ export function ProjectPicker() {
             ABSENCE
             <span>发呆症</span>
           </h1>
-          <p>只列出这台机器上探测到的 agent。Absence 不会代装，也不会改它们的配置。</p>
+          <button
+            type="button"
+            className="picker__link picker__reprobe"
+            aria-label="重新探测本机 agent"
+            disabled={probing}
+            onClick={() => void refreshRuntimes(true)}
+          >
+            {probing ? "探测中…" : "重新探测"}
+          </button>
         </header>
 
         <div className="picker__body">
+          <div className="picker__main">
           <section className="picker__block">
             <label className="picker__label" htmlFor="project-path">
               项目路径
@@ -474,18 +491,7 @@ export function ProjectPicker() {
           ) : null}
 
           <section className="picker__block">
-            <div className="picker__hhead">
-              <label className="picker__label">检测到的 Agent</label>
-              <button
-                type="button"
-                className="picker__link"
-                aria-label="重新探测本机 agent"
-                disabled={probing}
-                onClick={() => void refreshRuntimes(true)}
-              >
-                {probing ? "探测中…" : "重新探测"}
-              </button>
-            </div>
+            <label className="picker__label">Agent</label>
 
             {runtimes.length === 0 ? (
               <p className="picker__note">
@@ -500,14 +506,13 @@ export function ProjectPicker() {
                   type="button"
                   aria-pressed={agent === row.kind}
                   aria-label={`选择 ${row.label}（${STATE_TEXT[row.state]}）`}
-                  title={row.stateReason}
+                  title={row.state === "ready" ? row.label : `${row.label} · ${row.stateReason}`}
                   data-on={agent === row.kind ? "true" : undefined}
                   data-state={row.state}
                   onClick={() => setAgent(row.kind)}
                 >
                   <i data-state={row.state} />
                   {row.label}
-                  <small>{STATE_TEXT[row.state]}</small>
                 </button>
               ))}
               <button
@@ -521,84 +526,79 @@ export function ProjectPicker() {
             </div>
 
             {selected ? (
-              <div className="picker__agentfacts">
-                <p className="picker__note">
-                  <strong>
-                    {STATE_TEXT[selected.state]} · {SOURCE_TEXT[selected.source]}
-                  </strong>
-                </p>
-                <p className="picker__note">{selected.stateReason}</p>
-                {selected.willDownload ? (
-                  <p className="picker__note picker__warn">
-                    npx 兜底已显式开启，启动时会临时下载包。
-                  </p>
-                ) : null}
-                <p className="picker__note">
-                  认证：{AUTH_TEXT[selected.auth]}
-                  {selected.authReason ? ` — ${selected.authReason}` : null}
-                </p>
-                <p className="picker__note">
-                  模型来源：{modelsLabel(selected.models)}
-                  {selected.models.items.length > 0 ? ` — ${selected.models.items.join("、")}` : null}
-                </p>
-                <p className="picker__note">{sourceLine(selected)}</p>
-              </div>
+              selected.state === "ready" ? (
+                <div className="picker__factsline">
+                  <i data-state={selected.state} />
+                  <span className="picker__factsbrief" title={factsTitle(selected)}>
+                    {STATE_TEXT[selected.state]} · {AUTH_TEXT[selected.auth]} ·{" "}
+                    {SOURCE_TEXT[selected.source]}
+                  </span>
+                </div>
+              ) : (
+                <div className="picker__factsline picker__factsline--warn">
+                  <i data-state={selected.state} />
+                  <span className="picker__factsbrief">
+                    {STATE_TEXT[selected.state]} — {selected.stateReason}
+                  </span>
+                  {selected.adapter ? (
+                    <button
+                      type="button"
+                      className="picker__link picker__factsmore"
+                      aria-label={`用 ${selected.label} 的适配器预填自定义入口`}
+                      onClick={() => prefillFromAdapter(selected)}
+                    >
+                      预填入口
+                    </button>
+                  ) : null}
+                </div>
+              )
             ) : null}
 
-            {panelRow?.adapter ? (
+            {/* Install guidance only appears when the selected agent cannot start:
+                exactly the moment the user needs it. */}
+            {selected && selected.state !== "ready" && selected.adapter ? (
               <div className="picker__agentfacts">
-                <div className="picker__hhead">
-                  <strong>补全 {panelRow.label} 的 ACP</strong>
-                  <button
-                    type="button"
-                    className="picker__link"
-                    aria-label="关闭补全面板"
-                    onClick={() => setPanelKind(undefined)}
-                  >
-                    关闭
-                  </button>
-                </div>
-                {panelRow.adapter.packages.length > 0 ? (
+                {selected.adapter.packages.length > 0 ? (
                   <p className="picker__note">
-                    适配器包：<code>{panelRow.adapter.packages.join("、")}</code>
+                    适配器包：<code>{selected.adapter.packages.join("、")}</code>
                   </p>
                 ) : null}
-                {panelRow.adapter.bins.length > 0 ? (
+                {selected.adapter.bins.length > 0 ? (
                   <p className="picker__note">
-                    需要的可执行文件：<code>{panelRow.adapter.bins.join("、")}</code>
+                    需要的可执行文件：<code>{selected.adapter.bins.join("、")}</code>
                   </p>
                 ) : null}
-                {panelRow.adapter.command ? (
+                {selected.adapter.command ? (
                   <p className="picker__note">
-                    安装命令：<code>{panelRow.adapter.command}</code>{" "}
+                    安装命令：<code>{selected.adapter.command}</code>{" "}
                     <button
                       type="button"
                       className="picker__link"
                       aria-label="复制安装命令"
                       onClick={() =>
-                        void copy(panelRow.adapter?.command ?? "", `${panelRow.kind}:install`)
+                        void copy(selected.adapter?.command ?? "", `${selected.kind}:install`)
                       }
                     >
-                      {copied === `${panelRow.kind}:install` ? "已复制" : "复制"}
+                      {copied === `${selected.kind}:install` ? "已复制" : "复制"}
                     </button>
                   </p>
                 ) : null}
-                {panelRow.adapter.localCommand ? (
+                {selected.adapter.localCommand ? (
                   <p className="picker__note">
-                    项目内安装：<code>{panelRow.adapter.localCommand}</code>{" "}
+                    项目内安装：<code>{selected.adapter.localCommand}</code>{" "}
                     <button
                       type="button"
                       className="picker__link"
                       aria-label="复制项目内安装命令"
                       onClick={() =>
-                        void copy(panelRow.adapter?.localCommand ?? "", `${panelRow.kind}:local`)
+                        void copy(selected.adapter?.localCommand ?? "", `${selected.kind}:local`)
                       }
                     >
-                      {copied === `${panelRow.kind}:local` ? "已复制" : "复制"}
+                      {copied === `${selected.kind}:local` ? "已复制" : "复制"}
                     </button>
                   </p>
                 ) : null}
-                <p className="picker__note">{panelRow.adapter.note}</p>
+                <p className="picker__note">{selected.adapter.note}</p>
                 <div className="picker__customactions">
                   <button
                     type="button"
@@ -609,20 +609,13 @@ export function ProjectPicker() {
                   >
                     {probing ? "探测中…" : "重新探测"}
                   </button>
-                  <button
-                    type="button"
-                    className="picker__save"
-                    aria-label={`用 ${panelRow.label} 的适配器预填自定义入口`}
-                    onClick={() => prefillFromAdapter(panelRow)}
-                  >
-                    预填自定义入口
-                  </button>
                 </div>
               </div>
             ) : null}
           </section>
+          </div>
 
-          <section className="picker__block picker__block--fill">
+          <section className="picker__block picker__side">
             <div className="picker__hhead">
               <label className="picker__label">历史</label>
               <span>{visibleSessions.length} 个会话</span>
@@ -642,13 +635,12 @@ export function ProjectPicker() {
                     disabled={busy}
                     aria-label={`恢复会话 ${session.absenceSessionId ?? session.id}`}
                     onClick={() => void resume(session)}
-                    title={`恢复 ${session.absenceSessionId ?? session.id}`}
+                    title={session.projectPath}
                   >
                     <span className="picker__hrow">
                       <b>{session.name ?? session.projectName}</b>
                       <em>{formatWhen(session.updatedAt)}</em>
                     </span>
-                    <span className="picker__hpath">{session.projectPath}</span>
                     <span className="picker__hmeta">
                       <i data-runtime={session.runtime}>{session.runtime}</i>
                       {" · "}
@@ -660,119 +652,142 @@ export function ProjectPicker() {
               )}
             </div>
           </section>
-
-          {customOpen ? (
-            <section className="picker__block">
-              <label className="picker__label">自定义 ACP</label>
-
-              {customRows.length > 0 ? (
-                <div className="picker__pathlist">
-                  {customRows.map((row) => (
-                    <div key={row.id} className="picker__pathrow picker__customrow">
-                      <i data-state={row.available ? "ready" : "unavailable"} />
-                      <span>{row.label}</span>
-                      <em>{row.available ? row.resolved : "命令未找到"}</em>
-                      <button
-                        type="button"
-                        className="picker__link"
-                        aria-label={`编辑 ${row.label}`}
-                        onClick={() => editCustom(row)}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        className="picker__link"
-                        aria-label={`删除 ${row.label}`}
-                        onClick={() => void deleteCustom(row)}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              <div className="picker__custom">
-                <input
-                  value={formId}
-                  onChange={(e) => setFormId(e.target.value)}
-                  placeholder="id（可留空，自动生成）"
-                  aria-label="自定义 ACP id"
-                  spellCheck={false}
-                  disabled={editingId !== undefined}
-                />
-                <input
-                  value={formLabel}
-                  onChange={(e) => setFormLabel(e.target.value)}
-                  placeholder="显示名称"
-                  aria-label="自定义 ACP 显示名称"
-                  spellCheck={false}
-                />
-                <input
-                  value={formCommand}
-                  onChange={(e) => setFormCommand(e.target.value)}
-                  placeholder="命令（绝对路径或 PATH 上的名称）"
-                  aria-label="自定义 ACP 命令"
-                  spellCheck={false}
-                />
-                <textarea
-                  value={formArgs}
-                  onChange={(e) => setFormArgs(e.target.value)}
-                  placeholder="参数（每行一个）"
-                  aria-label="自定义 ACP 参数"
-                  spellCheck={false}
-                  rows={3}
-                />
-                <textarea
-                  value={formEnv}
-                  onChange={(e) => setFormEnv(e.target.value)}
-                  placeholder="环境变量（每行 KEY=VALUE）"
-                  aria-label="自定义 ACP 环境变量"
-                  spellCheck={false}
-                  rows={3}
-                />
-                <input
-                  value={formCwd}
-                  onChange={(e) => setFormCwd(e.target.value)}
-                  placeholder="工作目录（可选）"
-                  aria-label="自定义 ACP 工作目录"
-                  spellCheck={false}
-                />
-                {formError ? <div className="picker__error">{formError}</div> : null}
-                {formChecked.length > 0 ? (
-                  <p className="picker__note">检查过：{formChecked.slice(0, 5).join("、")}</p>
-                ) : null}
-                <div className="picker__customactions">
-                  <button
-                    type="button"
-                    className="picker__link"
-                    aria-label="取消自定义 ACP 编辑"
-                    onClick={() => {
-                      resetForm();
-                      setCustomOpen(false);
-                    }}
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    className="picker__save"
-                    disabled={saving || !formCommand.trim()}
-                    aria-label={editingId ? "保存自定义 ACP 修改" : "添加自定义 ACP 入口"}
-                    onClick={() => void saveCustom()}
-                  >
-                    {saving ? "保存中…" : editingId ? "保存修改" : "添加"}
-                  </button>
-                </div>
-                <p className="picker__note">
-                  只写入 ~/.absence/agents.json。命令必须能解析（PATHEXT 感知）；失败时会列出检查过的路径。
-                </p>
-              </div>
-            </section>
-          ) : null}
         </div>
       </div>
+
+      {customOpen ? (
+        <div
+          className="picker__overlay"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              resetForm();
+              setCustomOpen(false);
+            }
+          }}
+        >
+          <div className="picker__dialog" role="dialog" aria-modal="true" aria-label="自定义 ACP">
+            <div className="picker__hhead">
+              <label className="picker__label">自定义 ACP</label>
+              <button
+                type="button"
+                className="picker__link"
+                aria-label="关闭自定义 ACP"
+                onClick={() => {
+                  resetForm();
+                  setCustomOpen(false);
+                }}
+              >
+                关闭
+              </button>
+            </div>
+
+            {customRows.length > 0 ? (
+              <div className="picker__pathlist">
+                {customRows.map((row) => (
+                  <div key={row.id} className="picker__pathrow picker__customrow">
+                    <i data-state={row.available ? "ready" : "unavailable"} />
+                    <span>{row.label}</span>
+                    <em>{row.available ? row.resolved : "命令未找到"}</em>
+                    <button
+                      type="button"
+                      className="picker__link"
+                      aria-label={`编辑 ${row.label}`}
+                      onClick={() => editCustom(row)}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      className="picker__link"
+                      aria-label={`删除 ${row.label}`}
+                      onClick={() => void deleteCustom(row)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="picker__custom">
+              <input
+                value={formId}
+                onChange={(e) => setFormId(e.target.value)}
+                placeholder="id（可留空，自动生成）"
+                aria-label="自定义 ACP id"
+                spellCheck={false}
+                disabled={editingId !== undefined}
+              />
+              <input
+                value={formLabel}
+                onChange={(e) => setFormLabel(e.target.value)}
+                placeholder="显示名称"
+                aria-label="自定义 ACP 显示名称"
+                spellCheck={false}
+              />
+              <input
+                value={formCommand}
+                onChange={(e) => setFormCommand(e.target.value)}
+                placeholder="命令（绝对路径或 PATH 上的名称）"
+                aria-label="自定义 ACP 命令"
+                spellCheck={false}
+              />
+              <textarea
+                value={formArgs}
+                onChange={(e) => setFormArgs(e.target.value)}
+                placeholder="参数（每行一个）"
+                aria-label="自定义 ACP 参数"
+                spellCheck={false}
+                rows={3}
+              />
+              <textarea
+                value={formEnv}
+                onChange={(e) => setFormEnv(e.target.value)}
+                placeholder="环境变量（每行 KEY=VALUE）"
+                aria-label="自定义 ACP 环境变量"
+                spellCheck={false}
+                rows={3}
+              />
+              <input
+                value={formCwd}
+                onChange={(e) => setFormCwd(e.target.value)}
+                placeholder="工作目录（可选）"
+                aria-label="自定义 ACP 工作目录"
+                spellCheck={false}
+              />
+              {formError ? <div className="picker__error">{formError}</div> : null}
+              {formChecked.length > 0 ? (
+                <p className="picker__note">检查过：{formChecked.slice(0, 5).join("、")}</p>
+              ) : null}
+              <div className="picker__customactions">
+                <button
+                  type="button"
+                  className="picker__link"
+                  aria-label="取消自定义 ACP 编辑"
+                  onClick={() => {
+                    resetForm();
+                    setCustomOpen(false);
+                  }}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="picker__save"
+                  disabled={saving || !formCommand.trim()}
+                  aria-label={editingId ? "保存自定义 ACP 修改" : "添加自定义 ACP 入口"}
+                  onClick={() => void saveCustom()}
+                >
+                  {saving ? "保存中…" : editingId ? "保存修改" : "添加"}
+                </button>
+              </div>
+              <p className="picker__note">
+                只写入 ~/.absence/agents.json。命令必须能解析（PATHEXT 感知）；失败时会列出检查过的路径。
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
