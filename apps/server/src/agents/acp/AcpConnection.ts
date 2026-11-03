@@ -127,7 +127,7 @@ interface QueuedAction {
 
 const DEFAULT_CLIENT_INFO: AcpClientInfo = {
   name: "absence",
-  version: process.env.ABSENCE_VERSION ?? "0.4.0",
+  version: process.env.ABSENCE_VERSION ?? "0.5.0",
 };
 
 export class AcpConnection {
