@@ -13,7 +13,7 @@ Absence 没有单元测试框架。它难的不是纯函数，而是**观察一�
 npm run typecheck       # core / server / web 三个 workspace 的 tsc
 npm run build           # web 生产构建（产物在 dist/web）
 npm run check:acp-all   # ACP 接入层门禁（见下）
-npm run check:mock-agent  # 端到端仿真（mock agent + 真 server）
+npm run absence-sim     # 端到端仿真门禁（mock agent + 真 server；与 check:mock-agent 同一 runner）
 npm run check:offline   # 全部离线检查（CI 跑的就是它）
 ```
 
@@ -42,10 +42,11 @@ npm run check:offline   # 全部离线检查（CI 跑的就是它）
 模型和凭据）加一组场景（`scenarios/*.json`）。runner（`run.ts`）为每个场景造一个
 一次性 home/state/workspace，用自定义 profile 让**真 server** 拉起 mock agent
 进程（包在 Job Object 里，和真实 agent 一模一样），然后同时从 WebSocket 与
-SQLite 两端核对 `AbsenceEvent`。
+SQLite 两端核对 `AbsenceEvent`。这条仿真的门禁入口是 `npm run absence-sim`
+（等价于 `check:mock-agent`）。
 
 ```bash
-npm run mock:agent                          # 全部场景
+npm run absence-sim                         # 全部场景（= npm run check:mock-agent）
 npm run mock:agent -- --list                # 列出场景
 npm run mock:agent -- --scenario 03-file-ops
 ```
