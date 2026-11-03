@@ -11,11 +11,11 @@ name: Release
 # native/agentwatch-linux/agentwatch-linux), so the matrix only *packages* them;
 # nothing is cross-compiled and no extra build tools are needed.
 #
-# Release notes come from docs/RELEASE_NOTES_v<version>.md (or
-# docs/RELEASE_v<version>.md) when that file exists — that is the hand-written,
-# bilingual note the repo already ships. Otherwise they are generated from the
-# commit subjects between the previous tag and this one
-# (scripts/release/notes.mjs).
+# Release notes come from docs/releases/<tag>.md or
+# docs/releases/<tag>.zh-CN.md when that file exists — that is the hand-written
+# release note the repository ships (English first, Chinese as fallback).
+# Otherwise they are generated from the commit subjects between the previous
+# tag and this one (scripts/release/notes.mjs).
 
 on:
   workflow_dispatch:
@@ -96,7 +96,7 @@ jobs:
           fi
           tag="v$version"
           notes_file=""
-          for candidate in "docs/RELEASE_NOTES_${tag}.md" "docs/RELEASE_${tag}.md"; do
+          for candidate in "docs/releases/${tag}.md" "docs/releases/${tag}.zh-CN.md"; do
             if [ -f "$candidate" ]; then notes_file="$candidate"; break; fi
           done
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -279,7 +279,7 @@ jobs:
           # subjects. GitHub's own auto-generated notes group pull requests,
           # and this repo mostly pushes to main directly.
           if [ -z "$NOTES_FILE" ] || [ ! -f "$NOTES_FILE" ]; then
-            echo "No docs/RELEASE_NOTES_${TAG}.md — generating notes from commits."
+            echo "No docs/releases/${TAG}.md — generating notes from commits."
             node scripts/release/notes.mjs "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --label "$TAG" > release-notes.md

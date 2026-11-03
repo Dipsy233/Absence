@@ -1,59 +1,86 @@
 # Changelog
 
-本文以中文为准。发布流程见 [docs/RELEASING.md](docs/RELEASING.md)；
-v0.4.0 及更早的发布说明在 `docs/RELEASE_NOTES_v*.md`。
+[English](CHANGELOG.md) | [简体中文](CHANGELOG.zh-CN.md)
 
-## v0.5.0 —— 标准接入层（ACP）与 UI 重构
+Absence releases from v0.2.0 through v0.5.0. Each entry is a summary; the full
+notes are under `docs/releases/`. The release process is described in
+[releasing.md](docs/releasing.md).
 
-### 标准接入层（ACP）
+| Version | Focus | Notes |
+| --- | --- | --- |
+| v0.5.0 | ACP access layer and UI rebuild | [v0.5.0](docs/releases/v0.5.0.md) |
+| v0.4.0 | Persistence, metrics and verification | [v0.4.0](docs/releases/v0.4.0.md) |
+| v0.3.0 | Codex, DSH and shell takeover | [v0.3.0](docs/releases/v0.3.0.md) |
+| v0.2.0 | Personal avatars and Agent Eggs filters | [v0.2.0](docs/releases/v0.2.0.md) |
 
-- 接入层统一为标准 ACP 协议：`AcpAdapter` / `AcpConnection` /
-  `AcpToolMapper` + `AgentCatalog`。Pi、Codex 与所有其他 agent 都经同一层驱动；
-  新增 agent 是加一条 profile 数据，不是加代码分支。
-- 删除了全部深度耦合代码：Pi/Codex/DSH 各自的 adapter、`codex app-server`
-  私有协议客户端、shell 接管（`AbsenceShell` / `ExecServer` / `CodexShell` /
-  `ShellEnvironment`）、capabilities 配置管理（读写 agent 的
-  mcp.json / skills / config.toml）、Pi 私有会话文件合并。
-- Absence 不给 agent 提供接口、不处理 agent 请求，只做监控与转发：`/` 命令整行
-  原文进 `session/prompt`；审批选项原样回传；认证走 agent 自己的
-  `authenticate`；模型/thinking 档位来自 agent 的 `configOptions`。
-- 只读配置策略：picker 的认证状态与声明模型来自对 agent 配置目录的只读探测，
-  从不写入；npx 兜底默认关闭（`ABSENCE_ALLOW_NPX=1` 显式开启）。
-- 事件保真：每条事件带 `source` / `fidelity`（`exact` / `reported` / `inferred` /
-  `unknown`）；不存在的信息标 unknown，不猜。
-- 归档：分页事件接口、归档删除、会话保留策略
-  （`ABSENCE_SESSION_RETENTION_DAYS` / `ABSENCE_MAX_ARCHIVED_SESSIONS`）。
-- 修复：agent 启动 chunk 不再被误报为一个 speaking 回合（新建会话不再卡在
-  speaking）；停止未被确认时 UI 本地解锁；静默溢出与看门狗强制了结如实报错。
+## v0.5.0 — ACP access layer and UI rebuild
 
-### UI 重构
+[v0.5.0 notes](docs/releases/v0.5.0.md)
 
-- 探测式 agent 选择器：方格布局，每行显示真实探测结果（状态、发现来源、声明
-  的模型、适配器安装提示），未安装的 agent 不占格子。
-- 最后一格永远是 **"+"** 自定义 ACP 入口：label / command / args / env / cwd
-  写入 `~/.absence/agents.json`，任意 ACP agent 无需改代码即可接入。
-- 提示流：选中 agent 的事实（认证、模型来源、launch 覆盖）以同级 note 流入，
-  不再是弹窗或硬编码分支。
-- 命令面板是补全器：只列 agent 广告的命令 + `/auth`。
+- Agents run through one ACP access layer (`AgentCatalog` → `AcpAdapter` →
+  `AcpConnection`). Built-in profiles: Pi, Codex, Codex ACP alt, DSH, Claude
+  Code, Qwen Code and Gemini. Custom agents are data entries in
+  `~/.absence/agents.json`.
+- The picker probes installed agents and reports `ready`, `needs-adapter`,
+  `needs-auth` or `unavailable`; the last cell adds a custom ACP entry.
+- Slash commands are forwarded verbatim; `/auth` is the only local command.
+  Approvals return the agent's option id unchanged.
+- Events carry `source` and `fidelity` (`exact`, `reported`, `inferred`,
+  `unknown`); missing protocol fields are not filled in.
+- Three faces (Rounds, Monitor, Chart) plus the Drip overlay; Monitor is the
+  default. Settings has Appearance, Report WARN, Personalization and Agent Eggs
+  filter panes.
+- SQLite archive with paged replay, archive deletion and session retention;
+  metrics, Agent Eggs, Agent Folder, replay and Absence Report use the archived
+  events.
+- Docker container eggs, `absence watch` observe mode and the transparent ACP
+  proxy are available.
+- Windows releases include a portable ZIP.
+- Removed: per-product adapters (`PiAdapter`, `CodexAdapter`, `DshAdapter`),
+  `codex app-server`, exec-server shell takeover, `AbsenceShell`, `ExecServer`,
+  `CodexShell`, `ShellEnvironment`, capability configuration management, Pi
+  private session merging, local slash commands and the Classic layout.
 
-### 破坏性变更
+## v0.4.0 — Persistence, metrics and verification
 
-- **历史只来自 Absence 归档**（`~/.absence/absence.db`）：不再读取或合并 Pi 的
-  私有会话文件。旧 JSONL 归档仍在首次启动时一次性导入；agent 侧上下文经归档里
-  的 ACP resume handle 恢复（历史列名 `piSessionFile` / `piSessionId` 保留兼容）。
-- **`/` 命令纯转发**：Absence 自己实现的 `/model` / `/skill` / `/mcp` /
-  `/thinking` 等全部删除；整行原文发给 agent，认不认由 agent 决定。唯一的本地
-  动作是 `/auth <methodId>`。
-- **删除 `GET /api/sessions/:id/commands/:name/options`**：命令选项由 agent 的
-  `configOptions` / `available_commands_update` 承载。
-- 会话快照/状态里的 `capabilities` 字段删除（无生产来源）；`AgentProfile` 的
-  `discoverCapabilities` 字段删除（无消费方）。
-- 环境变量 `ABSENCE_PI_TOOLS` 随 shell 接管一并删除。
+[v0.4.0 notes](docs/releases/v0.4.0.md)
 
-### 已知债务（下一版处理）
+- Sessions, events, runs and file versions moved to SQLite at
+  `~/.absence/absence.db`; legacy JSONL archives were imported once.
+- History is indexed incrementally and Activity loads by run.
+- CPU/RSS metrics cover the agent's primary eggs, with a live ring, SQLite
+  chunks and 30-day retention.
+- Agent file views preserve unread line gaps and switch between recorded
+  versions.
+- `npm run verify` runs typechecks, the production web build and all offline
+  checks.
+- At v0.4.0 the Stage used METRICS as its default page with FILE / DIFF /
+  TERMINAL / LIVE content views; v0.5.0 replaced that layout with the faces.
 
-- `agents/AgentAdapter.ts` 的 legacy 接口、`BaseAdapter` 与 `toAgentSessionPort`
-  shim 是兼容壳：无新增调用方，v0.5.0 保留，下一版移除。
-- 头像皮肤 / 提示音 / egg 过滤器仍写在安装目录（`apps/server/src/process/`），
-  只读 asar 下上传失败；待迁到 `~/.absence/`。
-- `ProcessWatcher.noteMarker` 仅供内核验收检查使用，生产未接线（有意保留）。
+## v0.3.0 — Codex, DSH and shell takeover
+
+[v0.3.0 notes](docs/releases/v0.3.0.md)
+
+- Codex joined Pi, driven through `codex app-server`.
+- DSH joined through its ACP server (`dsh --profile acp`).
+- Absence took over Codex's shell through a loopback exec-server.
+- Real PTY support with Ctrl+C handling.
+- Approvals became activity rows.
+- Absence Report attention thresholds and levels became configurable, and
+  custom sound sets were added.
+- Runtime discovery and `~/.absence/runtimes.json` were added, and Settings
+  gained four panes.
+- The Codex app-server client, exec-server takeover, `AbsenceShell`,
+  `ExecServer`, `CodexShell`, `ShellEnvironment` and the dedicated Codex and
+  DSH adapters were removed in v0.5.0.
+
+## v0.2.0 — Personal avatars and Agent Eggs filters
+
+[v0.2.0 notes](docs/releases/v0.2.0.md)
+
+- The built-in character was renamed WhaleBun.
+- Avatar skins supported per-status uploads of mp4, gif, png, webp and svg,
+  with server-side ffmpeg re-encoding.
+- Agent Eggs filter profiles folded named helper commands into counts.
+- The Settings dialog had three panes at v0.2.0; its layout changed in v0.3.0
+  and v0.5.0.
