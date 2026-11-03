@@ -24,6 +24,7 @@ import { AcpPermissionBridge, type PermissionPrompt } from "./AcpPermissionBridg
 import { AcpSession } from "./AcpSession";
 import { describeAcpError } from "./protocol/errors";
 import type { AgentProfile } from "./profiles";
+import { mergeCommandSources } from "../commandSources";
 import { createMonitorBus } from "../../monitor/MonitorBus";
 import {
   BaseAdapter,
@@ -66,6 +67,8 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
   private usage?: { used: number; total?: number };
   private sessionTitle?: string;
   private availableCommands: AgentCommandInfo[] = [];
+  /** Unsubscribe handles for adapter-supplied command sources. */
+  private readonly commandSourceStops: Array<() => void> = [];
   private aborted = false;
   private closed = false;
   /** True once this turn emitted any assistant text. */
@@ -91,6 +94,10 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
       onPrompt: (prompt) => this.emitApproval(prompt),
     });
     this.bus.subscribe((event) => this.dispatch(event));
+    for (const source of this.options.commandSources ?? []) {
+      const stop = source.subscribe?.(() => this.options.onStateChange?.());
+      if (stop) this.commandSourceStops.push(stop);
+    }
   }
 
   // --- AgentSessionPort ------------------------------------------------------
@@ -159,6 +166,7 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
     if (this.closed) return;
     this.closed = true;
     this.aborted = true;
+    for (const stop of this.commandSourceStops.splice(0)) stop();
     // A pending card belongs to the closing turn; release it first.
     await this.permissions.cancelAll();
     const session = this.session;
@@ -193,7 +201,10 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
 
   /** The agent's own `/` commands; Absence never adds one of its own. */
   commands(): AgentCommandInfo[] {
-    return [...this.availableCommands];
+    return mergeCommandSources([
+      { id: "acp", commands: () => this.availableCommands },
+      ...(this.options.commandSources ?? []),
+    ]);
   }
 
   async authenticate(methodId: string): Promise<void> {

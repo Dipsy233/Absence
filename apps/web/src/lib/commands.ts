@@ -18,49 +18,63 @@ export interface CommandSpec {
 }
 
 /**
- * The only `/` line Absence itself executes: ACP authentication. Signing in is
- * a port action (`authenticate`), not a prompt the agent can interpret.
+ * The command catalog is the agent's list, unchanged.
  *
- * Everything else — `/model`, `/skill`, `/skill:<name>`, `/mcp`, or any command
- * the agent advertises — is forwarded verbatim as a prompt, and the agent
- * decides whether it knows it. Absence does not parse or implement them.
+ * Every distinct command the agent advertised becomes an entry; Absence adds
+ * none of its own and drops none for being unknown. The line the user picks is
+ * forwarded verbatim as a prompt.
  */
-export const LOCAL_COMMANDS: CommandSpec[] = [
-  {
-    name: "auth",
-    description: "Authenticate the ACP agent",
-    argHint: "<methodId>",
-    kind: "choice",
-  },
-];
-
-const LOCAL_NAMES = new Set(LOCAL_COMMANDS.map((command) => command.name));
-
-/**
- * Merge Absence's one ACP action with the `/` commands an agent advertised.
- * Advertised commands take free-text arguments and are forwarded by the server
- * as prompts; they never replace `/auth`.
- */
-export function mergeAgentCommands(specs: AgentCommandInfo[] | undefined): CommandSpec[] {
-  const merged = new Map<string, CommandSpec>(LOCAL_COMMANDS.map((command) => [command.name, command]));
+export function agentCommands(specs: AgentCommandInfo[] | undefined): CommandSpec[] {
+  const commands: CommandSpec[] = [];
+  const seen = new Set<string>();
   for (const spec of specs ?? []) {
     const name = spec.name.trim();
     if (!name) continue;
     const key = name.toLowerCase();
-    if (LOCAL_NAMES.has(key)) continue;
-    merged.set(key, {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    commands.push({
       name,
       description: spec.description ?? "provided by the agent",
       argHint: "[arguments]",
       kind: "text",
     });
   }
-  return [...merged.values()];
+  return commands;
 }
 
-export function findCommand(
-  name: string,
-  commands: CommandSpec[] = LOCAL_COMMANDS,
-): CommandSpec | undefined {
+/**
+ * The one `/` line Absence itself executes: ACP authentication. Signing in is
+ * a port action (`authenticate`), not a prompt the agent can interpret.
+ *
+ * It is a palette entry, not part of the agent's command catalog: the agent
+ * list above stays untouched.
+ */
+const AUTH_ACTION: CommandSpec = {
+  name: "auth",
+  description: "Authenticate the ACP agent",
+  argHint: "<methodId>",
+  kind: "choice",
+};
+
+/**
+ * What the `/` palette draws: the agent's catalog plus Absence's auth action.
+ * Agent commands take free-text arguments and are forwarded by the server as
+ * prompts; the auth action is the only local one.
+ */
+export function mergeAgentCommands(specs: AgentCommandInfo[] | undefined): CommandSpec[] {
+  return [AUTH_ACTION, ...agentCommands(specs).filter((command) => command.name.toLowerCase() !== "auth")];
+}
+
+/**
+ * The palette's filter: every catalog entry whose name starts with the text
+ * after `/`. It never drops a command for being unknown to Absence.
+ */
+export function matchCommands(commands: CommandSpec[], query: string): CommandSpec[] {
+  const prefix = query.trim().toLowerCase();
+  return commands.filter((command) => command.name.toLowerCase().startsWith(prefix));
+}
+
+export function findCommand(name: string, commands: CommandSpec[] = [AUTH_ACTION]): CommandSpec | undefined {
   return commands.find((command) => command.name.toLowerCase() === name.toLowerCase());
 }

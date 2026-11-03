@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { isAgentBusy, type CommandOption } from "@absence/core";
 import { buildPrompt } from "../../lib/context";
-import { findCommand, mergeAgentCommands, type CommandSpec } from "../../lib/commands";
+import { findCommand, matchCommands, mergeAgentCommands, type CommandSpec } from "../../lib/commands";
 import { useChatStore } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { ChatContext } from "../../types/chat";
@@ -74,22 +74,23 @@ export function useChatInput(): ChatInput {
   const command = commandMode ? findCommand(cmdName, commands) : undefined;
 
   const nameMatches = useMemo(
-    () => (commandMode && phase === "name" ? commands.filter((c) => c.name.startsWith(cmdName)) : []),
+    () => (commandMode && phase === "name" ? matchCommands(commands, cmdName) : []),
     [commandMode, phase, cmdName, commands],
   );
 
-  // `/auth` is the one choice list Absence draws: the methods the agent
-  // advertised during its ACP handshake.
+  // The one choice-backed action is the ACP port's sign-in: its options are the
+  // methods the agent advertised during the handshake. Every agent command is
+  // free text, so the interaction is driven by `kind`, not by a command name.
   const authOptions: CommandOption[] = useMemo(
     () =>
-      command?.name === "auth"
+      command?.kind === "choice"
         ? (authMethods ?? []).map((method) => ({
             value: method.id,
             label: method.id,
             description: method.description ?? method.name,
           }))
         : [],
-    [command?.name, authMethods],
+    [command?.kind, authMethods],
   );
 
   const activeOptions: CommandOption[] = phase === "arg" && command?.kind === "choice" ? authOptions : [];
@@ -121,11 +122,10 @@ export function useChatInput(): ChatInput {
 
   /** Send the line exactly as typed. The agent decides what it means. */
   const forward = async (line: string) => {
-    const value = line.trim();
-    if (!value) return;
+    if (!line.trim()) return;
     setText("");
     setPaletteOpen(false);
-    await sendPrompt(value);
+    await sendPrompt(line);
   };
 
   const authenticate = async (methodId: string) => {
@@ -148,7 +148,7 @@ export function useChatInput(): ChatInput {
       else openArgPhase(spec);
       return;
     }
-    if (command?.name === "auth") {
+    if (command?.kind === "choice") {
       void authenticate(value);
       return;
     }
@@ -166,10 +166,11 @@ export function useChatInput(): ChatInput {
       await sendPrompt(prompt);
       return;
     }
-    // `/auth` without an argument: list the agent's methods in the input's
-    // submenu rather than forwarding a line the agent would not understand.
-    if (phase === "name" && command?.name === "auth") return openArgPhase(command);
-    if (phase === "arg" && command?.name === "auth") {
+    // The choice-backed port action without an argument: list the agent's
+    // methods in the submenu rather than forwarding a line the agent cannot
+    // interpret.
+    if (phase === "name" && command?.kind === "choice") return openArgPhase(command);
+    if (phase === "arg" && command?.kind === "choice") {
       const item = activeOptions[highlight];
       if (item) return void authenticate(item.value);
     }

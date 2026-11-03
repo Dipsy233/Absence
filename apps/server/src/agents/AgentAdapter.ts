@@ -22,6 +22,7 @@ import {
   type StopReason,
 } from "@absence/core";
 import type { ProcessWatcher } from "../process/ProcessWatcher";
+import type { AgentCommandSource } from "./commandSources";
 
 /**
  * The legacy runtime boundary and its bridge to the new port.
@@ -55,6 +56,12 @@ export interface AdapterOptions {
    * so the palette/auth UI does not wait for the next event.
    */
   onStateChange?: () => void;
+  /**
+   * Extra command sources an adapter's own runtime can expose besides ACP.
+   * They are merged after the ACP notification list; nothing here is
+   * product-specific, and the session/UI only sees the merged snapshot.
+   */
+  commandSources?: readonly AgentCommandSource[];
 }
 
 /**

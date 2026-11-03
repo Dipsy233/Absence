@@ -207,6 +207,47 @@ async function main(): Promise<void> {
     );
   }
 
+  section("adapter command sources: ACP primary, supplemental sources merged");
+  {
+    let notify: () => void = () => {};
+    let states = 0;
+    const source = {
+      id: "runtime",
+      commands: () => [
+        { name: "native-only", description: "from the adapter's own runtime" },
+        { name: "skill:playwright-cli", description: "duplicate from a supplemental source" },
+      ],
+      subscribe: (listener: () => void) => {
+        notify = listener;
+        return () => undefined;
+      },
+    };
+    const adapter = new AcpAdapter(profileFor("startup-chunk", "source-check"), {
+      commandSources: [source],
+      onStateChange: () => {
+        states += 1;
+      },
+    });
+    notify();
+    check("a supplemental source can request a new session state", states === 1, String(states));
+
+    await adapter.start({ sessionId: "source-check", cwd: repoRoot });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const merged = adapter.getAvailableCommands();
+    check(
+      "ACP and supplemental commands coexist",
+      merged.some((command) => command.name === "skill:playwright-cli") &&
+        merged.some((command) => command.name === "native-only"),
+      merged.map((command) => command.name).join(","),
+    );
+    check(
+      "the ACP source owns a duplicate name",
+      merged.find((command) => command.name === "skill:playwright-cli")?.description === "Automate browsers",
+      JSON.stringify(merged.find((command) => command.name === "skill:playwright-cli")),
+    );
+    adapter.dispose();
+  }
+
   section("authenticate: deferred session, readable failures, then usable");
   {
     const adapter = new AcpAdapter(profileFor("auth"));
