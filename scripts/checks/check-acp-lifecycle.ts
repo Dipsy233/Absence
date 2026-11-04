@@ -58,16 +58,19 @@ async function main(): Promise<void> {
     const dir = await tempDir();
     await fs.writeFile(path.join(dir, "src.txt"), "alpha\nbeta\ngamma\n");
     const mapper = new AcpToolMapper(dir);
+    // No locations.line, and the returned text is not on disk (stale): the
+    // range stays unknown. (A unique exact disk match verifies the range —
+    // that upgrade is pinned in check-acp-mapping.)
     const unknown = await mapper.mapCompleted({
       toolCallId: "r1",
       name: "Read",
       kind: "read",
       rawInput: { path: "src.txt" },
-      content: [{ type: "content", content: { type: "text", text: "alpha" } }],
+      content: [{ type: "content", content: { type: "text", text: "delta" } }],
     });
     const read = unknown.find((event) => event.type === "file_read");
     check(
-      "an omitted locations.line marks rangeKnown=false",
+      "an omitted locations.line with no disk match marks rangeKnown=false",
       read?.type === "file_read" && read.payload.rangeKnown === false,
       read ? JSON.stringify(read.payload) : "no file_read",
     );
