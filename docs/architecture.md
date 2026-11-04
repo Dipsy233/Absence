@@ -100,7 +100,8 @@ type AbsenceEventType =
   | "agent_start" | "agent_end" | "message" | "thinking"
   | "tool_start" | "tool_update" | "tool_end"
   | "file_read" | "file_write" | "file_edit" | "file_change"
-  | "command" | "search" | "process" | "approval" | "mcp" | "error";
+  | "command" | "search" | "process" | "approval" | "mcp" | "error"
+  | "usage";
 ```
 
 Each event carries `source` and `fidelity`:
@@ -120,6 +121,17 @@ Each event carries `source` and `fidelity`:
 | `unknown` | The protocol or OS did not provide the field. |
 
 Model, context usage, advertised commands and authentication methods travel in `session_state` messages and do not enter the event stream. Metrics travel on their own channel.
+
+`usage` is one event per run, emitted when the run closes. It carries the run's
+token estimates: `outputEst` (from the finished assistant text's length),
+`inputEst` (the reported context window's growth across the run, minus that
+output — `null` when the runtime reported no context usage), the context
+occupancy, and the model name. Every number is an estimate and the payload
+says so with `estimated: true`. Absence never parses model responses, so real
+token counts are unavailable; the estimate is a heuristic (CJK ≈ 1 token per
+character, other text ≈ 1 token per 4 characters, see
+`packages/core/src/tokens.ts`). The event is data plumbing for the cumulative
+stats, not a displayed activity: it is excluded from the Activity feed.
 
 Observation layers:
 
@@ -143,6 +155,7 @@ SQLite access is not confined to `db.ts`:
 | `sessions/storage/files.ts` | Prepare and write `file_versions`; read the version index and contents. |
 | `sessions/storage/runs.ts` | Maintain the `runs` index and read per-run event ranges. |
 | `sessions/storage/metrics.ts` | Insert, read and expire `metric_chunks`, `egg_metric_summary` and `host_metric_chunks`. |
+| `sessions/storage/stats.ts` | Read-only cross-session aggregates over `sessions`, `events` and `runs` (the cumulative stats). |
 
 Tables:
 
@@ -156,6 +169,17 @@ Tables:
 | `metric_chunks` | Per-egg metric chunks, packed as binary arrays. |
 | `egg_metric_summary` | Per-egg first and last sample, CPU base and end, RSS integral, sample count. |
 | `host_metric_chunks` | Host metric chunks in the same packed shape. |
+
+`GET /api/stats` reduces these tables into a cross-session report: totals
+(sessions, runs, events, error rate, wall time, token sums), a time-bucketed
+trend, tool call counts and start→end latency percentiles (paired on
+`session_id` + `toolCallId`), an error Top-N, tokens by model and per-project
+counts. One reporting rule applies everywhere: counts may honestly be 0, but a
+derived value (error rate, percentiles, tokens, cost) is `null` when the window
+holds no samples — the UI shows "no data", never a confident zero. Cost is
+computed at query time from `~/.absence/pricing.json` (a model-glob → USD-per-
+million-token table, editable in Settings) and is never stored: tokens are the
+telemetry fact, cost is a derived estimate.
 
 Archive writes are buffered for 50 ms and committed in one transaction. A burst of process or file events therefore costs one commit. `drainArchive()` flushes on dispose.
 

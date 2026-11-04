@@ -11,6 +11,7 @@ import { eggFilterRoutes } from "./api/eggFilter";
 import { avatarSkinRoutes } from "./api/avatarSkins";
 import { soundRoutes } from "./api/sounds";
 import { runtimeRoutes } from "./api/runtimes";
+import { statsRoutes } from "./api/stats";
 import { acpProxyRoutes } from "./api/acpProxy";
 import { proxySessions } from "./agents/acp/proxy";
 import { wsRoutes } from "./websocket/ws";
@@ -82,6 +83,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   await app.register(avatarSkinRoutes);
   await app.register(soundRoutes);
   await app.register(runtimeRoutes);
+  await app.register(statsRoutes);
   await app.register(acpProxyRoutes);
   await app.register(wsRoutes);
 

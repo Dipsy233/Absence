@@ -4,6 +4,8 @@ export * from "./runs";
 export * from "./knownLines";
 export * from "./files";
 export * from "./metrics";
+export * from "./stats";
+export * from "./tokens";
 export * from "./ws";
 export * from "./api";
 

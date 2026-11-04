@@ -17,6 +17,7 @@ import {
   type PromptBlock,
   type SessionStatsInfo,
   type StopReason,
+  estimateTokens,
 } from "@absence/core";
 import { AcpAuth } from "./AcpAuth";
 import { AcpConfigOptions, humanModelName } from "./AcpConfigOptions";
@@ -82,6 +83,14 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
     toolCalls: 0,
     tokens: { input: 0, output: 0, total: 0 },
   };
+  /** Estimated output tokens accumulated for the run in flight. */
+  private turnOutputTokens = 0;
+  /**
+   * The context occupancy reported at the previous run's end, so this run's
+   * input estimate is the window's *growth* — summing whole-window values
+   * across runs would count the carried conversation once per run.
+   */
+  private lastContextUsed?: number;
 
   constructor(
     private readonly profile: AgentProfile,
@@ -370,6 +379,7 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
 
     this.aborted = false;
     this.producedAssistantText = false;
+    this.turnOutputTokens = 0;
     this.resetMessage();
     this.resetThinking();
     this.stats.userMessages += 1;
@@ -388,6 +398,7 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
       this.emitAbsence("agent_end", {
         reason: stopReasonToReason(reason, this.aborted),
       });
+      this.emitRunUsage();
       this.promptActive = false;
       return reason;
     } catch (error) {
@@ -397,11 +408,13 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
       if (this.aborted) {
         // A watchdog settled the run; do not add an `error` row on top.
         this.emitAbsence("agent_end", { reason: "aborted" });
+        this.emitRunUsage();
       } else {
         // Keep the provider's own detail (`error.data`), not just JSON-RPC's
         // generic "Internal error".
         this.emitAbsence("error", { message: describeAcpError(error) });
         this.emitAbsence("agent_end", { reason: "error" });
+        this.emitRunUsage();
         if (!legacy) throw error;
       }
       return undefined;
@@ -494,8 +507,39 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
     }
   }
 
-  /** Raise a visible error when a turn ends "successfully" with no output. */
-  private reportSilentOverflow(): void {
+  /**
+   * Close the run with one `usage` event carrying this run's token estimates.
+   *
+   * Output is estimated from the finished assistant text. Input is the
+   * reported context window's growth across the run minus that output — the
+   * window includes the whole carried conversation, so the delta, not the
+   * occupancy, is the run's own input. No `usage_update` means no input
+   * estimate at all: null is "unknown", never 0.
+   */
+  private emitRunUsage(): void {
+    const output = this.turnOutputTokens;
+    this.turnOutputTokens = 0;
+    const contextUsed = this.usage?.used;
+    const contextTotal = this.usage?.total;
+    const inputEst =
+      contextUsed !== undefined
+        ? Math.max(0, contextUsed - (this.lastContextUsed ?? 0) - output)
+        : null;
+    if (contextUsed !== undefined) this.lastContextUsed = contextUsed;
+    this.stats.tokens.output += output;
+    if (inputEst !== null) this.stats.tokens.input += inputEst;
+    this.stats.tokens.total = this.stats.tokens.input + this.stats.tokens.output;
+    this.emitAbsence("usage", {
+      model: this.model,
+      outputEst: output,
+      inputEst,
+      ...(contextUsed !== undefined ? { contextUsed } : {}),
+      ...(contextTotal !== undefined ? { contextTotal } : {}),
+      estimated: true,
+    });
+  }
+
+  /** Raise a visible error when a turn ends "successfully" with no output. */  private reportSilentOverflow(): void {
     if (this.producedAssistantText) return;
     const usage = this.getContextUsage();
     const used = usage?.used;
@@ -517,6 +561,11 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
       event.payload.content.trim().length > 0
     ) {
       this.producedAssistantText = true;
+      // Only the finished message counts: streaming prefixes carry the whole
+      // text so far, so adding them would double the estimate.
+      if (event.payload.streaming !== true) {
+        this.turnOutputTokens += estimateTokens(event.payload.content);
+      }
     }
     this.bus.publish({
       sessionId: event.sessionId,

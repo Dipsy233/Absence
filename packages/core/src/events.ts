@@ -4,11 +4,11 @@
  * The core UI must never know about Pi. Everything is expressed as a
  * "AbsenceEvent": a description of "what just happened".
  *
- * Note: this union is the read.md §8 list plus three small, documented
- * extensions — `search` (Pi's grep/find/ls, so searching is visible),
- * `file_change` (raw filesystem watcher activity, Phase 5) and `process`
- * (an OS process the agent laid via the shell, v0.3). The payload shape
- * stays flat and simple.
+ * Note: this union is the read.md §8 list plus small, documented extensions —
+ * `search` (Pi's grep/find/ls, so searching is visible), `file_change` (raw
+ * filesystem watcher activity, Phase 5), `process` (an OS process the agent
+ * laid via the shell, v0.3) and `usage` (per-run token estimates, v0.5.1).
+ * The payload shape stays flat and simple.
  */
 
 export interface AgentStartPayload {
@@ -252,6 +252,35 @@ export interface ErrorPayload {
 }
 
 /**
+ * v0.5.1: per-run token estimates, emitted once when a run closes.
+ *
+ * Absence never parses model responses, so every number here is *estimated*
+ * from what the protocol and the OS actually reported — assistant text length
+ * for the output side, the reported context window's growth across the run for
+ * the input side. `estimated` is always true and every consumer must label
+ * these values as estimates. Tokens are the telemetry fact; any cost derived
+ * from them is computed at query time against a configurable price table and
+ * is never stored.
+ */
+export interface UsagePayload {
+  /** The model the run ran under (`sessions.model` at emit time). */
+  model?: string;
+  /** Estimated output-side tokens (assistant text), from text length. */
+  outputEst?: number;
+  /**
+   * Estimated input-side tokens for this run: the growth of the reported
+   * context window across the run minus the estimated output. Absent when the
+   * runtime reported no context usage at all — null means "unknown", never 0.
+   */
+  inputEst?: number | null;
+  /** The context window occupancy the runtime reported at run end. */
+  contextUsed?: number;
+  contextTotal?: number;
+  /** Always true for now: every number in this payload is an estimate. */
+  estimated: true;
+}
+
+/**
  * One selectable choice on an approval prompt. `value` is what the adapter
  * sends back to the runtime (a decision slug); `label` is what the user reads.
  */
@@ -311,6 +340,7 @@ export interface AbsenceEventPayloadMap {
   approval: ApprovalPayload;
   mcp: McpPayload;
   error: ErrorPayload;
+  usage: UsagePayload;
 }
 
 export type AbsenceEventType = keyof AbsenceEventPayloadMap;
@@ -333,6 +363,7 @@ export const ABSENCE_EVENT_TYPES = [
   "approval",
   "mcp",
   "error",
+  "usage",
 ] as const satisfies readonly AbsenceEventType[];
 
 /** Which observer produced an event. */

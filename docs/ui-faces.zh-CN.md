@@ -58,6 +58,7 @@ apps/web/src/ui/chart/
   ChartTimeline.tsx    报告的车道时间线
   ChartChat.tsx        报告的输入条
   chart.css            仅 Chart 的规则
+  StatsView.tsx        累计页（跨会话聚合）
 
 apps/web/src/ui/drip/
   DripUI.tsx           pill 与 card
@@ -185,6 +186,23 @@ Chart 是一页：所选 run 的 Absence Report。它读取 `useMonitorData.repo
 - 底部：`ChartChat`，固定在底部的共享输入条。
 
 界面没有 FILE / DIFF / TERMINAL 切换条，也没有报告浮层。报告就是该 face。
+
+### 累计页
+
+hero 携带第二种读法：`本 run` / `累计`。选 `累计` 后整个报告页替换为 `StatsView`，
+它读取一个时间窗（24 小时 / 7 天 / 30 天 / 全部，可按项目与运行时过滤）内所有会话与
+run 的归档数据，来自 `GET /api/stats` —— 不走 `useMonitorData`，后者的主体是所选 run。
+它展示：
+
+- 四个 KPI：运行数（含出错数与忙碌时长）、事件数（含会话数与平均 run 时长）、
+  错误率、估算 token / 成本。
+- 趋势图：每个时间桶的运行数、错误数与估算输出 token。
+- 细分：工具（调用量、失败数、p50/p95 延迟）、最高频错误、按模型的 token、
+  按项目的运行数。
+
+报告口径与归档一致：计数可以为诚实的 0，但任何派生值（错误率、分位数、token、
+成本）在窗口内没有样本时显示“无数据”——绝不显示一个自信的 0。成本在查询时由
+设置里的单价表（TOKEN 单价栏）推算；token 是遥测事实，成本是估算值，并如此标注。
 
 ## 共享外壳与数据流
 

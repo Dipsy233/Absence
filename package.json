@@ -25,6 +25,7 @@
     "check:classify": "tsx scripts/checks/check-classify.ts",
     "check:fsdiff": "tsx scripts/checks/check-fsdiff.ts",
     "check:storage": "tsx scripts/checks/check-storage.ts",
+    "check:stats": "tsx scripts/checks/check-stats.ts",
     "check:agentwatch": "tsx scripts/checks/check-agentwatch.ts",
     "check:ebpf": "tsx scripts/checks/check-ebpf.ts",
     "check:history": "tsx scripts/checks/check-history.ts",

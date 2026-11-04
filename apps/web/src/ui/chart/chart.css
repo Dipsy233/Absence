@@ -1138,3 +1138,60 @@
     border-radius: 8px;
   }
 }
+
+/* ── cumulative stats tab: the archive read across every session ─────────── */
+
+.chart-stats {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 18px 18px 16px;
+  overflow-y: auto;
+}
+
+.chart-hero--stats {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 4px;
+}
+
+.chart-stats__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.chart-stats__select {
+  max-width: 220px;
+  padding: 3px 8px;
+  border: 1px solid var(--ch-bd);
+  border-radius: 8px;
+  background: var(--ch-s1);
+  color: var(--ch-t1);
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.chart-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .chart-stats-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The hero's right column: the reading toggle stacked over the run pill. */
+.chart-hero__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}

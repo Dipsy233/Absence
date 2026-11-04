@@ -100,7 +100,8 @@ type AbsenceEventType =
   | "agent_start" | "agent_end" | "message" | "thinking"
   | "tool_start" | "tool_update" | "tool_end"
   | "file_read" | "file_write" | "file_edit" | "file_change"
-  | "command" | "search" | "process" | "approval" | "mcp" | "error";
+  | "command" | "search" | "process" | "approval" | "mcp" | "error"
+  | "usage";
 ```
 
 每条事件携带 `source` 与 `fidelity`：
@@ -120,6 +121,14 @@ type AbsenceEventType =
 | `unknown` | 协议或 OS 未提供该字段。 |
 
 模型、上下文用量、agent 广告的命令与认证方法通过 `session_state` 消息传输，不进入事件流。指标走独立通道。
+
+`usage` 是每个 run 一条、在 run 结束时发出的事件。它携带该 run 的 token 估算：
+`outputEst`（由最终 assistant 文本长度估算）、`inputEst`（上报的 context 窗口在本
+run 期间的增量，减去输出侧——运行时未上报 context 时为 `null`）、context 占用与
+模型名。每个数字都是估算值，payload 以 `estimated: true` 声明。Absence 不解析模型
+响应，因此拿不到真实 token 数；估算是启发式（CJK ≈ 每字 1 token，其他文本 ≈ 每
+4 字符 1 token，见 `packages/core/src/tokens.ts`）。该事件是累计统计的数据管道，
+不是展示用活动：它不进入 Activity 流。
 
 观察层次：
 
@@ -143,6 +152,7 @@ SQLite 访问不只发生在 `db.ts`：
 | `sessions/storage/files.ts` | 准备并写入 `file_versions`；读取版本索引与内容。 |
 | `sessions/storage/runs.ts` | 维护 `runs` 索引，读取单个 run 的事件范围。 |
 | `sessions/storage/metrics.ts` | 写入、读取与过期 `metric_chunks`、`egg_metric_summary` 与 `host_metric_chunks`。 |
+| `sessions/storage/stats.ts` | 对 `sessions`、`events` 与 `runs` 的只读跨会话聚合（累计统计）。 |
 
 表：
 
@@ -156,6 +166,14 @@ SQLite 访问不只发生在 `db.ts`：
 | `metric_chunks` | 每个 egg 的指标 chunk，以二进制数组打包。 |
 | `egg_metric_summary` | 每个 egg 的首末样本、CPU 基线与终值、RSS 积分、样本数。 |
 | `host_metric_chunks` | 主机指标 chunk，使用相同的打包结构。 |
+
+`GET /api/stats` 把这些表归约为跨会话报告：总量（会话数、run 数、事件数、错误率、
+忙时长、token 合计）、按时间桶的趋势、工具调用数与 start→end 延迟分位数（按
+`session_id` + `toolCallId` 配对）、错误 Top-N、按模型的 token 与按项目的计数。
+一条报告规则处处适用：计数可以为诚实的 0，但派生值（错误率、分位数、token、成本）
+在窗口内没有样本时为 `null` —— UI 显示“无数据”，绝不显示一个自信的 0。成本在
+查询时由 `~/.absence/pricing.json`（模型通配 → 每百万 token 美元单价的表，可在
+设置中编辑）推算，且从不落盘：token 是遥测事实，成本是推算的估算值。
 
 归档写入缓冲 50 ms，并以一个事务提交。一次进程或文件事件突发因此只产生一次提交。`drainArchive()` 在 dispose 时冲刷。
 

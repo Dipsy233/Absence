@@ -16,8 +16,11 @@ import {
   activateEggFilter,
   deleteEggFilter,
   fetchEggFilter,
+  fetchPricing,
   saveEggFilter,
+  savePricing,
   type EggFilterProfileMeta,
+  type PricingRule,
 } from "../../lib/api";
 
 const FAIL_LEVELS: CommandFailLevel[] = ["none", "low", "medium", "high"];
@@ -30,13 +33,15 @@ const FAIL_LEVEL_TEXT: Record<CommandFailLevel, string> = {
 };
 
 /**
- * The Settings dialog, opened from the gear button in the top bar. Four panes:
+ * The Settings dialog, opened from the gear button in the top bar. Five panes:
  *
  *   p1      — appearance (language, theme, chat)
  *   p2      — report: failed-command warning threshold & level
  *   p3      — personalization: avatar skin + sound sets stacked in one pane
  *   p4      — Agent Eggs filter profiles: a small file manager over the
  *             server's profile directory
+ *   p5      — token pricing: the table that turns estimated tokens into an
+ *             estimated cost (derived at query time, never stored)
  *
  * Skills and MCP are not here: they are chat commands (`/skill`, `/mcp`), the
  * same place Pi and Codex put them, so they sit next to the prompt they act on.
@@ -57,7 +62,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       }}
     >
       <div className="flex h-[85vh] w-[1500px] max-w-[96vw] overflow-hidden rounded-lg border border-desk-line bg-desk-panel shadow-[0_8px_40px_rgba(0,0,0,.5)]">
-        {/* ════ Left: appearance & layout ═══════════════════ */}
+        {/* ════ Left: appearance & layout ═════════════════ */}
         <AppearancePane />
 
         <div className="w-px shrink-0 bg-desk-line" />
@@ -74,6 +79,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
         {/* ════ Right: egg filter profiles ══════════════════ */}
         <EggFilterPane />
+
+        <div className="w-px shrink-0 bg-desk-line" />
+
+        {/* ════ Right: token price table ════════════════════ */}
+        <PricingPane />
       </div>
     </div>
   );
@@ -794,4 +804,104 @@ function EggFilterPane() {
       </div>
     </div>
   );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Token pricing pane.
+
+   One rule per line, whitespace separated: `model inputPer1M outputPer1M`
+   (USD per million tokens). The first matching glob wins, so a trailing
+   `*` row works as a catch-all. Applying replaces the whole table; the next
+   stats query picks it up without a restart. Cost is always derived — the
+   pane prices tokens, it does not store costs.
+   ════════════════════════════════════════════════════════════════════════ */
+
+function PricingPane() {
+  const t = useT();
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | undefined>();
+
+  useEffect(() => {
+    void fetchPricing()
+      .then((res) => {
+        setDraft(res.rules.map(ruleToText).join("\n"));
+        setLoaded(true);
+        setMessage(undefined);
+      })
+      .catch(() => setMessage({ ok: false, text: t("failed to load pricing") }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const apply = async () => {
+    const rules: PricingRule[] = [];
+    for (const line of draft.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const parts = trimmed.split(/\s+/);
+      if (parts.length !== 3) {
+        setMessage({ ok: false, text: t("bad line: \"{line}\" — use: model input output", { line: trimmed }) });
+        return;
+      }
+      const input = Number(parts[1]!);
+      const output = Number(parts[2]!);
+      if (!parts[0] || !Number.isFinite(input) || input < 0 || !Number.isFinite(output) || output < 0) {
+        setMessage({ ok: false, text: t("bad line: \"{line}\" — prices must be numbers ≥ 0", { line: trimmed }) });
+        return;
+      }
+      rules.push({ model: parts[0]!, inputPer1M: input, outputPer1M: output });
+    }
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      const res = await savePricing(rules);
+      setDraft(res.rules.map(ruleToText).join("\n"));
+      setMessage({ ok: true, text: t("saved ✓ ({n} rules)", { n: res.rules.length }) });
+    } catch (error) {
+      setMessage({ ok: false, text: error instanceof Error ? error.message : t("save failed") });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex min-w-0 flex-[0.8] basis-0 flex-col p-4">
+      <h2 className="mb-1 font-mono text-sm tracking-widest text-desk-ink">{t("TOKEN PRICING")}</h2>
+      <p className="mb-3 text-[11px] leading-snug text-desk-dim">
+        {t(
+          "USD per million tokens, one rule per line: model-glob input output. First match wins; a trailing * prices everything else. Cost is estimated at query time — tokens are the fact, the price is yours.",
+        )}
+      </p>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        spellCheck={false}
+        readOnly={!loaded}
+        rows={12}
+        placeholder={"claude-* 3 15\ngpt-* 2.5 10\n* 1 2"}
+        className="min-h-0 w-full flex-1 resize-none rounded border border-desk-line bg-desk-panel2 px-2 py-1 font-mono text-[11px] leading-snug text-desk-ink placeholder:text-desk-dim/60 focus:border-desk-amber/60 focus:outline-none"
+      />
+      <div className="mt-2 flex shrink-0 items-center gap-2">
+        {message ? (
+          <span className={["font-mono text-[10px]", message.ok ? "text-desk-teal" : "text-desk-ember"].join(" ")}>
+            {message.text}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          disabled={busy || !loaded}
+          onClick={() => void apply()}
+          className="ml-auto rounded border border-desk-amber/60 bg-desk-amber/10 px-3 py-1 font-mono text-[11px] text-desk-amber transition-colors hover:bg-desk-amber/20 disabled:cursor-not-allowed disabled:opacity-40"
+          title={t("Replace the whole price table")}
+        >
+          {busy ? t("saving…") : t("Apply")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ruleToText(rule: PricingRule): string {
+  return `${rule.model} ${rule.inputPer1M} ${rule.outputPer1M}`;
 }

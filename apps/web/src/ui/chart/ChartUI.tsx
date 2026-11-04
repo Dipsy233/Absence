@@ -28,6 +28,7 @@ import type { HistoryRun } from "../../types/history";
 
 import { ChartTimeline, type TimelinePick } from "./ChartTimeline";
 import { ChartChat } from "./ChartChat";
+import { StatsView } from "./StatsView";
 import "./chart.css";
 import { useRideScroll } from "../shared/rideScroll";
 
@@ -43,7 +44,15 @@ import { useRideScroll } from "../shared/rideScroll";
  * Everything is drawn from `useMonitorData` and `renderRun`: the same facts the
  * Monitor shows, read once the run has settled. No second derivation, no forked
  * engine.
+ *
+ * The hero also carries a second reading: 累计 (cumulative) — the same archive
+ * aggregated across every session and run in a window. It has its own data path
+ * (`statsStore`, isolated in `StatsView`) because its subject is the archive,
+ * not the selected run.
  */
+
+/** Which reading of the archive the face shows. */
+type ChartView = "run" | "cumulative";
 
 const KIND_CHIP: Record<TimelineKind, string> = {
   start: "mute",
@@ -91,6 +100,7 @@ export function ChartUI() {
 
   const ioARef = useRideScroll<HTMLElement>();
   const ioBRef = useRideScroll<HTMLElement>();
+  const [view, setView] = useState<ChartView>("run");
   const [tab, setTab] = useState<Tab>("changes");
   const [pick, setPick] = useState<TimelinePick | undefined>(undefined);
   const [attOpen, setAttOpen] = useState(false);
@@ -158,8 +168,19 @@ export function ChartUI() {
     return (
       <div className="mon-root chart-root">
         <FaceBar />
-        <div className="chart-page-empty">{t("Nothing to report yet — send the agent a task.")}</div>
-        <ChartChat />
+        {view === "cumulative" ? (
+          <StatsView />
+        ) : (
+          <>
+            <div className="chart-page-empty">
+              <button type="button" className="chart-tab" onClick={() => setView("cumulative")}>
+                {t("cumulative")}
+              </button>{" "}
+              — {t("Nothing to report yet — send the agent a task.")}
+            </div>
+            <ChartChat />
+          </>
+        )}
       </div>
     );
   }
@@ -219,6 +240,9 @@ export function ChartUI() {
     <div className="mon-root chart-root">
       <FaceBar />
 
+      {view === "cumulative" ? (
+        <StatsView />
+      ) : (
       <div className="chart-wrap">
         {/* ── the run, in one sentence ──────────────────────────────────── */}
         <section className="chart-hero">
@@ -253,7 +277,22 @@ export function ChartUI() {
 
           {/* Round switching: the report is per run, so the run is the first
               choice a reader makes. A pill at the hero's top-right, its list
-              opening downward over the numbers. */}
+              opening downward over the numbers. Beside it, the archive's
+              second reading: the cumulative tab. */}
+          <div className="chart-hero__side">
+            <div className="chart-tabs" role="tablist" aria-label={t("Reading")}>
+              <button type="button" role="tab" aria-selected="true" className="chart-tab chart-tab--on">
+                {t("this run")}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className="chart-tab"
+                onClick={() => setView("cumulative")}
+              >
+                {t("cumulative")}
+              </button>
+            </div>
           <div className="chart-runselwrap" ref={menuRef}>
             <button
               type="button"
@@ -301,6 +340,7 @@ export function ChartUI() {
                 ))}
               </ul>
             ) : null}
+          </div>
           </div>
         </section>
 
@@ -653,6 +693,7 @@ export function ChartUI() {
           </div>
         </section>
       </div>
+      )}
 
       {/* The report page scrolls; the input does not — one rounded line, always
           reachable at the bottom, in the same FaceChat skin as every face. */}
