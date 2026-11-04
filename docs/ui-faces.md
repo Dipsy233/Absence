@@ -78,7 +78,7 @@ apps/web/src/ui/chart/
   ChartUI.tsx          hero, KPIs, lists, evidence, input/output
   ChartTimeline.tsx    the report's lane timeline
   ChartChat.tsx        the report's input bar
-  StatsView.tsx        the cumulative tab (cross-session aggregates)
+  StatsKpiCards.tsx    the run scope's four cumulative KPI cards
   chart.css            Chart-only rules
 
 apps/web/src/ui/drip/
@@ -289,26 +289,6 @@ uses.
 
 There is no FILE / DIFF / TERMINAL switch strip and no report overlay. The
 report is this face.
-
-### The cumulative tab
-
-The hero carries a second reading: `this run` / `cumulative`. `cumulative`
-replaces the whole report with `StatsView`, which reads the archive across
-every session and run in a time window (24h / 7d / 30d / all, filterable by
-project and runtime) from `GET /api/stats` — not `useMonitorData`, whose
-subject is the selected run. It shows:
-
-- Four KPIs: run count (with error count and busy time), events (with session
-  count and average run time), error rate, and estimated tokens/cost.
-- A trend chart: runs, errors, and estimated output tokens per time bucket.
-- Breakdowns: tools (calls, failures, p50/p95 latency), most frequent errors,
-  tokens by model, and per-project run counts.
-
-The reporting contract is the archive's own: a count may honestly be 0, but a
-derived number (error rate, percentiles, tokens, cost) is shown as "no data"
-when the window holds no samples — never as a confident zero. Cost is derived
-at query time from the price table in Settings (TOKEN PRICING pane); tokens
-are the telemetry fact, cost is an estimate and is labelled one.
 
 ## Shared shell and data flow
 
