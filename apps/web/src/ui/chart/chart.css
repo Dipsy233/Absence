@@ -377,6 +377,11 @@
   gap: 10px;
 }
 
+/* The report row once the selection's cumulative four cards join it: eight. */
+.chart-kpis--eight {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
 .chart-kpi {
   display: flex;
   min-width: 0;
@@ -673,10 +678,81 @@
   position: relative;
 }
 
-/* The list panel's header is right-aligned: the three counts travel as one
-   group, and the attention verdict sits beside them as its own control. */
-.chart-pt--lists {
-  justify-content: flex-end;
+/* The lists panel is a row: a vertical rail of lists on the left, the picked
+   list filling the rest. */
+.chart-listsrow {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.chart-listsrow .chart-body {
+  min-width: 0;
+}
+
+.chart-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
+  border-right: 1px solid var(--ch-bd);
+  background: var(--ch-s2);
+}
+
+.chart-rail__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font-family: var(--ch-mono);
+  font-size: 11px;
+  color: var(--ch-t3);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chart-rail__item:hover {
+  color: var(--ch-t2);
+}
+
+.chart-rail__item em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 10px;
+  color: var(--ch-t3);
+}
+
+.chart-rail__item--on {
+  background: var(--ch-s1);
+  color: var(--ch-t);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* The attention item's verdict dot: the rail stays quiet, the dot carries the
+   level's colour. */
+.chart-rail__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ch-t3);
+  opacity: 0.85;
+}
+
+.chart-rail__dot--low {
+  background: var(--ch-edit);
+}
+
+.chart-rail__dot--medium {
+  background: var(--ch-run);
+}
+
+.chart-rail__dot--high {
+  background: var(--ch-err);
 }
 
 .chart-pt {
@@ -707,93 +783,8 @@
   white-space: nowrap;
 }
 
-.chart-tabs {
-  display: inline-flex;
-  flex: none;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--ch-bd);
-  border-radius: 999px;
-  background: var(--ch-s2);
-}
-
-.chart-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  font-family: var(--ch-mono);
-  font-size: 11.5px;
-  color: var(--ch-t3);
-  cursor: pointer;
-}
-
-.chart-tab em {
-  font-style: normal;
-  font-size: 10px;
-  color: var(--ch-t3);
-}
-
-.chart-tab--on {
-  background: var(--ch-s1);
-  color: var(--ch-t);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-}
-
-/* The attention verdict: a button at the panel's top-right, separate from the
-   tabs, and its reasons open over the list rather than pushing it down. */
-.chart-att-btn {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  height: 24px;
-  padding: 0 9px;
-  border: 1px solid var(--ch-bd);
-  border-radius: 999px;
-  background: var(--ch-s2);
-  font-family: var(--ch-mono);
-  font-size: 10.5px;
-  color: var(--ch-t2);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.chart-att-btn:hover {
-  color: var(--ch-t);
-  border-color: var(--ch-bd2);
-}
-
-.chart-att-btn__dot {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.85;
-}
-
-.chart-att-btn--low {
-  border-color: rgba(114, 188, 143, 0.4);
-  color: var(--ch-edit);
-}
-
-.chart-att-btn--medium {
-  border-color: rgba(222, 146, 85, 0.4);
-  color: var(--ch-run);
-}
-
-.chart-att-btn--high {
-  border-color: rgba(233, 115, 102, 0.45);
-  color: var(--ch-err);
-}
-
-/* The triggered rules, listed in the evidence pane when the verdict is open:
-   one row per rule, level tag first, the sentence it stands for after. */
+/* The triggered rules, listed under the rail's Attention item: one row per
+   rule, level tag first, the sentence it stands for after. */
 .chart-att-list {
   display: flex;
   flex-direction: column;
@@ -1087,6 +1078,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .chart-kpis--eight {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .chart-split {
     grid-template-columns: minmax(0, 1fr);
     flex: none;
@@ -1133,62 +1128,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .chart-tabs {
-    flex-wrap: wrap;
-    border-radius: 8px;
+  .chart-kpis--eight {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-/* ── cumulative stats tab: the archive read across every session ─────────── */
-
-.chart-stats {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-  padding: 18px 18px 16px;
-  overflow-y: auto;
-}
-
-.chart-hero--stats {
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
-  gap: 4px;
-}
-
-.chart-stats__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.chart-stats__select {
-  max-width: 220px;
-  padding: 3px 8px;
-  border: 1px solid var(--ch-bd);
-  border-radius: 8px;
-  background: var(--ch-s1);
-  color: var(--ch-t1);
-  font-size: 11px;
-  font-family: inherit;
-}
-
-.chart-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-@media (max-width: 900px) {
-  .chart-stats-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* The hero's right column: the reading toggle stacked over the run pill. */
+/* The hero's right column: the run pill. */
 .chart-hero__side {
   display: flex;
   flex-direction: column;

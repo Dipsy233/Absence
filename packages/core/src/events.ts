@@ -258,9 +258,7 @@ export interface ErrorPayload {
  * from what the protocol and the OS actually reported — assistant text length
  * for the output side, the reported context window's growth across the run for
  * the input side. `estimated` is always true and every consumer must label
- * these values as estimates. Tokens are the telemetry fact; any cost derived
- * from them is computed at query time against a configurable price table and
- * is never stored.
+ * these values as estimates. Tokens are the telemetry fact.
  */
 export interface UsagePayload {
   /** The model the run ran under (`sessions.model` at emit time). */

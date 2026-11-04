@@ -8,18 +8,16 @@ import type {
   FileContent,
   FileVersionInfo,
   MetricsResponse,
-  PricingRule,
   Project,
   ResumeTarget,
   RunSummary,
   RuntimeKind,
   RuntimeStatus,
+  SessionEventForwardPage,
   SessionHistoryEntry,
   SessionSnapshot,
   SoundSetMeta,
   SoundSetState,
-  StatsQuery,
-  StatsReport,
 } from "@absence/core";
 
 /* The wire shapes are the shared contracts (packages/core/api) — the same
@@ -33,7 +31,6 @@ export type {
   EggFilterSaveResponse,
   EggFilterState,
   FileContent,
-  PricingRule,
   ResumeTarget,
   RuntimeKind,
   RuntimeStatus,
@@ -125,6 +122,37 @@ export async function fetchRunEvents(
   );
 }
 
+/** One forward page of a session's persisted events (the catch-up direction). */
+export async function fetchSessionEventsPage(
+  sessionId: string,
+  options: { after?: number; limit?: number } = {},
+): Promise<SessionEventForwardPage> {
+  const params = new URLSearchParams();
+  if (options.after !== undefined) params.set("after", String(options.after));
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  const qs = params.toString();
+  return json<SessionEventForwardPage>(
+    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/events${qs ? `?${qs}` : ""}`),
+  );
+}
+
+/**
+ * The whole session's events, paged forward until the archive says stop. The
+ * events carry their `seq`, which is what the all-runs aggregate cuts run
+ * windows on. A live session reads the same archive — the server flushes its
+ * 50ms write buffer before answering.
+ */
+export async function fetchAllSessionEvents(sessionId: string): Promise<AbsenceEvent[]> {
+  const out: AbsenceEvent[] = [];
+  let after: number | undefined;
+  for (;;) {
+    const page = await fetchSessionEventsPage(sessionId, { after, limit: 2000 });
+    out.push(...page.events);
+    if (!page.hasMore || page.nextAfter === undefined) return out;
+    after = page.nextAfter;
+  }
+}
+
 export async function sendPrompt(id: string, prompt: string): Promise<void> {
   await json(
     await fetch(`/api/sessions/${id}/prompt`, {
@@ -173,38 +201,6 @@ export async function respondApproval(sessionId: string, id: string, value: stri
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, value }),
-    }),
-  );
-}
-
-/* ── Cross-session aggregate statistics ───────────────────────────────────── */
-
-/**
- * Aggregated agent behavior over a time window. Derived values arrive `null`
- * when the window has no data — render that as "no data", never as 0.
- */
-export async function fetchStats(query: StatsQuery = {}): Promise<StatsReport> {
-  const params = new URLSearchParams();
-  if (query.from !== undefined) params.set("from", String(query.from));
-  if (query.to !== undefined) params.set("to", String(query.to));
-  if (query.project) params.set("project", query.project);
-  if (query.runtime) params.set("runtime", query.runtime);
-  const qs = params.toString();
-  return json<StatsReport>(await fetch(`/api/stats${qs ? `?${qs}` : ""}`));
-}
-
-/* ── Token price table (cost is derived at query time, never stored) ─────── */
-
-export async function fetchPricing(): Promise<{ rules: PricingRule[] }> {
-  return json<{ rules: PricingRule[] }>(await fetch("/api/pricing"));
-}
-
-export async function savePricing(rules: PricingRule[]): Promise<{ ok: true; rules: PricingRule[] }> {
-  return json(
-    await fetch("/api/pricing", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rules }),
     }),
   );
 }
