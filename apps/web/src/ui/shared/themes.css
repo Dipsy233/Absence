@@ -1074,6 +1074,19 @@
   border-color: var(--mon-bd2);
 }
 
+/* The run switcher's pill and menu float over the glows and the page: the
+   10% white wash alone leaves their text on top of whatever shines through.
+   Frost them like the other floating glass, on a firmer plate. */
+.theme-glass .mon-runsel,
+.theme-glass .chart-runsel,
+.theme-glass .mon-runmenu,
+.theme-glass .chart-runmenu {
+  background: color-mix(in srgb, var(--mon-s2) 55%, var(--mon-bg));
+  backdrop-filter: blur(12px) saturate(1.6);
+  -webkit-backdrop-filter: blur(12px) saturate(1.6);
+  border-color: var(--mon-bd2);
+}
+
 .theme-glass.scheme-light .mon-bar {
   background: rgb(255 255 255 / 0.55);
 }
