@@ -449,6 +449,47 @@ async function main(): Promise<void> {
     adapter.dispose();
   }
 
+  section("resume replay: history updates are not projected as live events");
+  {
+    // pi-acp replays the session's tool calls as session/update traffic right
+    // after session/load. Projecting that replay pinned the Stage on the last
+    // edit, flipped the status to working, and wrote the same events into the
+    // archive again — on every reopen.
+    const adapter = new AcpAdapter(profileFor("resume-replay", "resume-check"));
+    const events: AbsenceEvent[] = [];
+    adapter.subscribe((event) => events.push(event));
+    await adapter.start({ sessionId: "resume-check", cwd: repoRoot, resumeHandle: "test-session" });
+
+    // The replay is delivered asynchronously; give the transport a moment.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    check(
+      "replayed tool calls never become live events",
+      !events.some((event) => event.type === "tool_start" || event.type === "tool_end"),
+      events.map((event) => event.type).join(","),
+    );
+    check(
+      "the replay starts no run",
+      !events.some((event) => event.type === "agent_start" || event.type === "agent_end"),
+      events.map((event) => event.type).join(","),
+    );
+
+    // The gate must not swallow a real turn that follows the resume.
+    await adapter.prompt("hello");
+    check(
+      "a following real turn still produces its events",
+      events.some((event) => event.type === "agent_start") &&
+        events.some(
+          (event) =>
+            event.type === "message" &&
+            (event.payload as any).role === "assistant" &&
+            String((event.payload as any).content).includes("test agent replied"),
+        ) &&
+        events.some((event) => event.type === "agent_end"),
+      events.map((event) => event.type).join(","),
+    );
+    adapter.dispose();
+  }
+
   section("registry: sync writes a usable cache, offline fails readably");
   {
     const body = {

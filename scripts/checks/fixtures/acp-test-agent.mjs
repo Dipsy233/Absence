@@ -14,6 +14,10 @@
  *   ABSENCE_ACP_TEST_MODE=startup-chunk
  *                                   sends an agent_message_chunk right after
  *                                   session/new, like pi-acp's startup info.
+ *   ABSENCE_ACP_TEST_MODE=resume-replay
+ *                                   answers session/load, then replays the
+ *                                   session's history as tool_call updates
+ *                                   before any prompt (pi-acp's resume shape).
  */
 import { createInterface } from "node:readline";
 
@@ -103,6 +107,26 @@ input.on("line", async (line) => {
             availableCommands: [
               { name: "skill:playwright-cli", description: "Automate browsers" },
             ],
+          });
+        }
+        if (mode === "resume-replay" && message.method !== "session/new") {
+          // The pi-acp resume shape: the session's history replays as
+          // tool_call updates right after session/load, before any prompt.
+          update(sessionId, {
+            sessionUpdate: "tool_call",
+            toolCallId: "replay-1",
+            title: "Edit 2.txt",
+            kind: "edit",
+            status: "completed",
+            rawInput: { path: "2.txt", content: "done" },
+          });
+          update(sessionId, {
+            sessionUpdate: "tool_call",
+            toolCallId: "replay-2",
+            title: "Read 2.txt",
+            kind: "read",
+            status: "completed",
+            rawInput: { path: "2.txt" },
           });
         }
       }

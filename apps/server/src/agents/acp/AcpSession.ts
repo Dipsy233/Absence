@@ -54,6 +54,12 @@ export class AcpSession {
   private resumeHandle?: string;
   private projection: Promise<void> = Promise.resolve();
   private busy = false;
+  /**
+   * False until this process's first `session/prompt`. A resumed/loaded
+   * session's replay of its history arrives before that prompt and is not
+   * projected (see handleNotification).
+   */
+  private hasPrompted = false;
   private aborted = false;
   private closed = false;
   private forceAbort?: () => void;
@@ -180,6 +186,9 @@ export class AcpSession {
 
     this.aborted = false;
     this.busy = true;
+    // From here on, session/update traffic is live turn output. Everything
+    // before it was the resume/load replay (see handleNotification).
+    this.hasPrompted = true;
 
     let forced = false;
     const promptPromise = connection.prompt(sessionId, toAcpBlocks(accepted));
@@ -364,6 +373,16 @@ export class AcpSession {
     if (!update || typeof update !== "object") return;
 
     this.options.onStateUpdate(update);
+
+    // A resumed/loaded session replays its history as session/update traffic
+    // before the first prompt. Absence already restored that history from its
+    // own archive; projecting it again would pin the Stage and the agent
+    // status on stale work (a replay ends without `agent_end`, so nothing
+    // would reset them) and would write the same events into the archive a
+    // second time. Session state (model, context usage, commands) still flows
+    // above; only event projection is gated. The first prompt of this process
+    // is what separates replay from live turn output.
+    if (!this.hasPrompted) return;
 
     // A rejected permission is a fact about the *call*, not an ACP field; the
     // bridge remembers it (from the standard option kind) so the projector can

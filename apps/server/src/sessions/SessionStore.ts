@@ -278,8 +278,12 @@ export class AbsenceSession {
       const events = await readEvents(this.session.projectPath, archiveId);
       for (const event of events) this.applyToState(event);
       this.events = events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events;
-      // A resumed session is not mid-run: the agent is idle again.
+      // A resumed session is not mid-run: the agent is idle again, and the
+      // Stage rests on its default page — an archive whose tail lacks
+      // `agent_end` (a killed server, a replayed resume) must not pin it on
+      // whatever last owned it.
       this.setStatus("listening");
+      this.currentAction = undefined;
       // …so a run the archive still marks `running` is one whose `agent_end`
       // never arrived (the server died, or the agent was killed). Left alone it
       // stays `running` forever, and `MonitorStage` keeps following work that
