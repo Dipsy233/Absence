@@ -382,7 +382,10 @@ export abstract class BaseAdapter implements AgentAdapter {
     if (now - this.thinkingLastEmit < THINK_EMIT_MS) return;
     this.thinkingLastEmit = now;
     this.thinkingDirty = false;
-    this.emitAbsence("thinking", { content: this.thinkingAcc, delta, streaming: true });
+    // Stamp the snapshot with the instant this delta was taken, not a second
+    // Date.now() inside createEvent: the first snapshot and the durable event
+    // must share the exact same time value, not merely the same millisecond.
+    this.emitAbsence("thinking", { content: this.thinkingAcc, delta, streaming: true }, now);
   }
 
   /**
@@ -441,12 +444,18 @@ export abstract class BaseAdapter implements AgentAdapter {
     this.messageDirty = false;
     const emitted = this.messageSinceEmit;
     this.messageSinceEmit = "";
-    this.emitAbsence("message", {
-      role: "assistant",
-      content: this.messageAcc,
-      delta: emitted,
-      streaming: true,
-    });
+    // One `now` per delta: the first snapshot and the durable reply share the
+    // exact time value (see the thinking stream above).
+    this.emitAbsence(
+      "message",
+      {
+        role: "assistant",
+        content: this.messageAcc,
+        delta: emitted,
+        streaming: true,
+      },
+      now,
+    );
   }
 
   /**
