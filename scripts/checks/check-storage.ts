@@ -274,6 +274,61 @@ section("file index");
   );
 }
 
+section("a command's output is stored whole — it has no other home");
+{
+  const id = "sess_command_output";
+  const started = startedAt + 80;
+  await writeMeta(project, {
+    version: 1,
+    absenceSessionId: id,
+    projectPath: project,
+    projectName: "project",
+    startedAt: started,
+    updatedAt: started + 5,
+    runtime: "mock",
+    messageCount: 1,
+    firstPrompt: "run it",
+  });
+  const longList = Array.from({ length: 400 }, (_, i) => `-rw-r--r-- file-${i}.txt`).join("\n");
+  appendEvents(project, id, [
+    event(
+      "evt_cmd_out",
+      "command",
+      {
+        command: "ls -la; echo ---; cat 2.txt",
+        stdout: `${longList}
+---
+中文1
+阿拉伯2
+`,
+        stderr: "",
+        exitCode: 0,
+      },
+      started,
+    ),
+    event("evt_big_write", "file_write", { path: "big.txt", content: "x".repeat(2_000) }, started + 1),
+  ]);
+  await drainArchive();
+  const events = await readEvents(project, id);
+  const command = events.find((e) => e.id === "evt_cmd_out");
+  check(
+    "the command's stdout survives the archive whole",
+    command?.type === "command" && (command.payload as { stdout: string }).stdout.includes("中文1"),
+    command?.type === "command" ? `${(command.payload as { stdout: string }).stdout.length} chars` : "missing",
+  );
+  check(
+    "the command row claims no preview",
+    command?.type === "command" && (command.payload as { previewTruncated?: boolean }).previewTruncated !== true,
+  );
+  const bigWrite = events.find((e) => e.id === "evt_big_write");
+  check(
+    "file content still previews — its full copy lives in file_versions",
+    bigWrite?.type === "file_write" &&
+      (bigWrite.payload as { content: string }).content.length < 2_000 &&
+      (bigWrite.payload as { previewTruncated?: boolean }).previewTruncated === true,
+  );
+}
+
 section("pagination");
 {
   const newest = await readEventsPage(legacyId, { limit: 2 });

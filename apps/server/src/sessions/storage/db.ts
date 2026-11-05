@@ -3,6 +3,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import {
+  EVENT_PREVIEW_LIMIT,
   isStreamingEvent,
   previewText,
   type AbsenceEvent,
@@ -661,28 +662,43 @@ export async function drainArchive(): Promise<void> {
 }
 
 /**
- * The payload as it is stored: large text fields reduced to a preview.
+ * The bound on one stored command's output: the same cap the projector's
+ * accumulator enforces on the live stream, so the archive never needs to hold
+ * more than the live window already did. Mirrored here rather than imported —
+ * it is a persistence bound, not a projection detail.
+ */
+const COMMAND_OUTPUT_LIMIT = 2_000_000;
+
+/**
+ * How much of each large text field the archive keeps, per field.
+ * The rule is "preview only where the full value has another home": file
+ * content is materialised into `file_versions` by the FileIndex — full
+ * fidelity, exactly one copy — so the event row keeps the head and the full
+ * text is fetched from the file-version endpoint when someone opens it.
  *
- * The event stream carries whole files (a `file_write`'s content, an edit's
- * `before`/`after`/`diff`, a command's stdout) and the same values are already
- * materialised into `file_versions` by the FileIndex — full fidelity, exactly
- * one copy. Storing them again inside every event row doubles the database for
- * nothing a reader needs: Activity, the Stage and the replay timeline show the
- * head of a value, and the full text is fetched from the file-version endpoint
- * when someone actually opens it.
+ * A command's output has no other home. Its stdout/stderr *is* the fact the
+ * reader opens the command card for, and truncating it destroyed the fact: a
+ * `cat file` after a long `ls` was gone from the record forever. The archive
+ * row is therefore the one full-fidelity copy, capped at the same bound the
+ * projector's accumulator enforces (the live event can never carry more), so
+ * the worst case row is bounded by what was already held in memory.
  *
  * The truncation happens at the storage boundary only: the run index, the file
  * index and the live window all receive the full event. Rows written before
  * this existed keep their full payloads, and every reader must therefore treat
  * `previewTruncated` as "may be a preview", never its absence as "complete".
  */
-const TRUNCATED_TEXT_FIELDS: Partial<Record<AbsenceEvent["type"], string[]>> = {
-  file_read: ["content"],
-  file_write: ["content"],
-  file_edit: ["before", "after", "diff"],
-  command: ["stdout", "stderr"],
-  search: ["output"],
-  mcp: ["args", "result", "structured"],
+const TRUNCATED_TEXT_FIELDS: Partial<Record<AbsenceEvent["type"], Record<string, number>>> = {
+  file_read: { content: EVENT_PREVIEW_LIMIT },
+  file_write: { content: EVENT_PREVIEW_LIMIT },
+  file_edit: {
+    before: EVENT_PREVIEW_LIMIT,
+    after: EVENT_PREVIEW_LIMIT,
+    diff: EVENT_PREVIEW_LIMIT,
+  },
+  command: { stdout: COMMAND_OUTPUT_LIMIT, stderr: COMMAND_OUTPUT_LIMIT },
+  search: { output: EVENT_PREVIEW_LIMIT },
+  mcp: { args: EVENT_PREVIEW_LIMIT, result: EVENT_PREVIEW_LIMIT, structured: EVENT_PREVIEW_LIMIT },
 };
 
 function storedPayload(event: AbsenceEvent): string {
@@ -691,10 +707,10 @@ function storedPayload(event: AbsenceEvent): string {
   const payload = event.payload as unknown as Record<string, unknown>;
   let truncated = false;
   const stored = { ...payload };
-  for (const field of fields) {
+  for (const [field, limit] of Object.entries(fields)) {
     const value = stored[field];
     if (typeof value !== "string") continue;
-    const preview = previewText(value);
+    const preview = previewText(value, limit);
     if (preview !== value) {
       stored[field] = preview;
       truncated = true;
