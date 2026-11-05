@@ -11,7 +11,7 @@ import { ChatThread } from "../../components/chat/ChatThread";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { StageItem } from "../../types/stage";
-import { REPLAY_SPEEDS } from "../../types/replay";
+import { REPLAY_SPEEDS, type ReplaySpeed } from "../../types/replay";
 import { Chip, TONE_FOR_KIND, type MonTone } from "../shared/atoms";
 import { layoutTimeline, timelineTotalMs } from "../../lib/timeline";
 import { useNow } from "../../hooks/useNow";
@@ -634,116 +634,127 @@ function Timeline({ data }: { data: MonitorData }) {
   const cursorLabel = formatOffset(cursor * total);
   const trackHeight = shownLanes.length * LANE_H + 2;
 
+  /** One button per replay rate; the active one is lit while a replay holds. */
+  const speedButton = (rate: ReplaySpeed) => (
+    <button
+      key={rate}
+      type="button"
+      className="mon-tl__ctl mon-tl__ctl--speed mon-mono"
+      data-on={inReplay && speed === rate ? "true" : undefined}
+      disabled={!inReplay}
+      onClick={() => setSpeed(rate)}
+      title={t("Replay speed")}
+      aria-label={t("Replay speed")}
+    >
+      {rate}×
+    </button>
+  );
+
   return (
     <div className="mon-tl">
-      <div className="mon-tl__row">
-        {/*
-          Replay's controls, all on the left in two rows: step and play on the
-          top row, speed and live on the bottom. The strip is a player — live
-          is its playing state, and both a step and a pause leave it holding a
-          moment (a paused replay), which the ▶ then continues.
-        */}
-        <div className="mon-tl__controls" style={{ height: trackHeight }}>
-          <button
-            type="button"
-            className="mon-tl__ctl"
-            disabled={!data.run}
-            onClick={() => {
-              if (!data.run) return;
-              if (!inReplay) {
-                // Stepping back from live holds the previous activity: load
-                // the replay paused at the live edge, then one step back.
-                selectRun(data.run.id);
-                load(runEvents(data.events, data.run), {
-                  startAtEnd: true,
-                  label: `#${data.run.index} · ${data.run.prompt}`,
-                });
-                useReplayStore.getState().stepBackward();
-                setMode("replay");
-                return;
-              }
-              ensureReplayFresh();
-              stepBackward();
-            }}
-            title={t("One activity back")}
-            aria-label={t("One activity back")}
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            className="mon-tl__ctl mon-tl__ctl--play"
-            disabled={!data.run}
-            onClick={() => {
-              if (!data.run) return;
-              if (!inReplay) {
-                // Live is the player's playing state, so its button pauses:
-                // hold the view at the live edge as a paused replay, which the
-                // clock can then be walked or played from.
-                selectRun(data.run.id);
-                load(runEvents(data.events, data.run), {
-                  startAtEnd: true,
-                  label: `#${data.run.index} · ${data.run.prompt}`,
-                });
-                setMode("replay");
-                return;
-              }
-              if (replayStatus === "playing") pause();
-              else play();
-            }}
-            title={
-              !inReplay
-                ? t("Pause")
-                : replayStatus === "playing"
-                  ? t("Pause")
-                  : t("Play")
+      {/*
+        Replay's transport, one row above the strip, right-aligned: the slow
+        speeds, the step/play cluster, the fast speeds, then live. The strip is
+        a player — live is its playing state, and both a step and a pause leave
+        it holding a moment (a paused replay), which the ▶ then continues. The
+        speed is a button per rate, not one cycling read-out, so the rate a
+        reader wants is one click away in either direction.
+      */}
+      <div className="mon-tl__bar">
+        {REPLAY_SPEEDS.filter((rate) => rate <= 1).map((rate) => speedButton(rate))}
+        <button
+          type="button"
+          className="mon-tl__ctl"
+          disabled={!data.run}
+          onClick={() => {
+            if (!data.run) return;
+            if (!inReplay) {
+              // Stepping back from live holds the previous activity: load
+              // the replay paused at the live edge, then one step back.
+              selectRun(data.run.id);
+              load(runEvents(data.events, data.run), {
+                startAtEnd: true,
+                label: `#${data.run.index} · ${data.run.prompt}`,
+              });
+              useReplayStore.getState().stepBackward();
+              setMode("replay");
+              return;
             }
-            aria-label={
-              !inReplay
-                ? t("Pause")
-                : replayStatus === "playing"
-                  ? t("Pause")
-                  : t("Play")
+            ensureReplayFresh();
+            stepBackward();
+          }}
+          title={t("One activity back")}
+          aria-label={t("One activity back")}
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          className="mon-tl__ctl mon-tl__ctl--play"
+          disabled={!data.run}
+          onClick={() => {
+            if (!data.run) return;
+            if (!inReplay) {
+              // Live is the player's playing state, so its button pauses:
+              // hold the view at the live edge as a paused replay, which the
+              // clock can then be walked or played from.
+              selectRun(data.run.id);
+              load(runEvents(data.events, data.run), {
+                startAtEnd: true,
+                label: `#${data.run.index} · ${data.run.prompt}`,
+              });
+              setMode("replay");
+              return;
             }
-          >
-            {!inReplay || replayStatus === "playing" ? "⏸" : "▶"}
-          </button>
-          <button
-            type="button"
-            className="mon-tl__ctl"
-            disabled={!inReplay}
-            onClick={() => {
-              ensureReplayFresh();
-              stepForward();
-            }}
-            title={t("One activity forward")}
-            aria-label={t("One activity forward")}
-          >
-            ›
-          </button>
-          <button
-            type="button"
-            className="mon-tl__ctl mon-tl__ctl--speed mon-mono"
-            disabled={!inReplay}
-            onClick={() => setSpeed(REPLAY_SPEEDS[(REPLAY_SPEEDS.indexOf(speed) + 1) % REPLAY_SPEEDS.length]!)}
-            title={inReplay ? t("Replay speed — click to change") : t("Replay speed")}
-            aria-label={t("Replay speed")}
-          >
-            {speed}×
-          </button>
-          <button
-            type="button"
-            className="mon-tl__ctl"
-            data-live={following ? "true" : undefined}
-            onClick={goLive}
-            disabled={following}
-            title={t("Back to live")}
-            aria-label={t("Back to live")}
-          >
-            ◉
-          </button>
-        </div>
+            if (replayStatus === "playing") pause();
+            else play();
+          }}
+          title={
+            !inReplay
+              ? t("Pause")
+              : replayStatus === "playing"
+                ? t("Pause")
+                : t("Play")
+          }
+          aria-label={
+            !inReplay
+              ? t("Pause")
+              : replayStatus === "playing"
+                ? t("Pause")
+                : t("Play")
+          }
+        >
+          {!inReplay || replayStatus === "playing" ? "⏸" : "▶"}
+        </button>
+        <button
+          type="button"
+          className="mon-tl__ctl"
+          disabled={!inReplay}
+          onClick={() => {
+            ensureReplayFresh();
+            stepForward();
+          }}
+          title={t("One activity forward")}
+          aria-label={t("One activity forward")}
+        >
+          ›
+        </button>
 
+        {REPLAY_SPEEDS.filter((rate) => rate > 1).map((rate) => speedButton(rate))}
+        <button
+          type="button"
+          className="mon-tl__ctl"
+          data-live={following ? "true" : undefined}
+          onClick={goLive}
+          disabled={following}
+          title={t("Back to live")}
+          aria-label={t("Back to live")}
+        >
+          ◉
+        </button>
+      </div>
+
+      <div className="mon-tl__row">
         <div className="mon-tl__labels" style={{ height: trackHeight }}>
           {shownLanes.map(([id, label]) => (
             <span key={id} style={{ height: LANE_H }}>
