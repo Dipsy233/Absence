@@ -285,6 +285,11 @@ export function buildRunFacts(
           eventId: event.id,
           at: event.timestamp,
         });
+        // A *modified* change means the file already existed: a `file_write`
+        // derived from the same shell write is a rewrite, not a creation. A
+        // `created` change does not — the write that follows is still this
+        // run's first evidence of the file, and stays a creation.
+        if (event.payload.kind === "modified") known.add(event.payload.path);
         // A change the watcher saw outside the project root: the agent has no
         // business writing there, so it is a fact on its own.
         if (event.payload.outside) {
@@ -758,6 +763,12 @@ function buildTimeline(
    * `at`/`offsetMs` stay at the start, so the world line stays in event order.
    */
   const openStream: Partial<Record<"think" | "speak", TimelineNode>> = {};
+  /**
+   * The LAID node still open per command window (`toolCallId`), so one egg's
+   * child-count updates stay the one node they describe. Keyed on the id, not
+   * on the node's place: a command's own node can land between two updates.
+   */
+  const laidByCall = new Map<string, TimelineNode>();
   const appendStream = (
     event: AbsenceEvent,
     kind: "think" | "speak",
@@ -765,16 +776,20 @@ function buildTimeline(
     subject: string,
     streaming: boolean | undefined,
   ): void => {
+    const offset = Math.max(0, event.timestamp - run.startedAt);
     const open = openStream[kind];
     if (open) {
       open.eventId = event.id;
       open.subject = subject;
+      // The mark keeps the offset of its first chunk; its end follows the
+      // newest evidence that the text was still arriving.
+      open.endOffsetMs = Math.max(open.endOffsetMs ?? offset, offset);
     } else {
       const created: TimelineNode = {
         eventId: event.id,
         kind,
         at: event.timestamp,
-        offsetMs: Math.max(0, event.timestamp - run.startedAt),
+        offsetMs: offset,
         action,
         subject,
         effects: [],
@@ -782,7 +797,21 @@ function buildTimeline(
       nodes.push(created);
       openStream[kind] = created;
     }
-    if (streaming !== true) openStream[kind] = undefined;
+    if (streaming !== true) {
+      const node = openStream[kind];
+      // The finished event carries when the text actually stopped (its own
+      // stamp is the block's start). The mark then ends there — the model
+      // track goes quiet while the shell runs — instead of running on until
+      // the next think/speak. Archives written before `endedAt` existed, and
+      // an end that would not outlast the start (a clock skew), fall back to
+      // fill-to-next.
+      const endedAt = (event.payload as { endedAt?: unknown }).endedAt;
+      if (node && typeof endedAt === "number") {
+        const end = Math.max(0, endedAt - run.startedAt);
+        if (end > node.offsetMs) node.endOffsetMs = Math.max(node.endOffsetMs ?? end, end);
+      }
+      openStream[kind] = undefined;
+    }
   };
 
   for (const event of slice) {
@@ -857,18 +886,31 @@ function buildTimeline(
       // A command is anchored on whichever event carries it: the `command` event
       // when the shell reported, the tool_start when it is still running, and the
       // tool_end when it failed (a failed tool emits no `command` event at all).
+      // The mark covers the command's own execution — from the tool call that
+      // started it to the moment it reported — not a point at its completion
+      // with a bar that then fills whatever came after it. A command whose
+      // start was never seen (a bare `command` event from an older archive)
+      // anchors at its report and has no end of its own.
       case "tool_start":
       case "command":
       case "tool_end": {
         const command = commandByEvent.get(event.id);
         if (!command) break;
-        push(
-          event,
-          "run",
-          command.permissionDenied ? "DENIED" : "RUN",
-          command.command || "(shell)",
-          [commandEffect(command)],
-        );
+        const startedAt = command.startedAt ?? event.timestamp;
+        const node: TimelineNode = {
+          eventId: event.id,
+          kind: "run",
+          at: startedAt,
+          offsetMs: Math.max(0, startedAt - run.startedAt),
+          action: command.permissionDenied ? "DENIED" : "RUN",
+          subject: command.command || "(shell)",
+          effects: [commandEffect(command)],
+        };
+        if (command.endedAt !== undefined) {
+          const end = Math.max(0, command.endedAt - run.startedAt);
+          if (end > node.offsetMs) node.endOffsetMs = end;
+        }
+        nodes.push(node);
         break;
       }
 
@@ -879,17 +921,40 @@ function buildTimeline(
       case "process": {
         const { kind } = event.payload;
         if (kind === "tool") break;
-        const { pid, name, commandLine, command, status, children, startedAt, exitedAt } = event.payload;
+        const { pid, name, commandLine, command, status, children, startedAt, exitedAt, toolCallId } =
+          event.payload;
+        // One command is one node on the world line. The watcher re-reports
+        // the command's own egg every time its child count moves, which used
+        // to read as a LAID node per update; keyed on the command window's
+        // tool call id, the first LAID stays where the process started and a
+        // later update only refreshes what it says. The exit keeps its own
+        // node — that moment is a fact of its own.
+        if (status === "running" && toolCallId !== undefined) {
+          const open = laidByCall.get(toolCallId);
+          if (open) {
+            open.eventId = event.id;
+            open.effects = [`pid ${pid}${children > 0 ? ` +${children}` : ""}`, command ?? commandLine];
+            break;
+          }
+        }
         const livedSeconds = Math.max(0, Math.round(((exitedAt ?? startedAt) - startedAt) / 1000));
-        push(
-          event,
-          "process",
-          status === "running" ? "LAID" : "DIED",
-          name,
-          status === "running"
-            ? [`pid ${pid}${children > 0 ? ` +${children}` : ""}`, command ?? commandLine]
-            : [`pid ${pid}`, `exited after ${livedSeconds}s`],
-        );
+        const node: TimelineNode = {
+          eventId: event.id,
+          kind: "process",
+          at: event.timestamp,
+          offsetMs: Math.max(0, event.timestamp - run.startedAt),
+          action: status === "running" ? "LAID" : "DIED",
+          subject: name,
+          effects:
+            status === "running"
+              ? [`pid ${pid}${children > 0 ? ` +${children}` : ""}`, command ?? commandLine]
+              : [`pid ${pid}`, `exited after ${livedSeconds}s`],
+        };
+        nodes.push(node);
+        if (toolCallId !== undefined) {
+          if (status === "running") laidByCall.set(toolCallId, node);
+          else laidByCall.delete(toolCallId);
+        }
         break;
       }
 
@@ -921,6 +986,11 @@ function buildTimeline(
     }
   }
 
+  // The world line is time-ordered. A command's node is created where its
+  // result arrived but drawn from where the call began, so insertion order is
+  // no longer time order; a stable sort keeps same-offset nodes in arrival
+  // order.
+  nodes.sort((a, b) => a.offsetMs - b.offsetMs);
   return nodes;
 }
 

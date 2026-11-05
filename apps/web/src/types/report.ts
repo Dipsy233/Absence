@@ -162,6 +162,16 @@ export interface TimelineNode {
   at: number;
   /** Milliseconds from the start of the run (the axis label). */
   offsetMs: number;
+  /**
+   * Milliseconds from the run's start at which this activity *actually
+   * stopped*, when the stream carried its end: a finished thought's last
+   * chunk, a reply's flush. A node with an end is drawn only that long — the
+   * model track goes quiet while the shell runs — instead of running on to
+   * the next node of its track. Absent on one-shot activities and on rows
+   * written before the end was recorded; the layout then falls back to
+   * fill-to-next.
+   */
+  endOffsetMs?: number;
   /** Short verb shown on the node. */
   action: string;
   /** The thing acted on: a path, a command, a query, a model. */

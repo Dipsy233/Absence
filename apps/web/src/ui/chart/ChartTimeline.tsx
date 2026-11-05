@@ -10,10 +10,12 @@ import type { TimelineNode } from "../../types/report";
  *
  * Not a row of cards: one track per kind of work — the model's reasoning and
  * words, the tools it called, the shell commands it ran — and each activity a
- * mark at the moment it happened. A mark's width is the time it was the thing
- * happening on its own track, strictly `span / total`: when the axis grows,
- * every mark and every gap shrink by the same factor, and the last mark on a
- * track runs to the axis end.
+ * mark for the time it actually took: a thought from its first chunk to its
+ * last, a command from its call to its report. An activity with no recorded
+ * end is drawn until the next activity of any track starts (that is what
+ * stopped it from being the thing happening), and only a run's genuine last
+ * activity reaches the axis end. Strictly `span / total`: when the axis grows,
+ * every mark and every gap shrink by the same factor.
  *
  * Track membership, bucketing and geometry live in `lib/timeline`; this
  * component only draws what the layout hands it, so adding or removing a track

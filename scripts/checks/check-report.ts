@@ -9,6 +9,7 @@
 import { check, finish } from "./harness";
 import { createEvent, type AbsenceEvent } from "@absence/core";
 import { buildRunFacts, renderLive, renderRun } from "../../apps/web/src/lib/report";
+import { buildTimelineTracks, layoutTimeline, timelineTotalMs } from "../../apps/web/src/lib/timeline";
 import type { HistoryRun } from "../../apps/web/src/types/history";
 
 
@@ -379,6 +380,86 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   );
 }
 
+// H4. a streamed thought ends where it stopped, and a one-shot mark ends at
+// the next activity of any track — the model lane goes quiet while the shell
+// runs, and no bar stretches across another track's work or to the axis end.
+{
+  const events = [
+    stamp(ev("agent_start", { model: "mock/agent" })), // @+0, offset 0
+    stamp(ev("thinking", { content: "Looking around", streaming: true })), // @+10, offset 10
+    // The durable thought is start-stamped; `endedAt` is the only record of
+    // when the text actually stopped.
+    stamp(ev("thinking", { content: "Looking around the project", streaming: false })), // @+20
+    bashStart("b1", "npm test"), // @+30 — the command's call
+    bashEnd("b1"), // @+40 — its report
+    cmd("b1", "npm test", 0), // @+50 — its result
+    stamp(ev("file_read", { path: "a.ts", startLine: 1, endLine: 1, content: "x" })), // @+60
+    stamp(ev("message", { role: "assistant", content: "Done.", streaming: false })), // @+70
+    stamp(ev("agent_end", { reason: "completed" })), // @+80
+  ];
+  // `endedAt` is absolute wall clock, like the stamps: the thought stopped
+  // 20ms after its durable event, the reply 8ms after its own — before the
+  // run ends.
+  (events[2]!.payload as { endedAt?: number }).endedAt = events[2]!.timestamp + 20;
+  (events[7]!.payload as { endedAt?: number }).endedAt = events[7]!.timestamp + 8;
+  const run = runOf(events, 0);
+  const facts = buildRunFacts(events, run);
+  const think = facts.timeline.find((n) => n.kind === "think");
+  check("the thought carries its real end", think?.endOffsetMs === 40, `end=${think?.endOffsetMs}`);
+  const speak = facts.timeline.find((n) => n.kind === "speak");
+  check("the reply carries its real end", speak?.endOffsetMs === 78, `end=${speak?.endOffsetMs}`);
+  const runNode = facts.timeline.find((n) => n.kind === "run");
+  // The command's end is the tool report (+40), which is when execution
+  // actually finished; the result event arrives just after.
+  check(
+    "the command's mark covers its own execution, not its aftermath",
+    runNode?.offsetMs === 30 && runNode?.endOffsetMs === 40,
+    `run=${runNode?.offsetMs}..${runNode?.endOffsetMs}`,
+  );
+  check(
+    "the world line stays in time order",
+    facts.timeline.every((n, i) => i === 0 || n.offsetMs >= facts.timeline[i - 1]!.offsetMs),
+    facts.timeline.map((n) => `${n.action}@${n.offsetMs}`).join(" → "),
+  );
+
+  const total = timelineTotalMs({
+    startedAt: run.startedAt!,
+    endedAt: run.endedAt,
+    lastOffsetMs: Math.max(...facts.timeline.map((n) => n.offsetMs)),
+  });
+  const layout = layoutTimeline(buildTimelineTracks(facts.timeline), total);
+  const model = layout.marks.filter((mark) => mark.trackId === "model");
+  const thinkMark = model.find((mark) => mark.node.kind === "think")!;
+  const speakMark = model.find((mark) => mark.node.kind === "speak")!;
+  check(
+    "the model lane is blank while the shell runs",
+    thinkMark.left + thinkMark.width < speakMark.left,
+    `think ends at ${thinkMark.left + thinkMark.width}%, speak starts at ${speakMark.left}%`,
+  );
+  // The read has no end of its own: the reply that follows it bounds the mark,
+  // so the tools lane does not light up through the reply (or to the axis end).
+  const tools = layout.marks.filter((mark) => mark.trackId === "tools");
+  const readMark = tools.find((mark) => mark.node.kind === "read")!;
+  check(
+    "a one-shot mark ends at the next activity of any track",
+    readMark.left + readMark.width <= speakMark.left + 0.001 && readMark.width > 0,
+    `read ends at ${readMark.left + readMark.width}%, axis is 100%`,
+  );
+  check(
+    "no mark runs to the axis end when activity follows it",
+    layout.marks.every((mark) => mark.left + mark.width < 99.99 || mark.node.kind === "end"),
+    layout.marks.map((m) => `${m.node.action}:${(m.left + m.width).toFixed(1)}`).join(" "),
+  );
+
+  // Archives written before `endedAt` existed keep a bounded fallback.
+  const legacy = [stamp(ev("thinking", { content: "Old archive", streaming: false }))];
+  const legacyFacts = buildRunFacts(legacy, runOf(legacy, 0, "running"));
+  check(
+    "a thought without a recorded end falls back to fill-to-next",
+    legacyFacts.timeline.find((n) => n.kind === "think")?.endOffsetMs === undefined,
+  );
+}
+
 // I. a shell tool that started and never ended is a process still running.
 {
   const events = [bashStart("b1", "npm run dev")];
@@ -467,6 +548,72 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
     "a dead egg is not an attention reason",
     !facts.attention.reasons.includes("process_left_running"),
   );
+}
+
+// K2. one command window is one world-line node: the watcher re-reports the
+// command's own egg every time its child count moves, and those updates fold
+// into the first LAID by the window's tool call id. The exit keeps its node.
+{
+  const egg = (status: "running" | "exited", children: number, exitedAt?: number): AbsenceEvent =>
+    stamp(
+      ev("process", {
+        pid: 4444,
+        ppid: 1000,
+        name: "bash.exe",
+        commandLine: "bash -c ls -la",
+        status,
+        startedAt: 1_000,
+        ...(exitedAt !== undefined ? { exitedAt } : {}),
+        children,
+        command: "ls -la",
+        toolCallId: "call_1",
+      }),
+    );
+  const events = [
+    bashStart("call_1", "ls -la"),
+    egg("running", 0),
+    egg("running", 1),
+    egg("running", 2),
+    egg("running", 3),
+    cmd("call_1", "ls -la", 0),
+    egg("exited", 3, 9_000),
+  ];
+  const facts = buildRunFacts(events, runOf(events, 0));
+  const laid = facts.timeline.filter((n) => n.kind === "process" && n.action === "LAID");
+  check("one command window lays one timeline node", laid.length === 1, `got ${laid.length}`);
+  check("the folded node keeps the newest children", laid[0]?.effects[0] === "pid 4444 +3", laid[0]?.effects[0]);
+  check(
+    "the exit stays its own node",
+    facts.timeline.filter((n) => n.kind === "process").map((n) => n.action).join(",") === "LAID,DIED",
+    facts.timeline.map((n) => n.action).join(","),
+  );
+}
+
+// K3. a shell write the OS saw first: the derived `file_write` is a rewrite of
+// a file the `file_change` already proved existed — not a creation.
+{
+  const events = [
+    stamp(ev("file_change", { path: "2.txt", kind: "modified" })),
+    stamp(ev("file_write", { path: "2.txt", content: "one\ntwo" })),
+  ];
+  const facts = buildRunFacts(events, runOf(events, 0));
+  check("a write after a modified change is modified", facts.files.modified.includes("2.txt"));
+  check("and never reads as created", !facts.files.created.includes("2.txt"));
+
+  // An echo'd change is the agent's own write landing on disk: not observed.
+  const echoed = [
+    stamp(ev("file_change", { path: "3.txt", kind: "modified", echo: true })),
+    stamp(ev("file_write", { path: "3.txt", content: "x" })),
+  ];
+  const echoedFacts = buildRunFacts(echoed, runOf(echoed, 0));
+  check("an echo'd change is not observed", !echoedFacts.files.observed.includes("3.txt"));
+  check("a created change does not pre-empt the write's creation", (() => {
+    const born = [
+      stamp(ev("file_change", { path: "4.txt", kind: "created" })),
+      stamp(ev("file_write", { path: "4.txt", content: "x" })),
+    ];
+    return buildRunFacts(born, runOf(born, 0)).files.created.includes("4.txt");
+  })());
 }
 
 // L. a file version loop: the agent writes v0's state back (v2 ≡ v0).
