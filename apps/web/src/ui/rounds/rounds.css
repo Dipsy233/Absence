@@ -633,6 +633,42 @@
   margin: 0 -10px;
   background: var(--mon-bd2);
 }
+/* The selected card: the accent edge says "this is the one the detail window
+   is open on", so a second click reads as a close and not as a re-open. */
+.rounds-card[data-sel="true"] {
+  z-index: 3;
+  border-color: var(--mon-acc);
+  box-shadow:
+    0 10px 22px rgb(0 0 0 / 0.3),
+    0 0 0 3px rgb(94 159 232 / 0.25);
+}
+
+/* The story window's fallback page: a run boundary (START/END) has no Stage
+   item, so the row's own lines are the detail. */
+.rounds-storymeta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+}
+.rounds-storymeta__primary {
+  margin: 0;
+  font: 13px var(--mon-mono);
+  color: var(--mon-t1);
+  word-break: break-word;
+}
+.rounds-storymeta__secondary {
+  margin: 0;
+  font-size: 12px;
+  color: var(--mon-t3);
+  word-break: break-word;
+}
+.rounds-storymeta__time {
+  margin: 0;
+  font-size: 11px;
+  color: var(--mon-t3);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ── The chat row ───────────────────────────────────────────────────────── */
 

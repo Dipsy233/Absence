@@ -16,14 +16,29 @@ import { useRideScroll } from "../shared/rideScroll";
  * One card per activity row — the same rows the Activity feed shows, read as a
  * narrative — and clicking a card rewinds to that step: pin it when live (the
  * whole face then holds that moment), scrub to it when a replay is on screen.
- * The current step lights up (`card now`); a dashed ghost trails the chain so
+ * A click also selects the card and opens the event's detail window (a child
+ * RoundsWindow, owned by RoundsUI); clicking the same card again deselects it
+ * and closes that window. The selected card lights up (`card sel`); the
+ * current step lights up (`card now`); a dashed ghost trails the chain so
  * the story visibly continues.
  *
  * Like the feed, only *state re-reports* would deserve folding, and the fold
  * lives in the feed rather than here: the story is short by construction (one
  * card per act), and a rewind target that absorbed two reads would be a lie.
  */
-export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => void }) {
+export function RoundsStory({
+  data,
+  onLive,
+  selectedId,
+  onSelect,
+}: {
+  data: RoundsData;
+  onLive: () => void;
+  /** The card whose detail window is open — RoundsUI owns the state. */
+  selectedId?: string;
+  /** A click on a card: select it; the same card again means deselect. */
+  onSelect: (row: ActivityRow) => void;
+}) {
   const t = useT();
   const openStage = useStageStore((s) => s.openStage);
   const seek = useReplayStore((s) => s.seekTimestamp);
@@ -41,14 +56,6 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
     }
     return data.item?.id;
   }, [inReplay, replayTime, data.rows, data.following, data.item]);
-
-  const activate = (row: ActivityRow) => {
-    if (inReplay) {
-      seek(row.event.timestamp);
-      return;
-    }
-    if (row.stageItem) openStage(row.stageItem);
-  };
 
   /**
    * The stream, with the opening folded into one card.
@@ -76,6 +83,20 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
     }
     return out;
   }, [data.rows, data.rowsVersion]);
+
+  /**
+   * A click both rewinds — pin when live, scrub when replaying, the card's
+   * older job — and toggles the event's detail window (RoundsUI decides:
+   * the same card again is the close click).
+   */
+  const activate = (row: ActivityRow) => {
+    if (inReplay) {
+      seek(row.event.timestamp);
+    } else if (row.stageItem) {
+      openStage(row.stageItem);
+    }
+    onSelect(row);
+  };
 
   /**
    * What the story is doing with the run — the shared `playingState` rule
@@ -157,6 +178,7 @@ export function RoundsStory({ data, onLive }: { data: RoundsData; onLive: () => 
                   type="button"
                   className="rounds-card"
                   data-now={now ? "true" : undefined}
+                  data-sel={row.id === selectedId ? "true" : undefined}
                   data-dim={row.stageItem === undefined && !inReplay ? "true" : undefined}
                   onClick={() => activate(row)}
                   title={row.stageItem ? row.primary : `${row.action} · ${row.primary}`}

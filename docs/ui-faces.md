@@ -232,7 +232,8 @@ Rounds is a desktop canvas inside `.rounds-root`.
 - `RoundsStory`: the run's steps as a horizontal card chain, one card per
   activity row. The first `START` pair is folded into one card: the user
   prompt carries the model as its meta line. `END` keeps its own card.
-  Clicking a card pins it while live and seeks to it during a replay. The
+  Clicking a card pins it while live and seeks to it during a replay, and
+  opens the event's child window; clicking the same card again closes it. The
   header shows `LIVE` or `REPLAY`, the run index and status, the step count, the
   counts, and `Back to live`.
 - Wallpaper: `ChatThread` with the bubble layout, rendered transparent on the

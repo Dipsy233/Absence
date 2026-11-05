@@ -162,7 +162,7 @@ pin bar 出现在两种情况：
 Rounds 是 `.rounds-root` 内的桌面画布。
 
 - `RoundsScene`：头像与其上方的状态气泡。气泡显示状态词和一行当前对象说明（`Reading {path}`、`Editing {path}`、`Running {command}`、`Reasoning`、`Watching {name}`、`Waiting for you`）。pin 或 replay 持有视图时，点击舞台回到 live。
-- `RoundsStory`：run 的步骤横向卡片链，每个活动行一张卡。最前面的 `START` 对折叠为一张卡：用户 prompt 的卡片把模型作为 meta 行。`END` 保留自己的卡片。点击卡片在 live 时固定它，在 replay 时 seek 到它。页头显示 `LIVE` 或 `REPLAY`、run 序号与状态、步骤数、计数与 `Back to live`。
+- `RoundsStory`：run 的步骤横向卡片链，每个活动行一张卡。最前面的 `START` 对折叠为一张卡：用户 prompt 的卡片把模型作为 meta 行。`END` 保留自己的卡片。点击卡片在 live 时固定它，在 replay 时 seek 到它，并打开对应事件的子窗口；再次点击同一张卡片即关闭。页头显示 `LIVE` 或 `REPLAY`、run 序号与状态、步骤数、计数与 `Back to live`。
 - 壁纸：采用气泡布局的 `ChatThread`，在故事上方的右侧透明渲染。
 - `RoundsDock`：五个快捷入口。`Files`、`Agent Folder`、`Agent Eggs`、`Run`、`Activity`。徽标显示文件夹数、运行中的 egg 数与活动数。没有 `Metrics` 快捷入口：指标从 egg 行打开，作用域为该 egg。
 - 窗口：`RoundsWindow` 可通过标题栏拖拽、通过角柄缩放、关闭，并按焦点堆叠。顶层窗口为 440×430；子窗口为 580×470。`FilePanel`、`Agent Folder`、`Agent Eggs`、`Run` 作为顶层窗口打开。文件内容、版本、事件、egg 指标作为子窗口打开。

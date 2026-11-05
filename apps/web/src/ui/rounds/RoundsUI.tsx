@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isAgentBusy } from "@absence/core";
-import { formatBytes } from "../../lib/format";
+import { formatBytes, formatClock, formatOffset } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { useStageStore } from "../../stores/stageStore";
 import { useMetricsStore } from "../../stores/metricsStore";
@@ -95,6 +95,13 @@ function itemTitle(item: StageItem): string {
   return item.title;
 }
 
+/** The story window's time line for a row without a Stage item. */
+function runStartLabel(row: ActivityRow, runStart?: number): string {
+  return runStart !== undefined
+    ? `${formatOffset(row.event.timestamp - runStart)} · ${formatClock(row.event.timestamp)}`
+    : formatClock(row.event.timestamp);
+}
+
 /** The newest event in the stream that has something to put on a page. */
 function newestItem(rows: ActivityRow[]): StageItem | undefined {
   for (let i = rows.length - 1; i >= 0; i--) {
@@ -177,6 +184,33 @@ export function RoundsUI() {
   };
 
   /**
+   * The story card's own event window. The story chain is the same run the
+   * dock's Run window lists, but a card click is a *selection* with a toggle:
+   * the same card again is the close click, so one id is kept here and the
+   * window lives and dies with it — not one more window per click.
+   */
+  const [storySel, setStorySel] = useState<string>();
+  const storyRow = useMemo(
+    () => (storySel === undefined ? undefined : data.rows.find((row) => row.id === storySel)),
+    [data.rows, storySel],
+  );
+
+  // The selection dies with its row: a new run replaces the chain, and a
+  // window for a card that is gone would outlive its subject.
+  useEffect(() => {
+    if (storySel !== undefined && storyRow === undefined) setStorySel(undefined);
+  }, [storySel, storyRow]);
+
+  const toggleStory = (row: ActivityRow) => {
+    if (storySel === row.id) {
+      setStorySel(undefined);
+      return;
+    }
+    setStorySel(row.id);
+    focus(`story-${row.id}`);
+  };
+
+  /**
    * A notice card opened onto the desktop. The event it names gets its window,
    * the same one the Run list would give that row; a row with nothing to put on
    * a page (a tool boundary, say) falls back to the Run window, which is where
@@ -227,7 +261,7 @@ export function RoundsUI() {
 
         <RoundsScene data={data} onLive={goLive} />
 
-        <RoundsStory data={data} onLive={goLive} />
+        <RoundsStory data={data} onLive={goLive} selectedId={storySel} onSelect={toggleStory} />
 
         <RoundsChat />
 
@@ -324,6 +358,44 @@ export function RoundsUI() {
             </div>
           </RoundsWindow>
         ))}
+
+        {storyRow ? (
+          <RoundsWindow
+            key={`story-${storyRow.id}`}
+            title={
+              storyRow.stageItem
+                ? itemTitle(storyRow.stageItem)
+                : `${storyRow.action} · ${storyRow.primary}`
+            }
+            initial={childSpot(0)}
+            size={CHILD_SIZE}
+            z={zmap[`story-${storyRow.id}`] ?? 2}
+            onFocus={() => focus(`story-${storyRow.id}`)}
+            onClose={() => setStorySel(undefined)}
+          >
+            {storyRow.stageItem ? (
+              storyRow.stageItem.payload.kind === "file" ? (
+                <RoundsPeek item={storyRow.stageItem} />
+              ) : (
+                <div className="rounds-win__stage">
+                  <StageItemView item={storyRow.stageItem} />
+                </div>
+              )
+            ) : (
+              /* A run boundary (START/END) has nothing to put on a page: the
+                 row's own lines are the detail, the same fields the card shows. */
+              <div className="rounds-storymeta">
+                <p className="rounds-storymeta__primary">{storyRow.primary}</p>
+                {storyRow.secondary ? (
+                  <p className="rounds-storymeta__secondary">{storyRow.secondary}</p>
+                ) : null}
+                <p className="rounds-storymeta__time mon-mono">
+                  {runStartLabel(storyRow, data.run?.startedAt)}
+                </p>
+              </div>
+            )}
+          </RoundsWindow>
+        ) : null}
 
         <RoundsDock
           data={data}
