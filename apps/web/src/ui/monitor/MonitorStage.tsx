@@ -13,6 +13,7 @@ import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { StageItem } from "../../types/stage";
 import { REPLAY_SPEEDS } from "../../types/replay";
 import { Chip, TONE_FOR_KIND, type MonTone } from "../shared/atoms";
+import { layoutTimeline } from "../../lib/timeline";
 import { activityViews } from "./activityViews";
 import type { MonitorData } from "../../hooks/useMonitorData";
 
@@ -476,97 +477,48 @@ function Timeline({ data }: { data: MonitorData }) {
   // would otherwise skip it and crash the moment nodes appeared.
   const activeItem = useStageStore((s) => s.activeItem);
 
-  /**
-   * Three lanes, one per *kind of activity*: reasoning, files, shell.
-   *
-   * The lanes are a reading of the Activity feed, so only activities belong on
-   * them. An egg is not an activity — it is a process a command left behind,
-   * reported again every time it changes. It has its own panel on the right;
-   * putting it here would draw the same moment twice and make one daemon look
-   * like a busy shell.
-   */
-  const lanes: Array<[string, string]> = useMemo(
-    () => [
-      ["think", t("Think")],
-      ["files", t("Files")],
-      ["shell", t("Shell")],
-    ],
-    [t],
-  );
-
   const total = Math.max(1, nodes.at(-1)?.offsetMs ?? 0);
 
   /**
-   * For each node, the offset of the next *activity* — precomputed in one
-   * reverse pass.
+   * The three tracks — the model, the tools it called, the shell — bucketed
+   * and laid out by `lib/timeline`, independently of each other.
    *
-   * A block's width is the gap to the next activity (see `marks`), and
-   * answering that by scanning forward from every node made a 2000-node run
-   * two million iterations, twice a second. One walk from the end, carrying the
-   * last seen activity offset backwards, is the same table for O(n). `NaN`
-   * marks "no activity after this one"; `undefined` would need a sparse array,
-   * and `Number.MAX_SAFE_INTEGER` would poison the span arithmetic.
+   * Only activities belong on the strip: lifecycle markers, eggs and OS
+   * observations have no track of their own. An egg is a process a command left
+   * behind, reported again every time it changes; the rail's Agent Eggs panel
+   * is where it lives, and drawing it here would make one daemon look like a
+   * busy shell.
    */
-  const nextActivityOffsetMs = useMemo(() => {
-    const next = new Array<number>(nodes.length).fill(Number.NaN);
-    let seen = Number.NaN;
-    for (let i = nodes.length - 1; i >= 0; i--) {
-      next[i] = seen;
-      if (laneFor(nodes[i]!.kind) !== undefined) seen = nodes[i]!.offsetMs;
-    }
-    return next;
-  }, [nodes]);
+  const layout = useMemo(
+    () => layoutTimeline(data.tracks, total),
+    [data.tracks, total],
+  );
 
   /**
-   * One block per activity, at its own offset.
+   * One block per activity, at its own offset. A block's width is the gap to
+   * the next activity *on the same track*, computed by the layout: a silent
+   * model track must not stretch a shell mark.
    *
-   * The timeline nodes carry a start and no end, so a block's width is the gap
-   * to the next activity — the time that activity was the thing happening.
-   * Capped (a long silence must not become a wall of colour) and floored (a
-   * 40ms read must still be a visible mark, not a sub-pixel sliver).
-   *
-   * Blocks carry their lane's *id*, not an index: which lanes exist is decided
-   * below from the marks themselves.
+   * Blocks carry their track's id, not an index: which tracks exist is decided
+   * by the registry, and empty tracks are already dropped by the layout.
    */
-  const marks = useMemo(() => {
-    const out: Array<{ laneId: string; left: number; width: number; tone: MonTone; label: string; at: number }> = [];
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i]!;
-      // `laneFor` returns undefined for a node that is not one of the three
-      // kinds of work (an egg, a lifecycle marker). Those get no block at all —
-      // an egg re-reports every few seconds and would read as a busy line doing
-      // nothing; its life is the rail's Agent Eggs section, not this strip.
-      const laneId = laneFor(node.kind);
-      if (laneId === undefined) continue;
-      // The next *activity*, not the next node: a run of egg updates between two
-      // reads must not make the read look like it lasted a minute. `NaN` here
-      // means this is the last activity, so its span runs to the line's end.
-      const nextMs = nextActivityOffsetMs[i]!;
-      const span = Number.isNaN(nextMs) ? total - node.offsetMs : nextMs - node.offsetMs;
-      out.push({
-        laneId,
-        left: (node.offsetMs / total) * 100,
-        width: Math.max(0.7, Math.min(28, (span / total) * 100)),
-        tone: TONE_FOR_KIND[node.kind] ?? "mute",
-        label: `${node.action} · ${node.subject} · ${formatOffset(node.offsetMs)}`,
-        at: node.at,
-      });
-    }
-    return out;
-  }, [nodes, total, nextActivityOffsetMs]);
+  const marks = useMemo(
+    () =>
+      layout.marks.map((mark) => ({
+        laneId: mark.trackId,
+        left: mark.left,
+        width: mark.width,
+        tone: (TONE_FOR_KIND[mark.node.kind] ?? "mute") as MonTone,
+        label: `${mark.node.action} · ${mark.node.subject} · ${formatOffset(mark.node.offsetMs)}`,
+        at: mark.node.at,
+      })),
+    [layout],
+  );
 
-  /**
-   * Only the lanes that have something on them get drawn.
-   *
-   * The three lane rows are fixed in order, but a run that never reasoned has
-   * no Think marks, and an egg-heavy run can be almost pure `process`
-   * re-reports — which draw no block anywhere. Drawing the empty lanes anyway
-   * turned the strip into bare hairlines ("empty rows"), the ghost of the eggs
-   * lane the first version had. So the lane list is derived from the marks:
-   * same order, no empty rows, and the strip is only as tall as the work it
-   * shows.
-   */
-  const shownLanes = useMemo(() => lanes.filter(([id]) => marks.some((mark) => mark.laneId === id)), [lanes, marks]);
+  const shownLanes = useMemo(
+    () => layout.tracks.map((track) => [track.id, track.label] as const),
+    [layout],
+  );
   const laneIndex = useMemo(
     () => new Map(shownLanes.map(([id], index) => [id, index])),
     [shownLanes],
@@ -636,7 +588,7 @@ function Timeline({ data }: { data: MonitorData }) {
     return (
       <div className="mon-tl">
         <span className="mon-cap">{t("Timeline")}</span>
-        <span className="mon-tl__empty">{t("Only process updates so far — no file, shell or reasoning activity.")}</span>
+        <span className="mon-tl__empty">{t("Only process updates so far — no model, tool or shell activity.")}</span>
       </div>
     );
   }
@@ -770,7 +722,7 @@ function Timeline({ data }: { data: MonitorData }) {
         <div className="mon-tl__labels" style={{ height: trackHeight }}>
           {shownLanes.map(([id, label]) => (
             <span key={id} style={{ height: LANE_H }}>
-              {label}
+              {t(label)}
             </span>
           ))}
         </div>
@@ -832,28 +784,4 @@ function Timeline({ data }: { data: MonitorData }) {
   );
 }
 
-/**
- * Which lane an activity belongs on, or `undefined` when it is not an activity.
- *
- * The lanes are a reading of the Activity feed, so only activities get a block.
- * `process` (an egg) is deliberately absent: it is a process a command *left
- * behind*, re-reported every time its child count changes — not something the
- * agent did in that instant. Lifecycle and error nodes are excluded for the
- * same reason. Lanes with no marks are not drawn at all (see `shownLanes`).
- */
-function laneFor(kind: string): string | undefined {
-  switch (kind) {
-    case "think":
-      return "think";
-    case "read":
-    case "search":
-    case "edit":
-    case "write":
-    case "observe":
-      return "files";
-    case "run":
-      return "shell";
-    default:
-      return undefined;
-  }
-}
+

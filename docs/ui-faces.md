@@ -180,9 +180,10 @@ The pin bar appears in two cases:
 - a replay: a `REPLAY` chip and `Replaying — the page follows the run's own
   clock, {time} in`.
 
-The footer is the run's world line: one lane each for `Think`, `Files`, and
-`Shell`. Only lanes with marks are drawn. A block sits at the activity's offset
-and its width runs to the next activity. Clicking the track seeks; the first
+The footer is the run's world line: one lane each for `Model` (think and speak),
+`Tools` (tool calls, including MCP), and `Shell` (command execution). Only lanes
+with marks are drawn. A block sits at the activity's offset and its width runs
+to the next activity on its own track. Clicking the track seeks; the first
 click in live enters replay. The controls are `‹` (one activity back),
 `⏸`/`▶`, `›` (one activity forward), the speed chip
 (`0.25× / 0.5× / 1× / 2× / 5× / 10×`), and `◉` (back to live).
@@ -271,10 +272,9 @@ uses.
   `+additions / −deletions`, modified and created counts), `Executions`
   (commands, succeeded, failed, unknown), `Attention` (level, trigger count,
   high / medium / low).
-- Timeline: four lanes, `Think`, `Read`, `Edit`, and `Shell`. Activities are
-  marks whose width runs to the next activity; eggs are drawn as spans from
-  laid to died. Clicking a mark or a row selects its evidence; hovering
-  previews the moment under the pointer.
+- Timeline: three tracks, `Model`, `Tools`, and `Shell`. Activities are marks
+  whose width runs to the next activity on the same track. Clicking a mark or a
+  row selects its evidence; hovering previews the moment under the pointer.
 - Lists: `Changes` (modified, created, deleted, observed, outside the
   project), `Executions` (command, exit code, failure, permission denial),
   and `Knows` (reads with line ranges, searches with hit counts). Each row

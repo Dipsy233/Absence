@@ -214,7 +214,7 @@ Absence Report 完全由 Web 端的 `apps/web/src/lib/report.ts` 计算，输入
 - 文件重建：`file_write` 覆盖文件；`file_edit` 应用 `after`；`file_read` 只在路径仍未知时作为初始内容；`file_change deleted` 删除路径。
 - `seek` 选择时间戳不晚于目标时间的最近快照，再应用余下事件到目标时间。
 - 播放按 80 ms tick 推进。速度选项为 `0.25 / 0.5 / 1 / 2 / 5 / 10`。到 run 末尾自动暂停。
-- Monitor Stage 底部时间线有 Think、Files、Shell 三条 lane，点击即 seek。Rounds 的故事卡片与 Monitor 的 feed 行点击时同样 seek。
+- Monitor Stage 底部时间线有 Model（模型的思考与发言）、Tools（工具调用，含 MCP）、Shell（命令执行）三条独立轨道，点击即 seek。Rounds 的故事卡片与 Monitor 的 feed 行点击时同样 seek。
 
 回放范围：
 

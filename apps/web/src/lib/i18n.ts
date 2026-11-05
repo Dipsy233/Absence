@@ -303,8 +303,8 @@ const ZH: Record<string, string> = {
   "One activity forward": "前进一个动作",
   "Replay speed": "回放倍速",
   "Replay speed — click to change": "回放倍速 —— 点击切换",
-  "Only process updates so far — no file, shell or reasoning activity.":
-    "目前只有进程状态更新 —— 还没有文件、命令或推理动作。",
+  "Only process updates so far — no model, tool or shell activity.":
+    "目前只有进程状态更新 —— 还没有模型、工具或命令动作。",
   "Waiting for the first activity of this run…": "等待本次运行的第一个动作…",
   "Replay — before the first activity of this run": "回放 —— 还没到本次运行的第一个动作",
   "Replaying — the page follows the run's own clock, {time} in":
@@ -430,6 +430,9 @@ const ZH: Record<string, string> = {
   "process still running": "进程仍在运行",
 
   // ── Chart (病历报告) ────────────────────────────────────────────────────
+  Model: "模型",
+  Tools: "工具",
+  SPEAK: "发言",
   Think: "思考",
   "Read · Search": "读取 · 搜索",
   "Edit · Write": "编辑 · 写入",

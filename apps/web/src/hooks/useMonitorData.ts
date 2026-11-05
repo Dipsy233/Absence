@@ -5,6 +5,8 @@ import { useLiveItem } from "./useStage";
 import { useRunAttention } from "./useRunAttention";
 import { activityRowsVersion, memoRunRows } from "../lib/history";
 import { renderRun } from "../lib/report";
+import { buildTimelineTracks } from "../lib/timeline";
+import type { TimelineTrack } from "../lib/timeline";
 import { useSessionStore } from "../stores/sessionStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { ActivityRow } from "../types/stage";
@@ -28,6 +30,8 @@ export interface MonitorData {
   facts?: RunFacts;
   /** The finished-run report rendered from the facts, or nothing while live. */
   report?: RunReport;
+  /** The run's world line, already split into the model / tools / shell tracks. */
+  tracks: TimelineTrack[];
   attention: Attention;
   /** The live "what is it doing" sentence, only while the run is in flight. */
   liveHeadline?: string;
@@ -71,6 +75,10 @@ export function useMonitorData(): MonitorData {
   // both drew `renderRun(facts)` at their tops, so the derivation lives here.
   const report = useMemo(() => (facts ? renderRun(facts) : undefined), [facts]);
 
+  // The track split is a derivation over the report's world line, not a
+  // rendering concern: both faces receive the same three tracks from here.
+  const tracks = useMemo(() => (facts ? buildTimelineTracks(facts.timeline) : []), [facts]);
+
   /**
    * What the Stage follows while it is live: the agent's *current action*, not
    * the tail of the feed.
@@ -95,6 +103,7 @@ export function useMonitorData(): MonitorData {
     rows,
     facts,
     report,
+    tracks,
     attention,
     liveHeadline: headline,
     liveEventId: liveItem?.source?.eventId,

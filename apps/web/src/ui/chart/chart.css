@@ -546,8 +546,13 @@
   outline-offset: 1px;
 }
 
-.chart-blk--think {
+.chart-blk--think,
+.chart-blk--speak {
   background: var(--ch-think);
+}
+
+.chart-blk--tool {
+  background: var(--ch-search);
 }
 
 .chart-blk--read {

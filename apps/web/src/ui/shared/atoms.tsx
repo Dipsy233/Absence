@@ -37,10 +37,12 @@ export const TONE_FOR_ROW: Record<ActivityRow["tone"], MonTone> = {
 export const TONE_FOR_KIND: Record<string, MonTone> = {
   start: "mute",
   think: "think",
+  speak: "think",
   read: "read",
   search: "search",
   edit: "edit",
   write: "edit",
+  tool: "run",
   run: "run",
   process: "egg",
   observe: "mute",

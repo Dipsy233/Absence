@@ -1,22 +1,22 @@
 import { useMemo, useState } from "react";
 import { formatOffset } from "../../lib/format";
 import { useT } from "../../lib/i18n";
-import type { ProcessFact, TimelineKind, TimelineNode } from "../../types/report";
+import { layoutTimeline } from "../../lib/timeline";
+import type { TimelineTrack } from "../../lib/timeline";
+import type { TimelineNode } from "../../types/report";
 
 /**
  * The run's world line, read the way Monitor reads it.
  *
- * Not a row of cards: one track, three lanes of activity, and each activity a
+ * Not a row of cards: one track per kind of work — the model's reasoning and
+ * words, the tools it called, the shell commands it ran — and each activity a
  * mark at the moment it happened. A mark's width is the time it was the thing
- * happening — the gap to the next activity, capped so a long silence is not a
- * wall of colour and floored so a 40 ms read is still a mark. Eggs are the one
- * exception: they are spans, drawn from laid to died, because that is what a
- * process is.
+ * happening on its own track, capped so a long silence is not a wall of colour
+ * and floored so a 40 ms read is still a mark.
  *
- * Lane geometry is absolute (`lane top = 8 + n*14`, `block top = 4 + n*14`)
- * because a block has to sit *on* the lane, which a flex column of rows cannot
- * do. Lanes with no marks are not drawn at all: a run that never reasoned
- * should not show an empty Think row.
+ * Track membership, bucketing and geometry live in `lib/timeline`; this
+ * component only draws what the layout hands it, so adding or removing a track
+ * never changes the other tracks' rendering.
  *
  * Picking a mark puts that event in the report's evidence pane and leaves a
  * head line where it happened, the way a scrubber holds a replay position.
@@ -35,127 +35,28 @@ export interface TimelinePick {
 const LANE_H = 14;
 const TRACK_TOP = 8;
 
-/** Lane ids, in the order they are drawn. */
-const LANES: Array<{ id: string; label: string }> = [
-  { id: "think", label: "Think" },
-  { id: "knows", label: "Read" },
-  { id: "files", label: "Edit" },
-  { id: "shell", label: "Shell" },
-];
-
 interface Props {
-  nodes: TimelineNode[];
-  processes: ProcessFact[];
-  /** The run's start, the origin every block is measured from. */
-  startedAt: number;
+  /** The run's world line, already split into its tracks. */
+  tracks: TimelineTrack[];
   /** The run's length (ended-at or the newest activity), never below 1. */
   totalMs: number;
   selected?: TimelinePick;
   onPick: (pick: TimelinePick) => void;
 }
 
-interface Mark {
-  key: string;
-  laneId: string;
-  left: number;
-  width: number;
-  tone: TimelineKind | "egg";
-  title: string;
-  pick: TimelinePick;
-}
-
-/** Which lane an activity belongs on, or undefined when it draws no mark. */
-function laneFor(kind: TimelineKind): string | undefined {
-  switch (kind) {
-    case "think":
-      return "think";
-    case "read":
-    case "search":
-      return "knows";
-    case "edit":
-    case "write":
-      return "files";
-    case "run":
-      return "shell";
-    default:
-      return undefined;
-  }
-}
-
-export function ChartTimeline({ nodes, processes, startedAt, totalMs, selected, onPick }: Props) {
+export function ChartTimeline({ tracks, totalMs, selected, onPick }: Props) {
   const t = useT();
   const [hover, setHover] = useState<number | undefined>(undefined);
   const total = Math.max(1, totalMs);
 
-  /**
-   * For each node, the offset of the next *activity* — one reverse pass.
-   * `NaN` marks the last activity, whose span runs to the end of the line.
-   */
-  const nextActivityOffsetMs = useMemo(() => {
-    const next = new Array<number>(nodes.length).fill(Number.NaN);
-    let seen = Number.NaN;
-    for (let i = nodes.length - 1; i >= 0; i--) {
-      next[i] = seen;
-      if (laneFor(nodes[i]!.kind) !== undefined) seen = nodes[i]!.offsetMs;
-    }
-    return next;
-  }, [nodes]);
-
-  const marks = useMemo(() => {
-    const out: Mark[] = [];
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i]!;
-      const laneId = laneFor(node.kind);
-      if (laneId === undefined) continue;
-      const nextMs = nextActivityOffsetMs[i]!;
-      const span = Number.isNaN(nextMs) ? total - node.offsetMs : nextMs - node.offsetMs;
-      out.push({
-        key: `n-${node.eventId}-${node.kind}`,
-        laneId,
-        left: (node.offsetMs / total) * 100,
-        width: Math.max(0.7, Math.min(28, (span / total) * 100)),
-        tone: node.kind,
-        title: `${t(node.action)} · ${node.subject} · ${formatOffset(node.offsetMs)}`,
-        pick: {
-          eventId: node.eventId,
-          node,
-          anchorMs: node.offsetMs,
-          label: `${t(node.action)} · ${formatOffset(node.offsetMs)}`,
-        },
-      });
-    }
-
-    const eggs = processes.filter((process) => process.kind === "primary");
-    for (const process of eggs) {
-      const offset = Math.max(0, process.startedAt - startedAt);
-      const end = Math.max(offset, (process.exitedAt ?? startedAt + total) - startedAt);
-      out.push({
-        key: `p-${process.pid}`,
-        laneId: "eggs",
-        left: (offset / total) * 100,
-        width: Math.min(100 - (offset / total) * 100, Math.max(0.7, ((end - offset) / total) * 100)),
-        tone: "egg",
-        title: `${process.name} · pid ${process.pid} · ${formatOffset(offset)}`,
-        pick: {
-          eventId: process.evidence[0] ?? "",
-          anchorMs: offset,
-          label: `${process.name} · ${formatOffset(offset)}`,
-        },
-      });
-    }
-    return out;
-  }, [nodes, nextActivityOffsetMs, processes, startedAt, total, t]);
-
-  const shownLanes = useMemo(
-    () =>
-      [
-        ...LANES.filter((lane) => marks.some((mark) => mark.laneId === lane.id)),
-        ...(marks.some((mark) => mark.laneId === "eggs") ? [{ id: "eggs", label: t("Eggs") }] : []),
-      ],
-    [marks, t],
+  const layout = useMemo(() => layoutTimeline(tracks, total), [tracks, total]);
+  const shownTracks = layout.tracks;
+  const marks = layout.marks;
+  const laneIndex = useMemo(
+    () => new Map(shownTracks.map((track, index) => [track.id, index])),
+    [shownTracks],
   );
-  const laneIndex = useMemo(() => new Map(shownLanes.map((lane, index) => [lane.id, index])), [shownLanes]);
-  const trackHeight = shownLanes.length * LANE_H + 2;
+  const trackHeight = shownTracks.length * LANE_H + 2;
   const percent = (ms: number) => Math.min(100, Math.max(0, (ms / total) * 100));
 
   if (marks.length === 0) {
@@ -168,9 +69,9 @@ export function ChartTimeline({ nodes, processes, startedAt, totalMs, selected, 
     <div className="chart-tl">
       <div className="chart-tl__body">
         <div className="chart-labels" style={{ height: trackHeight }}>
-          {shownLanes.map((lane) => (
-            <span key={lane.id} style={{ height: LANE_H }}>
-              {t(lane.label)}
+          {shownTracks.map((track) => (
+            <span key={track.id} style={{ height: LANE_H }}>
+              {t(track.label)}
             </span>
           ))}
         </div>
@@ -186,30 +87,40 @@ export function ChartTimeline({ nodes, processes, startedAt, totalMs, selected, 
           }}
           onMouseLeave={() => setHover(undefined)}
         >
-          {shownLanes.map((lane, index) => (
-            <span key={lane.id} className="chart-lane" style={{ top: TRACK_TOP + index * LANE_H }} aria-hidden />
+          {shownTracks.map((track, index) => (
+            <span key={track.id} className="chart-lane" style={{ top: TRACK_TOP + index * LANE_H }} aria-hidden />
           ))}
 
-          {marks.map((mark) => (
-            <button
-              key={mark.key}
-              type="button"
-              title={mark.title}
-              onClick={() => onPick(mark.pick)}
-              className={[
-                "chart-blk",
-                `chart-blk--${mark.tone}`,
-                selected?.eventId === mark.pick.eventId ? "chart-blk--sel" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              style={{
-                top: TRACK_TOP - 4 + laneIndex.get(mark.laneId)! * LANE_H,
-                left: `${mark.left}%`,
-                width: `${mark.width}%`,
-              }}
-            />
-          ))}
+          {marks.map((mark) => {
+            const node = mark.node;
+            return (
+              <button
+                key={`n-${node.eventId}-${node.kind}`}
+                type="button"
+                title={`${t(node.action)} · ${node.subject} · ${formatOffset(node.offsetMs)}`}
+                onClick={() =>
+                  onPick({
+                    eventId: node.eventId,
+                    node,
+                    anchorMs: node.offsetMs,
+                    label: `${t(node.action)} · ${formatOffset(node.offsetMs)}`,
+                  })
+                }
+                className={[
+                  "chart-blk",
+                  `chart-blk--${node.kind}`,
+                  selected?.eventId === node.eventId ? "chart-blk--sel" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                style={{
+                  top: TRACK_TOP - 4 + laneIndex.get(mark.trackId)! * LANE_H,
+                  left: `${mark.left}%`,
+                  width: `${mark.width}%`,
+                }}
+              />
+            );
+          })}
 
           {/* The moment under the pointer, under the real head: a click on a
               40ms mark is guesswork without it. */}

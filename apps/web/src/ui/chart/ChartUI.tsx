@@ -27,6 +27,7 @@ import type {
 } from "../../types/report";
 
 import { ChartTimeline, type TimelinePick } from "./ChartTimeline";
+import { buildTimelineTracks } from "../../lib/timeline";
 import { ChartChat } from "./ChartChat";
 import { StatsKpiCards } from "./StatsKpiCards";
 import { useAllRunsData } from "../../hooks/useAllRunsData";
@@ -53,10 +54,12 @@ import { useRideScroll } from "../shared/rideScroll";
 const KIND_CHIP: Record<TimelineKind, string> = {
   start: "mute",
   think: "think",
+  speak: "think",
   read: "read",
   search: "search",
   edit: "edit",
   write: "edit",
+  tool: "run",
   run: "run",
   process: "egg",
   observe: "mute",
@@ -127,6 +130,12 @@ export function ChartUI() {
   const allData = useAllRunsData(allRuns);
   const activeEvents = allRuns ? allData.events : data.events;
   const activeRun = allRuns ? allData.run : run;
+  // The track split is data, not layout: the drawing component receives the
+  // three tracks and never decides which activity belongs on which one.
+  const activeTracks = useMemo(
+    () => buildTimelineTracks((allRuns ? allData.report : report)?.timeline ?? []),
+    [allRuns, allData.report, report],
+  );
 
   // The KPI row's cumulative four cards share the selection's scope: the
   // selected run's own window, or every run in the session under "all runs".
@@ -475,9 +484,7 @@ export function ChartUI() {
             </span>
           </div>
           <ChartTimeline
-            nodes={activeReport.timeline}
-            processes={activeReport.processes}
-            startedAt={activeRun.startedAt}
+            tracks={activeTracks}
             totalMs={Math.max(1, durationMs)}
             selected={pick}
             onPick={(next) => {

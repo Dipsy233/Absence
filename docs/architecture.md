@@ -217,7 +217,7 @@ Replay rebuilds a run from its events and periodic snapshots.
 - File reconstruction: `file_write` replaces the file; `file_edit` applies `after`; `file_read` seeds only a path that is still unknown; `file_change deleted` removes the path.
 - `seek` selects the latest snapshot whose timestamp is not later than the target, then applies the remaining events up to the target time.
 - Playback advances on an 80 ms tick. Speeds are `0.25 / 0.5 / 1 / 2 / 5 / 10`. Playback pauses at the end of the run.
-- The Monitor Stage timeline has Think, Files and Shell lanes and seeks on click. Rounds story cards and Monitor feed rows also seek when clicked.
+- The Monitor Stage timeline has three independent tracks — Model (the agent's think and speak), Tools (tool calls, including MCP), and Shell (command execution) — and seeks on click. Rounds story cards and Monitor feed rows also seek when clicked.
 
 Replay scope:
 

@@ -135,7 +135,7 @@ pin bar 出现在两种情况：
 - 固定时刻：`Pinned at {time} — every panel shows this moment` 与 `Back to live ⏎`；
 - 回放：`REPLAY` chip 与 `Replaying — the page follows the run's own clock, {time} in`。
 
-底部是 run 的世界线：`Think`、`Files`、`Shell` 各一条 lane。只绘制有标记的 lane。块位于活动偏移处，宽度延伸到下一个活动。点击轨道会 seek；在 live 中第一次点击进入 replay。控件为 `‹`（后退一个活动）、`⏸`/`▶`、`›`（前进一个活动）、速度 chip（`0.25× / 0.5× / 1× / 2× / 5× / 10×`）、`◉`（回到 live）。
+底部是 run 的世界线：`Model`（思考与发言）、`Tools`（工具调用，含 MCP）、`Shell`（命令执行）各一条轨道。只绘制有标记的轨道。块位于活动偏移处，宽度延伸到同轨道的下一个活动。点击轨道会 seek；在 live 中第一次点击进入 replay。控件为 `‹`（后退一个活动）、`⏸`/`▶`、`›`（前进一个活动）、速度 chip（`0.25× / 0.5× / 1× / 2× / 5× / 10×`）、`◉`（回到 live）。
 
 输入行为一行：`Ask about this moment, or / for commands`。它没有展开开关；对话是 Stage 的 `CHAT` 页。输入 `/` 打开命令面板。
 
@@ -178,7 +178,7 @@ Chart 是一页：所选 run 的 Absence Report。它读取 `useMonitorData.repo
 
 - hero：应用图标、outcome chip、`run #{index}`、runtime、时长、活动数、headline、`Started` 与 `Ended` 时间，以及 run 切换器。
 - 四个 KPI：`Knows`（文件数、context 中行数、搜索数）、`Changes`（文件数、`+additions / −deletions`、modified 与 created 计数）、`Executions`（命令数、succeeded、failed、unknown）、`Attention`（等级、触发数、high / medium / low）。
-- 时间线：四条 lane，`Think`、`Read`、`Edit`、`Shell`。活动是标记，宽度延伸到下一个活动；egg 画成从 laid 到 died 的跨度。点击标记或列表行选中其证据；悬停预览指针下的时刻。
+- 时间线：三条轨道，`Model`、`Tools`、`Shell`。活动是标记，宽度延伸到同轨道的下一个活动。点击标记或列表行选中其证据；悬停预览指针下的时刻。
 - 列表：`Changes`（modified、created、deleted、observed、项目外）、`Executions`（命令、退出码、失败、权限拒绝）、`Knows`（带行范围的读取、带命中数的搜索）。每行选中其证据。
 - `Attention` 按钮：展开带逐条等级的原因列表。关闭时，窗格显示所选事件的预览，或提示选择块或行。
 - 证据窗格：所选事件的 `StageItemView`，以及其效果行。

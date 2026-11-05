@@ -137,10 +137,12 @@ export type RunOutcome =
 export type TimelineKind =
   | "start"
   | "think"
+  | "speak"
   | "read"
   | "search"
   | "edit"
   | "write"
+  | "tool"
   | "run"
   | "process"
   | "observe"

@@ -763,6 +763,25 @@ function buildTimeline(
         break;
       }
 
+      case "message": {
+        // The model's own words, on the same world line as its reasoning. The
+        // reply streams as a run of events carrying the text so far, so a
+        // consecutive one replaces the node it continues instead of adding a
+        // node per chunk. User and system messages are not the model speaking.
+        if (event.payload.role !== "assistant" || event.payload.content.trim().length === 0) break;
+        const subject = firstLine(event.payload.content);
+        const last = nodes[nodes.length - 1];
+        if (last?.kind === "speak") {
+          last.eventId = event.id;
+          last.at = event.timestamp;
+          last.offsetMs = Math.max(0, event.timestamp - run.startedAt);
+          last.subject = subject;
+        } else {
+          push(event, "speak", "SPEAK", subject, []);
+        }
+        break;
+      }
+
       case "file_read": {
         const { path, startLine, endLine, rangeKnown } = event.payload;
         push(event, "read", "READ", path, [
@@ -845,6 +864,21 @@ function buildTimeline(
           status === "running"
             ? [`pid ${pid}${children > 0 ? ` +${children}` : ""}`, command ?? commandLine]
             : [`pid ${pid}`, `exited after ${livedSeconds}s`],
+        );
+        break;
+      }
+
+      // An MCP call is a tool call like any other on the tools track: the
+      // report's own event kind is `tool`, so the tools track needs no special
+      // case for this particular tool family.
+      case "mcp": {
+        const { server, tool, namespace, result, isError } = event.payload;
+        push(
+          event,
+          "tool",
+          isError ? "MCP!" : "MCP",
+          `${server} › ${namespace ? `${namespace}/` : ""}${tool}`,
+          [isError ? "the server returned an error" : `${result.length} B returned`],
         );
         break;
       }
