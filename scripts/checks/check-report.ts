@@ -326,6 +326,59 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
   check("the report exposes the timeline", renderRun(facts).timeline.length === timeline.length);
 }
 
+// H2. a streamed thought and a reply are one node each, and the thought stays
+// first — even when a reply lands between two thought chunks and the turn-end
+// flush of the thought arrives after the final message (the mock scenarios 02
+// and 03 shape). A thought that reopens after the reply used to duplicate the
+// node and pin it at the end of the run.
+{
+  const events = [
+    stamp(ev("agent_start", { model: "mock/agent" })), // @10, offset 0
+    stamp(ev("thinking", { content: "Looking around", streaming: true })), // @20, offset 10
+    stamp(ev("thinking", { content: "Looking around the project", streaming: true })), // @30
+    stamp(ev("file_read", { path: "a.ts", startLine: 1, endLine: 20, content: "x" })), // @40
+    stamp(ev("message", { role: "assistant", content: "Fixed a.ts.", streaming: true })), // @50, offset 40
+    stamp(ev("message", { role: "assistant", content: "Fixed a.ts. Done.", streaming: false })), // @60
+    stamp(ev("thinking", { content: "Looking around the project", streaming: false })), // @70, the tail flush
+    stamp(ev("agent_end", { reason: "completed" })), // @80
+  ];
+  const facts = buildRunFacts(events, runOf(events, 0));
+  const timeline = facts.timeline;
+  const thinkIndex = timeline.findIndex((n) => n.kind === "think");
+  const speakIndex = timeline.findIndex((n) => n.kind === "speak");
+  check(
+    "a thought interrupted by the reply is still one node",
+    timeline.filter((n) => n.kind === "think").length === 1,
+    timeline.map((n) => n.action).join(" → "),
+  );
+  check("a streamed reply is one node", timeline.filter((n) => n.kind === "speak").length === 1);
+  check(
+    "the thought comes before the reply",
+    thinkIndex !== -1 && speakIndex !== -1 && thinkIndex < speakIndex,
+    timeline.map((n) => n.action).join(" → "),
+  );
+  check(
+    "no thought node reopens after the reply",
+    speakIndex === -1 || timeline.slice(speakIndex).every((n) => n.kind !== "think"),
+    timeline.map((n) => n.action).join(" → "),
+  );
+  check(
+    "the thought keeps the offset of its first chunk, not its last",
+    timeline[thinkIndex]?.offsetMs === 10,
+    `offsetMs=${timeline[thinkIndex]?.offsetMs}`,
+  );
+  check(
+    "the reply keeps the offset of its first chunk, not its last",
+    timeline[speakIndex]?.offsetMs === 40,
+    `offsetMs=${timeline[speakIndex]?.offsetMs}`,
+  );
+  check(
+    "the split still leaves the world line in event order",
+    timeline.every((n, i) => i === 0 || n.at >= timeline[i - 1]!.at),
+    timeline.map((n) => `${n.action}@${n.at}`).join(" → "),
+  );
+}
+
 // I. a shell tool that started and never ended is a process still running.
 {
   const events = [bashStart("b1", "npm run dev")];

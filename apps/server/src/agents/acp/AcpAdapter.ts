@@ -388,8 +388,10 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
     this.promptActive = true;
     try {
       const reason = await session.prompt(blocks);
-      this.flushMessage();
+      // The thought ends before the reply does: flush reasoning first so a
+      // tail the throttle still held does not land after the final message.
       this.flushThinking();
+      this.flushMessage();
       // Some agents turn a provider failure into a bare `end_turn` (pi-acp
       // does), which used to read as a successful empty turn. When the context
       // is over its window and the turn produced no text at all, say so before
@@ -403,8 +405,8 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
       return reason;
     } catch (error) {
       this.promptActive = false;
-      this.flushMessage();
       this.flushThinking();
+      this.flushMessage();
       if (this.aborted) {
         // A watchdog settled the run; do not add an `error` row on top.
         this.emitAbsence("agent_end", { reason: "aborted" });
@@ -503,6 +505,10 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
         this.emitThinkingDelta(String(payload.delta ?? payload.content ?? ""));
         continue;
       }
+      // A tool call, a file fact, a command or an error starts: the thought
+      // block, if one was open, ended before this activity. Close it here so
+      // its durable event lands before this event instead of at the turn end.
+      this.flushThinking();
       this.bus.publish(event);
     }
   }

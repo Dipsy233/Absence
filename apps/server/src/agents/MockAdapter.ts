@@ -373,8 +373,9 @@ export class MockAdapter extends BaseAdapter {
   private finish(reason: string): void {
     this.busy = false;
     // Send whatever the stream throttles still held before declaring the run over.
-    this.flushMessage();
+    // Reasoning first: the thought ended before the reply did.
     this.flushThinking();
+    this.flushMessage();
     this.emitAbsence("agent_end", { reason });
   }
 

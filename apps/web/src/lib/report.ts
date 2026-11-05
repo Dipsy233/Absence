@@ -742,6 +742,49 @@ function buildTimeline(
       effects,
     });
 
+  /**
+   * The run of streaming text still open, per kind.
+   *
+   * A thought or a reply arrives as a run of events that each carry the text so
+   * far, so one activity must stay one node however many chunks it takes. The
+   * node is looked up by *kind*, not by its place in `nodes`: another activity
+   * (the reply, a tool call) can land between two chunks, and that must not
+   * split the thought in two. Only a non-streaming event closes the run, so a
+   * genuinely new thought/reply opens a new node.
+   *
+   * The node keeps the offset of its first chunk — the mark belongs where the
+   * activity *started*, not where its last chunk happened. `eventId` still
+   * moves to the newest chunk, so the Stage shows the fullest text as evidence;
+   * `at`/`offsetMs` stay at the start, so the world line stays in event order.
+   */
+  const openStream: Partial<Record<"think" | "speak", TimelineNode>> = {};
+  const appendStream = (
+    event: AbsenceEvent,
+    kind: "think" | "speak",
+    action: string,
+    subject: string,
+    streaming: boolean | undefined,
+  ): void => {
+    const open = openStream[kind];
+    if (open) {
+      open.eventId = event.id;
+      open.subject = subject;
+    } else {
+      const created: TimelineNode = {
+        eventId: event.id,
+        kind,
+        at: event.timestamp,
+        offsetMs: Math.max(0, event.timestamp - run.startedAt),
+        action,
+        subject,
+        effects: [],
+      };
+      nodes.push(created);
+      openStream[kind] = created;
+    }
+    if (streaming !== true) openStream[kind] = undefined;
+  };
+
   for (const event of slice) {
     switch (event.type) {
       case "agent_start":
@@ -749,36 +792,18 @@ function buildTimeline(
         break;
 
       case "thinking": {
-        const subject = firstLine(event.payload.content);
-        const last = nodes[nodes.length - 1];
-        if (last?.kind === "think") {
-          // Same thought, still streaming: each delta carries the text so far.
-          last.eventId = event.id;
-          last.at = event.timestamp;
-          last.offsetMs = Math.max(0, event.timestamp - run.startedAt);
-          last.subject = subject;
-        } else {
-          push(event, "think", "THINK", subject, []);
-        }
+        // Reasoning: one thought per turn, however many chunks it streams in.
+        // The node is found by kind, so a reply or a tool call between two
+        // chunks no longer splits the thought in two.
+        appendStream(event, "think", "THINK", firstLine(event.payload.content), event.payload.streaming);
         break;
       }
 
       case "message": {
-        // The model's own words, on the same world line as its reasoning. The
-        // reply streams as a run of events carrying the text so far, so a
-        // consecutive one replaces the node it continues instead of adding a
-        // node per chunk. User and system messages are not the model speaking.
+        // The model's own words, on the same world line as its reasoning. User
+        // and system messages are not the model speaking.
         if (event.payload.role !== "assistant" || event.payload.content.trim().length === 0) break;
-        const subject = firstLine(event.payload.content);
-        const last = nodes[nodes.length - 1];
-        if (last?.kind === "speak") {
-          last.eventId = event.id;
-          last.at = event.timestamp;
-          last.offsetMs = Math.max(0, event.timestamp - run.startedAt);
-          last.subject = subject;
-        } else {
-          push(event, "speak", "SPEAK", subject, []);
-        }
+        appendStream(event, "speak", "SPEAK", firstLine(event.payload.content), event.payload.streaming);
         break;
       }
 

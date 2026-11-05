@@ -153,6 +153,43 @@ section("new writes");
   );
 }
 
+section("a streamed thought has one durable record, stamped at its start");
+{
+  const id = "sess_think_final";
+  const started = startedAt + 40;
+  await writeMeta(project, {
+    version: 1,
+    absenceSessionId: id,
+    projectPath: project,
+    projectName: "project",
+    startedAt: started,
+    updatedAt: started + 5,
+    runtime: "mock",
+    messageCount: 1,
+    firstPrompt: "thinking",
+  });
+  appendEvents(project, id, [
+    event("evt_think_prefix", "thinking", { content: "Look", streaming: true }, started + 1),
+    event("evt_think_final", "thinking", { content: "Look around the project", streaming: false }, started),
+    event("evt_think_tool", "command", { command: "ls", stdout: "", stderr: "", exitCode: 0 }, started + 2),
+  ]);
+  await drainArchive();
+  const events = await readEvents(project, id);
+  const thinking = events.filter((item) => item.type === "thinking");
+  check("the streaming prefix is not archived", thinking.length === 1, `${thinking.length} thinking row(s)`);
+  check(
+    "the durable thought keeps the block's start timestamp",
+    thinking[0]?.timestamp === started,
+    `ts=${thinking[0]?.timestamp} start=${started}`,
+  );
+  check(
+    "the durable thought is the whole value with no delta",
+    thinking[0]?.payload.content === "Look around the project" &&
+      (thinking[0]?.payload as { delta?: unknown }).delta === undefined,
+    JSON.stringify(thinking[0]?.payload),
+  );
+}
+
 section("file index");
 {
   const id = "sess_files";

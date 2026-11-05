@@ -52,6 +52,103 @@ async function main(): Promise<void> {
   const { parseRegistryEntries, registryProfiles, syncRegistry } = await import(
     "../../apps/server/src/agents/acp/AgentCatalog"
   );
+  const { BaseAdapter } = await import("../../apps/server/src/agents/AgentAdapter");
+
+  section("thinking flush: a finished thought is durable even after its last chunk was emitted");
+  {
+    class FlushProbe extends BaseAdapter {
+      readonly runtime = "probe";
+      private readonly sink: AbsenceEvent[];
+      constructor(sink: AbsenceEvent[]) {
+        super();
+        this.sessionId = "sess_flush_probe";
+        this.sink = sink;
+        this.resetThinking();
+        this.subscribe((event) => this.sink.push(event));
+      }
+      async start(): Promise<{ model: string }> {
+        return { model: "probe" };
+      }
+      async prompt(): Promise<void> {}
+      async abort(): Promise<void> {}
+      getContextUsage(): undefined {
+        return undefined;
+      }
+      dispose(): void {}
+      think(delta: string): void {
+        this.emitThinkingDelta(delta);
+      }
+      reply(delta: string): void {
+        this.emitMessageDelta(delta);
+      }
+      closeThought(): void {
+        this.flushThinking();
+      }
+      closeReply(): void {
+        this.flushMessage();
+      }
+    }
+
+    // 1. The last delta is emitted by the throttle (dirty false); the flush must
+    // still produce the one durable event, stamped with the block's start.
+    const seen: AbsenceEvent[] = [];
+    const probe = new FlushProbe(seen);
+    probe.think("Looking");
+    const streamed = seen.find((event) => event.type === "thinking" && event.payload.streaming === true);
+    probe.closeThought();
+    const finals = seen.filter((event) => event.type === "thinking" && event.payload.streaming !== true);
+    check(
+      "a thought whose last chunk was emitted still gets one durable event",
+      finals.length === 1,
+      `${finals.length} final thinking event(s)`,
+    );
+    check(
+      "the durable thought is stamped with its start, not the flush time",
+      finals[0]?.timestamp === streamed?.timestamp,
+      `final=${finals[0]?.timestamp} streamed=${streamed?.timestamp}`,
+    );
+    check(
+      "the durable thought is the full value with no delta",
+      finals[0]?.payload.content === "Looking" && (finals[0]?.payload as { delta?: unknown }).delta === undefined,
+      JSON.stringify(finals[0]?.payload),
+    );
+    probe.closeThought();
+    check(
+      "a second flush does not duplicate the thought",
+      seen.filter((event) => event.type === "thinking").length === 2,
+      `${seen.filter((event) => event.type === "thinking").length} thinking event(s)`,
+    );
+
+    // 2. The reply's first delta closes the open thought before the reply, so
+    // Activity reads THINK → SPEAK (never a thought tail after the reply).
+    const replySeen: AbsenceEvent[] = [];
+    const replyProbe = new FlushProbe(replySeen);
+    replyProbe.think("Planning the reply");
+    replyProbe.reply("Hello");
+    const replyEvents = replySeen.filter(
+      (event) => event.type === "thinking" || event.type === "message",
+    );
+    check(
+      "the thought closes before the reply's first chunk",
+      replyEvents[0]?.type === "thinking" &&
+        replyEvents[0]?.payload.streaming === true &&
+        replyEvents[1]?.type === "thinking" &&
+        replyEvents[1]?.payload.streaming !== true &&
+        replyEvents[2]?.type === "message",
+      replyEvents.map((event) => `${event.type}:${event.payload.streaming === true ? "stream" : "final"}`).join(" → "),
+    );
+    replyProbe.closeThought();
+    check(
+      "the end-of-turn thought flush is a no-op after the reply closed it",
+      replySeen.filter((event) => event.type === "thinking").length === 2,
+      `${replySeen.filter((event) => event.type === "thinking").length} thinking event(s)`,
+    );
+    replyProbe.closeReply();
+    check(
+      "the reply still gets its own final event",
+      replySeen.some((event) => event.type === "message" && event.payload.streaming !== true),
+    );
+  }
 
   section("rangeKnown: no locations.line is not a precise range");
   {

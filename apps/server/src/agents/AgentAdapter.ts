@@ -310,11 +310,13 @@ export abstract class BaseAdapter implements AgentAdapter {
   // events — one long thought could evict a whole run's history on its own —
   // and gave the Activity panel a row per character. The deltas are folded
   // here instead: the accumulated thought is re-emitted at most once per
-  // THINK_EMIT_MS, and `flushThinking()` sends whatever is still held when the
-  // thought ends (message_end / agent_end).
+  // THINK_EMIT_MS, and `flushThinking()` sends the finished thought when the
+  // block ends (a reply, a tool call, or the turn itself).
   private thinkingAcc = "";
   private thinkingDirty = false;
   private thinkingLastEmit = 0;
+  /** When the current thought block started, so the durable event is not stamped at flush time. */
+  private thinkingStartedAt: number | undefined = undefined;
 
   // --- assistant message coalescing -----------------------------------------
   //
@@ -349,33 +351,62 @@ export abstract class BaseAdapter implements AgentAdapter {
   }
 
   /** Emit a AbsenceEvent for this session, with the payload type checked. */
-  protected emitAbsence<K extends AbsenceEventType>(type: K, payload: AbsenceEventPayloadMap[K]): void {
-    this.emit(createEvent(this.sessionId, type, payload));
+  protected emitAbsence<K extends AbsenceEventType>(
+    type: K,
+    payload: AbsenceEventPayloadMap[K],
+    at?: number,
+  ): void {
+    this.emit(createEvent(this.sessionId, type, payload, at));
   }
 
   /** Clear the thought accumulator (a new message, a new prompt). */
   protected resetThinking(): void {
     this.thinkingAcc = "";
     this.thinkingDirty = false;
-    this.thinkingLastEmit = Date.now();
+    this.thinkingStartedAt = undefined;
+    // The first delta of a thought should appear immediately, like a reply's:
+    // a thought shorter than the throttle window would otherwise only reach the
+    // stream at the turn-end flush, after the final message.
+    this.thinkingLastEmit = 0;
   }
 
   /** Fold one reasoning delta in, emitting the thought so far at most every THINK_EMIT_MS. */
   protected emitThinkingDelta(delta: string): void {
+    const now = Date.now();
+    // The durable event will carry the block's start, not this chunk's time.
+    if (this.thinkingStartedAt === undefined) this.thinkingStartedAt = now;
     this.thinkingAcc += delta;
     this.thinkingDirty = true;
-    const now = Date.now();
     if (now - this.thinkingLastEmit < THINK_EMIT_MS) return;
     this.thinkingLastEmit = now;
     this.thinkingDirty = false;
     this.emitAbsence("thinking", { content: this.thinkingAcc, delta, streaming: true });
   }
 
-  /** Emit the tail of a thought the throttle still held, as the final (non-streaming) event. */
+  /**
+   * Emit the finished thought as one non-streaming event, and close its block.
+   *
+   * Unconditional on `thinkingDirty`: the streaming chunks are live-only and
+   * `SessionStore` refuses to archive them, so a thought whose last chunk was
+   * already emitted would otherwise leave no durable record at all. This is the
+   * thinking counterpart of `flushMessage()`: as long as there was text, the
+   * archive gets exactly one complete event. Clearing the accumulator makes a
+   * second flush (message start + turn end) a no-op, and lets a new thought
+   * after the reply open a new block.
+   *
+   * The event is stamped with the block's start (`thinkingStartedAt`), so a
+   * historical view places the thought where it happened instead of at the
+   * moment it was flushed.
+   */
   protected flushThinking(): void {
-    if (!this.thinkingDirty) return;
+    const text = this.thinkingAcc;
+    const startedAt = this.thinkingStartedAt;
+    const shouldEmit = this.thinkingDirty || text.trim().length > 0;
+    this.thinkingAcc = "";
     this.thinkingDirty = false;
-    this.emitAbsence("thinking", { content: this.thinkingAcc, streaming: false });
+    this.thinkingStartedAt = undefined;
+    if (!shouldEmit || text.trim().length === 0) return;
+    this.emitAbsence("thinking", { content: text, streaming: false }, startedAt);
   }
 
   /** Clear the assistant accumulator (a new message, a new prompt). */
@@ -390,6 +421,12 @@ export abstract class BaseAdapter implements AgentAdapter {
 
   /** Fold one assistant text delta in, emitting the message so far at most every MESSAGE_EMIT_MS. */
   protected emitMessageDelta(delta: string): void {
+    // The reply starts: close the thought block first. Its durable event then
+    // lands before the reply (Activity reads THINK → SPEAK), and the cleared
+    // accumulator makes the turn-end flush a no-op. Without this the reply's
+    // non-streaming event would arrive after the thought's tail, and the feed
+    // would carry a second SPEAK row.
+    this.flushThinking();
     this.messageAcc += delta;
     this.messageSinceEmit += delta;
     this.messageDirty = true;

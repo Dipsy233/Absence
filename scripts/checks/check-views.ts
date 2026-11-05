@@ -22,8 +22,10 @@ import { translate } from "../../apps/web/src/lib/i18n";
 import { useSettingsStore } from "../../apps/web/src/stores/settingsStore";
 import { isViewMode, readStoredViewMode, viewModeSpec } from "../../apps/web/src/lib/viewMode";
 import { RUN_TONE, RUN_WORD, TONE_FOR_ROW, TONE_FOR_KIND } from "../../apps/web/src/ui/shared/atoms";
+import { createEvent } from "@absence/core";
+import { appendActivityRow, eventToActivityRow } from "../../apps/web/src/lib/events";
 import type { ActivityRow } from "../../apps/web/src/types/stage";
-import type { MetricsFrame } from "@absence/core";
+import type { AbsenceEvent, MetricsFrame } from "@absence/core";
 import type { PhaseType } from "../../apps/web/src/types/report";
 
 /* ── fixtures ──────────────────────────────────────────────────────────── */
@@ -136,6 +138,42 @@ section("groupFeedRows — state re-reports fold into the row they re-report");
   check("the same command from another run does not fold in", two.flatMap((g) => g.rows).length === 2);
   const withExit = groupFeedRows([first, exit]);
   check("RUN vs EXIT stay separate — finishing is a fact", withExit.flatMap((g) => g.rows).length === 2);
+}
+
+section("one turn: one SPEAK row, and the thought folds before it");
+{
+  // The server order after the fix: streaming thought chunks, the durable
+  // thought (stamped with the block start) when the reply begins, then the
+  // streamed reply and its final value. Activity must show one THINK and one
+  // SPEAK, with THINK first.
+  const sid = "sess_feed";
+  const events: AbsenceEvent[] = [
+    createEvent(sid, "thinking", { content: "Looking", streaming: true }, 10),
+    createEvent(sid, "thinking", { content: "Looking around", streaming: true }, 20),
+    createEvent(sid, "thinking", { content: "Looking around", streaming: false }, 10),
+    createEvent(sid, "message", { role: "assistant", content: "Done", streaming: true }, 30),
+    createEvent(sid, "message", { role: "assistant", content: "Done.", streaming: false }, 30),
+  ];
+  const rows: ActivityRow[] = [];
+  for (const event of events) {
+    const feedRow = eventToActivityRow(event);
+    if (feedRow) appendActivityRow(rows, feedRow);
+  }
+  check(
+    "one turn folds to one THINK row",
+    rows.filter((item) => item.action === "THINK").length === 1,
+    rows.map((item) => item.action).join(" → "),
+  );
+  check(
+    "one turn has exactly one SPEAK row",
+    rows.filter((item) => item.action === "SPEAK").length === 1,
+    rows.map((item) => item.action).join(" → "),
+  );
+  check(
+    "the THINK row comes before the SPEAK row",
+    rows.findIndex((item) => item.action === "THINK") < rows.findIndex((item) => item.action === "SPEAK"),
+    rows.map((item) => item.action).join(" → "),
+  );
 }
 
 section("feedAnchors / stripFeedAnchors — the run's two ends, pinned not repeated");

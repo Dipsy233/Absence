@@ -419,16 +419,22 @@ export function newEventId(): string {
 /**
  * Create a fully-formed AbsenceEvent for a given type. The payload type is
  * enforced against the event type.
+ *
+ * `at` is the moment the fact *belongs to*, when a caller knows it and it is
+ * not "now": the finished thought of a throttled reasoning stream is stamped
+ * with the time it started, not the time it was flushed. Existing callers omit
+ * it and keep the wall-clock default.
  */
 export function createEvent<K extends AbsenceEventType>(
   sessionId: string,
   type: K,
   payload: AbsenceEventPayloadMap[K],
+  at?: number,
 ): AbsenceEventOf<K> {
   return {
     id: newEventId(),
     sessionId,
-    timestamp: Date.now(),
+    timestamp: at ?? Date.now(),
     type,
     payload,
   } as AbsenceEventOf<K>;
