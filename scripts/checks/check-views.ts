@@ -225,6 +225,77 @@ section("timeline clock — the live edge grows, the finished run freezes");
   );
 }
 
+section("timeline geometry — a growing axis shrinks marks and gaps by the same factor");
+{
+  const node = (eventId: string, kind: TimelineNode["kind"], offsetMs: number): TimelineNode => ({
+    eventId,
+    kind,
+    at: offsetMs,
+    offsetMs,
+    action: kind.toUpperCase(),
+    subject: eventId,
+    effects: [],
+  });
+  // Think → speak → think → speak on one track, so every block (except the
+  // last) has a next activity to run to.
+  const tracks = buildTimelineTracks([
+    node("think-a", "think", 0),
+    node("speak-a", "speak", 10_000),
+    node("think-b", "think", 12_000),
+    node("speak-b", "speak", 18_000),
+  ]);
+  const at20 = layoutTimeline(tracks, 20_000).marks;
+  const at40 = layoutTimeline(tracks, 40_000).marks;
+  const mark = (marks: typeof at20, id: string) => marks.find((item) => item.node.eventId === id);
+  const close = (a?: number, b?: number) =>
+    a !== undefined && b !== undefined && Math.abs(a - b) < 1e-9;
+
+  check(
+    "every non-last mark shrinks by the axis factor",
+    close(mark(at40, "think-a")?.width, mark(at20, "think-a")!.width / 2) &&
+      close(mark(at40, "speak-a")?.width, mark(at20, "speak-a")!.width / 2) &&
+      close(mark(at40, "think-b")?.width, mark(at20, "think-b")!.width / 2),
+    `think-a ${mark(at20, "think-a")?.width}%→${mark(at40, "think-a")?.width}%`,
+  );
+  check(
+    "a mark's right edge lands on the next activity, so no gap is capped away",
+    close(
+      mark(at20, "think-a")!.left + mark(at20, "think-a")!.width,
+      mark(at20, "speak-a")!.left,
+    ) &&
+      close(
+        mark(at20, "speak-a")!.left + mark(at20, "speak-a")!.width,
+        mark(at20, "think-b")!.left,
+      ) &&
+      close(
+        mark(at40, "think-a")!.left + mark(at40, "think-a")!.width,
+        mark(at40, "speak-a")!.left,
+      ),
+    `${mark(at20, "think-a")?.left}+${mark(at20, "think-a")?.width} vs ${mark(at20, "speak-a")?.left}`,
+  );
+  check(
+    "the gap between two marks scales with the axis, not against it",
+    close(
+      mark(at40, "speak-a")!.left - (mark(at40, "think-a")!.left + mark(at40, "think-a")!.width),
+      (mark(at20, "speak-a")!.left - (mark(at20, "think-a")!.left + mark(at20, "think-a")!.width)) / 2,
+    ),
+  );
+  check(
+    "left positions never move right as the axis grows",
+    ["think-a", "speak-a", "think-b", "speak-b"].every(
+      (id) => mark(at40, id)!.left <= mark(at20, id)!.left,
+    ),
+    ["think-a", "speak-a", "think-b", "speak-b"]
+      .map((id) => `${id}:${mark(at20, id)?.left}%→${mark(at40, id)?.left}%`)
+      .join(" "),
+  );
+  check(
+    "the last mark on a track still grows to the live edge",
+    mark(at40, "speak-b")!.width > mark(at20, "speak-b")!.width,
+    `${mark(at20, "speak-b")?.width}%→${mark(at40, "speak-b")?.width}%`,
+  );
+}
+
 section("feedAnchors / stripFeedAnchors — the run's two ends, pinned not repeated");
 {
   const feed = [

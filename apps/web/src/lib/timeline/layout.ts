@@ -3,12 +3,12 @@ import type { TimelineLayout, TimelineMark, TimelineTrack } from "./types";
 /**
  * A mark's width is the time it was the thing happening on its own track.
  *
- * Capped so a long silence is not a wall of colour, floored so a 40 ms read is
- * still a mark. The span is measured against the next node *on the same track*
- * — one track's silence never stretches another track's marks.
+ * Strictly proportional: `(next.offset - offset) / total`. No cap and no floor,
+ * so when the axis grows every mark and every gap between marks shrink by the
+ * same factor — a block parked at a fixed 28% while the clock advances would
+ * look like it is drifting. A long silence therefore does stretch its mark; a
+ * truthful axis is the point, and the last mark on a track runs to the axis end.
  */
-const MAX_MARK_PERCENT = 28;
-const MIN_MARK_PERCENT = 0.7;
 
 /**
  * The axis length the two faces draw against.
@@ -60,7 +60,10 @@ export function layoutTimeline(tracks: TimelineTrack[], totalMs: number): Timeli
         trackId: track.id,
         node,
         left: (node.offsetMs / total) * 100,
-        width: Math.max(MIN_MARK_PERCENT, Math.min(MAX_MARK_PERCENT, (span / total) * 100)),
+        // Pure time share: no cap, no floor. The right edge lands on the next
+        // node of the same track (or the axis end for the last one), so the
+        // gap between marks is the time gap, not a fixed padding.
+        width: Math.min(100, Math.max(0, (span / total) * 100)),
       });
     }
   }
