@@ -11,6 +11,34 @@ const MAX_MARK_PERCENT = 28;
 const MIN_MARK_PERCENT = 0.7;
 
 /**
+ * The axis length the two faces draw against.
+ *
+ * The world line is time-driven, like a player's progress bar: while the run is
+ * in flight the axis ends at *now* (the live edge), so the newest activity keeps
+ * growing and silences read as empty space without waiting for the next event.
+ * Once the run ends the axis freezes at its duration, so the historical view is
+ * static and does not drift with the wall clock.
+ *
+ * `nowMs` is supplied only while the live clock should drive (following a
+ * running run); omit it for a settled run, a pin or a replay. `lastOffsetMs`
+ * always wins when a node sits beyond the run's end (a process dies after
+ * `agent_end`, for instance), so the axis never clips an activity.
+ */
+export function timelineTotalMs(input: {
+  startedAt: number;
+  endedAt?: number;
+  lastOffsetMs: number;
+  nowMs?: number;
+}): number {
+  // A settled run is frozen: a wall clock passed by mistake cannot unfreeze it.
+  if (input.endedAt !== undefined) {
+    return Math.max(1, input.lastOffsetMs, input.endedAt - input.startedAt);
+  }
+  const live = input.nowMs !== undefined ? input.nowMs - input.startedAt : 0;
+  return Math.max(1, input.lastOffsetMs, live);
+}
+
+/**
  * Place every track's nodes on the shared time axis, independently.
  *
  * This is the layout step: no track ids are known here, no DOM is involved.

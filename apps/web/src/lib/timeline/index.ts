@@ -1,6 +1,6 @@
 export { classifyTimelineNode } from "./classify";
 export { buildTimelineTracks, TIMELINE_TRACKS } from "./tracks";
-export { layoutTimeline } from "./layout";
+export { layoutTimeline, timelineTotalMs } from "./layout";
 export type {
   TimelineLayout,
   TimelineMark,

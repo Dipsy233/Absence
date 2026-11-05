@@ -24,8 +24,10 @@ import { isViewMode, readStoredViewMode, viewModeSpec } from "../../apps/web/src
 import { RUN_TONE, RUN_WORD, TONE_FOR_ROW, TONE_FOR_KIND } from "../../apps/web/src/ui/shared/atoms";
 import { createEvent } from "@absence/core";
 import { appendActivityRow, eventToActivityRow } from "../../apps/web/src/lib/events";
+import { buildTimelineTracks, layoutTimeline, timelineTotalMs } from "../../apps/web/src/lib/timeline";
 import type { ActivityRow } from "../../apps/web/src/types/stage";
 import type { AbsenceEvent, MetricsFrame } from "@absence/core";
+import type { TimelineNode } from "../../apps/web/src/types/report";
 import type { PhaseType } from "../../apps/web/src/types/report";
 
 /* ── fixtures ──────────────────────────────────────────────────────────── */
@@ -173,6 +175,53 @@ section("one turn: one SPEAK row, and the thought folds before it");
     "the THINK row comes before the SPEAK row",
     rows.findIndex((item) => item.action === "THINK") < rows.findIndex((item) => item.action === "SPEAK"),
     rows.map((item) => item.action).join(" → "),
+  );
+}
+
+section("timeline clock — the live edge grows, the finished run freezes");
+{
+  const node = (eventId: string, kind: TimelineNode["kind"], offsetMs: number): TimelineNode => ({
+    eventId,
+    kind,
+    at: offsetMs,
+    offsetMs,
+    action: kind.toUpperCase(),
+    subject: eventId,
+    effects: [],
+  });
+  const tracks = buildTimelineTracks([node("read", "read", 0), node("run", "run", 18_000)]);
+
+  check(
+    "a running run's axis ends at the live clock",
+    timelineTotalMs({ startedAt: 0, lastOffsetMs: 18_000, nowMs: 20_000 }) === 20_000,
+  );
+  check(
+    "a finished run freezes at its duration, even with a later clock",
+    timelineTotalMs({ startedAt: 0, endedAt: 15_000, lastOffsetMs: 18_000, nowMs: 30_000 }) === 18_000,
+    String(timelineTotalMs({ startedAt: 0, endedAt: 15_000, lastOffsetMs: 18_000, nowMs: 30_000 })),
+  );
+  check(
+    "the axis never clips a node past the run's end",
+    timelineTotalMs({ startedAt: 0, endedAt: 12_000, lastOffsetMs: 14_000 }) === 14_000,
+  );
+
+  const early = layoutTimeline(tracks, timelineTotalMs({ startedAt: 0, lastOffsetMs: 18_000, nowMs: 20_000 }));
+  const late = layoutTimeline(tracks, timelineTotalMs({ startedAt: 0, lastOffsetMs: 18_000, nowMs: 40_000 }));
+  const runEarly = early.marks.find((mark) => mark.node.eventId === "run");
+  const runLate = late.marks.find((mark) => mark.node.eventId === "run");
+  check(
+    "the newest mark grows as the clock advances",
+    (runLate?.width ?? 0) > (runEarly?.width ?? 0),
+    `${runEarly?.width}% → ${runLate?.width}%`,
+  );
+  check(
+    "cross-track positions stay on the event's own time",
+    runEarly?.left === 90,
+    `${runEarly?.left}%`,
+  );
+  check(
+    "the live edge does not move an earlier track's mark off its time",
+    early.marks.find((mark) => mark.node.eventId === "read")?.left === 0,
   );
 }
 

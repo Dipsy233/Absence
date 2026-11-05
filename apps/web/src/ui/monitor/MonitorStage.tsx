@@ -13,7 +13,8 @@ import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
 import { StageItem } from "../../types/stage";
 import { REPLAY_SPEEDS } from "../../types/replay";
 import { Chip, TONE_FOR_KIND, type MonTone } from "../shared/atoms";
-import { layoutTimeline } from "../../lib/timeline";
+import { layoutTimeline, timelineTotalMs } from "../../lib/timeline";
+import { useNow } from "../../hooks/useNow";
 import { activityViews } from "./activityViews";
 import type { MonitorData } from "../../hooks/useMonitorData";
 
@@ -477,7 +478,31 @@ function Timeline({ data }: { data: MonitorData }) {
   // would otherwise skip it and crash the moment nodes appeared.
   const activeItem = useStageStore((s) => s.activeItem);
 
-  const total = Math.max(1, nodes.at(-1)?.offsetMs ?? 0);
+  /**
+   * The footer is a player's progress bar, not an event list.
+   *
+   * While the reader follows a running run the axis ends at *now*, so the
+   * newest activity keeps growing and a silence reads as empty space without
+   * waiting for the next event. A settled run freezes at its duration; a pin or
+   * a replay also stops the clock, because the reader has chosen a moment.
+   *
+   * The 250 ms tick re-renders this strip only (`Timeline`), and the layout it
+   * feeds is O(activities) — not a per-frame walk of the whole tree. A frozen
+   * axis (settled run, pin, replay) drops the clock to a slow idle beat.
+   */
+  const running = data.run?.status === "running";
+  const liveClock = following && !inReplay && running;
+  const now = useNow(liveClock ? 250 : 60_000);
+  const lastOffsetMs = nodes.at(-1)?.offsetMs ?? 0;
+  const liveNow = liveClock ? now : undefined;
+  const total = data.run
+    ? timelineTotalMs({
+        startedAt: data.run.startedAt,
+        endedAt: data.run.endedAt,
+        lastOffsetMs,
+        nowMs: liveNow,
+      })
+    : Math.max(1, lastOffsetMs);
 
   /**
    * The three tracks — the model, the tools it called, the shell — bucketed

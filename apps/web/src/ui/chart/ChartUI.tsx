@@ -27,7 +27,7 @@ import type {
 } from "../../types/report";
 
 import { ChartTimeline, type TimelinePick } from "./ChartTimeline";
-import { buildTimelineTracks } from "../../lib/timeline";
+import { buildTimelineTracks, timelineTotalMs } from "../../lib/timeline";
 import { ChartChat } from "./ChartChat";
 import { StatsKpiCards } from "./StatsKpiCards";
 import { useAllRunsData } from "../../hooks/useAllRunsData";
@@ -485,7 +485,15 @@ export function ChartUI() {
           </div>
           <ChartTimeline
             tracks={activeTracks}
-            totalMs={Math.max(1, durationMs)}
+            totalMs={timelineTotalMs({
+              startedAt: activeRun.startedAt,
+              endedAt: activeRun.endedAt,
+              lastOffsetMs: activeReport.timeline.at(-1)?.offsetMs ?? 0,
+              // Chart already ticks once a second for its live headline; the
+              // axis follows the same clock while the run is in flight, then
+              // freezes at the run's duration once it settles.
+              nowMs: activeRun.endedAt === undefined ? now : undefined,
+            })}
             selected={pick}
             onPick={(next) => {
               setPick(next);
