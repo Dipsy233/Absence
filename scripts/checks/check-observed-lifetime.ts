@@ -40,6 +40,8 @@ function freePort(): Promise<number> {
 interface ProcessPayload {
   pid: number;
   name: string;
+  /** The command the egg was laid for, with the shell wrapper stripped. */
+  commandLine?: string;
   status: "running" | "exited";
   startedAt: number;
   exitedAt?: number;
@@ -88,6 +90,21 @@ async function main(): Promise<void> {
     return eggs;
   };
 
+  /**
+   * The egg is selected by the command it laid, not by the shell's name.
+   * Windows runs `cmd.exe /c "node …"`, POSIX `sh -c "node …"`; the egg root is
+   * whichever shell carried the command, and its `commandLine` is the command
+   * text with the wrapper stripped. A shell name list would (a) miss a shell we
+   * did not enumerate and (b) still pick the `wsl docker version` probe when it
+   * inherited the open command window. The command text distinguishes them.
+   */
+  const eggSummary = (egg: ProcessPayload): string =>
+    `${egg.name} pid=${egg.pid} ${egg.status} cmd=${(egg.commandLine ?? "")
+      .replace(/\s+/g, " ")
+      .slice(0, 90)}`;
+  const eggsSeen = (eggs: ProcessPayload[]): string =>
+    eggs.length > 0 ? eggs.map(eggSummary).join(" | ") : "(none)";
+
   try {
     let up = false;
     for (let attempt = 0; attempt < 90 && !up; attempt++) {
@@ -109,21 +126,32 @@ async function main(): Promise<void> {
 
     // A process that lives a few seconds and then ends.
     const runSeconds = 8;
+    const expectedCommand = `setTimeout(()=>{}, ${runSeconds * 1000})`;
     const startedAtWall = Date.now();
     await api(port, "POST", `/api/sessions/${sessionId}/prompt`, {
-      prompt: `$ node -e "setTimeout(()=>{}, ${runSeconds * 1000})"`,
+      prompt: `$ node -e "${expectedCommand}"`,
     });
 
-    // Watch the egg while it runs.
+    // Watch the egg while it runs. The shell's own name is not used: the egg is
+    // whichever root carries the command we started.
     let running: ProcessPayload | undefined;
+    let observed: ProcessPayload[] = [];
     for (let attempt = 0; attempt < 30 && !running; attempt++) {
       await sleep(1_000);
-      for (const egg of (await readEggs(sessionId)).values()) {
-        if (egg.name.toLowerCase().includes("node") && egg.status === "running") running = egg;
-      }
+      observed = [...(await readEggs(sessionId)).values()];
+      running = observed.find(
+        (egg) =>
+          egg.status === "running" && (egg.commandLine ?? "").includes(expectedCommand),
+      );
     }
-    check("the long-running process became an egg", Boolean(running), running ? running.name : "none");
-    if (!running) throw new Error("the process was never seen");
+    check(
+      "the long-running process became an egg",
+      Boolean(running),
+      running ? eggSummary(running) : `eggs seen: ${eggsSeen(observed)}`,
+    );
+    if (!running) {
+      throw new Error(`the 8s command never became a running egg. Eggs seen: ${eggsSeen(observed)}`);
+    }
 
     check(
       "its lifetime starts when the process started, not when the session did",
@@ -136,15 +164,29 @@ async function main(): Promise<void> {
       `exitedAt=${String(running.exitedAt)}`,
     );
 
-    // Let it end.
+    // Let it end. The same pid must still carry the same command: a reused pid
+    // is not this process.
     let exited: ProcessPayload | undefined;
     for (let attempt = 0; attempt < 45 && !exited; attempt++) {
       await sleep(1_000);
-      const egg = (await readEggs(sessionId)).get(running.pid);
-      if (egg?.status === "exited" && egg.exitedAt !== undefined) exited = egg;
+      observed = [...(await readEggs(sessionId)).values()];
+      const egg = observed.find((candidate) => candidate.pid === running!.pid);
+      if (
+        egg?.status === "exited" &&
+        egg.exitedAt !== undefined &&
+        (egg.commandLine ?? "").includes(expectedCommand)
+      ) {
+        exited = egg;
+      }
     }
-    check("the process eventually reports exited", Boolean(exited));
-    if (!exited) throw new Error("the process never exited");
+    check(
+      "the process eventually reports exited",
+      Boolean(exited),
+      exited ? eggSummary(exited) : `eggs seen: ${eggsSeen(observed)}`,
+    );
+    if (!exited) {
+      throw new Error(`the 8s command never reported exited. Eggs seen: ${eggsSeen(observed)}`);
+    }
 
     const lifetime = exited.exitedAt! - exited.startedAt;
     check(
@@ -156,14 +198,18 @@ async function main(): Promise<void> {
     // And it is frozen: "observed for" reads startedAt → exitedAt, both fixed, so
     // the number the UI shows keeps growing with the clock is impossible.
     await sleep(4_000);
-    const later = (await readEggs(sessionId)).get(running.pid);
+    observed = [...(await readEggs(sessionId)).values()];
+    const later = observed.find((candidate) => candidate.pid === running!.pid);
     check(
       "the recorded lifetime does not keep growing after the exit",
       later !== undefined &&
         later.status === "exited" &&
+        (later.commandLine ?? "").includes(expectedCommand) &&
         later.exitedAt === exited.exitedAt &&
         later.startedAt === exited.startedAt,
-      `startedAt=${String(later?.startedAt)} exitedAt=${String(later?.exitedAt)}`,
+      later
+        ? `${eggSummary(later)} startedAt=${later.startedAt} exitedAt=${String(later.exitedAt)}`
+        : `egg pid=${running.pid} disappeared; eggs seen: ${eggsSeen(observed)}`,
     );
   } finally {
     server.kill();
