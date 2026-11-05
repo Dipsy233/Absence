@@ -309,6 +309,12 @@ export class DockerEggs {
    * whose docker-shaped words could not be read fall back to the bare window.
    */
   private attribute(event: ContainerEvent): string | undefined {
+    // TODO(session-isolation): `docker events` carries the container, not the
+    // client process, so a container started by a *sibling* session while this
+    // session's docker command window overlaps can match the same prediction.
+    // There is no pid/ppid here to walk back to this session's agent. Once the
+    // daemon event exposes a client id (or Absence labels the containers it
+    // launches), attribution should require that id instead of the window alone.
     let looseFallback: string | undefined;
     for (const { command, cwd } of this.watcher.commandContexts(event.at, CONTAINER_POST_SLACK_MS)) {
       const prediction = predictContainers(command, cwd);

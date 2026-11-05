@@ -274,7 +274,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     });
   },
 
-  ingestEvents: (incoming) => {
+  ingestEvents: (raw) => {
+    // The store is a module singleton; the events must be narrowed to the
+    // session it is currently showing. A frame from a stale socket (or any
+    // producer bug) must not append another session's work.
+    const current = get().session?.id;
+    if (!current) return;
+    const incoming = raw.filter((event) => event.sessionId === current);
     if (incoming.length === 0) return;
     const previous = get().events;
     // The socket batches events, so copy the window once per batch instead of

@@ -65,10 +65,23 @@ export function useSessionSocket(sessionId: string | undefined): void {
       };
 
       socket.onmessage = (raw) => {
+        // A frame can still be dispatched after cleanup called close(). The
+        // effect may already be bound to another session, so a stale frame must
+        // not touch the stores.
+        if (disposed) return;
         let message: SessionServerMessage;
         try {
           message = JSON.parse(raw.data as string) as SessionServerMessage;
         } catch {
+          return;
+        }
+        // Defence in depth for the session boundary. The server already sends
+        // only this session's frames, but a frame that names another session
+        // must never hydrate or append here.
+        if (
+          (message.type === "snapshot" || message.type === "session_state") &&
+          message.state.session.id !== sessionId
+        ) {
           return;
         }
         switch (message.type) {
@@ -78,16 +91,21 @@ export function useSessionSocket(sessionId: string | undefined): void {
             useChatStore.getState().hydrate(message.state);
             useMetricsStore.getState().hydrate(message.state.metrics);
             break;
-          case "events":
+          case "events": {
             // One store update per socket batch: the server already coalesced
-            // a burst into this frame (see websocket/ws.ts).
-            useSessionStore.getState().ingestEvents(message.events);
-            useFileStore.getState().ingestEvents(message.events);
-            useChatStore.getState().ingestEvents(message.events);
-            if (isRunBoundary(message.events)) {
+            // a burst into this frame (see websocket/ws.ts). Filter by the
+            // event's own sessionId as well — the payload carries it, and the
+            // store is global.
+            const events = message.events.filter((event) => event.sessionId === sessionId);
+            if (events.length === 0) break;
+            useSessionStore.getState().ingestEvents(events);
+            useFileStore.getState().ingestEvents(events);
+            useChatStore.getState().ingestEvents(events);
+            if (isRunBoundary(events)) {
               void useRunsStore.getState().loadRuns(sessionId);
             }
             break;
+          }
           case "metrics":
             useMetricsStore.getState().ingest(message.frame);
             break;

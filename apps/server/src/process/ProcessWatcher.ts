@@ -77,6 +77,15 @@ const JOB_POST_SLACK_MS = 2500;
  */
 const JOB_PRE_SLACK_MS = 1500;
 
+/**
+ * How many pid→ppid rows and owned pids a watcher retains. Ancestry must
+ * outlive the process it describes (a daemon's child can be reported after its
+ * parent exited), but a session that runs for days cannot grow without bound.
+ * Old entries are dropped in insertion order, the same trade the kernel's own
+ * pid reuse already forces.
+ */
+const JOB_PID_HISTORY_MAX = 8192;
+
 /** A command's window: everything it could possibly have started. */
 export interface ProcessWindow {
   /** Epoch ms the command started. */
@@ -160,8 +169,22 @@ export function retiredPids(
 export interface ProcessWatcherOptions {
   /** Every egg state change, ready to become a `process` AbsenceEvent. */
   onProcess: (payload: ProcessPayload) => void;
+  /**
+   * A command window opened/closed. The session uses this to register on-demand
+   * file watches for paths the command names, and to release them when the
+   * window ends. The watcher itself stays free of session logic.
+   */
+  onCommandWindow?: (command: string, cwd: string, id: number) => void;
+  onCommandEnd?: (id: number) => void;
   /** Injectable for tests. */
   snapshot?: () => Promise<ProcessTable>;
+  /**
+   * Injectable kernel event source. Production omits it and subscribes to the
+   * process-wide `JobMonitor`; checks use it to feed two watchers from one fake
+   * stream, which is the only way to pin session isolation without a real
+   * second agent.
+   */
+  subscribeKernel?: (listener: (event: WatchStart | WatchExit) => void) => () => void;
   now?: () => number;
   /**
    * How many *finished* eggs to keep. Running eggs are always kept, however
@@ -260,10 +283,25 @@ export class ProcessWatcher {
    * The Absence session the observed runtime belongs to, when the runtime's
    * shell environment carries `ABSENCE_SESSION_ID` (Windows does, through the
    * Job-Object observer's PEB read; the Linux eBPF observer reports no marker).
-   * Set by `beginSession`. Used only to *exclude* — a process carrying a
-   * different session's marker is meant to be ignored — never as a requirement.
+   * Set by `beginSession`. A *different* marker is excluded; an unmarked event
+   * is only accepted when its ancestry reaches `ownedPids`.
    */
   private jobSessionId?: string;
+  /** The agent process Absence spawned for this session, once it exists. */
+  private agentPid?: number;
+  /**
+   * Pids this session owns: the agent itself plus every accepted descendant.
+   * Retained after exit so a late child can still prove its ancestry.
+   */
+  private readonly ownedPids = new Set<number>();
+  /** Owned pids believed alive — the metric target must not sample the dead. */
+  private readonly ownedLive = new Set<number>();
+  /**
+   * pid → ppid as the kernel reported it. The pid alone cannot prove ancestry
+   * across sessions; this map is what makes the chain walkable. Entries outlive
+   * exits because a child's start can be delivered after its parent is gone.
+   */
+  private readonly jobPpid = new Map<number, number>();
 
   constructor(private readonly options: ProcessWatcherOptions) {
     this.rootPid = process.pid;
@@ -279,9 +317,15 @@ export class ProcessWatcher {
    * miss. When it is not available the watcher falls back to snapshots.
    */
   private attachJobObserver(): void {
+    // Checks inject their own stream. Production has none and subscribes to the
+    // process-wide observer below.
+    if (this.options.subscribeKernel) {
+      this.jobUnsubscribe = this.options.subscribeKernel((event) => this.onJobEvent(event));
+      return;
+    }
     // The Windows observer is a Job Object placed on *our* process: it reports
-    // every descendant we create, and nothing that existed before us or belongs
-    // to somebody else.
+    // every descendant of the server — including the agents of sibling
+    // sessions, which is why per-event session attribution is required.
     const monitor = JobMonitor.get();
     if (!monitor.available && monitor.status === "unavailable") {
       // The helper did not start (missing binary, no rights). Stay on polling.
@@ -330,14 +374,21 @@ export class ProcessWatcher {
     return targets;
   }
 
-  /** The complete agent tree, including runtime plumbing and eggs. */
+  /**
+   * The complete agent tree, including runtime plumbing and eggs.
+   *
+   * Only pids this session actually owns are sampled. `jobSeen` deliberately
+   * holds foreign pids too (it exists to deduplicate the shared kernel stream),
+   * so using it here would put another session's CPU and RSS on this session's
+   * Agent curve.
+   */
   metricsAgentTarget(): MetricsTarget {
-    const pids = new Set<number>([this.rootPid]);
-    for (const pid of this.jobSeen) pids.add(pid);
-    for (const pid of this.jobParent.keys()) pids.add(pid);
+    const rootPid = this.agentPid ?? this.rootPid;
+    const pids = new Set<number>([rootPid]);
+    for (const pid of this.ownedLive) pids.add(pid);
     for (const egg of this.eggs.values()) pids.add(egg.info.pid);
     return {
-      rootPid: this.rootPid,
+      rootPid,
       name: "Agent",
       kind: "agent",
       status: "running",
@@ -356,13 +407,66 @@ export class ProcessWatcher {
   }
 
   /**
-   * Declare which Absence session the observed runtime belongs to. Start events
-   * whose environment carries a *different* `ABSENCE_SESSION_ID` are then known
-   * to be another session's and are ignored. Observations without a marker — all
-   * of Linux, where the eBPF observer reports none — are unaffected.
+   * Declare which Absence session the observed runtime belongs to.
+   *
+   * The agent pid is not known when the adapter starts, so the first call
+   * declares only the id; the ACP spawn callback calls it again with the pid
+   * once the child exists. From then on an unmarked event is accepted only when
+   * its pid→ppid chain reaches an owned pid; a different `ABSENCE_SESSION_ID` is
+   * still excluded first-hand.
    */
-  beginSession(sessionId: string): void {
+  beginSession(sessionId: string, agentPid?: number): void {
     this.jobSessionId = sessionId;
+    if (agentPid !== undefined) this.ownAgent(agentPid);
+  }
+
+  /** Declare the agent process this session drives (see `beginSession`). */
+  ownAgent(pid: number | undefined): void {
+    if (pid === undefined || !Number.isSafeInteger(pid) || pid <= 0) return;
+    this.agentPid = pid;
+    this.markOwned(pid);
+  }
+
+  /** Remember one pid as belonging to this session. */
+  private markOwned(pid: number): void {
+    if (!Number.isSafeInteger(pid) || pid <= 0) return;
+    this.ownedPids.add(pid);
+    this.ownedLive.add(pid);
+    if (this.ownedPids.size > JOB_PID_HISTORY_MAX) {
+      for (const candidate of this.ownedPids) {
+        if (this.ownedPids.size <= JOB_PID_HISTORY_MAX) break;
+        if (candidate === this.agentPid) continue;
+        this.ownedPids.delete(candidate);
+      }
+    }
+  }
+
+  /** Remember the parent the kernel reported for a pid. */
+  private rememberPpid(pid: number, ppid: number): void {
+    this.jobPpid.set(pid, ppid);
+    if (this.jobPpid.size > JOB_PID_HISTORY_MAX) {
+      const oldest = this.jobPpid.keys().next().value;
+      if (oldest !== undefined) this.jobPpid.delete(oldest);
+    }
+  }
+
+  /**
+   * True when walking `ppid` upwards reaches a pid this session owns. A missing
+   * link means the chain cannot be proven, and proving it is the whole point:
+   * the observer is machine-wide (Linux) or server-wide (Windows), so "no
+   * marker" must not mean "ours".
+   */
+  private reachesOwned(ppid: number): boolean {
+    const visited = new Set<number>();
+    let current = ppid;
+    while (current > 0 && !visited.has(current)) {
+      if (this.ownedPids.has(current)) return true;
+      visited.add(current);
+      const next = this.jobPpid.get(current);
+      if (next === undefined) return false;
+      current = next;
+    }
+    return false;
   }
 
   /**
@@ -387,6 +491,7 @@ export class ProcessWatcher {
         intent: parseCommandIntent(command),
         cwd: this.jobCwd,
       });
+      this.options.onCommandWindow?.(command, this.jobCwd, id);
       return id;
     }
     this.open.set(id, {
@@ -396,11 +501,13 @@ export class ProcessWatcher {
       cwd: this.jobCwd,
     });
     this.startTick();
+    this.options.onCommandWindow?.(command, this.jobCwd, id);
     return id;
   }
 
   /** The command has finished. Returns immediately; the evidence arrives later. */
   end(id: number): void {
+    this.options.onCommandEnd?.(id);
     if (this.jobMode) {
       const entry = this.jobOpen.get(id);
       this.jobOpen.delete(id);
@@ -502,6 +609,9 @@ export class ProcessWatcher {
     this.open.clear();
     this.jobOpen.clear();
     this.jobExec.clear();
+    this.jobPpid.clear();
+    this.ownedPids.clear();
+    this.ownedLive.clear();
     this.jobUnsubscribe?.();
     this.jobUnsubscribe = undefined;
   }
@@ -557,14 +667,19 @@ export class ProcessWatcher {
     cwd: string,
   ): void {
     const candidates = candidatePids(this.baseline, table, this.seen, window);
+    // Polling sees the whole process table too. Root the ancestry at the agent
+    // when one is known, otherwise at the server as before (legacy/mock paths).
     const { roots, children, claimed } = attributeProcesses(
       table,
       candidates,
       this.seen,
-      this.rootPid,
+      this.agentPid ?? this.rootPid,
       this.markers,
     );
-    for (const pid of claimed) this.seen.add(pid);
+    for (const pid of claimed) {
+      this.seen.add(pid);
+      this.markOwned(pid);
+    }
     if (roots.length === 0) return;
 
     const at = this.now();
@@ -627,6 +742,14 @@ export class ProcessWatcher {
     }
     const pid = event.pid;
     if (pid === this.rootPid) return;
+    this.rememberPpid(pid, event.ppid);
+    // The runtime itself is the tree's root, never an egg. It was marked owned
+    // when ACP reported its pid; the explicit skip keeps a start event that
+    // arrives before that callback from becoming a "?" egg.
+    if (this.agentPid !== undefined && pid === this.agentPid) {
+      this.jobSeen.add(pid);
+      return;
+    }
     if (isConsoleHost(nameOf(event))) return;
     if (this.isDockerStream(event)) {
       this.jobSeen.add(pid);
@@ -645,37 +768,53 @@ export class ProcessWatcher {
       // Remembered so its descendants still read as ours, but deliberately NOT
       // registered as a parent egg: the shell only forwards the command, so its
       // children are the roots of the subtrees we actually report.
+      this.markOwned(pid);
       this.jobSeen.add(pid);
       return;
     }
 
-    // Session attribution. When a runtime's shell carries `ABSENCE_SESSION_ID`,
-    // the kernel reports it and a process belonging to a *different* session is
-    // none of our business — the one thing the marker is used for here. It is
-    // deliberately not a *requirement*: the Linux observer (eBPF) reports no
-    // marker at all, and the shell wrapper is a comment on the command line
-    // rather than an environment variable, so an unmarked process is judged by
-    // the window and its ancestry below. The agent process itself sits inside
-    // Absence's Job Object, so the whole subtree it spawns is seen regardless.
+    // Session attribution, strict form. The observer reports the whole server
+    // job (Windows) or the whole machine (Linux), so an event belongs to this
+    // session only when:
+    //   - its environment marker matches (the strongest signal), or
+    //   - it is unmarked and its pid→ppid chain reaches a pid this session owns.
+    // A different marker is another session's, discarded immediately. An
+    // unmarked event that cannot prove ancestry is somebody else's (or server
+    // infrastructure) and is never credited to a command window alone.
+    //
+    // Legacy watchers with no declared session (the scripted mock and the
+    // standalone kernel checks) keep the old window behaviour: there is no
+    // second session to confuse them with.
     const session = this.sessionVerdict(event);
     if (session === "foreign") {
       this.jobSeen.add(pid);
       return;
     }
+    if (session === "unmarked" && this.jobSessionId !== undefined) {
+      // A `lost` start has no command line and no parent; ancestry cannot be
+      // proven for it, and treating "unprovable" as "ours" is exactly the leak.
+      if (event.lost === true) {
+        this.jobSeen.add(pid);
+        return;
+      }
+      if (this.agentPid === undefined || !this.reachesOwned(event.ppid)) {
+        this.jobSeen.add(pid);
+        return;
+      }
+    }
+    this.markOwned(pid);
 
-    // Attribution: prefer the window whose words this process actually ran —
-    // parallel commands overlap, and the first open window is not always the
-    // owner. The shell forwards the command text verbatim, so the child's
-    // command line contains it (minus the interpreter's own path). Fall back
-    // to the window order when no window's words match.
+    // Attribution is settled; the window only decides *which command* gets the
+    // credit. Prefer the window whose words this process actually ran — parallel
+    // commands overlap, and the first open window is not always the owner. The
+    // shell forwards the command text verbatim, so the child's command line
+    // contains it (minus the interpreter's own path).
     const exact = this.commandForExact(event.createdAt, event.commandLine);
     const window = exact ?? this.commandFor(event.createdAt);
     if (window === undefined) {
-      // Outside any command window. An env-marked process is still the
-      // runtime's shell tree (a detached daemon, most likely), so it is
-      // remembered but not reported — it has no command to be credited to.
-      // Unmarked, it is infrastructure the server itself spawns (update
-      // checks, git, tooling): remembered for the same reason.
+      // Outside any command window. An owned process is still the runtime's
+      // shell tree (a detached daemon, most likely), so it stays in the metrics
+      // target but is not reported as an egg — it has no command to credit.
       this.jobSeen.add(pid);
       return;
     }
@@ -758,6 +897,7 @@ export class ProcessWatcher {
 
   private onJobExit(event: WatchExit): void {
     this.jobSeen.delete(event.pid);
+    this.ownedLive.delete(event.pid);
     this.jobParent.delete(event.pid);
     this.jobExec.delete(event.pid);
     const egg = this.eggs.get(event.pid);
@@ -836,7 +976,54 @@ export class ProcessWatcher {
     if (last && when <= last.endedAt + postSlackMs) {
       out.push({ command: last.command, cwd: last.cwd });
     }
+    // Polling mode has no kernel stream, so its windows live in `open`/`pending`
+    // instead of `jobOpen`. File attribution must keep working on a machine
+    // where the helper did not start.
+    if (!this.jobMode) {
+      for (const entry of this.open.values()) {
+        if (when >= entry.startedAt - WINDOW_SLACK_MS) {
+          out.push({ command: entry.command, cwd: entry.cwd });
+        }
+      }
+      for (const window of this.pending) {
+        const end = window.closedAt ?? (window.endedAt ?? 0) + postSlackMs;
+        if (when >= window.startedAt - WINDOW_SLACK_MS && when <= end) {
+          out.push({ command: window.command, cwd: window.cwd });
+        }
+      }
+    }
     return out;
+  }
+
+  /**
+   * True when a command that could own work at `at` names this path in its own
+   * words. This is the in-project companion of `recentAgentWrites`: the OS
+   * watcher cannot say who wrote a file, so a change is only reported as this
+   * agent's when the session's own command line mentions the path. A sibling
+   * agent's edit must not be credited just because a command of ours overlaps.
+   *
+   * `relativePath` is project-relative and `absolutePath` is optional. Matching
+   * is case- and separator-insensitive, and a short basename is only accepted
+   * when it is long enough not to be a bare `a.ts` coincidence.
+   */
+  commandMentionsPath(
+    at: number,
+    relativePath: string,
+    absolutePath?: string,
+  ): boolean {
+    const contexts = this.commandContexts(at);
+    if (contexts.length === 0) return false;
+    const rel = normalizePathForMatch(relativePath);
+    const abs = absolutePath ? normalizePathForMatch(absolutePath) : undefined;
+    const base = rel.slice(rel.lastIndexOf("/") + 1);
+    return contexts.some(({ command }) => {
+      const line = normalizePathForMatch(command);
+      return (
+        line.includes(rel) ||
+        (abs !== undefined && line.includes(abs)) ||
+        (base.length >= 4 && line.includes(base))
+      );
+    });
   }
 
   /** The command a process started at `at` belongs to, if any. */
@@ -912,9 +1099,9 @@ export class ProcessWatcher {
    *
    *   - "ours"     — the marker matches `beginSession`; the runtime laid it.
    *   - "foreign"  — the marker is a *different* session's; not ours to report.
-   *   - "unmarked" — no marker was reported. In session mode that is usually
-   *                  the server's own infrastructure; outside it, the older
-   *                  heuristics (ancestry, the command window) still decide.
+   *   - "unmarked" — no marker was reported. In session mode the caller must
+   *                  prove ancestry to `ownedPids`; outside a declared session
+   *                  the legacy window heuristics still apply.
    */
   private sessionVerdict(event: WatchStart): "ours" | "foreign" | "unmarked" {
     if (this.jobSessionId === undefined) return "unmarked";
@@ -939,6 +1126,7 @@ export class ProcessWatcher {
       }
       egg.status = "exited";
       egg.exitedAt = at;
+      this.ownedLive.delete(egg.info.pid);
       this.emit(egg);
       this.retireOverflow();
     }
@@ -1227,6 +1415,11 @@ function delay(ms: number): Promise<void> {
 /** Distinguish the two shapes the kernel observer emits. */
 function isExit(event: WatchStart | WatchExit): event is WatchExit {
   return (event as WatchExit).exitedAt !== undefined;
+}
+
+/** Command text and paths match regardless of case or separator. */
+function normalizePathForMatch(value: string): string {
+  return value.replace(/\\/g, "/").toLowerCase();
 }
 
 /** A display name for a start event: the executable's own name, not its path. */

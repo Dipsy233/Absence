@@ -43,16 +43,46 @@ await session.start();
 
 const edits = () => events.filter((e) => e.type === "file_edit" || e.type === "file_write");
 
+/**
+ * Run one shell line through the mock runtime. The mock opens the same
+ * ProcessWatcher command window a real ACP execute call would, and the command
+ * text names the file — the two pieces the session-scoped file attribution
+ * requires. A direct `fs.writeFile` from the check process is intentionally
+ * *not* attributed; that is the session-isolation contract, asserted below.
+ */
+async function runShell(command: string): Promise<void> {
+  const from = events.length;
+  await session.prompt(`$ ${command}`);
+  await waitFor(
+    () => events.slice(from).some((event) => event.type === "agent_end"),
+    15_000,
+  );
+}
+
+const nodeWrite = (file: string, value: string) =>
+  `node -e "const fs=require('fs');fs.writeFileSync('${file}',${value})"`;
+
+// 0. A write no session can claim (no command window, no tool report) must not
+//    enter this session. This is the regression that cross-session isolation
+//    introduced: the project watcher is shared, the act is not.
+await fs.writeFile(path.join(dir, "notes.txt"), "unattributed\n", "utf-8");
+await new Promise((r) => setTimeout(r, 500));
+check(
+  "an unattributed in-project write stays out of the session",
+  edits().length === 0 && !events.some((event) => event.type === "file_change"),
+  JSON.stringify(events.map((e) => e.type)),
+);
+
 // 1. A first write to a file Absence has never seen is the whole content — it
 //    cannot fabricate a "before" it does not have.
-await fs.writeFile(path.join(dir, "notes.txt"), "hello\nworld\n", "utf-8");
+await runShell(nodeWrite("notes.txt", "'hello'+String.fromCharCode(10)+'world'+String.fromCharCode(10)"));
 check("a shell write reaches the stage", await waitFor(() => edits().length > 0), JSON.stringify(events.map((e) => e.type)));
 const first = edits()[0] as Extract<AbsenceEvent, { type: "file_write" }> | undefined;
 check("an unknown file is a file_write with the whole content", first?.type === "file_write" && first.payload.path === "notes.txt" && first.payload.content === "hello\nworld\n", JSON.stringify(first?.payload));
 
 // 2. A second write to a file Absence now knows becomes a real diff.
 const beforeCount = edits().length;
-await fs.writeFile(path.join(dir, "notes.txt"), "hello\nworld\nagain\n", "utf-8");
+await runShell(nodeWrite("notes.txt", "'hello'+String.fromCharCode(10)+'world'+String.fromCharCode(10)+'again'+String.fromCharCode(10)"));
 check("a known file change reaches the stage", await waitFor(() => edits().length > beforeCount), JSON.stringify(edits().map((e) => e.type)));
 
 const edit = edits().find((e) => e.type === "file_edit") as Extract<AbsenceEvent, { type: "file_edit" }> | undefined;
@@ -66,7 +96,7 @@ const item = edit ? eventToStageItem(edit) : undefined;
 check("it becomes a DIFF stage item", item?.type === "diff" && item.payload.kind === "diff", JSON.stringify(item?.type));
 
 // 3. A brand new file becomes a file_write (the whole content).
-await fs.writeFile(path.join(dir, "1.txt"), "hi\n", "utf-8");
+await runShell(nodeWrite("1.txt", "'hi'+String.fromCharCode(10)"));
 check(
   "a new file becomes a file_write",
   await waitFor(() => edits().some((e) => e.type === "file_write" && e.payload.path === "1.txt")),
@@ -75,7 +105,7 @@ check(
 
 // 4. No change, no event: rewriting identical content is not a diff.
 const settled = edits().length;
-await fs.writeFile(path.join(dir, "notes.txt"), "hello\nworld\nagain\n", "utf-8");
+await runShell(nodeWrite("notes.txt", "'hello'+String.fromCharCode(10)+'world'+String.fromCharCode(10)+'again'+String.fromCharCode(10)"));
 await new Promise((r) => setTimeout(r, 400));
 check("an identical rewrite emits no diff", edits().length === settled, `${settled} → ${edits().length}`);
 

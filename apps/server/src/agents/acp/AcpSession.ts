@@ -89,6 +89,10 @@ export class AcpSession {
       onRequest: (method, params) => this.handleAgentRequest(method, params),
       onSpawn: (pid) => {
         this.agentPid = pid;
+        // Second declaration, now that the pid exists: from here on the kernel
+        // observer can prove ancestry to this session's own agent. The first
+        // call (in AcpAdapter.start) only declared the id, before the spawn.
+        this.options.processWatcher?.beginSession(this.options.sessionId, pid);
       },
       onErrorOutput: () => {
         /* stderr is diagnostics; the ACP stream is the truth */

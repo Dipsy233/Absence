@@ -68,6 +68,7 @@
     "check:docker": "tsx scripts/checks/check-docker.ts",
     "check:docker-eggs": "tsx scripts/checks/check-docker-eggs.ts",
     "check:outside-attr": "tsx scripts/checks/check-outside-attr.ts",
+    "check:session-isolation": "tsx scripts/checks/check-session-isolation.ts",
     "mock:agent": "tsx scripts/mock-agent/run.ts",
     "check:mock-agent": "tsx scripts/mock-agent/run.ts --all",
     "absence-sim": "tsx scripts/mock-agent/run.ts --all",

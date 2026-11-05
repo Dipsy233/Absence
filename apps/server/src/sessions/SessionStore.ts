@@ -576,6 +576,17 @@ export class AbsenceSession {
 
   private handleEvent(event: AbsenceEvent): void {
     if (this.disposed) return;
+    // Session identity is a hard boundary, not a convention. Adapters, OS
+    // watchers and notices all build events with this.id, so a mismatch is a
+    // producer bug — dropping it keeps another session's work out of this
+    // session's bus, Activity, archive and Report. The diagnostic is deliberate:
+    // silent acceptance is how cross-session leaks become invisible.
+    if (event.sessionId !== this.id) {
+      console.warn(
+        `[absence] session ${this.id}: dropped event ${event.id} from session ${event.sessionId}`,
+      );
+      return;
+    }
     // Absence's own events (OS watchers, system notices) are not tagged by an
     // adapter. Stamp them too, so every live WS frame and every archived row
     // carries the same `at`/`source`/`fidelity` shape. An unknown origin is
@@ -922,10 +933,23 @@ export class AbsenceSession {
   }
 
   /**
-   * One OS change, judged against what the agent already reported. The
-   * `file_change` is always emitted (it is real OS evidence); when its content
-   * matches a tool call Absence already recorded, it is marked `echo` and the
-   * second, redundant diff is skipped.
+   * One OS change, judged twice: first against what the agent already reported,
+   * then against whether this session can claim it at all.
+   *
+   * The in-project watcher is project-scoped, not agent-scoped. Two sessions (or
+   * an Absence session plus a user-run agent) working on the same project all
+   * receive every chokidar event, so "the file changed" is not evidence that
+   * *this* agent changed it. The outside watcher already has an attribution
+   * gate (`OutsideAttribution`); this is its in-project counterpart:
+   *
+   *   - an echoed tool write (content matches `recentAgentWrites`) is ours; or
+   *   - the change happened while one of *this* session's commands was open and
+   *     that command's own text names the path.
+   *
+   * Anything else is somebody else's work. It still updates the baseline (so a
+   * later diff of ours has the right `before`), but it produces no
+   * `file_change` / `file_write` / `file_edit` in this session's Activity or
+   * Report.
    */
   private async handleFsChange(
     rel: string,
@@ -935,6 +959,11 @@ export class AbsenceSession {
     const content = kind === "deleted" ? null : await readFileSafe(absolute);
     const reported = this.recentAgentWrites.get(rel);
     const echo = content !== null && reported !== undefined && reported.content === content;
+    const named = this.processWatcher.commandMentionsPath(Date.now(), rel, absolute);
+    if (!echo && !named) {
+      this.absorbUnattributedFsChange(rel, kind, content);
+      return;
+    }
     this.handleEvent(
       createEvent(this.id, "file_change", {
         path: rel,
@@ -951,6 +980,31 @@ export class AbsenceSession {
     // pipeline are all `Unknown`), so without this a file changed by a command
     // would show only as "file touch" and never as a diff on the Stage.
     void this.diffFromDisk(rel);
+  }
+
+  /**
+   * Refresh what Absence knows about a file somebody else changed, without
+   * reporting it as this agent's act.
+   *
+   * Only files this session already knows are updated: adding a stranger's file
+   * would make it appear in Agent Folder as something this agent read or wrote.
+   * The project tree still refreshes, because that is the user's view of disk,
+   * not the agent's file list.
+   */
+  private absorbUnattributedFsChange(
+    rel: string,
+    kind: "created" | "modified" | "deleted",
+    content: string | null,
+  ): void {
+    if (kind === "deleted") {
+      this.files.delete(rel);
+    } else {
+      const known = this.files.get(rel);
+      if (known && content !== null) {
+        this.files.set(rel, { ...known, content });
+      }
+    }
+    this.scheduleTree();
   }
 
   /**
