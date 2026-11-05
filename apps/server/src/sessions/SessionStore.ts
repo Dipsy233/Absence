@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 import {
   createEvent,
@@ -35,7 +36,7 @@ import type { AgentAdapter } from "../agents/AgentAdapter";
 import { OutsideAttribution } from "./OutsideAttribution";
 import { createAdapter } from "../agents/createAdapter";
 import { formatAgentCommand } from "../agents/slashCommands";
-import { FileWatcher } from "../filesystem/FileWatcher";
+import { EXTERNAL_WATCH_TTL_MS, FileWatcher, outsideWatchRoot } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
 import { ProcessWatcher } from "../process/ProcessWatcher";
 import { ProcessMetricsSampler } from "../process/ProcessMetrics";
@@ -69,6 +70,31 @@ const SNAPSHOT_EVENT_LIMIT = 2_000;
  * of the same file.
  */
 const OUTSIDE_ATTRIBUTION_WINDOW_MS = 120_000;
+
+/**
+ * A command-named outside path has no content claim, so its attribution window
+ * is deliberately short: the command itself is the evidence, not a blank
+ * permission to report any change on that path for two minutes.
+ */
+const COMMAND_CLAIM_WINDOW_MS = 10_000;
+
+/** How long an on-demand watch for a command-named path stays registered. */
+const COMMAND_WATCH_TTL_MS = 15_000;
+
+/** A short tail after the command returned, for a backgrounded write. */
+const COMMAND_RELEASE_DELAY_MS = 5_000;
+
+/** At most this many distinct paths are registered for one command. */
+const MAX_COMMAND_PATHS = 8;
+
+/**
+ * A command that can plausibly write. A read-only command (`cat`, `ls`) may
+ * name a file, but a change on it is not evidence of this agent; only
+ * write-shaped commands get a time-only claim. The on-demand watch is opened
+ * either way, so a later tool report can still use it.
+ */
+const COMMAND_WRITE_SIGNAL =
+  /(?:>>?|\b(?:cp|mv|rm|del|mkdir|md|touch|tee|dd|truncate|rsync|install)\b|Set-Content|Out-File|Remove-Item|New-Item|Copy-Item|Move-Item|writeFile(?:Sync)?|appendFile(?:Sync)?|createWriteStream|sed\s+-i|perl\s+-i)/i;
 
 /** Newline, kept as a constant so multi-line notices read the same on Windows. */
 const NL = String.fromCharCode(10);
@@ -170,6 +196,15 @@ export class AbsenceSession {
    * reports.
    */
   private outsideAttribution = new OutsideAttribution(OUTSIDE_ATTRIBUTION_WINDOW_MS);
+  /**
+   * On-demand outside watches opened for a command window, keyed by the
+   * watcher's command id. They are released when the command ends (plus a short
+   * tail for a backgrounded write) and never accumulate over a session.
+   */
+  private readonly commandWatches = new Map<
+    number,
+    { releases: Array<() => void>; releaseTimer?: NodeJS.Timeout }
+  >();
   private chat: ChatMessage[] = [];
   private context?: ContextState;
   private tree?: FileTreeNode;
@@ -220,6 +255,11 @@ export class AbsenceSession {
     this.runtimeSessionId = resume?.runtimeSessionId;
     this.processWatcher = new ProcessWatcher({
       onProcess: (payload) => this.handleEvent(createEvent(this.id, "process", payload)),
+      // The command window is the one place that knows the *text* of a shell
+      // command before it runs. The session uses it to open on-demand outside
+      // watches for paths the command names; the watcher stays session-agnostic.
+      onCommandWindow: (command, cwd, id) => this.registerCommandWatches(command, cwd, id),
+      onCommandEnd: (id) => this.releaseCommandWatches(id),
       // Bound the live egg view: running eggs always stay, only the oldest
       // exits beyond the cap are retired. See ProcessWatcher.retireOverflow.
       maxFinishedEggs: config.maxEggs,
@@ -545,6 +585,7 @@ export class AbsenceSession {
 
   async dispose(): Promise<void> {
     this.disposed = true;
+    this.releaseAllCommandWatches();
     this.metricsSampler.stop();
     if (this.stateTimer) clearTimeout(this.stateTimer);
     if (this.treeTimer) clearTimeout(this.treeTimer);
@@ -723,6 +764,10 @@ export class AbsenceSession {
       }
 
       case "tool_start":
+        // The tool's arguments are the earliest evidence that this session is
+        // about to touch a path. Opening the watch now (before the write) is
+        // what makes an outside echo observable without watching the disk.
+        this.watchToolPaths(event.payload.args);
         this.setStatus(statusForTool(event.payload.toolName));
         break;
 
@@ -1082,7 +1127,114 @@ export class AbsenceSession {
     // outside the project — exactly the case the outside watcher must confirm
     // against the attribution map rather than assume.
     const absolute = path.isAbsolute(rel) ? rel : path.join(this.session.projectPath, rel);
-    this.outsideAttribution.note(absolute, at);
+    this.outsideAttribution.note(absolute, at, content);
+    // Fallback for runtimes whose tool_start carries no usable path: the
+    // reported write still opens the on-demand watch for this path.
+    this.watchExternalPath(absolute, EXTERNAL_WATCH_TTL_MS);
+  }
+
+  /** True when the path lives inside this session's project. */
+  private isInsideProject(absolutePath: string): boolean {
+    const rel = path.relative(this.session.projectPath, absolutePath);
+    return !rel.startsWith("..") && !path.isAbsolute(rel);
+  }
+
+  /**
+   * True when an existing permanent watcher already covers this path:
+   * the project watcher, or the shallow outside watcher over the parent.
+   * Registering an on-demand watch there too would duplicate every event.
+   */
+  private externalWatchCovers(absolutePath: string): boolean {
+    const target = path.resolve(absolutePath);
+    if (this.isInsideProject(target)) return true;
+    const root = outsideWatchRoot(this.session.projectPath);
+    if (root === undefined) return false;
+    const rel = path.relative(root, target);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) return false;
+    // The outside watcher runs at depth 2; three segments is the conservative
+    // cut so a file just below a sibling project stays covered by it.
+    return rel.split(path.sep).filter(Boolean).length <= 3;
+  }
+
+  /** Open a bounded on-demand watch for one named path outside the project. */
+  private watchExternalPath(absolutePath: string, ttlMs: number): void {
+    if (this.watcher === undefined) return;
+    if (this.externalWatchCovers(absolutePath)) return;
+    this.watcher.watchExternalFile(
+      absolutePath,
+      (kind, changed) => this.onOutsideFsChange(kind, changed),
+      ttlMs,
+    );
+  }
+
+  /** Paths named by a tool call's arguments (tool_start, before the write). */
+  private watchToolPaths(args: unknown): void {
+    if (this.watcher === undefined) return;
+    for (const value of collectPathStrings(args)) {
+      const absolute = path.isAbsolute(value)
+        ? value
+        : path.join(this.session.projectPath, value);
+      this.watchExternalPath(absolute, EXTERNAL_WATCH_TTL_MS);
+    }
+  }
+
+  /**
+   * A command is about to run. Watch the outside paths its own text names, so
+   * a shell write beyond the shallow parent root is still observed. Bounded by
+   * `MAX_COMMAND_PATHS`; attribution stays here (content/time), never in the
+   * watcher.
+   */
+  private registerCommandWatches(command: string, cwd: string, id: number): void {
+    if (this.watcher === undefined) return;
+    const existing = this.commandWatches.get(id);
+    if (existing) this.releaseCommandWatch(id);
+    const paths = scanCommandOutsidePaths(command, cwd, this.session.projectPath)
+      .slice(0, MAX_COMMAND_PATHS);
+    if (paths.length === 0) return;
+    const entry: { releases: Array<() => void>; releaseTimer?: NodeJS.Timeout } = {
+      releases: [],
+    };
+    const now = Date.now();
+    const mayWrite = COMMAND_WRITE_SIGNAL.test(command);
+    for (const absolute of paths) {
+      // No content is known for a shell write: the claim is short and the
+      // command text itself is the evidence. A read-only command still gets
+      // the watch (for a later tool report) but not a blank attribution claim.
+      if (mayWrite) {
+        this.outsideAttribution.note(absolute, now, undefined, COMMAND_CLAIM_WINDOW_MS);
+      }
+      if (this.externalWatchCovers(absolute)) continue;
+      entry.releases.push(
+        this.watcher.watchExternalFile(
+          absolute,
+          (kind, changed) => this.onOutsideFsChange(kind, changed),
+          COMMAND_WATCH_TTL_MS,
+        ),
+      );
+    }
+    if (entry.releases.length > 0) this.commandWatches.set(id, entry);
+  }
+
+  /** The command returned; keep the watches briefly, then release them. */
+  private releaseCommandWatches(id: number): void {
+    const entry = this.commandWatches.get(id);
+    if (entry === undefined || entry.releaseTimer !== undefined) return;
+    entry.releaseTimer = setTimeout(() => {
+      this.releaseCommandWatch(id);
+    }, COMMAND_RELEASE_DELAY_MS);
+    entry.releaseTimer.unref?.();
+  }
+
+  private releaseCommandWatch(id: number): void {
+    const entry = this.commandWatches.get(id);
+    if (entry === undefined) return;
+    this.commandWatches.delete(id);
+    if (entry.releaseTimer !== undefined) clearTimeout(entry.releaseTimer);
+    for (const release of entry.releases) release();
+  }
+
+  private releaseAllCommandWatches(): void {
+    for (const id of [...this.commandWatches.keys()]) this.releaseCommandWatch(id);
   }
 
   /**
@@ -1095,7 +1247,26 @@ export class AbsenceSession {
    * run row already shows whatever command or call carried the write.
    */
   private onOutsideFsChange(kind: "created" | "modified" | "deleted", absolutePath: string): void {
-    if (!this.outsideAttribution.owns(absolutePath)) return;
+    void this.handleOutsideFsChange(kind, absolutePath);
+  }
+
+  /**
+   * Judge one outside event against the claim the agent itself reported.
+   *
+   * Time alone is not enough: a sibling agent saving the same shared file
+   * within the window would still be reported as this agent's work. The tool
+   * write carried the content it produced, so the content now on disk is the
+   * second half of the proof — exactly like the in-project echo check. A
+   * command-named path has no content claim and falls back to its (short)
+   * time window.
+   */
+  private async handleOutsideFsChange(
+    kind: "created" | "modified" | "deleted",
+    absolutePath: string,
+  ): Promise<void> {
+    if (!this.outsideAttribution.has(absolutePath)) return;
+    const content = kind === "deleted" ? null : await readFileSafe(absolutePath);
+    if (!this.outsideAttribution.owns(absolutePath, Date.now(), content)) return;
     // Spend the attribution: this echo is the record. What the same path does
     // for the rest of the window is no longer provably this agent's — most
     // plausibly a sibling agent writing the same shared file.
@@ -1132,6 +1303,100 @@ export class AbsenceSession {
       });
     }, 500);
   }
+}
+
+/** Tool argument keys that conventionally carry a file/directory path. */
+const PATH_ARG_KEYS = new Set([
+  "file",
+  "file_path",
+  "filepath",
+  "path",
+  "target",
+  "target_file",
+  "destination",
+  "dest",
+  "output",
+  "output_path",
+  "source",
+  "from",
+  "to",
+]);
+
+/**
+ * Pull path-like strings out of a tool's `rawInput`. Recursive because some
+ * runtimes nest them (`{"edits":[{"file_path":…}]}`), shallow-bounded because
+ * an argument object is never deep and unknown shapes must not be walked
+ * forever. Only values under a path-ish key are considered: a free-text
+ * argument that happens to contain a slash is not a path.
+ */
+function collectPathStrings(
+  value: unknown,
+  out: string[] = [],
+  depth = 0,
+): string[] {
+  if (depth > 4 || value === null || typeof value !== "object") return out;
+  if (Array.isArray(value)) {
+    for (const entry of value) collectPathStrings(entry, out, depth + 1);
+    return out;
+  }
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (PATH_ARG_KEYS.has(key.toLowerCase())) {
+      if (typeof entry === "string" && entry.trim()) out.push(entry.trim());
+      continue;
+    }
+    collectPathStrings(entry, out, depth + 1);
+  }
+  return out.slice(0, 8);
+}
+
+/**
+ * Absolute paths a shell command names, excluding anything inside the project.
+ *
+ * This is intentionally conservative: it takes path-shaped tokens and absolute
+ * paths embedded in quoted code, resolves them against the command's cwd, and
+ * lets the caller bound the result. A bare file name (`foo.txt`) is not
+ * resolved because it cannot say which directory it means; the project watcher
+ * already covers the command's project. The goal is to catch writes the shallow
+ * parent watcher cannot see, not to parse every shell dialect.
+ */
+function scanCommandOutsidePaths(
+  command: string,
+  cwd: string,
+  projectPath: string,
+): string[] {
+  const found = new Set<string>();
+  const add = (value: string): void => {
+    if (!value.trim()) return;
+    const absolute = path.resolve(cwd, value.trim());
+    const rel = path.relative(projectPath, absolute);
+    // Inside the project (or the project itself): the project watcher covers it.
+    if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) return;
+    found.add(absolute);
+  };
+
+  for (const raw of command.match(/"[^"]*"|'[^']*'|\S+/g) ?? []) {
+    const token = raw.replace(/^["']|["']$/g, "").replace(/[),;]+$/, "");
+    if (!token || token.startsWith("-")) continue;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(token)) continue; // URL, not a path
+    const looksPath =
+      /^[A-Za-z]:[\\/]/.test(token) ||
+      token.startsWith("~") ||
+      token.startsWith(".") ||
+      token.includes("/") ||
+      token.includes("\\");
+    if (!looksPath) continue;
+    if (token.startsWith("~")) add(path.join(os.homedir(), token.slice(1)));
+    else add(token);
+  }
+
+  // Paths embedded in quoted code: `node -e "write('/tmp/x')"`.
+  for (const match of command.match(/[A-Za-z]:[\\/][^\s"'|&;<>()]+|\/[^\s"'|&;<>()]+/g) ?? []) {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(match) || match.startsWith("//")) continue;
+    // Redirections to the null device are not file writes.
+    if (/^\/(?:dev\/null|dev\/stdout|dev\/stderr|dev\/zero)$/i.test(match)) continue;
+    add(match);
+  }
+  return [...found].slice(0, 16);
 }
 
 /** Keep the agent's observed ranges without letting a long run grow forever. */

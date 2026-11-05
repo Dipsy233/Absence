@@ -3,59 +3,99 @@ import { toPosix } from "../util/paths";
 /**
  * Which outside file changes belong to the agent.
  *
- * The filesystem watcher also watches the project's parent directory (shallow),
- * so an agent that quietly edits a file outside its own project is still seen.
- * But a parent directory holds *sibling projects*, and those have agents of
- * their own: with two agents working side by side, every edit one of them makes
- * lands in the other's watcher too. Reporting it there would be a lie about
- * what the observed agent did — its Activity would fill with another agent's
- * work.
+ * A change outside the project is only the observed agent's when the agent
+ * itself reported work on that exact path. The watch may be the permanent
+ * parent-directory watcher or an on-demand watcher opened because a tool or
+ * command named the path; attribution does not care which one saw the event.
+ * Two signals make that safe:
  *
- * So attribution is earned: a path counts as the agent's only when the agent
- * itself recently wrote through a tool Absence could see — an adapter
- * `file_write`/`file_edit`. A change on such a path is the agent's echo;
- * anything else is somebody else's work and is not reported. A shell write
- * outside the project (`sed -i` on a temp file) is therefore not echoed as a
- * `file_change` — the run row already shows the command that carried it.
+ *  - **Time.** The claim lapses after a window (120 s for a tool-reported write,
+ *    shorter when the path was only named by a command).
+ *  - **Content.** A tool write carries the content it produced. The watcher's
+ *    later event carries the content actually on disk. If the two differ, the
+ *    change was somebody else's (a sibling agent saving the same shared file),
+ *    however close it arrived. This is the same idea as the in-project echo
+ *    check, applied outside.
+ *
+ * Shell writes outside the project are not covered by content matching (the
+ * command declares no content); they are given a short window instead. The
+ * run row already shows the command that carried the write.
  */
+export interface OutsideClaim {
+  at: number;
+  /** What the agent said it wrote. Undefined means "time only" (command-named). */
+  content?: string | null;
+  /** How long this claim stays live; defaults to the watcher's window. */
+  windowMs?: number;
+}
+
 export class OutsideAttribution {
-  private readonly writtenAt = new Map<string, number>();
+  private readonly writtenAt = new Map<string, OutsideClaim>();
 
   constructor(private readonly windowMs: number) {}
 
-  /** The agent wrote (or deleted) this absolute path through a tool. */
-  note(absolutePath: string, at = Date.now()): void {
-    this.writtenAt.set(key(absolutePath), at);
+  /** The agent reported a write (or a command named this path). */
+  note(
+    absolutePath: string,
+    at = Date.now(),
+    content?: string | null,
+    windowMs?: number,
+  ): void {
+    this.writtenAt.set(key(absolutePath), {
+      at,
+      ...(content !== undefined ? { content } : {}),
+      ...(windowMs !== undefined ? { windowMs } : {}),
+    });
     if (this.writtenAt.size > 256) {
-      for (const [key, value] of this.writtenAt) {
-        if (at - value > this.windowMs) this.writtenAt.delete(key);
+      for (const [path, claim] of this.writtenAt) {
+        if (at - claim.at > (claim.windowMs ?? this.windowMs)) this.writtenAt.delete(path);
       }
     }
   }
 
-  /** True when a change on this path can be read as the agent's doing. */
-  owns(absolutePath: string, now = Date.now()): boolean {
-    const at = this.writtenAt.get(key(absolutePath));
-    return at !== undefined && now - at <= this.windowMs;
+  /** True while the path has a live claim (cheap; no disk read). */
+  has(absolutePath: string, now = Date.now()): boolean {
+    const claim = this.writtenAt.get(key(absolutePath));
+    if (claim === undefined) return false;
+    return now - claim.at <= (claim.windowMs ?? this.windowMs);
   }
 
   /**
-   * Spend the attribution: the watcher just echoed the agent's own write, so
-   * the record is done. What remains of this path's window shrinks to a short
-   * tail — long enough for the write's own trailing watcher events (a create
-   * followed by a flush, an editor's second save) to still count as one
-   * write, short enough that a sibling agent's later edit of the same file
-   * cannot ride the rest of the window as this agent's doing.
+   * True when a change on this path can be read as the agent's doing.
+   *
+   * `content` is what the watcher found on disk. When the claim carries the
+   * agent's reported content, a different value on disk is somebody else's
+   * write and this returns false.
+   */
+  owns(absolutePath: string, now = Date.now(), content?: string | null): boolean {
+    const claim = this.writtenAt.get(key(absolutePath));
+    if (claim === undefined) return false;
+    if (now - claim.at > (claim.windowMs ?? this.windowMs)) return false;
+    if (claim.content === undefined) return true;
+    if (content === undefined) return false;
+    return claim.content === content;
+  }
+
+  /**
+   * Spend the attribution: the watcher just echoed the agent's own write. The
+   * remaining claim shrinks to a short tail so the write's own duplicate events
+   * (create then flush) still count, while a sibling's later edit of the same
+   * path cannot ride the rest of the window.
    */
   demote(absolutePath: string, now = Date.now()): void {
-    const at = this.writtenAt.get(key(absolutePath));
-    if (at === undefined) return;
-    this.writtenAt.set(key(absolutePath), now - this.windowMs + ECHO_TAIL_MS);
+    const claim = this.writtenAt.get(key(absolutePath));
+    if (claim === undefined) return;
+    const window = claim.windowMs ?? this.windowMs;
+    this.writtenAt.set(key(absolutePath), {
+      at: now - window + ECHO_TAIL_MS,
+      ...(claim.content !== undefined ? { content: claim.content } : {}),
+      ...(claim.windowMs !== undefined ? { windowMs: claim.windowMs } : {}),
+    });
   }
 }
 
 /** How long a claimed echo stays attributable, for its own duplicate events. */
-const ECHO_TAIL_MS = 5_000;
+const ECHO_TAIL_MS = 1_000;
 
 /** Paths are matched case-insensitively and in posix form: Windows watchers
  * report the same file through either separator or casing. */

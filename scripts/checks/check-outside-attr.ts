@@ -53,12 +53,42 @@ section("attribution: an echo claimed is an echo spent");
   attribution.note("E:/0down/shared/config.json", 1_000);
   check("owned before the echo", attribution.owns("E:/0down/shared/config.json", 2_000));
   attribution.demote("E:/0down/shared/config.json", 2_000);
-  check("still owned within the tail (duplicate watcher events)", attribution.owns("E:/0down/shared/config.json", 3_000));
-  check("not owned after the tail", !attribution.owns("E:/0down/shared/config.json", 2_000 + 6_000));
+  check(
+    "still owned within the short tail (duplicate watcher events)",
+    attribution.owns("E:/0down/shared/config.json", 2_500),
+  );
+  check("not owned after the tail", !attribution.owns("E:/0down/shared/config.json", 4_000));
   check(
     "the sibling's later edit of the same file is not owned",
     !attribution.owns("E:/0down/shared/config.json", 60_000),
   );
+}
+
+section("attribution: the content on disk must match what the agent reported");
+{
+  // Time + path was not enough: a sibling saving the same shared file inside
+  // the window was reported as this agent's. The tool write now carries its
+  // content, so the watcher's content is the second half of the proof.
+  const attribution = new OutsideAttribution(WINDOW);
+  const shared = "E:/0down/shared/config.json";
+  attribution.note(shared, 1_000, '{"a":1}');
+  check("the agent's own content is owned", attribution.owns(shared, 2_000, '{"a":1}'));
+  check("a sibling's different content is not", !attribution.owns(shared, 2_000, '{"a":2}'));
+  check("content cannot be verified → not owned", !attribution.owns(shared, 2_000, undefined));
+  check("the time window still expires", !attribution.owns(shared, 1_000 + WINDOW + 1, '{"a":1}'));
+}
+
+section("attribution: a command-named path has only a short window");
+{
+  // A shell write names the path but declares no content. Its claim is short
+  // and explicit; it must not become a 120 s permission on the same path.
+  const attribution = new OutsideAttribution(WINDOW);
+  const named = "E:/0down/out/report.txt";
+  attribution.note(named, 1_000, undefined, 5_000);
+  check("owned inside the command window", attribution.owns(named, 3_000));
+  check("expired after the short window", !attribution.owns(named, 1_000 + 5_000 + 1));
+  check("has() agrees while the claim is live", attribution.has(named, 3_000));
+  check("has() is false after expiry", !attribution.has(named, 1_000 + 5_000 + 1));
 }
 
 section("attribution: windows path casing and separators are one file");

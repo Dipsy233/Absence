@@ -121,6 +121,7 @@ export const GROUPS: CheckGroup[] = [
       { script: "check-eggs.ts", timeout: 60_000 },
       { script: "check-classify.ts", timeout: 60_000 },
       { script: "check-outside-attr.ts", timeout: 60_000 },
+      { script: "check-outside-scope.ts", timeout: 180_000 },
       { script: "check-session-isolation.ts", timeout: 300_000 },
     ],
     platform: [
@@ -176,6 +177,7 @@ export const GROUPS: CheckGroup[] = [
       { script: "check-session-dwell.ts", timeout: 180_000 },
       { script: "check-session-close.ts", timeout: 180_000 },
       { script: "check-lifecycle.ts", timeout: 120_000 },
+      { script: "check-outside-scope.ts", timeout: 180_000 },
       { script: "check-session-isolation.ts", timeout: 300_000 },
     ],
   },
