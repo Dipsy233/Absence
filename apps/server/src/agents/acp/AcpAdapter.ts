@@ -505,10 +505,14 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
         this.emitThinkingDelta(String(payload.delta ?? payload.content ?? ""));
         continue;
       }
-      // A tool call, a file fact, a command or an error starts: the thought
-      // block, if one was open, ended before this activity. Close it here so
-      // its durable event lands before this event instead of at the turn end.
+      // A tool call, a file fact, a command or an error is a protocol message
+      // boundary: the text before it is one assistant message, the text after
+      // it another. Close both open blocks here — the thought and the reply —
+      // so each durable event lands before this activity with its own start
+      // time, instead of two texts across a tool call being folded into one
+      // message stamped with the first one's moment.
       this.flushThinking();
+      this.flushMessage();
       this.bus.publish(event);
     }
   }

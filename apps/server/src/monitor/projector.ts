@@ -11,6 +11,7 @@ import {
 import { AcpToolMapper, type MappedEventRecord } from "../agents/acp/AcpToolMapper";
 import {
   textOfContentBlock,
+  textOfTerminalOutput,
   textOfToolContent,
   type AcpToolFacts,
 } from "../agents/acp/ToolRules";
@@ -34,7 +35,12 @@ import {
 
 /** The process-window port. `begin`/`end` are called at most once per call. */
 export interface ProjectorCommandWindow {
-  begin(command: string, cwd: string): number | undefined;
+  /**
+   * `ref` is the ACP tool call the window belongs to, when there is one. The
+   * watcher carries it on every `process` event the window observes, so the
+   * feed can fold a command and the processes it spawned into one action row.
+   */
+  begin(command: string, cwd: string, ref?: string): number | undefined;
   end(windowId: number): void;
 }
 
@@ -62,6 +68,12 @@ interface CallRecord {
   lastUpdateAt?: number;
   /** Output chunks seen so far, in protocol order. */
   output: string;
+  /**
+   * Output streamed through the ACP terminal extension
+   * (`_meta.terminal_output.data`), folded separately from `output`: it is the
+   * execution's own stream, while `content` is the model-facing text.
+   */
+  terminalOutput: string;
   /** The cap was hit; the final event must say the tail is missing. */
   outputTruncated: boolean;
 }
@@ -237,6 +249,7 @@ export class AcpMonitorProjector {
       ended: false,
       windowOpened: false,
       output: "",
+      terminalOutput: "",
       outputTruncated: false,
     };
     this.calls.set(toolCallId, record);
@@ -265,6 +278,9 @@ export class AcpMonitorProjector {
     // The final update usually carries no per-chunk text at all; the mapper
     // needs everything this call streamed to avoid keeping only its last chunk.
     if (record.output.length > 0) record.facts.accumulatedOutput = record.output;
+    if (record.terminalOutput.length > 0) {
+      record.facts.accumulatedTerminalOutput = record.terminalOutput;
+    }
     if (record.outputTruncated) record.facts.outputTruncated = true;
     this.closeWindow(record);
 
@@ -291,7 +307,11 @@ export class AcpMonitorProjector {
     const resolved = this.mapper.resolve(record.facts);
     if (resolved.kind !== "execute" || !resolved.command) return;
     record.windowOpened = true;
-    const windowId = this.options.commandWindow.begin(resolved.command, this.options.cwd);
+    const windowId = this.options.commandWindow.begin(
+      resolved.command,
+      this.options.cwd,
+      record.facts.toolCallId || undefined,
+    );
     if (windowId !== undefined) record.windowId = windowId;
   }
 
@@ -305,26 +325,41 @@ export class AcpMonitorProjector {
   /**
    * Fold one `tool_call_update` chunk into the call's accumulated output.
    *
-   * ACP streams output as chunks; a later update usually carries only the next
-   * chunk, but some adapters resend the value *so far*. A chunk that starts
-   * with what we already have is treated as that cumulative snapshot and
-   * replaces it, never appended twice. Output is capped so a pathological
-   * stream cannot exhaust memory; the final event then says it was truncated
-   * instead of quietly presenting half a result as the whole one.
+   * ACP streams `content` as chunks; a later update usually carries only the
+   * next chunk, but some adapters resend the value *so far*. A chunk that
+   * starts with what we already have is treated as that cumulative snapshot and
+   * replaces it, never appended twice.
+   *
+   * The terminal extension (`_meta.terminal_output.data`) is a second, separate
+   * channel: its `data` is normally the delta this update added, so only a
+   * strictly longer chunk with our text as its prefix is treated as a snapshot.
+   * The two channels stay apart so the mapper can apply its own precedence;
+   * neither is ever summarised into the other. Output is capped so a
+   * pathological stream cannot exhaust memory; the final event then says it was
+   * truncated instead of quietly presenting half a result as the whole one.
    */
   private collectOutput(record: CallRecord, update: any): void {
-    const chunk = textOfToolContent(update.content);
-    if (chunk.length === 0) return;
-    const current = record.output;
-    if (chunk.length <= current.length && chunk === current) return; // same snapshot
-    const next =
-      chunk.length > current.length && chunk.startsWith(current) ? chunk : current + chunk;
-    if (next.length <= MAX_ACCUMULATED_OUTPUT) {
-      record.output = next;
-      return;
+    const content = textOfToolContent(update.content);
+    if (content.length > 0) {
+      record.output = this.capped(
+        record,
+        foldStream(record.output, content, content === record.output),
+      );
     }
-    record.output = next.slice(0, MAX_ACCUMULATED_OUTPUT);
+    const terminal = textOfTerminalOutput(update);
+    if (terminal.length > 0) {
+      record.terminalOutput = this.capped(
+        record,
+        foldStream(record.terminalOutput, terminal, false),
+      );
+    }
+  }
+
+  /** Store one accumulated value, marking the call truncated at the cap. */
+  private capped(record: CallRecord, next: string): string {
+    if (next.length <= MAX_ACCUMULATED_OUTPUT) return next;
     record.outputTruncated = true;
+    return next.slice(0, MAX_ACCUMULATED_OUTPUT);
   }
 
   private wrapMapped(record: MappedEventRecord): MonitorEvent {
@@ -371,6 +406,19 @@ function isTerminal(status: unknown): boolean {
   return status === "completed" || status === "failed";
 }
 
+/**
+ * Fold one stream chunk into the value so far.
+ *
+ * `sameSnapshot` is true for the `content` channel, where an identical value
+ * is a re-sent snapshot and must not be appended twice. A strictly longer
+ * chunk that starts with the current value is a cumulative snapshot on either
+ * channel; everything else is a delta to append.
+ */
+function foldStream(current: string, chunk: string, sameSnapshot: boolean): string {
+  if (sameSnapshot) return current;
+  return chunk.length > current.length && chunk.startsWith(current) ? chunk : current + chunk;
+}
+
 function ctx(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -380,6 +428,7 @@ function factsOf(update: any, previous?: AcpToolFacts): AcpToolFacts {
   return {
     toolCallId: ctx(update.toolCallId) ?? previous?.toolCallId ?? "",
     name: ctx(update.title) ?? previous?.name ?? ctx(update.kind) ?? "tool",
+    title: ctx(update.title) ?? previous?.title,
     kind: typeof update.kind === "string" ? update.kind : previous?.kind,
     rawInput: parseRawInput(update.rawInput ?? previous?.rawInput),
     status: ctx(update.status) ?? previous?.status,

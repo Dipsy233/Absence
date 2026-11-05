@@ -131,6 +131,9 @@ export class AcpToolMapper {
             ...(denied ? { permissionDenied: true as const } : {}),
             // Carry the terminal reference verbatim; do not guess a process.
             ...(terminalId !== undefined ? { terminalId } : {}),
+            // The call id is the join key to the OS `process` events the
+            // command window observed: the feed folds them into one row.
+            ...(facts.toolCallId ? { toolCallId: facts.toolCallId } : {}),
           },
         };
         // A denial is reported by the client; an unknown exit code is inferred
@@ -337,7 +340,9 @@ function exact(event: MappedEvent): MappedEventRecord {
  *
  *   1. `rawOutput.aggregatedOutput` — the agent's own complete copy
  *   2. `rawOutput.stdout` + `rawOutput.stderr` — explicit channels
- *   3. every chunk streamed through `tool_call_update.content`
+ *   3. the call's streamed `_meta.terminal_output.data` — the execution's own
+ *      terminal stream, when the agent reports it through ACP's extension bag
+ *   4. every chunk streamed through `tool_call_update.content`
  *
  * A failed call's text belongs on stderr, as before; an explicit channel pair
  * is kept exactly where the agent put it.
@@ -365,10 +370,13 @@ function commandOutput(
       };
     }
   }
+  const terminalText = facts.accumulatedTerminalOutput;
   const text =
-    facts.accumulatedOutput && facts.accumulatedOutput.length > 0
-      ? facts.accumulatedOutput
-      : textOfToolContent(facts.content) || textOfToolContent(facts.rawOutput);
+    terminalText && terminalText.length > 0
+      ? terminalText
+      : facts.accumulatedOutput && facts.accumulatedOutput.length > 0
+        ? facts.accumulatedOutput
+        : textOfToolContent(facts.content) || textOfToolContent(facts.rawOutput);
   return failed
     ? { stdout: "", stderr: text, truncated: facts.outputTruncated === true }
     : { stdout: text, stderr: "", truncated: facts.outputTruncated === true };

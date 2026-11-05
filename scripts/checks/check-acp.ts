@@ -143,6 +143,28 @@ section("claude-code: prose titles, ACP kinds, real shell children");
   check("the turn starts and completes", eventsByType("agent_start").length === 1 && eventsByType("agent_end").length === 1);
   check("the end reason is completed", (eventsByType("agent_end")[0]?.payload as { reason?: string })?.reason === "completed");
   check("assistant text arrives", eventsByType("message").some((event) => (event.payload as { content: string }).content.includes("Fixed")));
+  // A tool call is a protocol message boundary: the text before it is one
+  // assistant message, the text after it another. Folding both into one
+  // message stamped with the first one's moment made the reply predate the
+  // work it describes.
+  const finished = eventsByType("message").filter(
+    (event) => (event.payload as { role?: string; streaming?: boolean }).role === "assistant" &&
+      (event.payload as { streaming?: boolean }).streaming !== true,
+  );
+  check("text across a tool call is two finished messages", finished.length === 2, String(finished.length));
+  check(
+    "the first message is the pre-tool text",
+    (finished[0]?.payload as { content?: string })?.content?.startsWith("I'll start by reading") === true,
+    (finished[0]?.payload as { content?: string })?.content?.slice(0, 40),
+  );
+  check(
+    "each message lands before the activity that follows it",
+    finished[0] !== undefined &&
+      finished[1] !== undefined &&
+      finished[0].timestamp <= (eventsByType("file_read")[0]?.timestamp ?? Infinity) &&
+      finished[0].timestamp < finished[1].timestamp,
+    `${finished[0]?.timestamp} < ${finished[1]?.timestamp}`,
+  );
   check("a read is a file_read, not a tool titled 'Read'", types.has("file_read"));
   check("a search is a search event", types.has("search"));
   check("two shell calls are command events", eventsByType("command").length === 2);

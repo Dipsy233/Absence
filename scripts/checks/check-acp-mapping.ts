@@ -45,15 +45,18 @@ function firstOf(events: MonitorEvent[], type: string): MonitorEvent | undefined
   return events.find((event) => event.event.type === type);
 }
 
-function recordingWindow(): { port: ProjectorCommandWindow; log: Array<{ phase: string; id?: number; command?: string }> } {
-  const log: Array<{ phase: string; id?: number; command?: string }> = [];
+function recordingWindow(): {
+  port: ProjectorCommandWindow;
+  log: Array<{ phase: string; id?: number; command?: string; ref?: string }>;
+} {
+  const log: Array<{ phase: string; id?: number; command?: string; ref?: string }> = [];
   let next = 1;
   return {
     log,
     port: {
-      begin: (command) => {
+      begin: (command, _cwd, ref) => {
         const id = next++;
-        log.push({ phase: "begin", id, command });
+        log.push({ phase: "begin", id, command, ...(ref !== undefined ? { ref } : {}) });
         return id;
       },
       end: (id) => {
@@ -187,6 +190,32 @@ async function main(): Promise<void> {
       "an empty argv is an empty value, not a fabricated command",
       emptyArgv.kind === "execute" && emptyArgv.command === undefined,
       JSON.stringify(emptyArgv),
+    );
+
+    const titleOnly = resolveTool({
+      toolCallId: "k-title",
+      name: "ls -la && echo done",
+      title: "ls -la && echo done",
+      kind: "execute",
+      rawInput: undefined,
+    });
+    check(
+      "an execute call with no rawInput takes its command from the ACP title",
+      titleOnly.kind === "execute" && titleOnly.command === "ls -la && echo done",
+      JSON.stringify(titleOnly),
+    );
+
+    const titleOnRead = resolveTool({
+      toolCallId: "k-title-read",
+      name: "Inspect the file",
+      title: "Inspect the file",
+      kind: "read",
+      rawInput: { path: "a.ts" },
+    });
+    check(
+      "a title on a non-execute call is not turned into a command",
+      titleOnRead.kind === "read" && titleOnRead.command === undefined,
+      JSON.stringify(titleOnRead),
     );
 
     const mcp = resolveTool({
@@ -922,6 +951,11 @@ async function main(): Promise<void> {
     check("one window begin", window.log.filter((entry) => entry.phase === "begin").length === 1, JSON.stringify(window.log));
     check("one window end", window.log.filter((entry) => entry.phase === "end").length === 1, JSON.stringify(window.log));
     check("the window carries the reported command", window.log.some((entry) => entry.phase === "begin" && entry.command === "npm test"));
+    check(
+      "the window carries the tool call id as its ref",
+      window.log.some((entry) => entry.phase === "begin" && entry.ref === "c1"),
+      JSON.stringify(window.log),
+    );
     check("the bus received every returned event", received.length === events.length, `${received.length} vs ${events.length}`);
     check("every projected event says source acp", events.every((event) => event.source === "acp"));
     check(
@@ -939,6 +973,11 @@ async function main(): Promise<void> {
         command.fidelity === "reported",
     );
     check("the command output is the reported text", command?.event.type === "command" && command.event.payload.stdout === "all pass");
+    check(
+      "the command carries the tool call id, so the feed can fold its processes",
+      command?.event.type === "command" && command.event.payload.toolCallId === "c1",
+      command?.event.type === "command" ? String(command.event.payload.toolCallId) : "no command",
+    );
     check("the duplicate terminal update changed nothing", firstOf(events, "command") === command);
 
     unsubscribe();
@@ -1170,6 +1209,204 @@ async function main(): Promise<void> {
 
     projector.dispose();
     cumulativeProjector.dispose();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+
+  section("AcpMonitorProjector: title-only execute and _meta terminal output");
+  {
+    const dir = await tempDir();
+    const window = recordingWindow();
+    const projector = new AcpMonitorProjector({
+      sessionId: "s7",
+      cwd: dir,
+      commandWindow: window.port,
+    });
+
+    const started = await projector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "t1",
+        title: "ls -la && cat 2.txt",
+        kind: "execute",
+        status: "in_progress",
+        content: [{ type: "terminal", terminalId: "t1" }],
+        _meta: { terminal_info: { terminal_id: "t1", cwd: dir } },
+      },
+    });
+    const start = firstOf(started, "tool_start");
+    check(
+      "tool_start keeps the ACP title as its display name",
+      start?.event.type === "tool_start" && start.event.payload.toolName === "ls -la && cat 2.txt",
+    );
+    check(
+      "a title-only execute opens the command window with that command",
+      window.log.filter((entry) => entry.phase === "begin" && entry.command === "ls -la && cat 2.txt").length === 1,
+      JSON.stringify(window.log),
+    );
+    check(
+      "tool_start does not invent arguments the protocol omitted",
+      start?.event.type === "tool_start" && start.event.payload.args === undefined,
+    );
+
+    await projector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "in_progress",
+        _meta: { terminal_output: { terminal_id: "t1", data: "one\n" } },
+      },
+    });
+    await projector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "in_progress",
+        _meta: { terminal_output: { terminal_id: "t1", data: "two\n" } },
+      },
+    });
+    const done = await projector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+        _meta: {
+          terminal_output: { terminal_id: "t1", data: "three\n" },
+          terminal_exit: { terminal_id: "t1", exit_code: 0 },
+        },
+      },
+    });
+    const command = firstOf(done, "command");
+    check(
+      "the command text comes from the title when rawInput has none",
+      command?.event.type === "command" && command.event.payload.command === "ls -la && cat 2.txt",
+      command?.event.type === "command" ? command.event.payload.command : "no command",
+    );
+    check(
+      "terminal_output deltas are folded into stdout",
+      command?.event.type === "command" && command.event.payload.stdout === "one\ntwo\nthree\n",
+      command?.event.type === "command" ? JSON.stringify(command.event.payload.stdout) : "no command",
+    );
+    check(
+      "terminal_exit still supplies the real exit code",
+      command?.event.type === "command" &&
+        command.event.payload.exitCode === 0 &&
+        command.event.payload.exitCodeKnown === undefined,
+    );
+    check(
+      "the terminal block is still carried as terminalId",
+      command?.event.type === "command" && command.event.payload.terminalId === "t1",
+    );
+    check("no process is invented from a terminal reference", done.every((event) => event.event.type !== "process"));
+
+    const snapshotProjector = new AcpMonitorProjector({ sessionId: "s8", cwd: dir });
+    await snapshotProjector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "t2",
+        title: "echo abc",
+        kind: "execute",
+        status: "in_progress",
+      },
+    });
+    for (const data of ["a", "ab", "abc"]) {
+      await snapshotProjector.project("session/update", {
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "t2",
+          status: "in_progress",
+          _meta: { terminal_output: { terminal_id: "t2", data } },
+        },
+      });
+    }
+    const snapshotDone = await snapshotProjector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t2",
+        status: "completed",
+        _meta: { terminal_exit: { terminal_id: "t2", exit_code: 0 } },
+      },
+    });
+    const snapshotCommand = firstOf(snapshotDone, "command");
+    check(
+      "a cumulative terminal snapshot replaces the prefix instead of repeating it",
+      snapshotCommand?.event.type === "command" && snapshotCommand.event.payload.stdout === "abc",
+      snapshotCommand?.event.type === "command" ? JSON.stringify(snapshotCommand.event.payload.stdout) : "no command",
+    );
+
+    const failedProjector = new AcpMonitorProjector({ sessionId: "s9", cwd: dir });
+    await failedProjector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "t3",
+        title: "false",
+        kind: "execute",
+        status: "in_progress",
+      },
+    });
+    await failedProjector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t3",
+        status: "in_progress",
+        _meta: { terminal_output: { terminal_id: "t3", data: "boom" } },
+      },
+    });
+    const failedDone = await failedProjector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t3",
+        status: "failed",
+        _meta: { terminal_exit: { terminal_id: "t3", exit_code: 1 } },
+      },
+    });
+    const failedCommand = firstOf(failedDone, "command");
+    check(
+      "a failed execute keeps terminal output on stderr",
+      failedCommand?.event.type === "command" &&
+        failedCommand.event.payload.stdout === "" &&
+        failedCommand.event.payload.stderr === "boom" &&
+        failedCommand.event.payload.exitCode === 1,
+      failedCommand?.event.type === "command" ? JSON.stringify(failedCommand.event.payload) : "no command",
+    );
+
+    const mixedProjector = new AcpMonitorProjector({ sessionId: "s10", cwd: dir });
+    await mixedProjector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "t4",
+        title: "mixed",
+        kind: "execute",
+        status: "in_progress",
+      },
+    });
+    await mixedProjector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t4",
+        status: "in_progress",
+        content: [{ type: "content", content: { type: "text", text: "model-facing" } }],
+        _meta: { terminal_output: { terminal_id: "t4", data: "terminal-stream" } },
+      },
+    });
+    const mixedDone = await mixedProjector.project("session/update", {
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t4",
+        status: "completed",
+        rawOutput: { exitCode: 0 },
+      },
+    });
+    const mixedCommand = firstOf(mixedDone, "command");
+    check(
+      "the terminal stream wins over model-facing content, never concatenated",
+      mixedCommand?.event.type === "command" && mixedCommand.event.payload.stdout === "terminal-stream",
+      mixedCommand?.event.type === "command" ? JSON.stringify(mixedCommand.event.payload.stdout) : "no command",
+    );
+
+    projector.dispose();
+    snapshotProjector.dispose();
+    failedProjector.dispose();
+    mixedProjector.dispose();
     await fs.rm(dir, { recursive: true, force: true });
   }
 

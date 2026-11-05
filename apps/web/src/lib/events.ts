@@ -451,7 +451,7 @@ export function firstLine(text: string): string {
 
 /**
  * Append a row to the Activity list, folding streamed text into the row it
- * continues.
+ * continues and process updates into the command they belong to.
  *
  * Reasoning and answers both stream as a run of events — one per token before
  * the adapters coalesce them, one per flush window after — and each event used
@@ -460,6 +460,22 @@ export function firstLine(text: string): string {
  * are the same text growing (the report's timeline collapses them the same way,
  * see `buildTimeline`), so here the last row is replaced instead of a new one
  * appended. Any other event in between ends the run of text and starts a new row.
+ *
+ * Process events get the same treatment, because one command is one action:
+ * the watcher re-reports an egg every time its child count moves, which used
+ * to read as one RUN row per update next to the command's own row. Two rules
+ * fix that, both keyed on protocol ids (never on an agent's name):
+ *
+ *   - a *running* process update folds into the last running row of the same
+ *     pid (newest child count wins), and is dropped entirely once the command
+ *     row it belongs to has arrived — that row already says everything;
+ *   - a `command` event replaces the running process row observed for its own
+ *     `toolCallId` in place, so the placeholder the user watched while the
+ *     command ran becomes the command's result instead of a second row.
+ *
+ * The process's EXIT stays its own row (when process rows are shown at all):
+ * it is the one fact the command's exit code cannot say — *when* the egg
+ * actually went away.
  */
 export function appendActivityRow(rows: ActivityRow[], row: ActivityRow): boolean {
   const last = rows[rows.length - 1];
@@ -470,8 +486,65 @@ export function appendActivityRow(rows: ActivityRow[], row: ActivityRow): boolea
     rows[rows.length - 1] = row;
     return true;
   }
+  if (row.event.type === "process") {
+    const { pid, status, toolCallId } = row.event.payload;
+    if (status === "running") {
+      // Already answered by its command row: the command's own row says what
+      // ran and how it ended; a late child-count update adds nothing to the
+      // feed (the Agent Eggs panel holds the live state).
+      if (toolCallId && findCommandRow(rows, toolCallId)) return true;
+      // Fold into the previous update of the same egg: it is a state
+      // re-report, not a second process.
+      const index = findRunningProcessRow(rows, pid, toolCallId);
+      if (index >= 0) {
+        rows[index] = row;
+        return true;
+      }
+    }
+    rows.push(row);
+    return false;
+  }
+  if (row.event.type === "command" && row.event.payload.toolCallId) {
+    // The command finished: replace the process row that stood in for it while
+    // it ran, in place, so the feed never grows a second row for one command.
+    const index = findRunningProcessRow(rows, undefined, row.event.payload.toolCallId);
+    if (index >= 0) {
+      rows[index] = row;
+      return true;
+    }
+  }
   rows.push(row);
   return false;
+}
+
+/** The last `command` row carrying this tool call id, if any. */
+function findCommandRow(rows: ActivityRow[], toolCallId: string): number {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i]!;
+    if (row.event.type === "command" && row.event.payload.toolCallId === toolCallId) return i;
+  }
+  return -1;
+}
+
+/**
+ * The last running-process row of this egg: by pid when known, else by the
+ * command window's tool call id (a placeholder seen before the pid did).
+ */
+function findRunningProcessRow(
+  rows: ActivityRow[],
+  pid: number | undefined,
+  toolCallId: string | undefined,
+): number {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i]!;
+    if (row.event.type !== "process") continue;
+    const payload = row.event.payload;
+    if (payload.status !== "running") continue;
+    if (pid !== undefined ? payload.pid === pid : toolCallId !== undefined && payload.toolCallId === toolCallId) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 /** A compact, clickable row for the Activity panel. */
@@ -576,7 +649,10 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
         event,
         time,
         action: event.payload.permissionDenied ? "DENIED" : "RUN",
-        primary: event.payload.command,
+        // An archived command written before the ACP mapper read a terminal
+        // tool's title has an empty command; the row names the action instead
+        // of rendering a blank line. New events always carry the command.
+        primary: event.payload.command || "(shell)",
         secondary: event.payload.permissionDenied
           ? "not executed · permission denied"
           : event.payload.exitCodeKnown === false
@@ -630,13 +706,14 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
       // Helpers are folded away here too: a run's `cat`, `grep` and `sleep` are
       // noise next to the daemon it started. The raw events remain in the stream.
       if (kind === "tool") return undefined;
-      const failed = status === "exited" && exitCode !== undefined && exitCode !== 0;
       const exitCodeText = status === "exited" && exitCode !== undefined ? ` · exit ${exitCode}` : "";
-      // A process created by a shell wrapping a command IS that command (the
-      // server reads it off the command line — see `observedCommand`). Showing
-      // it as `bash.exe` would bury the one thing a person wants: what ran.
-      // The pid stays in the secondary line, because two runs of the same
-      // command are two processes.
+      // A process laid inside a command window is that command's own execution,
+      // not a second action next to it: the `command` event is the action row,
+      // and these updates only add pid / children / the live state (see
+      // `appendActivityRow`, which folds them into that row by `toolCallId`).
+      // The tone is therefore `process` — the same class as LAID/DIED — so the
+      // activity-only default view shows exactly one row per command, and a
+      // process update never reads as a run of its own.
       if (command && !command.startsWith("<pid")) {
         return {
           id,
@@ -645,9 +722,7 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
           action: status === "running" ? "RUN" : "EXIT",
           primary: command,
           secondary: `${name} · pid ${pid}${children > 0 ? ` · +${children}` : ""}${exitCodeText}`,
-          // A non-zero exit is the one thing a watcher must not have to squint
-          // for: a failed command and a successful one used to look identical.
-          tone: failed ? "error" : "run",
+          tone: "process",
           stageItem,
         };
       }

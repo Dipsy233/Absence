@@ -5,6 +5,9 @@ import {
   isAgentBusy,
   isStreamingEvent,
   MAX_SESSION_EVENTS,
+  type AbsenceEventOf,
+  type AbsenceEventPayloadMap,
+  type AbsenceEventType,
   type AgentStatus,
   type ChatMessage,
   type ContextState,
@@ -254,7 +257,7 @@ export class AbsenceSession {
     this.resumeHandle = resume?.resumeHandle;
     this.runtimeSessionId = resume?.runtimeSessionId;
     this.processWatcher = new ProcessWatcher({
-      onProcess: (payload) => this.handleEvent(createEvent(this.id, "process", payload)),
+      onProcess: (payload) => this.handleEvent(this.osEvent("process", payload)),
       // The command window is the one place that knows the *text* of a shell
       // command before it runs. The session uses it to open on-demand outside
       // watches for paths the command names; the watcher stays session-agnostic.
@@ -288,7 +291,7 @@ export class AbsenceSession {
           // Status was already reported by the monitor; sessions run without it.
         });
       this.dockerEggs = new DockerEggs(this.processWatcher, (payload) =>
-        this.handleEvent(createEvent(this.id, "process", payload)),
+        this.handleEvent(this.osEvent("process", payload)),
       );
       this.unsubDocker = DockerMonitor.get().onContainer((event) => this.dockerEggs?.onContainerEvent(event));
     }
@@ -614,6 +617,20 @@ export class AbsenceSession {
   }
 
   // --------------------------------------------------------------------------
+
+  /**
+   * An OS-watcher fact, tagged where it is created. Process and file events
+   * come from Absence's own observers, so their provenance is known — `os` and
+   * `exact` — and must not depend on `handleEvent`'s `unknown` default, which
+   * exists for genuinely unattributed events.
+   */
+  private osEvent<K extends AbsenceEventType>(
+    type: K,
+    payload: AbsenceEventPayloadMap[K],
+  ): AbsenceEventOf<K> {
+    const event = createEvent(this.id, type, payload);
+    return { ...event, at: event.timestamp, source: "os", fidelity: "exact" };
+  }
 
   private handleEvent(event: AbsenceEvent): void {
     if (this.disposed) return;
@@ -1009,14 +1026,8 @@ export class AbsenceSession {
       this.absorbUnattributedFsChange(rel, kind, content);
       return;
     }
-    this.handleEvent(
-      createEvent(this.id, "file_change", {
-        path: rel,
-        kind,
-        ...(echo ? { echo: true as const } : {}),
-      }),
-    );
     if (kind === "deleted" || echo) {
+      this.handleEvent(this.osEvent("file_change", { path: rel, kind, ...(echo ? { echo: true as const } : {}) }));
       if (echo) this.recentAgentWrites.delete(rel);
       return;
     }
@@ -1024,6 +1035,22 @@ export class AbsenceSession {
     // action in its command parse (`Set-Content`, `echo > file`, a sed in a
     // pipeline are all `Unknown`), so without this a file changed by a command
     // would show only as "file touch" and never as a diff on the Stage.
+    //
+    // The diff read back below is the one action row for this change, so the
+    // raw `file_change` is marked as its echo — one disk change, one row, not
+    // a MODIFIED row beside a WRITE row describing the same thing. Only when
+    // the content will actually derive an event: when it cannot (the content
+    // matches what Absence already knew, or the read came back empty), the
+    // bare change keeps its row as the sole record of the fact.
+    const known = this.files.get(rel);
+    const derives = content !== null && known?.content !== content;
+    this.handleEvent(
+      this.osEvent("file_change", {
+        path: rel,
+        kind,
+        ...(derives ? { echo: true as const } : {}),
+      }),
+    );
     void this.diffFromDisk(rel);
   }
 
@@ -1096,11 +1123,11 @@ export class AbsenceSession {
     }
 
     if (known === undefined) {
-      this.handleEvent(createEvent(this.id, "file_write", { path: rel, content }));
+      this.handleEvent(this.osEvent("file_write", { path: rel, content }));
       return;
     }
     this.handleEvent(
-      createEvent(this.id, "file_edit", {
+      this.osEvent("file_edit", {
         path: rel,
         before: known.content,
         after: content,
@@ -1272,7 +1299,7 @@ export class AbsenceSession {
     // plausibly a sibling agent writing the same shared file.
     this.outsideAttribution.demote(absolutePath);
     this.handleEvent(
-      createEvent(this.id, "file_change", { path: toPosix(absolutePath), kind, outside: true }),
+      this.osEvent("file_change", { path: toPosix(absolutePath), kind, outside: true }),
     );
   }
 

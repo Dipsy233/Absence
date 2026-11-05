@@ -37,6 +37,7 @@
       "match": "fix",
       "steps": [
         { "type": "thought", "text": "I should read the entry point before editing anything." },
+        { "type": "message", "text": "I'll start by reading the entry point." },
         { "type": "tool", "toolCallId": "cc_read_1", "title": "Read src/index.ts", "kind": "read", "rawInput": { "file_path": "src/index.ts", "offset": 1, "limit": 40 }, "locations": [{ "path": "src/index.ts", "line": 1 }], "content": [{ "type": "content", "content": { "type": "text", "text": "export function main() {\n  return 0;\n}\n" } }] },
         { "type": "tool", "toolCallId": "cc_grep_1", "title": "Search for TODO", "kind": "search", "rawInput": { "pattern": "TODO", "path": "src" }, "content": [{ "type": "content", "content": { "type": "text", "text": "src/index.ts:7: // TODO: wire the observer\n" } }] },
         { "type": "tool", "toolCallId": "cc_bash_1", "title": "Run npm test", "kind": "execute", "rawInput": { "command": "node -e \"console.log('tests ok')\"", "description": "Run the test suite" }, "runCommand": "node -e \"console.log('tests ok')\"", "permission": { "options": [{ "optionId": "allow-once", "name": "Allow once", "kind": "allow_once" }, { "optionId": "allow-always", "name": "Always allow npm test", "kind": "allow_always" }, { "optionId": "reject-once", "name": "Deny", "kind": "reject_once" }] } },

@@ -11,6 +11,7 @@
 import { check, finish } from "./harness";
 import { createEvent, type AbsenceEvent } from "@absence/core";
 import { attributeProcesses, candidatePids, retiredPids } from "../../apps/server/src/process/ProcessWatcher";
+import { detectCommand } from "../../apps/server/src/process/CommandLine";
 import type { ProcessTable } from "../../apps/server/src/process/ProcessTable";
 import { applyProcessEvent, buildEggs, countEggs, filterEggs } from "../../apps/web/src/lib/eggs";
 
@@ -128,6 +129,46 @@ function table(rows: [number, number, string, string?][], startedAt = 0): Proces
     "a console host is never an egg",
     attributeProcesses(table([[1000, 4, "node"], [1001, 1000, "conhost.exe"]]), [1001], new Set(), SERVER).claimed
       .length === 0,
+  );
+}
+
+// D2. the command's own executor shell is plumbing even unmarked: the runtime
+// spawned it to run the command string, so it *is* the command — one shell egg
+// per tool call turned the eggs panel into a command log. Its children re-root
+// and are judged on their own.
+{
+  const snapshot = table([
+    [1000, 4, "node"],
+    [1001, 1000, "bash", '"C:\\Program Files\\Git\\bin\\bash.exe" -c "ls -la && cat 2.txt"'],
+    [1002, 1001, "ls", '"C:\\Program Files\\Git\\usr\\bin\\ls.exe" -la'],
+    [1003, 1001, "node", "node server.js"],
+  ]);
+  const plumbing = (info: { name: string; commandLine: string }): boolean =>
+    detectCommand(info.name, info.commandLine).wrapped;
+  const { roots, claimed } = attributeProcesses(
+    snapshot,
+    [1001, 1002, 1003],
+    new Set(),
+    SERVER,
+    MARK,
+    plumbing,
+  );
+  check("the command's executor shell is not an egg", !claimed.includes(1001), `claimed=${claimed}`);
+  check(
+    "its children re-root and are judged on their own",
+    roots.length === 2 && roots.some((r) => r.pid === 1002) && roots.some((r) => r.pid === 1003),
+    `roots=${roots.map((r) => r.pid)}`,
+  );
+  check(
+    "a deliberately started shell (no -c) is still an egg",
+    (() => {
+      const script = table([
+        [1000, 4, "node"],
+        [1101, 1000, "bash", '"C:\\Program Files\\Git\\usr\\bin\\bash.exe" daemon.sh'],
+      ]);
+      const { roots } = attributeProcesses(script, [1101], new Set(), SERVER, MARK, plumbing);
+      return roots.length === 1 && roots[0]!.pid === 1101;
+    })(),
   );
 }
 

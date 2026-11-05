@@ -376,6 +376,12 @@ interface RowCache {
   /** Absolute index of the first source event not yet scanned. */
   scanned: number;
   rows: ActivityRow[];
+  /**
+   * `toolCallId → toolName` for this run, so a legacy `command` event that has
+   * no command text can be paired with its start. Reset with the cache, never
+   * shared across runs.
+   */
+  toolNames: Map<string, string>;
 }
 
 /**
@@ -423,14 +429,20 @@ export function memoRunRows(
     entry.scanned > base + to + 1 ||
     entry.scanned < base + from
   ) {
-    entry = { runId: run.id, displayInActivity, scanned: base + from, rows: [] };
+    entry = {
+      runId: run.id,
+      displayInActivity,
+      scanned: base + from,
+      rows: [],
+      toolNames: new Map(),
+    };
     rowCache = entry;
   }
 
   for (let absolute = entry.scanned; absolute <= base + to; absolute++) {
     const event = events[absolute - base];
     if (!event) break;
-    const row = eventToActivityRow(event);
+    const row = eventToActivityRow(repairCommandEvent(event, entry.toolNames));
     // The Setting can hide the LAID/DIED process rows (Agent Eggs) so the panel
     // reads as actions only; the eggs stay in the Agent Eggs panel. Consecutive
     // THINK rows fold into one (see appendActivityRow).
@@ -441,6 +453,32 @@ export function memoRunRows(
   }
   entry.scanned = base + to + 1;
   return entry.rows;
+}
+
+/**
+ * Pair a legacy `command` event with the tool start it belongs to.
+ *
+ * Older ACP archives recorded `command: ""` when the agent put the command
+ * only in the tool's display `title`; the start event in the same run still
+ * carries it under the same ACP `toolCallId` (the command's `terminalId`).
+ * This is a read-side repair keyed on protocol ids — no archive is rewritten,
+ * no agent is recognised, and a command the archive already has is never
+ * overwritten. The patched event also feeds the Stage item derived from it.
+ */
+function repairCommandEvent(event: AbsenceEvent, toolNames: Map<string, string>): AbsenceEvent {
+  if (event.type === "tool_start") {
+    if (event.payload.toolCallId && event.payload.toolName) {
+      toolNames.set(event.payload.toolCallId, event.payload.toolName);
+    }
+    return event;
+  }
+  if (event.type !== "command") return event;
+  if (event.payload.command.trim().length > 0) return event;
+  const key = event.payload.terminalId;
+  if (!key) return event;
+  const command = toolNames.get(key);
+  if (!command) return event;
+  return { ...event, payload: { ...event.payload, command } };
 }
 
 /**

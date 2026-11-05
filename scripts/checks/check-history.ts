@@ -18,7 +18,7 @@ import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { AbsenceEvent } from "@absence/core";
-import { buildHistory, pickRun, runEvents } from "../../apps/web/src/lib/history";
+import { buildHistory, memoRunRows, pickRun, resetEventCaches, runEvents } from "../../apps/web/src/lib/history";
 import {
   createStageItem,
   eventToActivityRow,
@@ -676,6 +676,160 @@ const run = async () => {
   assert("a find without a duration is kept", eventToActivityRow(legacy)?.action === "SEARCH");
   // One standard across Absence: the search threshold IS the eggs classifier's.
   assert("the search threshold is the eggs EPHEMERAL_MS", EPHEMERAL_MS === 300);
+
+  // 13. a legacy command row recovers its command from the tool start, by the
+  // protocol ids only; a command with nothing to recover is named, not blank.
+  {
+    resetEventCaches();
+    const repairEvents: AbsenceEvent[] = [
+      userMessage(3, "run ls"),
+      {
+        id: "evt_repair_start",
+        sessionId: "s",
+        timestamp: stamp(51),
+        type: "tool_start",
+        payload: { toolCallId: "call_1", toolName: "ls -la && cat 2.txt", args: undefined },
+      },
+      {
+        id: "evt_repair_cmd",
+        sessionId: "s",
+        timestamp: stamp(52),
+        type: "command",
+        payload: { command: "", stdout: "", stderr: "", exitCode: 0, terminalId: "call_1" },
+      },
+      agentEnd(3),
+    ];
+    const repairRun = buildHistory(repairEvents)[0]!;
+    const repairRows = memoRunRows(repairEvents, repairRun, true);
+    const repairRow = repairRows.find((row) => row.action === "RUN");
+    assert(
+      "a legacy empty command recovers its tool_start title in Activity",
+      repairRow?.primary === "ls -la && cat 2.txt",
+      repairRow?.primary ?? "no RUN row",
+    );
+    const repairItem = repairRow?.stageItem;
+    assert(
+      "the recovered command reaches the Stage card",
+      repairItem?.payload.kind === "terminal" && repairItem.payload.command === "ls -la && cat 2.txt",
+      repairItem?.payload.kind === "terminal" ? repairItem.payload.command : "wrong payload",
+    );
+    const orphan: AbsenceEvent = {
+      id: "evt_orphan_cmd",
+      sessionId: "s",
+      timestamp: stamp(54),
+      type: "command",
+      payload: { command: "", stdout: "", stderr: "", exitCode: 0 },
+    };
+    assert(
+      "a command with nothing to recover shows (shell), not a blank row",
+      eventToActivityRow(orphan)?.primary === "(shell)",
+      eventToActivityRow(orphan)?.primary ?? "no row",
+    );
+    resetEventCaches();
+  }
+
+  // 14. one command, one action row. A command window observes its command's
+  // own process and re-reports it every time the child count moves; the feed
+  // folds those updates by the protocol ids (never by an agent's name) so one
+  // command never reads as a second run. Keyed on `toolCallId`:
+  //   - a running update folds into the last running row of the same egg;
+  //   - the `command` event replaces that placeholder row in place;
+  //   - the process's EXIT stays its own row when process rows are shown.
+  {
+    resetEventCaches();
+    let at = 500;
+    const tick = () => (at += 100);
+    const procEvent = (
+      pid: number,
+      status: "running" | "exited",
+      children: number,
+      toolCallId?: string,
+    ): AbsenceEvent => ({
+      id: `evt_proc_${tick()}`,
+      sessionId: "s",
+      timestamp: tick(),
+      type: "process",
+      payload: {
+        pid,
+        ppid: 1000,
+        name: "bash.exe",
+        commandLine: "bash -c ls -la",
+        status,
+        startedAt: 1,
+        children,
+        command: "ls -la",
+        ...(toolCallId ? { toolCallId } : {}),
+      },
+    });
+    const commandEvent: AbsenceEvent = {
+      id: `evt_cmd_${tick()}`,
+      sessionId: "s",
+      timestamp: tick(),
+      type: "command",
+      payload: {
+        command: "ls -la",
+        stdout: "total 0",
+        stderr: "",
+        exitCode: 0,
+        toolCallId: "call_1",
+      },
+    };
+    const events: AbsenceEvent[] = [
+      userMessage(4, "run ls"),
+      procEvent(129808, "running", 0, "call_1"),
+      procEvent(129808, "running", 1, "call_1"),
+      procEvent(129808, "running", 2, "call_1"),
+      procEvent(129808, "running", 3, "call_1"),
+      commandEvent,
+      procEvent(129808, "exited", 3, "call_1"),
+      agentEnd(4),
+    ];
+    const procRun = buildHistory(events)[0]!;
+    const shown = memoRunRows(events, procRun, true);
+    const runRows = shown.filter((row) => row.action === "RUN");
+    const exitRows = shown.filter((row) => row.action === "EXIT");
+    assert(
+      "a command and its observed process fold into one RUN row",
+      runRows.length === 1 && runRows[0]!.event.type === "command",
+      `RUN rows=${runRows.length}, first=${runRows[0]?.event.type}`,
+    );
+    assert(
+      "the command row replaced the process placeholder in place",
+      shown.findIndex((row) => row.action === "RUN") < shown.findIndex((row) => row.action === "EXIT"),
+      shown.map((row) => row.action).join(" → "),
+    );
+    assert("the egg's exit stays its own row", exitRows.length === 1, `EXIT rows=${exitRows.length}`);
+    const quiet = memoRunRows(events, procRun, false);
+    assert(
+      "the default view shows exactly one action row for the command",
+      quiet.filter((row) => row.action === "RUN").length === 1 &&
+        quiet.every((row) => row.action !== "EXIT" && row.action !== "LAID" && row.action !== "DIED"),
+      quiet.map((row) => row.action).join(" → "),
+    );
+    // An egg outside any command window (no toolCallId, no command text) keeps
+    // the LAID/DIED shape it always had.
+    const stray: AbsenceEvent = {
+      id: `evt_stray_${tick()}`,
+      sessionId: "s",
+      timestamp: tick(),
+      type: "process",
+      payload: {
+        pid: 777,
+        ppid: 1000,
+        name: "node",
+        commandLine: "node daemon.mjs",
+        status: "running",
+        startedAt: 1,
+        children: 0,
+      },
+    };
+    assert(
+      "a stray egg still renders as LAID, not RUN",
+      eventToActivityRow(stray)?.action === "LAID",
+      eventToActivityRow(stray)?.action,
+    );
+    resetEventCaches();
+  }
 
   console.log(`\nsnapshots for run #1: ${snapshots.length}`);
   // A check that asserts nothing must not pass: a wrong import or a skipped

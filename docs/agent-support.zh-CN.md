@@ -143,14 +143,20 @@ profile 说明：
 | `edit` 其他形状 | `file_edit` | `before`/`after` 来自 ACP diff block 或 raw 旧值/新值。可从磁盘重建完整文件；无法重建时 `fullContent: false`。 |
 | `delete` | `file_change`，`kind: "deleted"` | 路径来自解析结果。 |
 | `move` | `file_change`，`kind: "modified"` | 路径来自解析结果。 |
-| `execute` | `command` | 输出优先级：`rawOutput.aggregatedOutput`，然后 `rawOutput.stdout`/`stderr`，然后累积 chunk。退出码优先级：`rawOutput.exitCode`/`exit_code`/`code`，然后嵌套对象，然后 `_meta.terminal_exit`。缺失时 `exitCodeKnown: false`。被拒绝时 `permissionDenied: true`。terminal block 作为 `terminalId` 原样携带。 |
+| `execute` | `command` | 命令优先级：`rawInput` 的命令字段，然后当调用为 `execute` 且 `rawInput` 无命令时使用 ACP `title`（仅展示兜底，不参与分类）。输出优先级：`rawOutput.aggregatedOutput`，然后 `rawOutput.stdout`/`stderr`，然后流式的 `_meta.terminal_output.data`，然后累积的 `content` chunk。退出码优先级：`rawOutput.exitCode`/`exit_code`/`code`，然后嵌套对象，然后 `_meta.terminal_exit`。缺失时 `exitCodeKnown: false`。被拒绝时 `permissionDenied: true`。terminal block 作为 `terminalId` 原样携带。 |
 | `search` | `search` | 有 query 时 tool 为 `grep`，否则为 `find`。matches 为非空行数。输出截断至 4,000 字符。 |
 | `mcp__<server>__<tool>` | `mcp` | 无论 `kind` 都生成，携带 args、result、structured 与 `isError`。result 截断至 20,000 字符。 |
 | `fetch`、`think`、`other` | 不生成映射事件 | 只保留 `tool_start` 与 `tool_end`。不编造 payload。 |
 
 `tool_end` 的 `isError` 来自 `status === "failed"`。一个工具调用恰好产生一条 `tool_start` 与一条 `tool_end`；重复的终态更新被忽略。
 
-`execute` 窗口同时驱动进程归因。projector 在出现 `execute` 工具调用时调用 `ProcessWatcher.begin(command, cwd)`，在终态调用 `end`。该窗口内上报的进程归因到这条命令，命令级的 Agent Eggs 由此产生。
+`execute` 窗口同时驱动进程归因。projector 在出现 `execute` 工具调用时调用 `ProcessWatcher.begin(command, cwd, toolCallId)`，在终态调用 `end`。该窗口内上报的进程归因到这条命令，命令级的 Agent Eggs 由此产生。窗口携带 ACP 工具调用 id 作为 `ref`，`command` 事件与其观察到的每条 `process` 事件都以 `toolCallId` 携带同一个 id —— 这是 feed 把一条命令与它自己的进程折叠成一个动作行的关联键，避免每次子进程计数更新都多出一行 RUN 与命令行并列。
+
+命令自身的执行器不是 egg。runtime 为执行命令字符串而启动的 shell（`bash -c "…"`、`pwsh -Command "…"`）就是 `command` 事件已经上报的那条命令；每条工具调用都产出一个 shell egg 会把 Agent Eggs 面板变成命令日志。它像被标记的 shell 一样保持 owned 以便后代归因，但绝不注册为父 egg：它的子进程重新生根、按自身形态判定——命令真正留下的 daemon 仍是 egg，沿路的 `ls`/`cat` 仍按 tool 分类。agent 有意启动的 shell（`bash daemon.sh`，无 `-c`）照常参与判定。
+
+工具与文件事件同时是 assistant 消息的边界：`AcpAdapter` 在发布任何非流式事件前关闭打开中的思考*和*回复，因此工具调用两侧的文本是两条消息，各自带有自己的起始时间。
+
+OS 观察者的事实就地标注：`process`、`file_change` 与派生的 `file_write`/`file_edit` 携带 `source: "os"`、`fidelity: "exact"`，而不是依赖 `unknown` 默认值。shell 写文件是一个动作而不是两个：当磁盘 diff 会从同一次变化派生内容事件时，原始 `file_change` 被标为 `echo: true`（Activity 隐藏它，Report 不重复计数）；`file_change kind: "modified"` 证明文件已存在，因此派生的写入是修改而不是新建。
 
 ## 7. 审批与 `/auth`
 

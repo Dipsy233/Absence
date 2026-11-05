@@ -25,12 +25,21 @@ export interface MessagePayload {
   /** Present while the assistant message is still streaming. */
   delta?: string;
   streaming?: boolean;
+  /**
+   * When the finished text stopped arriving. The durable event is stamped at
+   * its *start*, so this is the only record of its end — the timeline's mark
+   * ends here instead of running on until the next event of its kind. Absent
+   * on rows written before it existed.
+   */
+  endedAt?: number;
 }
 
 export interface ThinkingPayload {
   content: string;
   delta?: string;
   streaming?: boolean;
+  /** When the finished thought stopped arriving (see `MessagePayload.endedAt`). */
+  endedAt?: number;
 }
 
 export interface ToolStartPayload {
@@ -111,9 +120,11 @@ export interface FileChangePayload {
    */
   outside?: boolean;
   /**
-   * The OS saw a change the agent already reported through a tool call. It is
-   * real evidence, but not a second act: Activity hides it, so one edit does
-   * not become two rows.
+   * This change is evidence of an act that is already (or is about to be)
+   * reported once: either the agent announced the write through a tool call,
+   * or the content event derived from this same disk change follows it. Real
+   * evidence, but not a second act: Activity hides it, so one edit does not
+   * become two rows.
    */
   echo?: true;
 }
@@ -146,6 +157,13 @@ export interface CommandPayload {
    * must not present this as a real exit status, and execution counters skip it.
    */
   permissionDenied?: true;
+  /**
+   * The ACP tool call this command answers, when the protocol carried one. It
+   * is the join key between this event and the OS `process` events the command
+   * window observed: a process carrying the same id belongs to this command,
+   * so the feed folds them into one action row instead of two.
+   */
+  toolCallId?: string;
 }
 
 /** v0.2: a search/listing action (Pi's grep / find / ls tools). */
@@ -185,6 +203,14 @@ export interface ProcessPayload {
   children: number;
   /** The shell command that laid it. */
   command?: string;
+  /**
+   * The ACP tool call whose command window this egg was observed in, when the
+   * window was opened by one. Present only on command-window attribution: an
+   * egg the watcher saw outside any execute call has no such field. Consumers
+   * fold these eggs into the `command` row of the same id — the process is the
+   * command's own execution, not a second action next to it.
+   */
+  toolCallId?: string;
   /**
    * The daemon's full container id, on a container egg only. Real processes
    * have no such field. The archive keeps it so a resumed session can ask the

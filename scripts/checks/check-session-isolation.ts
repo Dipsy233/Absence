@@ -116,8 +116,8 @@ function processIsolation(): void {
   });
   a.beginSession("session-a", AGENT_A);
   b.beginSession("session-b", AGENT_B);
-  a.begin("npm test", ".", NOW);
-  b.begin("npm test", ".", NOW);
+  a.begin("npm test", ".", undefined, NOW);
+  b.begin("npm test", ".", undefined, NOW);
 
   // The strongest positive case: an unmarked process whose ppid is this
   // session's agent. Linux eBPF reports exactly this shape (no env marker).

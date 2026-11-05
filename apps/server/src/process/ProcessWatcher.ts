@@ -7,7 +7,7 @@ import { JobMonitor } from "./JobMonitor";
 import type { MetricsTarget } from "./ProcessMetrics";
 import type { WatchExit, WatchStart } from "./observer";
 import { snapshotProcesses, type ProcessTable, type ProcInfo } from "./ProcessTable";
-import { unwrapCommandText } from "./CommandLine";
+import { detectCommand, unwrapCommandText } from "./CommandLine";
 
 /** How long after a command returns we take the final look. */
 const SETTLE_MS = 2500;
@@ -105,6 +105,8 @@ interface CommandWindow {
   intent: CommandIntent;
   /** Working directory the command ran in. */
   cwd: string;
+  /** The ACP tool call this window belongs to, when the projector gave one. */
+  toolCallId?: string;
 }
 
 interface Egg {
@@ -130,6 +132,8 @@ interface Egg {
   exePath?: string;
   /** The intent of the command that laid it, for re-classification on exit. */
   intent: CommandIntent;
+  /** The ACP tool call whose window laid it, when there was one. */
+  toolCallId?: string;
   /** The shell pid Absence drove the command through, when known. */
   shellPid?: number;
   /** The command a young tool belongs to; promoted to primary on survival. */
@@ -259,10 +263,23 @@ export class ProcessWatcher {
   /** Commands whose wall-clock window is still open, keyed by `begin` id. */
   private readonly jobOpen = new Map<
     number,
-    { command: string; startedAt: number; endedAt?: number; intent: CommandIntent; cwd: string }
+    {
+      command: string;
+      startedAt: number;
+      endedAt?: number;
+      intent: CommandIntent;
+      cwd: string;
+      toolCallId?: string;
+    }
   >();
   /** A command that has returned but whose late events still belong to it. */
-  private jobLastClosed?: { command: string; endedAt: number; intent: CommandIntent; cwd: string };
+  private jobLastClosed?: {
+    command: string;
+    endedAt: number;
+    intent: CommandIntent;
+    cwd: string;
+    toolCallId?: string;
+  };
   /**
    * pid → the root pid of the egg it was folded into. A child appearing after
    * its parent is not a second egg; it is the same subtree.
@@ -474,8 +491,12 @@ export class ProcessWatcher {
    * would add the cost of it to every command the agent runs. All we keep is
    * *when* it started, and that it closes whatever window was still open — two
    * commands a second apart must not both claim the same new process.
+   *
+   * `ref` is the tool call the command answers, when the caller knows it: every
+   * process laid inside the window carries it, so the feed can tell the
+   * command's own execution apart from a daemon it left behind.
    */
-  begin(command: string, cwd?: string, startedAtMs?: number): number {
+  begin(command: string, cwd?: string, ref?: string, startedAtMs?: number): number {
     const at = startedAtMs && startedAtMs < this.now() ? startedAtMs : this.now();
     if (cwd) this.jobCwd = cwd;
     for (const earlier of this.open.values()) earlier.closedAt ??= at;
@@ -490,6 +511,7 @@ export class ProcessWatcher {
         startedAt: at,
         intent: parseCommandIntent(command),
         cwd: this.jobCwd,
+        ...(ref ? { toolCallId: ref } : {}),
       });
       this.options.onCommandWindow?.(command, this.jobCwd, id);
       return id;
@@ -499,6 +521,7 @@ export class ProcessWatcher {
       startedAt: at,
       intent: parseCommandIntent(command),
       cwd: this.jobCwd,
+      ...(ref ? { toolCallId: ref } : {}),
     });
     this.startTick();
     this.options.onCommandWindow?.(command, this.jobCwd, id);
@@ -636,6 +659,7 @@ export class ProcessWatcher {
       running.command,
       running.intent,
       running.cwd,
+      running.toolCallId,
     );
     this.startTick(age < TICK_FAST_WINDOW_MS ? TICK_FAST_MS : TICK_SLOW_MS);
   }
@@ -655,6 +679,7 @@ export class ProcessWatcher {
       window.command,
       window.intent,
       window.cwd,
+      window.toolCallId,
     );
   }
 
@@ -665,6 +690,7 @@ export class ProcessWatcher {
     command: string,
     intent: CommandIntent,
     cwd: string,
+    toolCallId?: string,
   ): void {
     const candidates = candidatePids(this.baseline, table, this.seen, window);
     // Polling sees the whole process table too. Root the ancestry at the agent
@@ -675,6 +701,10 @@ export class ProcessWatcher {
       this.seen,
       this.agentPid ?? this.rootPid,
       this.markers,
+      // The command's own executor shell is plumbing here too: excluding it
+      // lets its children re-root, so what the command actually laid is what
+      // the panel sees.
+      (info) => detectCommand(info.name, info.commandLine).wrapped,
     );
     for (const pid of claimed) {
       this.seen.add(pid);
@@ -712,6 +742,7 @@ export class ProcessWatcher {
         reclassifyOnSurvive: false,
         survivedCommand: true,
         namedSubject: verdict.reason === "named by the command",
+        ...(toolCallId ? { toolCallId } : {}),
       };
       this.eggs.set(root.pid, egg);
       this.emit(egg);
@@ -855,6 +886,22 @@ export class ProcessWatcher {
       return;
     }
 
+    // The command's own executor: the shell the runtime spawned to run the
+    // command string (`bash -c "…"`, `pwsh -Command "…"`). It is the command,
+    // not something the command left behind — the `command` event already
+    // reports it, and one shell egg per command turned the Agent Eggs panel
+    // into a log of every tool call. Like a marked shell it stays owned so its
+    // descendants attribute, and it is not registered as a parent egg: its
+    // children re-root here and are judged on their own, so a daemon the
+    // command laid still becomes an egg while the `ls`/`cat` it ran along the
+    // way still classify as tools. A shell the agent started *deliberately*
+    // (`bash daemon.sh`, no `-c`) carries no command flag and is judged like
+    // any other process.
+    if (detectCommand(name, event.commandLine ?? "").wrapped) {
+      this.jobSeen.add(pid);
+      return;
+    }
+
     // A new root: a subtree the agent just laid. Classify it now, when it is
     // young; `end()` promotes it again if it outlives its command.
     this.jobSeen.add(pid);
@@ -890,6 +937,7 @@ export class ProcessWatcher {
       reclassifyOnSurvive: verdict.kind === "tool",
       survivedCommand: false,
       namedSubject: verdict.reason === "named by the command",
+      ...(window.toolCallId ? { toolCallId: window.toolCallId } : {}),
     };
     this.eggs.set(pid, egg);
     this.emit(egg);
@@ -1027,20 +1075,31 @@ export class ProcessWatcher {
   }
 
   /** The command a process started at `at` belongs to, if any. */
-  private commandFor(    at: number | undefined,
-  ): { command: string; intent: CommandIntent; cwd: string } | undefined {
+  private commandFor(
+    at: number | undefined,
+  ): { command: string; intent: CommandIntent; cwd: string; toolCallId?: string } | undefined {
     const when = at ?? this.now();
     // A command still running owns everything since a moment before it began.
     for (const entry of this.jobOpen.values()) {
       if (when >= entry.startedAt - JOB_PRE_SLACK_MS) {
-        return { command: entry.command, intent: entry.intent, cwd: entry.cwd };
+        return {
+          command: entry.command,
+          intent: entry.intent,
+          cwd: entry.cwd,
+          ...(entry.toolCallId ? { toolCallId: entry.toolCallId } : {}),
+        };
       }
     }
     // A command that has returned still owns a backgrounded daemon's late start,
     // but only until the next command begins.
     const last = this.jobLastClosed;
     if (last && when <= last.endedAt + JOB_POST_SLACK_MS) {
-      return { command: last.command, intent: last.intent, cwd: last.cwd };
+      return {
+        command: last.command,
+        intent: last.intent,
+        cwd: last.cwd,
+        ...(last.toolCallId ? { toolCallId: last.toolCallId } : {}),
+      };
     }
     return undefined;
   }
@@ -1059,19 +1118,34 @@ export class ProcessWatcher {
   private commandForExact(
     at: number | undefined,
     commandLine: string | undefined,
-  ): { command: string; intent: CommandIntent; cwd: string } | undefined {
+  ): { command: string; intent: CommandIntent; cwd: string; toolCallId?: string } | undefined {
     if (!commandLine) return undefined;
     const line = commandLine.toLowerCase();
-    const candidates: Array<{ command: string; intent: CommandIntent; cwd: string }> = [];
+    const candidates: Array<{
+      command: string;
+      intent: CommandIntent;
+      cwd: string;
+      toolCallId?: string;
+    }> = [];
     const when = at ?? this.now();
     for (const entry of this.jobOpen.values()) {
       if (when >= entry.startedAt - JOB_PRE_SLACK_MS) {
-        candidates.push({ command: entry.command, intent: entry.intent, cwd: entry.cwd });
+        candidates.push({
+          command: entry.command,
+          intent: entry.intent,
+          cwd: entry.cwd,
+          ...(entry.toolCallId ? { toolCallId: entry.toolCallId } : {}),
+        });
       }
     }
     const last = this.jobLastClosed;
     if (last && when <= last.endedAt + JOB_POST_SLACK_MS) {
-      candidates.push({ command: last.command, intent: last.intent, cwd: last.cwd });
+      candidates.push({
+        command: last.command,
+        intent: last.intent,
+        cwd: last.cwd,
+        ...(last.toolCallId ? { toolCallId: last.toolCallId } : {}),
+      });
     }
     for (const candidate of candidates) {
       const text = candidate.command.toLowerCase().trim();
@@ -1159,6 +1233,7 @@ export class ProcessWatcher {
       command: egg.command,
       kind: egg.kind,
       kindReason: egg.kindReason,
+      ...(egg.toolCallId ? { toolCallId: egg.toolCallId } : {}),
     });
   }
 
@@ -1204,6 +1279,7 @@ export class ProcessWatcher {
         command: egg.command,
         kind: egg.kind,
         kindReason: egg.kindReason,
+        ...(egg.toolCallId ? { toolCallId: egg.toolCallId } : {}),
         retired: true,
       });
     }
@@ -1279,6 +1355,10 @@ export function candidatePids(
  * parent is unknown is *not* ours: claiming every orphan swept in unrelated
  * `sleep`s from elsewhere on the machine, and a process that needs them to be
  * attributed is one Absence cannot honestly pin on the agent.
+ *
+ * `plumbing` marks processes that are never eggs but whose children stay
+ * eligible — the command's own executor shell, whose descendants re-root and
+ * are judged on their own.
  */
 export function attributeProcesses(
   table: ProcessTable,
@@ -1286,6 +1366,7 @@ export function attributeProcesses(
   known: ReadonlySet<number>,
   rootPid: number,
   markers: ReadonlySet<string> = new Set(),
+  plumbing?: (info: ProcInfo) => boolean,
 ): { roots: ProcInfo[]; children: Map<number, number>; claimed: number[] } {
   const isOurs = (pid: number): boolean => {
     const visited = new Set<number>();
@@ -1309,6 +1390,9 @@ export function attributeProcesses(
     const info = table.get(pid);
     if (isConsoleHost(info?.name ?? "")) return false;
     if (hasMarker(info, markers)) return false;
+    // Plumbing is not claimed either: it does not absorb its children, so they
+    // re-root and are judged on their own.
+    if (info && plumbing?.(info)) return false;
     return !hasAncestorIn(table, pid, known);
   });
 

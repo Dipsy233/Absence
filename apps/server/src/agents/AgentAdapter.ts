@@ -411,7 +411,10 @@ export abstract class BaseAdapter implements AgentAdapter {
     this.thinkingDirty = false;
     this.thinkingStartedAt = undefined;
     if (!shouldEmit || text.trim().length === 0) return;
-    this.emitAbsence("thinking", { content: text, streaming: false }, startedAt);
+    // The durable event is stamped at the block's start; `endedAt` is the only
+    // record of when the text actually stopped, and the timeline's mark ends
+    // there instead of running on to the next event of its kind.
+    this.emitAbsence("thinking", { content: text, streaming: false, endedAt: Date.now() }, startedAt);
   }
 
   /** Clear the assistant accumulator (a new message, a new prompt). */
@@ -479,9 +482,20 @@ export abstract class BaseAdapter implements AgentAdapter {
     this.messageSinceEmit = "";
     this.messageDirty = false;
     this.messageStartedAt = undefined;
-    this.messageLastEmit = Date.now();
+    // The accumulator is closed either way, so the *next* reply starts fresh:
+    // its first delta must reach the stream at once, exactly like after
+    // `resetMessage`. Stamping `Date.now()` here instead used to swallow the
+    // whole first throttle window of a reply that began right after a tool
+    // boundary — a fast reply then showed no streaming snapshot at all.
+    this.messageLastEmit = 0;
     if (!shouldEmit || text.trim().length === 0) return;
-    this.emitAbsence("message", { role: "assistant", content: text, streaming: false }, startedAt);
+    // `endedAt` for the same reason as the thought's: the mark ends where the
+    // reply stopped, not where the next activity begins.
+    this.emitAbsence(
+      "message",
+      { role: "assistant", content: text, streaming: false, endedAt: Date.now() },
+      startedAt,
+    );
   }
 }
 

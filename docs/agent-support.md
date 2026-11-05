@@ -143,14 +143,20 @@ Tool-call mapping uses the ACP `kind` and the field shape. When `kind` is missin
 | `edit`, other shapes | `file_edit` | `before`/`after` from the ACP diff block or raw old/new values. A complete file can be rebuilt from disk; if not, `fullContent: false`. |
 | `delete` | `file_change` with `kind: "deleted"` | Path from the resolved fields. |
 | `move` | `file_change` with `kind: "modified"` | Path from the resolved fields. |
-| `execute` | `command` | Output precedence: `rawOutput.aggregatedOutput`, then `rawOutput.stdout`/`stderr`, then accumulated chunks. Exit-code precedence: `rawOutput.exitCode`/`exit_code`/`code`, then a nested object, then `_meta.terminal_exit`. Missing codes set `exitCodeKnown: false`. Rejection sets `permissionDenied: true`. A terminal block is carried as `terminalId`. |
+| `execute` | `command` | Command precedence: `rawInput` command fields, then the ACP `title` when the call is `execute` and `rawInput` carries none (a display fallback, never a classification). Output precedence: `rawOutput.aggregatedOutput`, then `rawOutput.stdout`/`stderr`, then streamed `_meta.terminal_output.data`, then accumulated `content` chunks. Exit-code precedence: `rawOutput.exitCode`/`exit_code`/`code`, then a nested object, then `_meta.terminal_exit`. Missing codes set `exitCodeKnown: false`. Rejection sets `permissionDenied: true`. A terminal block is carried as `terminalId`. |
 | `search` | `search` | Tool is `grep` when a query exists, otherwise `find`. Match count is non-empty lines. Output is truncated at 4,000 characters. |
 | `mcp__<server>__<tool>` | `mcp` | Emitted regardless of `kind`, with args, result, structured content and `isError`. Result is truncated at 20,000 characters. |
 | `fetch`, `think`, `other` | No mapped event | Only `tool_start` and `tool_end` are kept. No payload is invented. |
 
 `tool_end` sets `isError` from `status === "failed"`. A tool call produces exactly one `tool_start` and one `tool_end`; duplicate terminal updates are ignored.
 
-The `execute` window also drives process attribution. The projector calls `ProcessWatcher.begin(command, cwd)` when an `execute` tool call appears and `end` at its terminal state. Processes reported during that window are attributed to the command, which is how command-scoped Agent Eggs are produced.
+The `execute` window also drives process attribution. The projector calls `ProcessWatcher.begin(command, cwd, toolCallId)` when an `execute` tool call appears and `end` at its terminal state. Processes reported during that window are attributed to the command, which is how command-scoped Agent Eggs are produced. The window carries the ACP tool call id as its `ref`, and both the `command` event and every `process` event it observed carry that id as `toolCallId` — the join key the feed uses to fold one command and its own processes into one action row, instead of a RUN row per child-count update beside the command's row.
+
+The command's own executor is not an egg. The shell the runtime spawned to run the command string (`bash -c "…"`, `pwsh -Command "…"`) *is* the command the `command` event already reports; one shell egg per tool call turned the Agent Eggs panel into a command log. Like a marked shell it stays owned so its descendants attribute, and it is never registered as a parent egg: its children re-root and are judged on their own, so a daemon the command laid still becomes an egg while the `ls`/`cat` it ran along the way still classify as tools. A shell the agent started deliberately (`bash daemon.sh`, no `-c`) is judged like any other process.
+
+Tool and file events are also assistant-message boundaries: `AcpAdapter` closes the open thought *and* the open reply before publishing any non-streaming event, so text on either side of a tool call is two messages, each stamped with its own start.
+
+OS-watcher facts are tagged where they are created: `process`, `file_change` and the derived `file_write`/`file_edit` carry `source: "os"` and `fidelity: "exact"` instead of an `unknown` default. A shell write is one action, not two: when the disk diff will derive a content event from the same change, the raw `file_change` is marked `echo: true` (Activity hides it, the Report does not count it twice), and a `file_change kind: "modified"` proves the file existed, so the derived write is a modification, not a creation.
 
 ## 7. Approvals and `/auth`
 

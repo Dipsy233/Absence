@@ -75,6 +75,12 @@ export interface AcpToolFacts {
   toolCallId: string;
   /** What the agent shows the user (`title` / `name`). Display only — never the classification. */
   name: string;
+  /**
+   * The raw ACP `title`, when the agent sent one. Kept apart from `name`, which
+   * may be synthesized from `kind`/`"tool"` when the protocol omitted the title:
+   * a synthetic placeholder must never be presented as a command.
+   */
+  title?: string;
   /** ACP's own kind, when the agent filled it. */
   kind?: string;
   rawInput?: unknown;
@@ -90,6 +96,14 @@ export interface AcpToolFacts {
    * it does not. Capped by the projector, which sets `outputTruncated`.
    */
   accumulatedOutput?: string;
+  /**
+   * Output accumulated from the ACP terminal extension
+   * (`_meta.terminal_output.data`) across this call's updates. It is a separate
+   * channel from `accumulatedOutput`: the terminal stream is the execution's
+   * own output, while `content` is the model-facing text. Capped by the
+   * projector, which sets `outputTruncated`.
+   */
+  accumulatedTerminalOutput?: string;
   outputTruncated?: boolean;
   /** The update-level `_meta` (ACP's extension bag), e.g. `terminal_exit`. */
   meta?: unknown;
@@ -166,7 +180,12 @@ export function resolveTool(facts: AcpToolFacts): ResolvedTool {
   const resolved: ResolvedTool = {
     kind: usable ?? "other",
     rule: usable ? "acp-kind" : "",
-    command: first("command"),
+    // An execute call may carry its command only in ACP's display `title` (a
+    // field every tool call has), with no `rawInput` at all. That title is the
+    // agent's own command text, so it is the display fallback — never a
+    // classification signal, and only for a call the protocol already called
+    // `execute`.
+    command: first("command") ?? (usable === "execute" ? commandFromTitle(facts) : undefined),
     path: first("path") ?? facts.locations?.find((l) => l.path)?.path ?? contentPath(facts.content),
     query: first("query"),
     url: first("url"),
@@ -243,6 +262,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * An execute call's command as the agent displays it. ACP's `title` is the
+ * only field some adapters fill, so it is the display fallback when
+ * `rawInput` carries no command field; it is never used to classify.
+ */
+function commandFromTitle(facts: AcpToolFacts): string | undefined {
+  const title = facts.title?.trim();
+  return title !== undefined && title.length > 0 ? title : undefined;
+}
+
+/**
  * Render an argv array as one display command, keeping the exact argument
  * order. This is presentation only: the original array stays in the event's
  * `tool_start.args` untouched.
@@ -273,6 +302,36 @@ export function textOfToolContent(content: unknown): string {
     if (text.length > 0) parts.push(text);
   }
   return parts.join("\n");
+}
+
+/**
+ * The stream chunk ACP's terminal extension carries on one update
+ * (`_meta.terminal_output.data`). Read from the update itself, or from a
+ * content block when the update has none; never both, so one chunk cannot be
+ * counted twice. The projector folds these chunks per call.
+ */
+export function textOfTerminalOutput(update: unknown): string {
+  if (!isRecord(update)) return "";
+  const direct = terminalOutputData(update["_meta"] ?? update["meta"]);
+  if (direct.length > 0) return direct;
+  const content = update["content"];
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const item of content) {
+    if (!isRecord(item)) continue;
+    const block = isRecord(item["content"]) ? item["content"] : item;
+    const data = terminalOutputData(block["_meta"] ?? block["meta"]);
+    if (data.length > 0) parts.push(data);
+  }
+  return parts.join("");
+}
+
+function terminalOutputData(meta: unknown): string {
+  if (!isRecord(meta)) return "";
+  const output = meta["terminal_output"];
+  if (!isRecord(output)) return "";
+  const data = output["data"];
+  return typeof data === "string" ? data : "";
 }
 
 /**
