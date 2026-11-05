@@ -144,9 +144,20 @@ async function main(): Promise<void> {
       `${replySeen.filter((event) => event.type === "thinking").length} thinking event(s)`,
     );
     replyProbe.closeReply();
+    const streamedReply = replySeen.find(
+      (event) => event.type === "message" && event.payload.streaming === true,
+    );
+    const finalReply = replySeen.find(
+      (event) => event.type === "message" && event.payload.streaming !== true,
+    );
     check(
       "the reply still gets its own final event",
-      replySeen.some((event) => event.type === "message" && event.payload.streaming !== true),
+      finalReply !== undefined,
+    );
+    check(
+      "the durable reply is stamped with its start, not the flush time",
+      finalReply?.timestamp === streamedReply?.timestamp,
+      `final=${finalReply?.timestamp} streamed=${streamedReply?.timestamp}`,
     );
   }
 

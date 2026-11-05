@@ -330,6 +330,8 @@ export abstract class BaseAdapter implements AgentAdapter {
   private messageSinceEmit = "";
   private messageDirty = false;
   private messageLastEmit = 0;
+  /** When the current reply started, so its durable event is not stamped at flush time. */
+  private messageStartedAt: number | undefined = undefined;
 
   abstract start(ctx: AgentStartContext): Promise<AgentStartResult>;
   abstract prompt(text: string): Promise<void>;
@@ -414,6 +416,7 @@ export abstract class BaseAdapter implements AgentAdapter {
     this.messageAcc = "";
     this.messageSinceEmit = "";
     this.messageDirty = false;
+    this.messageStartedAt = undefined;
     // The first delta of a reply should appear immediately, not after a
     // throttle window with nothing on screen.
     this.messageLastEmit = 0;
@@ -427,10 +430,12 @@ export abstract class BaseAdapter implements AgentAdapter {
     // non-streaming event would arrive after the thought's tail, and the feed
     // would carry a second SPEAK row.
     this.flushThinking();
+    const now = Date.now();
+    // The durable event will carry the reply's start, not its last chunk's time.
+    if (this.messageStartedAt === undefined) this.messageStartedAt = now;
     this.messageAcc += delta;
     this.messageSinceEmit += delta;
     this.messageDirty = true;
-    const now = Date.now();
     if (now - this.messageLastEmit < MESSAGE_EMIT_MS) return;
     this.messageLastEmit = now;
     this.messageDirty = false;
@@ -451,17 +456,23 @@ export abstract class BaseAdapter implements AgentAdapter {
    * `message_end`); without it the accumulated deltas are used (DSH's turn
    * settles without a message-end record). An empty/tool-only turn emits
    * nothing, so no empty chat bubble is appended.
+   *
+   * The event is stamped with the reply's start (`messageStartedAt`), like the
+   * finished thought, so a historical view places the reply where it began
+   * instead of at the moment it settled.
    */
   protected flushMessage(finalText?: string): void {
     if (finalText !== undefined) this.messageAcc = finalText;
     const text = this.messageAcc;
+    const startedAt = this.messageStartedAt;
     const shouldEmit = this.messageDirty || text.trim().length > 0;
     this.messageAcc = "";
     this.messageSinceEmit = "";
     this.messageDirty = false;
+    this.messageStartedAt = undefined;
     this.messageLastEmit = Date.now();
     if (!shouldEmit || text.trim().length === 0) return;
-    this.emitAbsence("message", { role: "assistant", content: text, streaming: false });
+    this.emitAbsence("message", { role: "assistant", content: text, streaming: false }, startedAt);
   }
 }
 

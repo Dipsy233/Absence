@@ -190,6 +190,52 @@ section("a streamed thought has one durable record, stamped at its start");
   );
 }
 
+section("a streamed reply has one durable record, stamped at its start");
+{
+  const id = "sess_message_final";
+  const started = startedAt + 60;
+  await writeMeta(project, {
+    version: 1,
+    absenceSessionId: id,
+    projectPath: project,
+    projectName: "project",
+    startedAt: started,
+    updatedAt: started + 5,
+    runtime: "mock",
+    messageCount: 1,
+    firstPrompt: "reply",
+  });
+  appendEvents(project, id, [
+    event(
+      "evt_msg_prefix",
+      "message",
+      { role: "assistant", content: "Hel", streaming: true },
+      started + 1,
+    ),
+    event(
+      "evt_msg_final",
+      "message",
+      { role: "assistant", content: "Hello", streaming: false },
+      started,
+    ),
+  ]);
+  await drainArchive();
+  const events = await readEvents(project, id);
+  const replies = events.filter((item) => item.type === "message");
+  check("the streaming reply prefix is not archived", replies.length === 1, `${replies.length} message row(s)`);
+  check(
+    "the durable reply keeps its start timestamp",
+    replies[0]?.timestamp === started,
+    `ts=${replies[0]?.timestamp} start=${started}`,
+  );
+  check(
+    "the durable reply is the whole value with no delta",
+    replies[0]?.payload.content === "Hello" &&
+      (replies[0]?.payload as { delta?: unknown }).delta === undefined,
+    JSON.stringify(replies[0]?.payload),
+  );
+}
+
 section("file index");
 {
   const id = "sess_files";
