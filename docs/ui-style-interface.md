@@ -15,9 +15,8 @@ The rules apply to Monitor, Rounds, Chart, Drip, ProjectPicker, and Settings.
 | Scheme | `scheme-dark` / `scheme-light` | Colour: background, text, border, semantic colours, surfaces |
 
 A style block defines non-colour attributes. Colour values come from the
-scheme's tokens, with the material definitions described under Materials and
-derived effects. The two dimensions are independent: either can change without
-the other.
+scheme's tokens; material definitions are described under Materials and derived
+effects. The two dimensions are independent and can change separately.
 
 ## Runtime
 
@@ -60,11 +59,11 @@ document.
 
 ## Style interface
 
-A style block may define:
+A style block can define:
 
 - `--mon-sans`: body and control font. The default stack includes
   `PingFang SC`, `Microsoft YaHei`, and `Noto Sans SC` for CJK.
-- `--mon-mono`: monospace slots (counts, paths, timestamps). A style may
+- `--mon-mono`: monospace slots (counts, paths, timestamps). A style can
   replace it with a display face; Monaco and Tailwind's `font-mono` keep their
   own stacks.
 - `--mon-hand`: optional auxiliary handwriting family for style-internal use.
@@ -166,7 +165,7 @@ style × scheme block.
 4. Normal, hover, active, focus, and selected states are distinguishable.
    Hover changes the surface, active moves down, focus draws an outline ring,
    and selected states carry the accent border. `shared.css` provides the
-   baseline; a style may add to it and may not remove it.
+   baseline; a style can add rules on top of it and cannot remove the baseline.
 5. Dividers remain visible.
 6. `outline: none` is not used alone. Text fields use the caret as their focus
    cue and keep their border colour; all other focusable elements draw a ring.

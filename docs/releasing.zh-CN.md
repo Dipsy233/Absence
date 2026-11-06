@@ -4,7 +4,7 @@
 
 Absence 以桌面安装包的形式发布：Windows 是 NSIS 安装器和免安装 ZIP，Linux 是
 AppImage 和 `tar.gz`。`.github/workflows/release.yml` 在 GitHub runner 上只构建
-Windows 与 Linux，并把安装包附加到 GitHub Release，因此发布不依赖任何本地环境。
+Windows 与 Linux，并把安装包附加到 GitHub Release，发布不依赖预先配置的构建环境。
 
 ## 发布说明
 
@@ -67,8 +67,8 @@ git push origin v0.5.0
 发布正文取自 `docs/releases/<tag>.md`；英文文件缺失时回退到
 `docs/releases/<tag>.zh-CN.md`。两者都不存在时，从上一个 tag 到本次 tag 之间的
 提交信息自动生成，按 conventional-commit 类型分组（`scripts/release/notes.mjs`，
-本地也可以运行 `npm run release:notes -- v0.5.0`）。不使用 GitHub 自带的自动
-说明，因为它按 PR 分组，而本仓库大多直接推送到 `main`；`.github/release.yml`
+也可以通过 `npm run release:notes -- v0.5.0` 运行）。不使用 GitHub 自带的自动
+说明，因为它按 PR 分组，而项目大多直接推送到 `main`；`.github/release.yml`
 只保留给 Releases 页面里的 "Generate release notes" 按钮使用。
 
 Release 上附加的文件：
@@ -89,16 +89,16 @@ Release 上附加的文件：
 
 - 内核进程观察器（`native/agentwatch/agentwatch.exe`、
   `native/agentwatch-linux/agentwatch-linux`）是预编译并提交进仓库的。CI 不编译
-  它们；源码变化时请在本地重新构建并提交新二进制：Windows 用
-  `npm run build:agentwatch`（MinGW 或 MSVC），Linux 用
-  `native/agentwatch-linux/build.sh`（clang + libbpf）。
+  它们；源码变化时用 `npm run build:agentwatch`（Windows 上为 MinGW 或 MSVC）或
+  `native/agentwatch-linux/build.sh`（Linux 上为 clang + libbpf）重新构建，再提交
+  新的二进制。
 - 安装包未签名。Windows SmartScreen 会在运行安装器前提示风险；签名需要证书和
   仓库 secrets，目前不在范围内。工作流设置了
   `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免 electron-builder 探测签名身份。
 - Linux 构建需要观察器有可执行位：git 里存的是 `100644`，所以打包前工作流会执行
   `chmod +x`。
 - 失败后可以安全地重跑：如果 Release 已存在，`publish` 会用 `--clobber` 重新上传
-  产物并刷新说明，而不是报错退出。
+  产物并刷新说明，不报错退出。
 
 ## 版本号
 
@@ -112,7 +112,7 @@ git commit -am "chore: release v0.5.0"
 git tag v0.5.0 && git push origin main --tags
 ```
 
-## 本地跑打包步骤
+## 直接运行打包步骤
 
 ```bash
 npm ci

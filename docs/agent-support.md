@@ -26,7 +26,7 @@ AgentCatalog (profile data)
    - The profile's `ABSENCE_*_BIN` environment variable.
    - A legacy `~/.absence/runtimes.json` is read for compatibility and is not written.
 2. **ACP binary on PATH** — each `discovery.acpBins` entry, for example `pi-acp` or `codex-acp`.
-3. **Local `node_modules` adapter** — each `discovery.acpPackages` entry, with the entry point defaulting to `dist/index.js`. The search walks up to five parent directories.
+3. **Adapter package under `node_modules`** — each `discovery.acpPackages` entry, with the entry point defaulting to `dist/index.js`. The search walks up to five parent directories.
 4. **Agent CLI with a built-in ACP mode** — `discovery.cli` plus `acpArgs`, for example `gemini --acp`, `qwen --experimental-acp` or `dsh --profile acp`.
 5. **npx fallback** — only when `ABSENCE_ALLOW_NPX=1` or `allowNpx: true` is set in `~/.absence/agents.json`. The version comes from the profile's `npxVersionEnv` when set, otherwise `npxVersion`. The row is marked as a temporary download.
 6. **No ACP entry** — if the agent CLI exists but no ACP entry does, the state is `needs-adapter`. If neither exists, the state is `unavailable`.
@@ -37,9 +37,9 @@ Picker behaviour:
 
 - Rows with `unavailable` and the `mock` fixture are hidden.
 - `ready`, `needs-adapter` and `needs-auth` rows are shown.
-- The picker has no `allowNpx` toggle. The setting comes from `ABSENCE_ALLOW_NPX` or the `allowNpx` field in `agents.json`; the server API can write the field, but the picker does not expose it.
-- The picker has no launch-line editor for arbitrary profiles. The server's `POST /api/runtimes` accepts launch overrides, but the current picker does not call it. The editing surface in the picker is the custom ACP form, which writes an `agents` entry.
-- `npm run registry:sync` writes the ACP registry to `~/.absence/registry.json`. The server does not sync the registry at startup. Registry entries launch through `npx`, `uvx` or a binary and are startable only when the binary exists or npx is allowed.
+- The picker has no `allowNpx` toggle. The setting comes from `ABSENCE_ALLOW_NPX` or the `allowNpx` field in `agents.json`; the server API can write the field, and the picker does not expose it.
+- The picker has no launch-line editor for arbitrary profiles. The server's `POST /api/runtimes` accepts launch overrides, and the picker does not call it. The editing surface in the picker is the custom ACP form, which writes an `agents` entry.
+- `npm run registry:sync` writes the ACP registry to `~/.absence/registry.json`. The server does not sync the registry at startup. Registry entries launch through `npx`, `uvx` or a binary and start only when the binary exists or npx is allowed.
 
 ## 3. Built-in profiles
 
@@ -47,20 +47,20 @@ Seven profiles ship in `apps/server/src/agents/acp/profiles.ts`.
 
 | Profile id | Product | Aliases | ACP entry / launch | Auth | Override env |
 |---|---|---|---|---|---|
-| `pi` | Pi | `pi-acp` | PATH `pi-acp`, local package `pi-acp`; CLI `pi` alone gives `needs-adapter`; npx `pi-acp@0.0.34` | none | `ABSENCE_PI_ACP_BIN`; npx version `ABSENCE_PI_ACP_VERSION` |
-| `codex` | Codex | `codex-acp` | PATH `codex-acp`, local package `@zed-industries/codex-acp`; npx `@zed-industries/codex-acp@0.16.0` | required | `ABSENCE_CODEX_ACP_BIN`; npx version `ABSENCE_CODEX_ACP_VERSION` |
-| `codex-acp-alt` | Codex, alternative ACP package | — | No PATH binary; local package `codex-acp`; explicit path, override or npx `codex-acp@1.11.0` | required | `ABSENCE_CODEX_ACP_ALT_BIN`; npx version `ABSENCE_CODEX_ACP_ALT_VERSION` |
+| `pi` | Pi | `pi-acp` | PATH `pi-acp`, package `pi-acp` under `node_modules`; CLI `pi` alone gives `needs-adapter`; npx `pi-acp@0.0.34` | none | `ABSENCE_PI_ACP_BIN`; npx version `ABSENCE_PI_ACP_VERSION` |
+| `codex` | Codex | `codex-acp` | PATH `codex-acp`, package `@zed-industries/codex-acp` under `node_modules`; npx `@zed-industries/codex-acp@0.16.0` | required | `ABSENCE_CODEX_ACP_BIN`; npx version `ABSENCE_CODEX_ACP_VERSION` |
+| `codex-acp-alt` | Codex, alternative ACP package | — | No PATH binary; package `codex-acp` under `node_modules`; explicit path, override or npx `codex-acp@1.11.0` | required | `ABSENCE_CODEX_ACP_ALT_BIN`; npx version `ABSENCE_CODEX_ACP_ALT_VERSION` |
 | `dsh` | DSH (DeepSeek Harness) | — | CLI `dsh --profile <dshProfile>`; default profile `acp` | none | `ABSENCE_DSH_BIN`, `ABSENCE_DSH_PROFILE`, `ABSENCE_DSH_HOME`, `ABSENCE_DSH_PROVIDER`, `ABSENCE_DSH_MODEL` |
-| `claude-code` | Claude Code | — | PATH `claude-code-acp`, local package `@zed-industries/claude-code-acp`; CLI `claude` alone gives `needs-adapter`; npx `@zed-industries/claude-code-acp` | optional | `ABSENCE_CLAUDE_ACP_BIN` |
+| `claude-code` | Claude Code | — | PATH `claude-code-acp`, package `@zed-industries/claude-code-acp` under `node_modules`; CLI `claude` alone gives `needs-adapter`; npx `@zed-industries/claude-code-acp` | optional | `ABSENCE_CLAUDE_ACP_BIN` |
 | `qwen-code` | Qwen Code | — | CLI `qwen --experimental-acp` | optional | `ABSENCE_QWEN_ACP_BIN` |
 | `gemini` | Gemini | `gemini-cli` | CLI `gemini --acp` | optional | `ABSENCE_GEMINI_ACP_BIN` |
 
 Profile notes:
 
-- `npxVersion` describes only the npx fallback. Absence does not pin the version of an adapter that is already installed; the installed package keeps its own version.
-- Pi is not an ACP server. `pi-acp` is the adapter; Absence starts an installed `pi-acp` from PATH or local `node_modules`.
-- `codex-acp-alt` exists for the alternative `codex-acp` package, which declares different session capabilities. The profile declares no PATH binary; its package name is `codex-acp`, and the resolver's local `node_modules` step applies. An explicit path or override also starts it.
-- The DSH profile note mentions a saved path and a DSH Desktop install. The current resolver implements PATH, an explicit override and `ABSENCE_DSH_BIN`; it does not probe a DSH Desktop installation directory.
+- `npxVersion` describes only the npx fallback. Absence does not pin the version of an installed adapter; the installed package keeps its own version.
+- Pi is not an ACP server. `pi-acp` is the adapter; Absence starts an installed `pi-acp` from PATH or `node_modules`.
+- `codex-acp-alt` covers the alternative `codex-acp` package, which declares different session capabilities. The profile declares no PATH binary; its package name is `codex-acp`, and the resolver's `node_modules` step applies. An explicit path or override also starts it.
+- The DSH profile note mentions a saved path and a DSH Desktop install. The resolver implements PATH, an explicit override and `ABSENCE_DSH_BIN`; it does not probe a DSH Desktop installation directory.
 - Claude Code's profile forwards `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` from the host environment. Qwen Code's profile forwards `OPENAI_API_KEY`, `OPENAI_BASE_URL` and `OPENAI_MODEL`.
 
 ## 4. Readiness, authentication and custom entries
@@ -70,8 +70,8 @@ Readiness states:
 | State | Meaning |
 |---|---|
 | `ready` | An executable ACP entry was found. |
-| `needs-adapter` | The agent CLI exists, but no ACP entry does. The row carries an install hint; Absence does not run it. |
-| `needs-auth` | The entry exists, but the profile requires authentication and the read-only inspection found no credentials. |
+| `needs-adapter` | The agent CLI exists, and no ACP entry does. The row carries an install hint; Absence does not run it. |
+| `needs-auth` | The entry exists, and the profile requires authentication while the read-only inspection found no credentials. |
 | `unavailable` | Neither an ACP entry nor the agent CLI was found. The row is hidden from the picker. |
 
 `finalize` changes a `ready` row to `needs-auth` when the profile's `auth` is `required` and inspection returns `missing`. When inspection returns `unknown`, the row stays `ready` and the state reason says the sign-in requirement is unknown until the agent answers.
@@ -95,7 +95,7 @@ Inspection locations:
 
 Inspection checks file presence and declared models. It does not read credential contents, does not write, and does not repair or migrate agent configuration. A read failure produces `unknown`.
 
-Custom ACP entries live in `~/.absence/agents.json`. The catalog directory defaults to `~/.absence` and can be changed with `ABSENCE_CATALOG_DIR`; `agents.json` and `registry.json` live there. An entry has `id`, `label`, `command`, `args`, `env` and `cwd`. The server exposes CRUD through `GET`/`POST`/`PUT`/`DELETE` under `/api/agents`. Any executable that speaks ACP can be added this way; no code change is required.
+Custom ACP entries live in `~/.absence/agents.json`. The catalog directory defaults to `~/.absence` and can be changed with `ABSENCE_CATALOG_DIR`; `agents.json` and `registry.json` live there. An entry has `id`, `label`, `command`, `args`, `env` and `cwd`. The server exposes CRUD through `GET`/`POST`/`PUT`/`DELETE` under `/api/agents`. Any executable that speaks ACP can be added this way without a code change.
 
 ## 5. Session lifecycle and capability gating
 
@@ -123,7 +123,7 @@ Projection starts at `AcpMonitorProjector.projectUpdate` in `apps/server/src/mon
 
 | ACP `session/update.sessionUpdate` | Result |
 |---|---|
-| `agent_message_chunk` | `message` event with `role: assistant`, `streaming: true` and a `delta`. A startup chunk received while `promptActive=false` is dropped so that a `## Skills` banner is not treated as a speaking turn. |
+| `agent_message_chunk` | `message` event with `role: assistant`, `streaming: true` and a `delta`. A startup chunk received while `promptActive=false` is dropped, so a `## Skills` banner is not treated as a speaking turn. |
 | `agent_thought_chunk` | `thinking` event with `streaming: true` and a `delta`. |
 | `tool_call` | First occurrence emits `tool_start`; the terminal state emits `tool_end` plus a mapped event. |
 | `tool_call_update` | Non-terminal updates emit a throttled `tool_update`; the terminal update emits `tool_end` plus a mapped event. If no `tool_call` was seen, a `tool_start` with `source: reported` is added. |
@@ -150,13 +150,13 @@ Tool-call mapping uses the ACP `kind` and the field shape. When `kind` is missin
 
 `tool_end` sets `isError` from `status === "failed"`. A tool call produces exactly one `tool_start` and one `tool_end`; duplicate terminal updates are ignored.
 
-The `execute` window also drives process attribution. The projector calls `ProcessWatcher.begin(command, cwd, toolCallId)` when an `execute` tool call appears and `end` at its terminal state. Processes reported during that window are attributed to the command, which is how command-scoped Agent Eggs are produced. The window carries the ACP tool call id as its `ref`, and both the `command` event and every `process` event it observed carry that id as `toolCallId` — the join key the feed uses to fold one command and its own processes into one action row, instead of a RUN row per child-count update beside the command's row.
+The `execute` window also drives process attribution. The projector calls `ProcessWatcher.begin(command, cwd, toolCallId)` when an `execute` tool call appears and `end` at its terminal state. Processes reported during that window are attributed to the command, which produces command-scoped Agent Eggs. The window carries the ACP tool call id as its `ref`, and the `command` event and every `process` event it observed carry that id as `toolCallId`. The feed uses this id to join one command and its own processes into one action row, so a child-count update does not create a RUN row beside the command's row.
 
-The command's own executor is not an egg. The shell the runtime spawned to run the command string (`bash -c "…"`, `pwsh -Command "…"`) *is* the command the `command` event already reports; one shell egg per tool call turned the Agent Eggs panel into a command log. Like a marked shell it stays owned so its descendants attribute, and it is never registered as a parent egg: its children re-root and are judged on their own, so a daemon the command laid still becomes an egg while the `ls`/`cat` it ran along the way still classify as tools. A shell the agent started deliberately (`bash daemon.sh`, no `-c`) is judged like any other process.
+The command's own executor does not become an egg. The shell the runtime spawned to run the command string (`bash -c "…"`, `pwsh -Command "…"`) is the command the `command` event already reports. Registering one shell egg per tool call would turn the Agent Eggs panel into a command log. The shell stays owned so its descendants can be attributed, and it is never registered as a parent egg: its children re-root and are judged on their own. A daemon the command left running still becomes an egg, and the `ls`/`cat` it ran along the way still classify as tools. A shell the agent started deliberately (`bash daemon.sh`, no `-c`) is judged like any other process.
 
-Tool and file events are also assistant-message boundaries: `AcpAdapter` closes the open thought *and* the open reply before publishing any non-streaming event, so text on either side of a tool call is two messages, each stamped with its own start.
+Tool and file events are also assistant-message boundaries: `AcpAdapter` closes the open thought and the open reply before publishing any non-streaming event, so text on either side of a tool call forms two messages, each stamped with its own start.
 
-OS-watcher facts are tagged where they are created: `process`, `file_change` and the derived `file_write`/`file_edit` carry `source: "os"` and `fidelity: "exact"` instead of an `unknown` default. A shell write is one action, not two: when the disk diff will derive a content event from the same change, the raw `file_change` is marked `echo: true` (Activity hides it, the Report does not count it twice), and a `file_change kind: "modified"` proves the file existed, so the derived write is a modification, not a creation.
+OS-watcher facts are tagged where they are created: `process`, `file_change` and the derived `file_write`/`file_edit` carry `source: "os"` and `fidelity: "exact"`; the `unknown` default does not apply. A shell write produces one action: when the disk diff derives a content event from the same change, the raw `file_change` is marked `echo: true` (Activity hides it, the Report does not count it twice). A `file_change kind: "modified"` indicates that the file existed, so the derived write is recorded as a modification.
 
 ## 7. Approvals and `/auth`
 
@@ -175,22 +175,18 @@ Authentication:
 - `initialize.authMethods` supplies the options shown for `/auth`.
 - `/auth <methodId>` calls ACP `authenticate` and then reopens the blocked session.
 - Absence does not read tokens, fill credentials or proxy an OAuth flow. It performs only the read-only inspection described in section 4.
-- Any other `/…` line is sent as a prompt. `SessionStore.forwardCommand(text)` is `this.prompt(text)`. The command panel combines commands advertised through `available_commands_update` with the local `/auth` action.
+- Any other `/…` line is sent as a prompt. `SessionStore.forwardCommand(text)` is `this.prompt(text)`. The command panel combines commands advertised through `available_commands_update` with the `/auth` action.
 
-## 8. Approaches that do not work
+## 8. Earlier per-product adapters
 
-Dedicated adapters per product do not work as a general integration strategy:
+Absence previously integrated each product through a dedicated adapter:
 
 - The Codex adapter drove the private `codex app-server` protocol and intercepted its shell. The DSH adapter carried its own ACP client. The Pi adapter loaded the Pi SDK in-process and wrapped Pi's bash and PowerShell operations.
 - Each implementation needed its own transport, command normalization and shell handling. A private protocol is outside Absence's control, so every product change required a matching adapter change. The same lifecycle, permission and event-mapping logic was repeated per product, and shell takeover made Absence responsible for semantics that belong to the agent.
-- The ACP path replaces these implementations with profile data and one generic connection. A product that ships an ACP entry requires no Absence code; a product without one needs an adapter package or a custom `agents.json` entry.
+- These adapters were removed in v0.5.0. The ACP path replaces them with profile data and one generic connection. A product that ships an ACP entry requires no Absence code; a product without one needs an adapter package or a custom `agents.json` entry.
 
 ## 9. Development aids
 
-- `npm run probe:acp -- <scenario>` drives the collection pipeline with a scripted fixture agent and prints each `AbsenceEvent`. Point it at a real agent with `ABSENCE_ACP_BIN`.
+- `npm run probe:acp -- <scenario>` drives the collection pipeline with a scripted fixture agent and prints each `AbsenceEvent`. `ABSENCE_ACP_BIN` points it at a real agent.
 - `npm run check:agent-catalog` checks discovery order, readiness states, the `+` cell and registry behaviour.
 - `scripts/acp-fixture/fake-agent.mjs` is a scripted agent that speaks the real ACP protocol and needs no model or credentials. The `check:acp*` checks and the simulation use it as their target.
-</content>
-</file_path>
-</invoke>
-</invoke>

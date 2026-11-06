@@ -26,7 +26,7 @@ AgentCatalog（profile 数据）
    - profile 的 `ABSENCE_*_BIN` 环境变量。
    - 旧版 `~/.absence/runtimes.json` 只读兼容，不写入。
 2. **PATH 上的 ACP 可执行文件** — 依次解析 `discovery.acpBins`，例如 `pi-acp`、`codex-acp`。
-3. **本地 `node_modules` 适配器** — 依次解析 `discovery.acpPackages`，入口默认 `dist/index.js`。搜索向上最多 5 层。
+3. **`node_modules` 中的适配器包** — 依次解析 `discovery.acpPackages`，入口默认 `dist/index.js`。搜索向上最多 5 层。
 4. **agent CLI 自带 ACP 模式** — `discovery.cli` 加 `acpArgs`，例如 `gemini --acp`、`qwen --experimental-acp`、`dsh --profile acp`。
 5. **npx 兜底** — 仅当 `ABSENCE_ALLOW_NPX=1` 或 `~/.absence/agents.json` 中 `allowNpx: true` 时启用。版本优先取 profile 的 `npxVersionEnv`，否则取 `npxVersion`。该行标注为临时下载。
 6. **没有 ACP 入口** — agent CLI 存在但没有 ACP 入口时，状态为 `needs-adapter`；两者都不存在时，状态为 `unavailable`。
@@ -37,8 +37,8 @@ AgentCatalog（profile 数据）
 
 - `unavailable` 行与 `mock` fixture 不显示。
 - `ready`、`needs-adapter` 与 `needs-auth` 行显示。
-- 选择器没有 `allowNpx` 开关。该设置来自 `ABSENCE_ALLOW_NPX` 或 `agents.json` 的 `allowNpx` 字段；服务端 API 可以写入该字段，但选择器不暴露它。
-- 选择器没有任意 profile 的 launch line 编辑控件。服务端 `POST /api/runtimes` 接受 launch 覆盖，但当前选择器不调用它。选择器中的编辑入口是自定义 ACP 表单，它写入一条 `agents` 条目。
+- 选择器没有 `allowNpx` 开关。该设置来自 `ABSENCE_ALLOW_NPX` 或 `agents.json` 的 `allowNpx` 字段；服务端 API 可以写入该字段，选择器不暴露它。
+- 选择器没有任意 profile 的 launch line 编辑控件。服务端 `POST /api/runtimes` 接受 launch 覆盖，选择器不调用它。选择器中的编辑入口是自定义 ACP 表单，它写入一条 `agents` 条目。
 - `npm run registry:sync` 把 ACP registry 写入 `~/.absence/registry.json`。服务端启动时不自动同步 registry。registry 条目通过 `npx`、`uvx` 或二进制启动；只有二进制存在或允许 npx 时才可启动。
 
 ## 3. 内置 profile
@@ -47,20 +47,20 @@ AgentCatalog（profile 数据）
 
 | profile id | 产品 | 别名 | ACP 入口 / 启动方式 | 认证 | 覆盖变量 |
 |---|---|---|---|---|---|
-| `pi` | Pi | `pi-acp` | PATH `pi-acp`，本地包 `pi-acp`；只有 `pi` CLI 时为 `needs-adapter`；npx `pi-acp@0.0.34` | 不需要 | `ABSENCE_PI_ACP_BIN`；npx 版本 `ABSENCE_PI_ACP_VERSION` |
-| `codex` | Codex | `codex-acp` | PATH `codex-acp`，本地包 `@zed-industries/codex-acp`；npx `@zed-industries/codex-acp@0.16.0` | 必须 | `ABSENCE_CODEX_ACP_BIN`；npx 版本 `ABSENCE_CODEX_ACP_VERSION` |
-| `codex-acp-alt` | Codex，替代 ACP 包 | — | 无 PATH 二进制；本地包 `codex-acp`；显式路径、覆盖或 npx `codex-acp@1.11.0` | 必须 | `ABSENCE_CODEX_ACP_ALT_BIN`；npx 版本 `ABSENCE_CODEX_ACP_ALT_VERSION` |
+| `pi` | Pi | `pi-acp` | PATH `pi-acp`，`node_modules` 中的包 `pi-acp`；只有 `pi` CLI 时为 `needs-adapter`；npx `pi-acp@0.0.34` | 不需要 | `ABSENCE_PI_ACP_BIN`；npx 版本 `ABSENCE_PI_ACP_VERSION` |
+| `codex` | Codex | `codex-acp` | PATH `codex-acp`，`node_modules` 中的包 `@zed-industries/codex-acp`；npx `@zed-industries/codex-acp@0.16.0` | 必须 | `ABSENCE_CODEX_ACP_BIN`；npx 版本 `ABSENCE_CODEX_ACP_VERSION` |
+| `codex-acp-alt` | Codex，替代 ACP 包 | — | 无 PATH 二进制；`node_modules` 中的包 `codex-acp`；显式路径、覆盖或 npx `codex-acp@1.11.0` | 必须 | `ABSENCE_CODEX_ACP_ALT_BIN`；npx 版本 `ABSENCE_CODEX_ACP_ALT_VERSION` |
 | `dsh` | DSH（DeepSeek Harness） | — | CLI `dsh --profile <dshProfile>`；默认 profile 为 `acp` | 不需要 | `ABSENCE_DSH_BIN`、`ABSENCE_DSH_PROFILE`、`ABSENCE_DSH_HOME`、`ABSENCE_DSH_PROVIDER`、`ABSENCE_DSH_MODEL` |
-| `claude-code` | Claude Code | — | PATH `claude-code-acp`，本地包 `@zed-industries/claude-code-acp`；只有 `claude` CLI 时为 `needs-adapter`；npx `@zed-industries/claude-code-acp` | 可选 | `ABSENCE_CLAUDE_ACP_BIN` |
+| `claude-code` | Claude Code | — | PATH `claude-code-acp`，`node_modules` 中的包 `@zed-industries/claude-code-acp`；只有 `claude` CLI 时为 `needs-adapter`；npx `@zed-industries/claude-code-acp` | 可选 | `ABSENCE_CLAUDE_ACP_BIN` |
 | `qwen-code` | Qwen Code | — | CLI `qwen --experimental-acp` | 可选 | `ABSENCE_QWEN_ACP_BIN` |
 | `gemini` | Gemini | `gemini-cli` | CLI `gemini --acp` | 可选 | `ABSENCE_GEMINI_ACP_BIN` |
 
 profile 说明：
 
 - `npxVersion` 只描述 npx 兜底。Absence 不固定已安装适配器的版本；已安装的包保持自身版本。
-- Pi 本身不是 ACP server。`pi-acp` 是适配器；Absence 启动 PATH 或本地 `node_modules` 中已安装的 `pi-acp`。
-- `codex-acp-alt` 对应替代 `codex-acp` 包，该包声明不同的会话能力。profile 未声明 PATH 二进制；其包名为 `codex-acp`，解析器的本地 `node_modules` 步骤适用。显式路径或覆盖也可以启动它。
-- DSH profile 的说明提到已保存路径与 DSH Desktop 安装。当前解析器只实现 PATH、显式覆盖与 `ABSENCE_DSH_BIN`，不探测 DSH Desktop 安装目录。
+- Pi 通过 `pi-acp` 适配器接入。`pi-acp` 是 ACP server；Absence 启动 PATH 或 `node_modules` 中已安装的 `pi-acp`。
+- `codex-acp-alt` 对应替代 `codex-acp` 包，该包声明不同的会话能力。profile 未声明 PATH 二进制；其包名为 `codex-acp`，解析器的 `node_modules` 步骤适用。显式路径或覆盖也可以启动它。
+- DSH profile 的说明提到已保存路径与 DSH Desktop 安装。解析器实现 PATH、显式覆盖与 `ABSENCE_DSH_BIN`，不探测 DSH Desktop 安装目录。
 - Claude Code 的 profile 从宿主环境转发 `ANTHROPIC_API_KEY` 与 `ANTHROPIC_BASE_URL`。Qwen Code 的 profile 从宿主环境转发 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 与 `OPENAI_MODEL`。
 
 ## 4. 就绪状态、认证与自定义入口
@@ -71,7 +71,7 @@ profile 说明：
 |---|---|
 | `ready` | 找到可执行的 ACP 入口。 |
 | `needs-adapter` | agent CLI 存在，但没有 ACP 入口。该行带安装提示；Absence 不执行提示中的命令。 |
-| `needs-auth` | 入口存在，但 profile 要求认证，且只读探测未找到凭据。 |
+| `needs-auth` | 入口存在，profile 要求认证，且只读探测未找到凭据。 |
 | `unavailable` | ACP 入口与 agent CLI 都不存在。该行在选择器中隐藏。 |
 
 `finalize` 在 profile 的 `auth` 为 `required` 且探测结果为 `missing` 时，把 `ready` 改为 `needs-auth`。探测结果为 `unknown` 时保持 `ready`，并在状态原因中说明登录要求未知，直到 agent 给出答复。
@@ -95,7 +95,7 @@ profile 说明：
 
 探测检查文件是否存在以及声明的模型。它不读取凭据内容，不写入，也不修复或迁移 agent 配置。读取失败时结果为 `unknown`。
 
-自定义 ACP 入口保存在 `~/.absence/agents.json`。catalog 目录默认为 `~/.absence`，可用 `ABSENCE_CATALOG_DIR` 改变；`agents.json` 与 `registry.json` 位于该目录。条目包含 `id`、`label`、`command`、`args`、`env` 与 `cwd`。服务端通过 `/api/agents` 下的 `GET`/`POST`/`PUT`/`DELETE` 提供 CRUD。任何会说 ACP 的可执行文件都可以这样接入，不需要修改代码。
+自定义 ACP 入口保存在 `~/.absence/agents.json`。catalog 目录默认为 `~/.absence`，可用 `ABSENCE_CATALOG_DIR` 改变；`agents.json` 与 `registry.json` 位于该目录。条目包含 `id`、`label`、`command`、`args`、`env` 与 `cwd`。服务端通过 `/api/agents` 下的 `GET`/`POST`/`PUT`/`DELETE` 提供 CRUD。任何支持 ACP 的可执行文件都可以这样接入，不需要修改代码。
 
 ## 5. 会话生命周期与能力门控
 
@@ -123,7 +123,7 @@ profile 说明：
 
 | ACP `session/update.sessionUpdate` | 结果 |
 |---|---|
-| `agent_message_chunk` | `message` 事件，`role: assistant`，`streaming: true`，带 `delta`。`promptActive=false` 时收到的启动 chunk 被丢弃，避免把 `## Skills` 横幅当成说话回合。 |
+| `agent_message_chunk` | `message` 事件，`role: assistant`，`streaming: true`，带 `delta`。`promptActive=false` 时收到的启动 chunk 被丢弃，因此 `## Skills` 横幅不会被当作说话回合。 |
 | `agent_thought_chunk` | `thinking` 事件，`streaming: true`，带 `delta`。 |
 | `tool_call` | 首次出现发出 `tool_start`；终态发出 `tool_end` 与映射事件。 |
 | `tool_call_update` | 非终态发出节流的 `tool_update`；终态发出 `tool_end` 与映射事件。未见过 `tool_call` 时补一条 `source: reported` 的 `tool_start`。 |
@@ -150,13 +150,13 @@ profile 说明：
 
 `tool_end` 的 `isError` 来自 `status === "failed"`。一个工具调用恰好产生一条 `tool_start` 与一条 `tool_end`；重复的终态更新被忽略。
 
-`execute` 窗口同时驱动进程归因。projector 在出现 `execute` 工具调用时调用 `ProcessWatcher.begin(command, cwd, toolCallId)`，在终态调用 `end`。该窗口内上报的进程归因到这条命令，命令级的 Agent Eggs 由此产生。窗口携带 ACP 工具调用 id 作为 `ref`，`command` 事件与其观察到的每条 `process` 事件都以 `toolCallId` 携带同一个 id —— 这是 feed 把一条命令与它自己的进程折叠成一个动作行的关联键，避免每次子进程计数更新都多出一行 RUN 与命令行并列。
+`execute` 窗口同时驱动进程归因。projector 在出现 `execute` 工具调用时调用 `ProcessWatcher.begin(command, cwd, toolCallId)`，在终态调用 `end`。该窗口内上报的进程归因到这条命令，命令级的 Agent Eggs 由此产生。窗口携带 ACP 工具调用 id 作为 `ref`，`command` 事件与其观察到的每条 `process` 事件都以 `toolCallId` 携带同一个 id。feed 用这个 id 把一条命令与它自己的进程合并成一个动作行，因此子进程计数更新不会在命令行旁新增一行 RUN。
 
-命令自身的执行器不是 egg。runtime 为执行命令字符串而启动的 shell（`bash -c "…"`、`pwsh -Command "…"`）就是 `command` 事件已经上报的那条命令；每条工具调用都产出一个 shell egg 会把 Agent Eggs 面板变成命令日志。它像被标记的 shell 一样保持 owned 以便后代归因，但绝不注册为父 egg：它的子进程重新生根、按自身形态判定——命令真正留下的 daemon 仍是 egg，沿路的 `ls`/`cat` 仍按 tool 分类。agent 有意启动的 shell（`bash daemon.sh`，无 `-c`）照常参与判定。
+命令自身的执行器不成为 egg。runtime 为执行命令字符串而启动的 shell（`bash -c "…"`、`pwsh -Command "…"`）就是 `command` 事件已经上报的那条命令。每条工具调用都产出一个 shell egg 会让 Agent Eggs 面板变成命令日志。该 shell 保持 owned，以便后代归因，但不注册为父 egg：它的子进程重新生根、按自身形态判定。命令留下的 daemon 仍成为 egg，沿路的 `ls`/`cat` 仍按 tool 分类。agent 有意启动的 shell（`bash daemon.sh`，无 `-c`）照常参与判定。
 
-工具与文件事件同时是 assistant 消息的边界：`AcpAdapter` 在发布任何非流式事件前关闭打开中的思考*和*回复，因此工具调用两侧的文本是两条消息，各自带有自己的起始时间。
+工具与文件事件同时是 assistant 消息的边界：`AcpAdapter` 在发布任何非流式事件前关闭打开中的思考与回复，因此工具调用两侧的文本形成两条消息，各自带有自己的起始时间。
 
-OS 观察者的事实就地标注：`process`、`file_change` 与派生的 `file_write`/`file_edit` 携带 `source: "os"`、`fidelity: "exact"`，而不是依赖 `unknown` 默认值。shell 写文件是一个动作而不是两个：当磁盘 diff 会从同一次变化派生内容事件时，原始 `file_change` 被标为 `echo: true`（Activity 隐藏它，Report 不重复计数）；`file_change kind: "modified"` 证明文件已存在，因此派生的写入是修改而不是新建。
+OS 观察者的事实就地标注：`process`、`file_change` 与派生的 `file_write`/`file_edit` 携带 `source: "os"`、`fidelity: "exact"`，不依赖 `unknown` 默认值。shell 写文件产生一个动作：当磁盘 diff 会从同一次变化派生内容事件时，原始 `file_change` 标为 `echo: true`（Activity 隐藏它，Report 不重复计数）。`file_change kind: "modified"` 表明文件已存在，因此派生的写入记为修改。
 
 ## 7. 审批与 `/auth`
 
@@ -175,22 +175,18 @@ OS 观察者的事实就地标注：`process`、`file_change` 与派生的 `file
 - `initialize.authMethods` 提供 `/auth` 的选项。
 - `/auth <methodId>` 调用 ACP `authenticate`，然后重开被阻塞的会话。
 - Absence 不读取 token，不代填凭据，不代理 OAuth 流程。它只执行第 4 节描述的只读探测。
-- 其他 `/…` 行作为 prompt 发送。`SessionStore.forwardCommand(text)` 的实现是 `this.prompt(text)`。命令面板合并 `available_commands_update` 广告的命令与本地 `/auth` 动作。
+- 其他 `/…` 行作为 prompt 发送。`SessionStore.forwardCommand(text)` 的实现是 `this.prompt(text)`。命令面板合并 `available_commands_update` 广告的命令与 `/auth` 动作。
 
-## 8. 无效的接入方式
+## 8. 已废弃的专用 adapter
 
-按产品编写专用 adapter 作为通用接入策略无效：
+Absence 早期通过每个产品专用的 adapter 接入：
 
 - Codex adapter 驱动私有的 `codex app-server` 协议并拦截其 shell。DSH adapter 自带 ACP client。Pi adapter 在进程内加载 Pi SDK，并包装 Pi 的 bash 与 PowerShell 操作。
 - 每种实现都需要自己的传输、命令规整与 shell 处理。私有协议不在 Absence 的控制范围内，产品每次变更都需要对应的 adapter 变更。同一套生命周期、权限与事件映射逻辑按产品重复实现，shell 接管又让 Absence 承担了属于 agent 的语义。
-- ACP 路径用 profile 数据与一个通用连接替代这些实现。自带 ACP 入口的产品不需要 Absence 代码；没有 ACP 入口的产品需要适配器包，或一条自定义 `agents.json` 条目。
+- 这些 adapter 已在 v0.5.0 移除。ACP 路径用 profile 数据与一个通用连接替代它们。自带 ACP 入口的产品不需要 Absence 代码；没有 ACP 入口的产品需要适配器包，或一条自定义 `agents.json` 条目。
 
 ## 9. 开发辅助
 
-- `npm run probe:acp -- <scenario>` 用脚本化 fixture agent 驱动采集管道，并打印每条 `AbsenceEvent`。用 `ABSENCE_ACP_BIN` 指向真实 agent。
+- `npm run probe:acp -- <scenario>` 用脚本化 fixture agent 驱动采集管道，并打印每条 `AbsenceEvent`。`ABSENCE_ACP_BIN` 可把它指向真实 agent。
 - `npm run check:agent-catalog` 检查发现顺序、就绪状态、`+` 格子与 registry 行为。
 - `scripts/acp-fixture/fake-agent.mjs` 是一个按真实 ACP 协议通信的脚本化 agent，不需要模型或凭据。`check:acp*` 检查与仿真以它为驱动对象。
-</content>
-</invoke>
-</file_path>
-</invoke>

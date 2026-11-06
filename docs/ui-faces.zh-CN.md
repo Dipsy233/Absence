@@ -2,7 +2,7 @@
 
 [English](ui-faces.md) | [简体中文](ui-faces.zh-CN.md)
 
-本文描述 `apps/web` 中的 Web 界面：三个可切换 face、Drip 浮层、共享外壳，以及渲染各部分的组件。文中说明每个元素是什么、显示什么、如何操作。路径以当前源码树为准。
+本文描述 `apps/web` 中的 Web 界面：三个可切换 face、Drip 浮层、共享外壳，以及渲染各部分的组件。文中说明每个元素是什么、显示什么、如何操作。路径为仓库相对路径。
 
 ## Face 与切换器
 
@@ -10,8 +10,8 @@
 
 | Face | 源码中的 intent | 布局 |
 |---|---|---|
-| Rounds | Light — the agent leads, you follow | 桌面：头像、故事卡片、浮动窗口 |
-| Monitor | Heavy — every trace on one screen | 三列：Activity、Stage、agent 栏 |
+| Rounds | Light — the agent leads, the user follows | 桌面：头像、故事卡片、浮动窗口 |
+| Monitor | Heavy — the run's traces on one screen | 三列：Activity、Stage、agent 栏 |
 | Chart | The run is over — read what it amounted to | 整页报告 |
 
 源码还为每个 face 记录了中文释义（查房陪诊、机器监护、病历报告）。切换器只显示英文 `name`。
@@ -20,7 +20,7 @@
 
 ### Drip
 
-Drip 是切换器旁的开关；face 切换器中没有它的按钮。其状态为 `viewModeStore.drip`。开启后，它在当前 face 上方打开一个浮动窗口；底下的 face 保持挂载并继续运行。关闭开关只关闭该窗口。Drip 从不作为 face 持久化。
+Drip 是切换器旁的开关；face 切换器本身没有 Drip 按钮。其状态为 `viewModeStore.drip`。开启后，它在当前 face 上方打开一个浮动窗口；底下的 face 保持挂载并继续运行。关闭开关只关闭该窗口。Drip 从不作为 face 持久化。
 
 - 桌面壳：第二个置顶透明窗口以 `?face=drip&session=<id>` 加载同一个应用，并挂载 `DripDesktop`。除球和卡片区域外，外壳让该窗口保持点击穿透。
 - 浏览器：`DripPipHost` 打开 Document Picture-in-Picture 窗口，复制文档样式，并同步 `theme-*` / `scheme-*` 类。PiP 不可用或被阻止时，widget 在页面内渲染。
@@ -57,8 +57,8 @@ apps/web/src/ui/chart/
   ChartUI.tsx          hero、KPI、列表、证据、输入与输出
   ChartTimeline.tsx    报告的车道时间线
   ChartChat.tsx        报告的输入条
-  chart.css            仅 Chart 的规则
   StatsKpiCards.tsx    run 范围的四张累计 KPI 卡
+  chart.css            仅 Chart 的规则
 
 apps/web/src/ui/drip/
   DripUI.tsx           pill 与 card
@@ -109,7 +109,7 @@ Monitor 在 `.mon-root` 内分为三列。
 
 三个标签：
 
-- `Activity`：所选 run 的事件行。行按 phase 分组；连续相同动作折叠为一行并带 `×N` 计数；`START` 与 `END` 固定在滚动 feed 的上下。点击行把该事件放上 Stage。回放中点击是 scrub。右键菜单提供 `Open in Stage` 与 `Add event to Chat`。
+- `Activity`：所选 run 的事件行。行按 phase 分组；连续相同动作折叠为一行并带 `×N` 计数；`START` 与 `END` 固定在滚动 feed 的上下。点击行把该事件放上 Stage。回放中点击执行 scrub。右键菜单提供 `Open in Stage` 与 `Add event to Chat`。
 - `Files`：从磁盘读取的项目树。右键菜单提供 `Inspect`、`Open in Stage`、`View History`、`View Diff`、`Add to Chat`、`Explain this`。
 - `Attention`：报告中的注意力记录。点击一条会切到 `Activity`、聚焦对应事件行，并打开它的 Stage item。
 
@@ -126,9 +126,9 @@ Monitor 在 `.mon-root` 内分为三列。
 - following：agent 的当前动作，来自 `sessionStore.currentAction`；
 - following 且没有当前动作：静止页。
 
-静止页是 `stageStore.restingPage`，即读者最后选择的页面（`METRICS` 或 `CHAT`）。读者从未选择时为 `CHAT`。因此 run 结束后默认停在 `CHAT`。
+静止页是 `stageStore.restingPage`，即最近一次选择的页面（`METRICS` 或 `CHAT`）。没有选择过时为 `CHAT`，因此 run 结束后默认停在 `CHAT`。
 
-页面通过 `StageItemView` 渲染一张卡片：`FileStage`、`DiffStage`、`TerminalStage`、`ThoughtStage`、`SpeechStage`、`ProcessStage` 或 `ApprovalStage`，取决于事件。`activityViews` 派生所选事件可用的读法（file、diff、terminal）；事件自身的 kind 决定显示哪一种。界面没有 FILE / DIFF / TERMINAL 切换条。
+页面通过 `StageItemView` 渲染一张卡片：`FileStage`、`DiffStage`、`TerminalStage`、`ThoughtStage`、`SpeechStage`、`ProcessStage` 或 `ApprovalStage`，取决于事件。`activityViews` 派生所选事件可用的读法（file、diff、terminal）；事件自身的 kind 决定显示哪一种。Stage 没有 FILE / DIFF / TERMINAL 切换条。
 
 pin bar 出现在两种情况：
 
@@ -137,7 +137,7 @@ pin bar 出现在两种情况：
 
 底部是 run 的世界线：`Model`（思考与发言）、`Tools`（工具调用，含 MCP）、`Shell`（命令执行）各一条轨道。只绘制有标记的轨道。块位于活动偏移处，宽度延伸到同轨道的下一个活动。点击轨道会 seek；在 live 中第一次点击进入 replay。控件为 `‹`（后退一个活动）、`⏸`/`▶`、`›`（前进一个活动）、速度 chip（`0.25× / 0.5× / 1× / 2× / 5× / 10×`）、`◉`（回到 live）。
 
-输入行为一行：`Ask about this moment, or / for commands`。它没有展开开关；对话是 Stage 的 `CHAT` 页。输入 `/` 打开命令面板。
+输入行为一行：`Ask about this moment, or / for commands`。该行没有展开开关；对话是 Stage 的 `CHAT` 页。输入 `/` 打开命令面板。
 
 ### 右列
 
@@ -162,7 +162,7 @@ pin bar 出现在两种情况：
 Rounds 是 `.rounds-root` 内的桌面画布。
 
 - `RoundsScene`：头像与其上方的状态气泡。气泡显示状态词和一行当前对象说明（`Reading {path}`、`Editing {path}`、`Running {command}`、`Reasoning`、`Watching {name}`、`Waiting for you`）。pin 或 replay 持有视图时，点击舞台回到 live。
-- `RoundsStory`：run 的步骤横向卡片链，每个活动行一张卡。最前面的 `START` 对折叠为一张卡：用户 prompt 的卡片把模型作为 meta 行。`END` 保留自己的卡片。点击卡片在 live 时固定它，在 replay 时 seek 到它，并打开对应事件的子窗口；再次点击同一张卡片即关闭。页头显示 `LIVE` 或 `REPLAY`、run 序号与状态、步骤数、计数与 `Back to live`。
+- `RoundsStory`：run 的步骤横向卡片链，每个活动行一张卡。最前面的 `START` 对折叠为一张卡：用户 prompt 的卡片把模型作为 meta 行。`END` 保留自己的卡片。live 中点击卡片固定该时刻，replay 中点击 seek 到它，并打开对应事件的子窗口；再次点击同一张卡片即关闭。页头显示 `LIVE` 或 `REPLAY`、run 序号与状态、步骤数、计数与 `Back to live`。
 - 壁纸：采用气泡布局的 `ChatThread`，在故事上方的右侧透明渲染。
 - `RoundsDock`：五个快捷入口。`Files`、`Agent Folder`、`Agent Eggs`、`Run`、`Activity`。徽标显示文件夹数、运行中的 egg 数与活动数。没有 `Metrics` 快捷入口：指标从 egg 行打开，作用域为该 egg。
 - 窗口：`RoundsWindow` 可通过标题栏拖拽、通过角柄缩放、关闭，并按焦点堆叠。顶层窗口为 440×430；子窗口为 580×470。`FilePanel`、`Agent Folder`、`Agent Eggs`、`Run` 作为顶层窗口打开。文件内容、版本、事件、egg 指标作为子窗口打开。
@@ -185,14 +185,14 @@ Chart 是一页：所选 run 的 Absence Report。它读取 `useMonitorData.repo
 - 输入与输出窗格：`Request`（run 的 prompt）与 `Response`（最终回复）。
 - 底部：`ChartChat`，固定在底部的共享输入条。
 
-界面没有 FILE / DIFF / TERMINAL 切换条，也没有报告浮层。报告就是该 face。
+该 face 没有 FILE / DIFF / TERMINAL 切换条，也没有报告浮层；页面本身就是报告。
 
 ## 共享外壳与数据流
 
 - `App.tsx` 负责会话 socket 与提示音。切换 face 不会重连，也不会重响某个 run 的提示音。
 - `useMonitorData` 是所选 run 的单一派生：事件、行、`RunFacts`、渲染后的报告、注意力、实时 headline。Monitor、Chart、Drip 读取它。Rounds 读取 `useRoundsData`，它使用相同的 store 与库。`buildRunFacts` 与注意力判定限制为 500ms；feed 行增量更新。
 - 共享输入是 `ui/shared/FaceChat.tsx` 与 `components/chat/useChatInput`。每个 face 只提供皮肤：类名、占位文案，以及 slash 按钮是否在框内。`/` 面板、context chip、`Send` / `Stop` / `Run` 三态在各 face 中一致。
-- 复用视图（`StageItemView`、`MetricsDashboard`、`FilePanel`、Markdown 渲染器、`SettingsDialog`）按 `--desk-*` token 书写。`.mon-root` 把这些 token 重新指向当前 face 的调色板。因此 `SettingsDialog` 必须渲染在 face 根节点内；portal 到 `document.body` 会逃出桥接范围。
+- 复用视图（`StageItemView`、`MetricsDashboard`、`FilePanel`、Markdown 渲染器、`SettingsDialog`）按 `--desk-*` token 书写。`.mon-root` 把这些 token 重新指向当前 face 的调色板。`SettingsDialog` 渲染在 face 根节点内；portal 到 `document.body` 会超出桥接范围。
 - 两个文件视图：左侧 `Files` 标签是磁盘上的项目；右侧 `Agent Folder` 是 agent 记录过的版本。Rounds 通过 `Files` 与 `Agent Folder` 窗口提供两者。
 
 ## 项目选择器
@@ -202,12 +202,12 @@ Chart 是一页：所选 run 的 Absence Report。它读取 `useMonitorData.repo
 - `ABSENCE` 品牌与 `重新探测`；
 - `项目路径` 输入与 `打开`；
 - `最近` 项目列表；
-- 本机发现行的 `Agent` 方格。每行显示 `可启动` / `缺适配器` / `需登录`、发现来源与路径、声明模型、认证状态、能力与安装提示。最后一格是 `+`，用于自定义 ACP 入口；
+- 当前主机发现行的 `Agent` 方格。每行显示 `可启动` / `缺适配器` / `需登录`、发现来源与路径、声明模型、认证状态、能力与安装提示。最后一格是 `+`，用于自定义 ACP 入口；
 - 选中行的提示流：认证、模型来源、launch 覆盖、npx 临时下载；
 - `历史` 会话；点击恢复；
 - `自定义 ACP` 对话框：`id`、`label`、`command`、`args`、`env`、`cwd`。
 
-选择器的区块标签在源码中是中文硬编码。选择器没有 launch line 编辑器，也没有 `allowNpx` 开关。
+选择器的区块标签为中文硬编码。选择器没有 launch line 编辑器，也没有 `allowNpx` 开关。
 
 ## 设置
 

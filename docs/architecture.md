@@ -34,9 +34,20 @@ The projector reads `session/update` and writes `AbsenceEvent`. Process and file
 
 A session is driven through the ACP adapter: Absence owns the child process and sends `session/new`, `session/prompt`, approval responses and `/auth`.
 
-## 2. Repository layout
+## 2. Repository layout and stack
 
 The root workspace contains `packages/*`, `apps/server` and `apps/web`. `apps/desktop` is managed by root scripts with `npm --prefix apps/desktop ...` and is not a workspace member.
+
+Main technology choices:
+
+| Area | Choice |
+|---|---|
+| Server | Fastify; `node:sqlite` for the archive and metrics |
+| Web client | React 19, Vite, Tailwind and Zustand; Monaco for code views |
+| Desktop shell | Electron 37 and electron-builder |
+| File observation | `chokidar` |
+| Process observation | Windows Job Object through `native/agentwatch`; Linux eBPF through `native/agentwatch-linux`; process-table sampling as the fallback |
+| Agent access | ACP over stdio, JSON-RPC 2.0 with NDJSON framing |
 
 | Path | Responsibility |
 |---|---|
@@ -54,7 +65,7 @@ The root workspace contains `packages/*`, `apps/server` and `apps/web`. `apps/de
 
 | Module | Responsibility |
 |---|---|
-| `AgentCatalog.ts`, `profiles.ts` | Resolve which agents exist on this machine, their launch data, readiness state and read-only configuration inspection. |
+| `AgentCatalog.ts`, `profiles.ts` | Resolve which agents exist on the host, their launch data, readiness state and read-only configuration inspection. |
 | `AcpConnection.ts`, `protocol/**` | stdio transport and JSON-RPC/NDJSON framing; `initialize`, session methods, request routing. |
 | `AcpAdapter.ts`, `AcpSession.ts` | Session lifecycle: start the process, open or resume a session, send prompts, cancel turns, answer permissions. |
 | `AcpToolMapper.ts`, `ToolRules.ts`, `toolRules.json` | Project ACP tool calls into `AbsenceEvent` by ACP `kind` and field shape. |
@@ -65,7 +76,7 @@ The root workspace contains `packages/*`, `apps/server` and `apps/web`. `apps/de
 
 ### 3.2 Sessions and archive — `apps/server/src/sessions`
 
-`SessionStore.ts` owns live session state: the ordered event list, current run, Stage action, chat messages, file state, process watcher and metrics sampler. `storage/**` persists that state. The live store is authoritative; SQLite only persists it.
+`SessionStore.ts` owns live session state: the ordered event list, current run, Stage action, chat messages, file state, process watcher and metrics sampler. `storage/**` persists that state. The in-memory store is the source of live state; SQLite provides persistence.
 
 ### 3.3 Process observation — `apps/server/src/process`
 
@@ -77,7 +88,7 @@ The root workspace contains `packages/*`, `apps/server` and `apps/web`. `apps/de
 
 ### 3.5 Metrics
 
-Metrics are not `AbsenceEvent`. They are sampled every five seconds on a wall-clock boundary, streamed on their own WebSocket channel, and persisted in SQLite. Sampling covers the whole agent tree, each egg subtree, Docker containers and the host. A frame carries process counters, host counters, per-egg rollups and a precision marker.
+Metrics do not use `AbsenceEvent`. They are sampled every five seconds on a wall-clock boundary, streamed on their own WebSocket channel, and persisted in SQLite. Sampling covers the whole agent tree, each egg subtree, Docker containers and the host. A frame carries process counters, host counters, per-egg rollups and a precision marker.
 
 ### 3.6 HTTP and WebSocket — `apps/server/src/api`, `apps/server/src/websocket`
 
@@ -85,7 +96,7 @@ The HTTP API exposes projects, session creation and observation, session snapsho
 
 ### 3.7 Web client — `apps/web`
 
-The client renders three switchable faces and one overlay; see section 6. It receives events and session state from the WebSocket and reads history, file versions and metrics from the HTTP API. The client does not know which agent produced an event; it consumes `AbsenceEvent` only.
+The client renders three switchable faces and one overlay; see section 6. It receives events and session state from the WebSocket and reads history, file versions and metrics from the HTTP API. It consumes `AbsenceEvent` without distinguishing which agent produced an event.
 
 ### 3.8 Desktop shell — `apps/desktop`
 
@@ -126,12 +137,12 @@ Model, context usage, advertised commands and authentication methods travel in `
 token estimates: `outputEst` (from the finished assistant text's length),
 `inputEst` (the reported context window's growth across the run, minus that
 output — `null` when the runtime reported no context usage), the context
-occupancy, and the model name. Every number is an estimate and the payload
-says so with `estimated: true`. Absence never parses model responses, so real
-token counts are unavailable; the estimate is a heuristic (CJK ≈ 1 token per
+occupancy, and the model name. Every value is an estimate and the payload marks it
+with `estimated: true`. Absence does not parse model responses, so real token
+counts are unavailable; the estimate uses a heuristic (CJK ≈ 1 token per
 character, other text ≈ 1 token per 4 characters, see
-`packages/core/src/tokens.ts`). The event is data plumbing for the run-scope
-token totals, not a displayed activity: it is excluded from the Activity feed.
+`packages/core/src/tokens.ts`). The event feeds run-scope token totals and is not a
+displayed activity, so it is excluded from the Activity feed.
 
 Observation layers:
 
@@ -141,13 +152,13 @@ Observation layers:
 | Terminal mirror | Raw stdout/stderr bytes from an agent started by Absence in a PTY. Not parsed. | Only when Absence starts the agent in a PTY. The current web client does not connect to the terminal WebSocket. |
 | ACP semantics | Tool calls, files, commands, MCP calls, approvals, thinking and messages. | When the agent reports them. Missing fields stay `unknown`. |
 
-The interface remains usable when the ACP layer is absent: OS facts still produce Activity rows, Agent Eggs, file changes and a report.
+When the ACP layer is absent, the interface remains usable: OS facts still produce Activity rows, Agent Eggs, file changes and a report.
 
 ## 5. Storage
 
 One SQLite database, `~/.absence/absence.db`, holds the archive and metrics. `ABSENCE_STATE_DIR` changes the database and archive root. `agents.json` and `registry.json` are catalog files; they live under `ABSENCE_CATALOG_DIR` or `~/.absence`, not under `ABSENCE_STATE_DIR`. `db.ts` opens the database with WAL, `synchronous=NORMAL`, a busy timeout and foreign keys, owns the schema and migrations, and exposes the shared handle through `openDatabase()`.
 
-SQLite access is not confined to `db.ts`:
+SQLite access is spread across several modules:
 
 | Module | Direct SQLite work |
 |---|---|
@@ -169,7 +180,7 @@ Tables:
 | `egg_metric_summary` | Per-egg first and last sample, CPU base and end, RSS integral, sample count. |
 | `host_metric_chunks` | Host metric chunks in the same packed shape. |
 
-Archive writes are buffered for 50 ms and committed in one transaction. A burst of process or file events therefore costs one commit. `drainArchive()` flushes on dispose.
+Archive writes are buffered for 50 ms and committed in one transaction, so a burst of process or file events costs one commit. `drainArchive()` flushes on dispose.
 
 Retention:
 
@@ -182,11 +193,11 @@ Retention:
 | Agent Eggs | Running eggs are always kept. Finished eggs beyond `ABSENCE_MAX_EGGS` (default 200) are retired from the live panel, oldest exit first, with `retired: true`. Archived `process` events are not removed. |
 | Terminal mirror | 256 KB ring buffer, 60 ms batching, streamed only. |
 
-File versions are stored separately from run events so Agent Folder and File History work without loading a run. A write or edit appends a complete version. Consecutive reads accumulate into one partial v0 version. When a read reports no line range, Absence tries to verify one against the file on disk: the returned text is located in the file, and an exact, unique match yields the read's line coordinates. An ambiguous match, a missing file, or a stale read keeps `rangeKnown=false`, and the UI shows the range as unknown.
+File versions are stored separately from run events, so Agent Folder and File History work without loading a run. A write or edit appends a complete version. Consecutive reads accumulate into one partial v0 version. When a read reports no line range, Absence tries to verify one against the file on disk: the returned text is located in the file, and an exact, unique match yields the read's line coordinates. An ambiguous match, a missing file, or a stale read keeps `rangeKnown=false`, and the UI shows the range as unknown.
 
 ## 6. Web rendering layer
 
-The client is React 19, Vite, Tailwind and Zustand. `useMonitorData` derives the selected run's Activity rows, `RunFacts`, the finished `RunReport`, live attention and the live headline once per render pass. The Chart face and the Monitor face consume the same derivation.
+The client uses React 19, Vite, Tailwind and Zustand. `useMonitorData` derives the selected run's Activity rows, `RunFacts`, the finished `RunReport`, live attention and the live headline once per render pass. The Chart face and the Monitor face consume the same derivation.
 
 Faces:
 
@@ -197,16 +208,16 @@ Faces:
 | Chart | Full-page Absence Report: outcome, KPIs, timeline, Changes, Executions, Knows, Attention and an evidence preview. |
 | Drip | An overlay toggled independently of the face switcher. A compact card with live events, the final reply and a composer. |
 
-`ViewMode` is `rounds | monitor | chart | drip`; the switcher exposes only the first three. Drip is stored as a toggle. The default face is Monitor; an unknown or stale stored value resolves to Monitor.
+`ViewMode` is `rounds | monitor | chart | drip`; the switcher exposes the first three. Drip is stored as a toggle. The default face is Monitor; an unknown or stale stored value resolves to Monitor.
 
 Stage behaviour:
 
 - `SessionStore.applyToState` decides which event owns the Stage. `message` clears the Stage and sets the agent state to `speaking`; `process` never owns the Stage.
 - The web client converts events to file, diff, terminal, thought, speech, process and approval cards in `apps/web/src/lib/events.ts` and `apps/web/src/components/stage/StageItemView.tsx`.
-- Monitor's Stage has two page tags, `METRICS` and `CHAT`. Activity cards are shown according to follow, pin or replay state. There is no `FILE`, `DIFF` or `TERMINAL` tab strip.
+- Monitor's Stage has two page tabs, `METRICS` and `CHAT`. Activity cards follow the follow, pin or replay state. The Stage has no `FILE`, `DIFF` or `TERMINAL` tab strip.
 - `activityViews.ts` derives the file, diff and terminal views from one pinned event.
 
-Absence Report is computed entirely in the web client by `apps/web/src/lib/report.ts` over the event slice of one run (`run.fromIndex` to `run.toIndex`). It is a deterministic reduction with no LLM call and no command parsing. Command text is used to pair `tool_start` with `tool_end`. Missing exit codes are stored as `exitCodeKnown=false`.
+Absence Report is computed entirely in the web client by `apps/web/src/lib/report.ts` over the event slice of one run (`run.fromIndex` to `run.toIndex`). It is a deterministic reduction with no LLM call and no command parsing. Command text pairs `tool_start` with `tool_end`. Missing exit codes are stored as `exitCodeKnown=false`.
 
 ## 7. Replay
 
@@ -245,7 +256,7 @@ Docker containers run inside the daemon VM, outside both the Job Object and eBPF
 
 ## 9. Desktop packaging
 
-`apps/desktop` is an Electron shell with Electron 37 and electron-builder. `main.cjs` starts the server in the same process, so the app has one lifecycle and no child console window. A checkout loads the server through `tsx`; a packaged build loads `apps/server-bundle.cjs`.
+`apps/desktop` is an Electron shell with Electron 37 and electron-builder. `main.cjs` starts the server in the same process, so the app has one lifecycle and no child console window. A source tree loads the server through `tsx`; a packaged build loads `apps/server-bundle.cjs`.
 
 Packaging stages the bundled server, its runtime `node_modules`, the built web app from `dist/web` and a launcher script. The Windows package adds `native/agentwatch/agentwatch.exe`; the Linux package adds `native/agentwatch-linux/agentwatch-linux`. The web build is the same one a browser uses.
 
@@ -260,4 +271,3 @@ Drip opens as a separate transparent, always-on-top window in the desktop shell.
 - Process attribution for concurrent commands can misattribute when command lines do not match. The fallback keeps the process.
 - Short-lived processes can be missed in snapshot mode.
 - Whether Codex's Windows sandbox keeps child processes inside the Job Object depends on the agent implementation. Absence does not assert it.
-</content>

@@ -5,7 +5,7 @@
 This document describes the web interface in `apps/web`: the three switchable
 faces, the Drip overlay, the shared shell, and the components that render each
 part. It states what each element is, what it displays, and how it is operated.
-Paths refer to the current source tree.
+Paths are repository-relative.
 
 ## Faces and the switcher
 
@@ -14,8 +14,8 @@ The face switcher in the top bar contains three buttons. Each button is one
 
 | Face | Intent in source | Layout |
 |---|---|---|
-| Rounds | Light — the agent leads, you follow | Desktop: avatar, story cards, floating windows |
-| Monitor | Heavy — every trace on one screen | Three columns: Activity, Stage, agent rail |
+| Rounds | Light — the agent leads, the user follows | Desktop: avatar, story cards, floating windows |
+| Monitor | Heavy — the run's traces on one screen | Three columns: Activity, Stage, agent rail |
 | Chart | The run is over — read what it amounted to | One full-page report |
 
 The source also records a Chinese term for each face (查房陪诊, 机器监护,
@@ -29,10 +29,10 @@ Monitor.
 
 ### Drip
 
-Drip is a toggle beside the face switcher; it has no button in the face
-switcher. Its state is `viewModeStore.drip`. Turning it on opens a floating
-window over the current face; the face underneath remains mounted and live.
-Turning it off closes only that window. Drip is never stored as a face.
+Drip is a toggle beside the face switcher; the face switcher itself has no Drip
+button. Its state is `viewModeStore.drip`. When Drip is on, a floating window
+opens over the current face, and the face underneath remains mounted and live.
+When Drip is off, only that window closes. Drip is never stored as a face.
 
 - Desktop shell: a second always-on-top, transparent window loads the same app
   with `?face=drip&session=<id>` and mounts `DripDesktop`. The shell keeps the
@@ -155,22 +155,22 @@ The header displays a chip, a title, a subtitle, and the page tabs. The only
 tabs are `METRICS` and `CHAT` (`Metrics` / `Chat` in `TAB_LABEL`).
 
 The activity page has no tab. It is the default page and renders the moment
-that the feed, a pin, or a replay selects:
+selected by the feed, a pin, or a replay:
 
 - replay: the item at `replayStore.currentTime`;
 - pinned: the pinned `StageItem`;
 - following: the agent's current action, from `sessionStore.currentAction`;
 - following with no current action: the resting page.
 
-The resting page is `stageStore.restingPage`, which is the last page the reader
-chose (`METRICS` or `CHAT`). It is `CHAT` when the reader has not chosen one.
-`CHAT` is therefore the page a finished run rests on by default.
+The resting page is `stageStore.restingPage`, the most recently chosen page
+(`METRICS` or `CHAT`). It is `CHAT` when no page has been chosen, so a finished
+run rests on `CHAT` by default.
 
 The page renders one card through `StageItemView`: `FileStage`, `DiffStage`,
 `TerminalStage`, `ThoughtStage`, `SpeechStage`, `ProcessStage`, or
 `ApprovalStage`, depending on the event. `activityViews` derives the
 available readings of the selected event (file, diff, terminal); the event's
-own kind decides which reading is shown. There is no FILE / DIFF / TERMINAL
+own kind decides which reading is shown. The Stage has no FILE / DIFF / TERMINAL
 switch strip.
 
 The pin bar appears in two cases:
@@ -232,10 +232,10 @@ Rounds is a desktop canvas inside `.rounds-root`.
 - `RoundsStory`: the run's steps as a horizontal card chain, one card per
   activity row. The first `START` pair is folded into one card: the user
   prompt carries the model as its meta line. `END` keeps its own card.
-  Clicking a card pins it while live and seeks to it during a replay, and
-  opens the event's child window; clicking the same card again closes it. The
-  header shows `LIVE` or `REPLAY`, the run index and status, the step count, the
-  counts, and `Back to live`.
+  Clicking a card pins it while live, seeks to it during a replay, and opens the
+  event's child window; clicking the same card again closes it. The header shows
+  `LIVE` or `REPLAY`, the run index and status, the step count, the counts, and
+  `Back to live`.
 - Wallpaper: `ChatThread` with the bubble layout, rendered transparent on the
   right above the story.
 - `RoundsDock`: five shortcuts. `Files`, `Agent Folder`, `Agent Eggs`, `Run`,
@@ -288,8 +288,8 @@ uses.
   reply).
 - Footer: `ChartChat`, the shared input bar fixed at the bottom.
 
-There is no FILE / DIFF / TERMINAL switch strip and no report overlay. The
-report is this face.
+The face has no FILE / DIFF / TERMINAL switch strip and no report overlay; the
+page itself is the report.
 
 ## Shared shell and data flow
 
@@ -306,9 +306,8 @@ report is this face.
   `Send` / `Stop` / `Run` states are the same in every face.
 - Reused views (`StageItemView`, `MetricsDashboard`, `FilePanel`, the Markdown
   renderer, `SettingsDialog`) are written against `--desk-*` tokens. `.mon-root`
-  re-points those tokens at the current face's palette. `SettingsDialog` must
-  therefore render inside the face root; a portal to `document.body` would
-  escape the bridge.
+  re-points those tokens at the current face's palette. `SettingsDialog` renders
+  inside the face root; a portal to `document.body` would escape the bridge.
 - Two file views: the left `Files` tab is the project on disk. The right
   `Agent Folder` is the agent's recorded versions. Rounds provides both through
   its `Files` and `Agent Folder` windows.
@@ -320,7 +319,7 @@ With no session, `App.tsx` renders `ProjectPicker`. It contains:
 - the `ABSENCE` brand and `重新探测`;
 - `项目路径` input and `打开`;
 - `最近` project list;
-- `Agent` tiles for the rows discovered on this machine. Each row shows
+- `Agent` tiles for the rows discovered on the host. Each row shows
   `可启动` / `缺适配器` / `需登录`, its discovery source and path, declared
   models, auth status, capabilities, and install hints. The last tile is `+`
   for a custom ACP entry;
@@ -329,8 +328,8 @@ With no session, `App.tsx` renders `ProjectPicker`. It contains:
 - `历史` sessions; clicking one resumes it;
 - a `自定义 ACP` dialog with `id`, `label`, `command`, `args`, `env`, and `cwd`.
 
-The picker's section labels are Chinese literals in the current source. The
-picker has no launch-line editor and no `allowNpx` switch.
+The picker's section labels are Chinese literals. The picker has no
+launch-line editor and no `allowNpx` switch.
 
 ## Settings
 

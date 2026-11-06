@@ -2,14 +2,14 @@
 
 [English](testing.md) | [简体中文](testing.zh-CN.md)
 
-Absence 没有单元测试框架。验收行为由一组以 `tsx` 运行的独立脚本核对，覆盖进程归因、事件投影、归档往返、指标持久化与 ACP 传输；这些环节出错时不会表现为类型错误。[testing-strategy.md](testing-strategy.zh-CN.md) 说明分层与取舍；本文列出跑什么、怎么跑、失败时输出什么。
+Absence 没有单元测试框架。验收行为由一组以 `tsx` 运行的独立脚本核对，覆盖进程归因、事件投影、归档往返、指标持久化与 ACP 传输；这些环节出错时不会表现为类型错误。[testing-strategy.md](testing-strategy.zh-CN.md) 说明分层与取舍；本文列出运行内容、运行方式与失败输出。
 
 ## 门禁
 
 ```bash
 npm run typecheck       # packages/core、apps/server、apps/web 的 tsc
 npm run build           # Web 生产构建，产物在 dist/web
-npm run check:offline   # 全部 29 条离线检查
+npm run check:offline   # 全部 34 次离线检查登记
 npm run check:acp-all   # 6 条已登记的 agent 层检查，随后跑 mock agent 仿真
 npm run absence-sim     # 端到端仿真（与 check:mock-agent 同一 runner）
 npm run verify          # typecheck + build + check:offline
@@ -19,19 +19,19 @@ npm run verify          # typecheck + build + check:offline
 
 ## 登记
 
-`scripts/checks/groups.ts` 是检查登记位置，定义 12 个组、34 条已登记检查：29 条分布在各组的 `checks` 列表中（离线），5 条在 `platform` 列表中（手动）。`run-offline.ts` 与 `run-group.ts` 都读取该文件；`package.json` 只保留逐脚本别名。未登记的脚本只能按路径直接调用。
+`scripts/checks/groups.ts` 是检查登记位置，定义 12 个组、34 次离线检查登记与 5 条手动平台检查登记。登记覆盖 37 个不同脚本：32 个离线脚本与 5 个手动脚本，其中两个脚本同时登记在 `eggs` 与 `session` 组。`run-offline.ts` 与 `run-group.ts` 都读取该文件；`package.json` 只保留逐脚本别名。未登记的脚本只能按路径直接调用。
 
 | 组 | 覆盖范围 | 离线检查 |
 |---|---|---|
-| `report` | 报告事实引擎、Markdown、格式化 | 3 条：`check-report`、`check-markdown`、`check-format` |
+| `report` | 报告事实引擎、全 run 汇总、Markdown、格式化 | 4 条：`check-report`、`check-chart-allrun`、`check-markdown`、`check-format` |
 | `views` | face 视图模型：回放当前行、播放态、feed 折叠、成本面板、词汇完整性、viewMode 回退 | 1 条：`check-views` |
 | `history` | 历史重建、run 分组、滑动窗口、事件缓存 | 2 条：`check-history`、`check-incremental` |
 | `settings` | 阈值归一化、i18n 表完整性 | 1 条：`check-settings` |
 | `chimes` | 提示音策略分支 | 1 条：`check-chimes` |
-| `eggs` | 进程识别、分类、过滤器、项目外改动归属 | 3 条：`check-eggs`、`check-classify`、`check-outside-attr` |
+| `eggs` | 进程识别、分类、过滤器、项目外改动归属、会话隔离 | 5 条：`check-eggs`、`check-classify`、`check-outside-attr`、`check-outside-scope`、`check-session-isolation` |
 | `metrics` | 采样、ring、重启存活、区间、进程蛋寿命 | 5 条：`check-metrics`、`check-metrics-persist`、`check-metrics-ranges`、`check-metrics-restart`、`check-observed-lifetime` |
 | `agent` | ACP 契约、命令转发、MCP 事件、catalog | 8 条：`check-capability-commands`、`check-mcp-events`、`check-acp`、`check-acp-lifecycle`、`check-acp-transport`、`check-acp-mapping`、`check-acp-proxy`、`check-agent-catalog` |
-| `session` | 归档存储、dwell 时钟、关闭、生命周期 | 4 条：`check-storage`、`check-session-dwell`、`check-session-close`、`check-lifecycle` |
+| `session` | 归档存储、dwell 时钟、关闭、生命周期、会话隔离 | 6 条：`check-storage`、`check-session-dwell`、`check-session-close`、`check-lifecycle`、`check-outside-scope`、`check-session-isolation` |
 | `io` | fsdiff 引擎 | 1 条：`check-fsdiff` |
 | `pipeline` | 自起 server 的全链路 | 0 条离线；手动：`check-e2e` |
 | `docker` | 容器蛋 | 0 条离线；手动：`check-docker`、`check-docker-eggs` |
@@ -51,17 +51,17 @@ npm run check:group -- affected --all           # 包含手动检查
 npm run check:process                           # eggs + agent + io，含手动检查
 ```
 
-`affected` 用改动文件路径（含未跟踪文件）匹配各组的 `paths` glob 与该组自己的检查脚本。匹配不到任何组的改动会被说明为“由 typecheck 与 Web 构建覆盖”，命令以退出码 0 结束。
+`affected` 用改动文件路径（含未跟踪文件）匹配各组的 `paths` glob 与该组自己的检查脚本。匹配不到任何组的改动会被说明为由 typecheck 与 Web 构建覆盖，命令以退出码 0 结束。
 
 ## 离线检查
 
-29 条脚本。离线检查只需要 Node：不需要内核观察器二进制、不需要 docker、不需要提权，也不需要预先启动的 server。检查可以在临时端口上启动自己的 server，并使用私有的 `ABSENCE_STATE_DIR`；会话检查、`check-metrics-restart` 与 `check-history` 采用这种方式，仍属于离线集合。
+34 次登记，覆盖 32 个脚本。离线检查只需要 Node：不需要内核观察器二进制、不需要 docker、不需要提权，也不需要预先启动的 server。检查可以在临时端口上启动自己的 server，并使用私有的 `ABSENCE_STATE_DIR`；会话检查、`check-metrics-restart` 与 `check-history` 采用这种方式，仍属于离线集合。
 
 按组列出的覆盖面：
 
-- **报告与界面模型**：run 事实、时间线、注意力规则、Markdown 渲染、格式化、回放行、feed 折叠、历史重建与增量 memo。
+- **报告与界面模型**：run 事实、全 run 汇总、时间线、注意力规则、Markdown 渲染、格式化、回放行、feed 折叠、历史重建与增量 memo。
 - **设置与声音**：阈值归一化、i18n 完整性、提示音策略的各个分支。
-- **进程蛋**：用伪造进程表核对归因、分类顺序、项目外改动归属、egg 折叠与退役。
+- **进程蛋**：用伪造进程表核对归因、分类顺序、项目外改动归属与范围、会话隔离、egg 折叠与退役。
 - **指标**：采样输出、ring 行为、持久化、区间选择、server 重启后的存活、进程蛋的寿命。
 - **agent 层**：ACP 会话契约、能力门控、传输、工具映射、透明代理、catalog 发现与状态、斜杠命令转发与 MCP 事件。
 - **会话与存储**：旧归档导入、事件往返、缓冲 drain、归档列表、dwell 时钟、关闭与生命周期。
@@ -69,7 +69,7 @@ npm run check:process                           # eggs + agent + io，含手动�
 
 ## 手动平台检查
 
-5 条脚本，在 `groups.ts` 的 `platform` 列表中登记。它们不进入 `check:offline`；`affected` 默认跳过，只有传 `--all` 才运行；`check:group -- list` 会把它们列在手动项中。
+5 个脚本，在 `groups.ts` 的 `platform` 列表中登记。它们不进入 `check:offline`；`affected` 默认跳过，只有传 `--all` 才运行；`check:group -- list` 会把它们列在手动项中。
 
 | 检查 | 前提 | 核对内容 |
 |---|---|---|
@@ -79,7 +79,7 @@ npm run check:process                           # eggs + agent + io，含手动�
 | `check-docker-eggs` | 可访问的 docker daemon（PATH，或 Windows 上的 WSL 发行版） | 从命令窗口到容器启动事件、归因后的蛋、`docker stats` 资源、退出码，以及会话恢复时的重新 attach |
 | `check-e2e` | 只需要 Node，但会启动真 server 与 mock 会话 | 一次运行内的命令事件、蛋、docker 可达时的容器蛋、指标帧与 SQLite 持久化 |
 
-`check-agentwatch` 在非 Windows 平台会说明原因并以退出码 0 结束；`check-ebpf` 在非 Linux 平台同样处理，`check-docker` 在非 Windows 平台同样处理。在错误平台上得到的通过结果不覆盖内核路径或 Windows docker 路径。没有可访问的 docker 时，`check-docker-eggs` 以非零退出码结束。
+`check-agentwatch` 在非 Windows 平台会说明原因并以退出码 0 结束；`check-ebpf` 在非 Linux 平台同样处理，`check-docker` 在非 Windows 平台同样处理。在其他平台上得到的通过结果不覆盖内核路径或 Windows docker 路径。没有可访问的 docker 时，`check-docker-eggs` 以非零退出码结束。
 
 内核与 docker 检查调用 `ProcessWatcher.noteMarker` 标记自己拉起的进程。生产代码不调用它。
 
@@ -112,7 +112,7 @@ npm run mock:agent -- --scenario 03-file-ops
 
 - `check(label, condition, detail)` 打印 `ok   <label>` 或 `FAIL <label>  — <detail>`。
 - `finish()` 打印 `<passed>/<total> checks passed`；任一检查失败时退出码为 1。一条检查都没跑时也以退出码 1 结束，空脚本无法通过。
-- `run-offline.ts` 打印 `all 29 offline checks passed`，或 `<n> check script(s) failed`；被超时终止的脚本会连同名称与 `groups.ts` 中的超时一起报告。
+- `run-offline.ts` 打印 `all 34 offline checks passed`，或 `<n> check script(s) failed`；被超时终止的脚本会连同名称与 `groups.ts` 中的超时一起报告。
 - `run-group.ts` 打印 `<n> check script(s) passed across <m> group(s)`，或 `<n> check script(s) failed`。
 
 每个检查脚本是一个独立进程，runner 消费它的退出码；一个脚本失败不会被另一个脚本的汇总掩盖。
@@ -127,6 +127,6 @@ npm run mock:agent -- --scenario 03-file-ops
 
 ## 开发辅助
 
-- `npm run probe:acp -- <scenario>` 单跑一次采集并打印事件；`ABSENCE_ACP_BIN` 可指向真实 agent。
+- `npm run probe:acp -- <scenario>` 单跑一次采集并打印事件；`ABSENCE_ACP_BIN` 可把它指向真实 agent。
 - `npm run registry:sync` 拉取 ACP 注册表到 `~/.absence/registry.json`。
 - `npm run release:notes -- v<版本>` 从提交记录生成发布说明草稿。

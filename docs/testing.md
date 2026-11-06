@@ -2,14 +2,14 @@
 
 [English](testing.md) | [简体中文](testing.zh-CN.md)
 
-Absence has no unit-test framework. Acceptance behaviour is verified by standalone scripts run with `tsx`. The checks target process attribution, event projection, archive round-trips, metrics persistence and ACP transport: failures in these areas do not surface as type errors. [testing-strategy.md](testing-strategy.md) describes the layering and the trade-offs behind it; this document lists what runs, how it runs, and what a failure reports.
+Absence has no unit-test framework. Acceptance behaviour is verified by standalone scripts run with `tsx`. The checks target process attribution, event projection, archive round-trips, metrics persistence and ACP transport: failures in these areas do not surface as type errors. [testing-strategy.md](testing-strategy.md) describes the layering and the reasons behind it; this document lists what runs, how it runs, and what a failure reports.
 
 ## Gates
 
 ```bash
 npm run typecheck       # tsc across packages/core, apps/server, apps/web
 npm run build           # production web build in dist/web
-npm run check:offline   # all 29 offline checks
+npm run check:offline   # all 34 offline check registrations
 npm run check:acp-all   # 6 registered agent-layer checks, then the mock-agent simulation
 npm run absence-sim     # end-to-end simulation (same runner as check:mock-agent)
 npm run verify          # typecheck + build + check:offline
@@ -19,19 +19,19 @@ npm run verify          # typecheck + build + check:offline
 
 ## Registration
 
-`scripts/checks/groups.ts` is the single registration point. It defines 12 groups and 34 registered check scripts: 29 across the groups' `checks` lists (offline) and 5 in a `platform` list (manual). `run-offline.ts` and `run-group.ts` both read that file; `package.json` only holds per-script aliases. A script that is not registered runs only when invoked by path.
+`scripts/checks/groups.ts` is the single registration point. It defines 12 groups, 34 offline check registrations and 5 manual platform registrations. The registrations cover 37 distinct scripts: 32 offline and 5 manual, with two scripts registered in both the `eggs` and `session` groups. `run-offline.ts` and `run-group.ts` both read that file; `package.json` holds per-script aliases only. A script that is not registered runs only when invoked by path.
 
 | Group | Scope | Offline checks |
 |---|---|---|
-| `report` | report fact engine, markdown, formatting | 3: `check-report`, `check-markdown`, `check-format` |
+| `report` | report fact engine, all-runs aggregate, markdown, formatting | 4: `check-report`, `check-chart-allrun`, `check-markdown`, `check-format` |
 | `views` | face view models: replay row, playback state, feed folding, cost panel, vocabulary, view-mode fallback | 1: `check-views` |
 | `history` | history rebuild, run grouping, sliding window, event cache | 2: `check-history`, `check-incremental` |
 | `settings` | threshold normalization, i18n table completeness | 1: `check-settings` |
 | `chimes` | chime policy branches | 1: `check-chimes` |
-| `eggs` | process recognition, classification, filters, outside-change attribution | 3: `check-eggs`, `check-classify`, `check-outside-attr` |
+| `eggs` | process recognition, classification, filters, outside-change attribution, session isolation | 5: `check-eggs`, `check-classify`, `check-outside-attr`, `check-outside-scope`, `check-session-isolation` |
 | `metrics` | sampling, ring, restart survival, ranges, egg lifetime | 5: `check-metrics`, `check-metrics-persist`, `check-metrics-ranges`, `check-metrics-restart`, `check-observed-lifetime` |
 | `agent` | ACP contract, command forwarding, MCP events, catalog | 8: `check-capability-commands`, `check-mcp-events`, `check-acp`, `check-acp-lifecycle`, `check-acp-transport`, `check-acp-mapping`, `check-acp-proxy`, `check-agent-catalog` |
-| `session` | archive storage, dwell clock, close, lifecycle | 4: `check-storage`, `check-session-dwell`, `check-session-close`, `check-lifecycle` |
+| `session` | archive storage, dwell clock, close, lifecycle, session isolation | 6: `check-storage`, `check-session-dwell`, `check-session-close`, `check-lifecycle`, `check-outside-scope`, `check-session-isolation` |
 | `io` | fsdiff engine | 1: `check-fsdiff` |
 | `pipeline` | full pipeline with a self-started server | 0 offline; platform: `check-e2e` |
 | `docker` | container eggs | 0 offline; platform: `check-docker`, `check-docker-eggs` |
@@ -55,13 +55,13 @@ npm run check:process                           # eggs + agent + io, including p
 
 ## Offline checks
 
-29 scripts. An offline check needs nothing beyond Node: no kernel observer binary, no docker, no elevated rights, and no server started by someone else. A check may boot its own server on an ephemeral port with a private `ABSENCE_STATE_DIR`; the session checks, `check-metrics-restart` and `check-history` do this and remain offline.
+34 registrations across 32 scripts. An offline check needs nothing beyond Node: no kernel observer binary, no docker, no elevated rights, and no pre-started server. A check can boot its own server on an ephemeral port with a private `ABSENCE_STATE_DIR`; the session checks, `check-metrics-restart` and `check-history` do this and remain offline.
 
 Coverage by group:
 
-- **Report and UI models**: run facts, timelines, attention rules, markdown rendering, formatting, replay rows, feed folding, history rebuild and the incremental memo.
+- **Report and UI models**: run facts, all-runs aggregation, timelines, attention rules, markdown rendering, formatting, replay rows, feed folding, history rebuild and the incremental memo.
 - **Settings and sound**: threshold normalization, i18n completeness, the branches of the chime policy.
-- **Process eggs**: attribution from a fabricated process table, classification order, outside-change attribution, egg folding and retirement.
+- **Process eggs**: attribution from a fabricated process table, classification order, outside-change attribution and scope, session isolation, egg folding and retirement.
 - **Metrics**: sampling output, ring behaviour, persistence, range selection, survival across a server restart, egg lifetime.
 - **Agent layer**: ACP session contract, capability gating, transport, tool mapping, transparent proxy, catalog discovery and status, slash-command forwarding, and MCP events.
 - **Session and storage**: legacy import, event round-trip, buffered drain, archive listing, dwell clock, close and lifecycle.
@@ -79,7 +79,7 @@ Coverage by group:
 | `check-docker-eggs` | A reachable docker daemon (PATH, or a WSL distro on Windows) | Command window to container start event to attributed egg, `docker stats` resources, exit code, and re-attach on session resume |
 | `check-e2e` | Nothing beyond Node, but it starts a real server and a mock session | Command events, eggs, container eggs when docker is reachable, metrics frames and SQLite persistence in one run |
 
-`check-agentwatch` exits 0 with an explanation on non-Windows platforms; `check-ebpf` does the same on non-Linux platforms, and `check-docker` does the same outside Windows. A green result on the wrong platform does not exercise the kernel path or the Windows docker path. `check-docker-eggs` exits non-zero when no docker is reachable.
+`check-agentwatch` exits 0 with an explanation on non-Windows platforms; `check-ebpf` does the same on non-Linux platforms, and `check-docker` does the same outside Windows. A pass result on another platform does not exercise the kernel path or the Windows docker path. `check-docker-eggs` exits non-zero when no docker is reachable.
 
 The kernel and docker checks call `ProcessWatcher.noteMarker` to label processes they start. Production code does not call it.
 
@@ -112,7 +112,7 @@ Every check imports `scripts/checks/harness.ts` (51 lines, four exports: `check`
 
 - `check(label, condition, detail)` prints `ok   <label>` or `FAIL <label>  — <detail>`.
 - `finish()` prints `<passed>/<total> checks passed` and exits 1 when any check failed. It also exits 1 when zero checks ran, so a script that asserts nothing cannot pass.
-- `run-offline.ts` prints `all 29 offline checks passed`, or `<n> check script(s) failed`; a killed script is reported with its name and the timeout from `groups.ts`.
+- `run-offline.ts` prints `all 34 offline checks passed`, or `<n> check script(s) failed`; a killed script is reported with its name and the timeout from `groups.ts`.
 - `run-group.ts` prints `<n> check script(s) passed across <m> group(s)`, or `<n> check script(s) failed`.
 
 A check script is one process. Its exit status is the signal the runners consume, so one failing script cannot be hidden by another script's summary.
@@ -127,6 +127,6 @@ A check's label states the rule in plain words, its `detail` carries the actual 
 
 ## Developer helpers
 
-- `npm run probe:acp -- <scenario>` runs one collection pass and prints the events; `ABSENCE_ACP_BIN` can point it at a real agent.
+- `npm run probe:acp -- <scenario>` runs one collection pass and prints the events; `ABSENCE_ACP_BIN` points it at a real agent.
 - `npm run registry:sync` fetches the ACP registry into `~/.absence/registry.json`.
 - `npm run release:notes -- v<version>` drafts release notes from the commit history.

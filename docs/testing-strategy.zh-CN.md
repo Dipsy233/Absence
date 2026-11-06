@@ -2,7 +2,7 @@
 
 [English](testing-strategy.md) | [简体中文](testing-strategy.zh-CN.md)
 
-[testing.zh-CN.md](testing.zh-CN.md) 列出检查项与运行命令。本文说明分层：每一层能证明什么、不能证明什么，以及拆分检查时为何以所需环境为依据。
+[testing.zh-CN.md](testing.zh-CN.md) 列出检查项与运行命令。本文说明分层：每一层能确立什么、不能确立什么，以及检查按所需环境拆分的原因。
 
 ## 方法
 
@@ -25,17 +25,17 @@ SQLite 访问分布在 `apps/server/src/sessions/storage/` 下的四个文件：
 
 ## 分层
 
-29 条离线检查分为三层，另有 ACP 家族；5 条手动检查构成最后一层。
+32 个离线脚本分为三层，另有 ACP 家族；5 个手动脚本构成最后一层。两个离线脚本同时登记在两个组，因此登记表包含 34 次离线登记，覆盖 32 个脚本。
 
 | 层 | 所需环境 | 检查 | 能确立的结论 |
 |---|---|---|---|
-| 1. 纯函数 | 伪造的进程表与事件数组；不启动进程、不写文件 | 13 条：`eggs`、`classify`、`outside-attr`、`report`、`markdown`、`format`、`views`、`chimes`、`settings`、`capability-commands`、`mcp-events`、`incremental`、`metrics-ranges` | 归因、分类、报告归约、视图模型与策略分支，仅靠数据驱动 |
-| 2. 隔离 I/O | 临时目录与 `ABSENCE_STATE_DIR`；在进程内引用生产存储与 diff 模块 | 4 条：`storage`、`metrics`、`metrics-persist`、`fsdiff` | 对真实 SQLite 文件的归档与指标往返，不写入用户档案 |
-| 3. 自起 server | 临时端口与隔离 state 目录；检查启动并结束真 server | 6 条：`history`、`lifecycle`、`metrics-restart`、`observed-lifetime`、`session-close`、`session-dwell` | server 生命周期、会话关闭、dwell 计时、经 HTTP 读取历史、重启后的指标 |
+| 1. 纯函数 | 伪造的进程表与事件数组；不启动进程、不写文件 | 14 条：`eggs`、`classify`、`outside-attr`、`report`、`chart-allrun`、`markdown`、`format`、`views`、`chimes`、`settings`、`capability-commands`、`mcp-events`、`incremental`、`metrics-ranges` | 归因、分类、报告归约、视图模型与策略分支，仅靠数据驱动 |
+| 2. 隔离 I/O | 临时目录与 `ABSENCE_STATE_DIR`；在进程内引用生产存储、观察与 diff 模块 | 5 条：`storage`、`metrics`、`metrics-persist`、`fsdiff`、`outside-scope` | 对真实 SQLite 文件与真实文件观察的归档和指标往返，不写入用户归档 |
+| 3. 自起 server | 临时端口与隔离 state 目录；检查启动并结束真 server | 7 条：`history`、`lifecycle`、`metrics-restart`、`observed-lifetime`、`session-close`、`session-dwell`、`session-isolation` | server 生命周期、会话关闭、dwell 计时、经 HTTP 读取历史、重启后的指标、会话间隔离 |
 | ACP 家族 | 脚本化 fixture agent 与临时目录中的子进程；不启动 server | 6 条：`acp`、`acp-lifecycle`、`acp-transport`、`acp-mapping`、`acp-proxy`、`agent-catalog` | ACP 契约：能力门控、传输、映射、代理、catalog 发现 |
-| 4. 手动 | 内核观察助手、docker daemon，或真 server 加 mock 会话 | 5 条：`agentwatch`、`ebpf`、`docker`、`docker-eggs`、`e2e` | 内核级进程捕获、容器蛋、以及一次运行内的全链路 |
+| 4. 手动 | 内核观察助手、docker daemon，或真 server 加 mock 会话 | 5 条：`agentwatch`、`ebpf`、`docker`、`docker-eggs`、`e2e` | 内核级进程捕获、容器蛋，以及一次运行内的全链路 |
 
-13 + 4 + 6 + 6 = 29 条离线检查；加上 5 条手动检查，登记总数为 34。
+14 + 5 + 7 + 6 = 32 个离线脚本。加上 5 个手动脚本，登记表覆盖 37 个不同脚本、共 39 次登记。
 
 第 1 层把系统调用推到边界之外，使中间逻辑成为可传入数据的函数。`check-eggs` 把伪造进程表喂给真实的归因代码：
 
@@ -54,9 +54,9 @@ process.env.ABSENCE_STATE_DIR = stateDir;          // 必须先于模块加载
 const { appendMetricsFrame } = await import("../../apps/server/src/sessions/storage/metrics");
 ```
 
-静态 import 会让模块对用户的真实归档打开连接。
+静态 import 会让模块对用户的归档打开连接。
 
-第 3 层的检查作为客户端，访问自己启动的 server。它们不依赖任何预先存在的资源：端口是临时的，state 目录是私有的，server 在清理阶段结束。CI 环境没有内核助手；`ci.yml` 的注释写明 watcher 会退回进程表采样，因此这些检查核对的是不依赖内核助手的会话、归档与指标行为。
+第 3 层的检查作为客户端，访问自己启动的 server。它们不依赖任何预先存在的资源：端口是临时的，state 目录是私有的，server 在清理阶段结束。CI 不安装内核观察器；`ci.yml` 的注释写明 watcher 会退回进程表采样，因此这些检查核对的是不依赖内核助手的会话、归档与指标行为。
 
 ACP 家族驱动的是 fixture agent，它确立 Absence 处理协议的方式，不确立 Pi、Codex、Claude Code、Qwen Code、Gemini 或 DSH 自身的行为。mock agent runner 在同一协议之上补充端到端覆盖：真 server 把 mock agent 作为子进程拉起，产生的事件从 WebSocket 与 SQLite 两侧读取。该仿真是独立门禁（`check:mock-agent`，别名 `absence-sim`），不包含在 `check:offline` 中。
 
@@ -80,8 +80,10 @@ ACP 家族驱动的是 fixture agent，它确立 Absence 处理协议的方式�
 
 | 项目 | 数值 | 来源 |
 |---|---|---|
-| 登记检查 | 35 | `scripts/checks/groups.ts` |
-| 离线检查 | 30 | `groups.ts` 的 `checks` 条目 |
+| 登记次数 | 39 | `scripts/checks/groups.ts` |
+| 不同登记脚本 | 37 | `scripts/checks/groups.ts` |
+| 离线登记 | 34 | `groups.ts` 的 `checks` 条目 |
+| 不同离线脚本 | 32 | `groups.ts` 的 `checks` 条目 |
 | 手动检查 | 5 | `groups.ts` 的 `platform` 条目 |
 | 检查组 | 12 | `groups.ts` 的 `GROUPS` |
 | mock agent 场景 | 14 | `scripts/mock-agent/scenarios/` |

@@ -2,7 +2,7 @@
 
 [English](architecture.md) | [简体中文](architecture.zh-CN.md)
 
-本文描述 Absence 的内部结构与机制：agent 进程如何变成事件流，事件如何被存储，以及界面、回放与 Absence Report 如何消费这些事件。agent 的安装与协议接入见 [agent-support.zh-CN.md](agent-support.zh-CN.md)。
+本文描述 Absence 的内部结构，以及 agent 进程与界面、归档、回放和 Absence Report 之间的连接机制。agent 的安装与协议接入见 [agent-support.zh-CN.md](agent-support.zh-CN.md)。
 
 ## 1. 数据流
 
@@ -32,11 +32,22 @@ OS 事实                                                │
 
 projector 读取 `session/update` 并写入 `AbsenceEvent`。进程与文件 watcher 直接写入 `AbsenceEvent`。`SessionStore` 把两个来源合并成一条有序事件流，通过 WebSocket 广播，并缓冲写入 SQLite。回放与 Absence Report 是 Web 端对该事件流某个切片的归约；服务端不计算它们。
 
-会话通过 ACP adapter 驱动：Absence 拥有子进程，并发送 `session/new`、`session/prompt`、审批响应与 `/auth`。
+会话通过 ACP adapter 驱动：Absence 持有子进程，并发送 `session/new`、`session/prompt`、审批响应与 `/auth`。
 
-## 2. 仓库结构
+## 2. 仓库结构与技术选型
 
 根 workspace 包含 `packages/*`、`apps/server` 与 `apps/web`。`apps/desktop` 由根脚本以 `npm --prefix apps/desktop ...` 管理，不属于 workspace 成员。
+
+主要技术选型：
+
+| 领域 | 选型 |
+|---|---|
+| 服务端 | Fastify；归档与指标使用 `node:sqlite` |
+| Web 客户端 | React 19、Vite、Tailwind、Zustand；代码视图使用 Monaco |
+| 桌面壳 | Electron 37 与 electron-builder |
+| 文件观察 | `chokidar` |
+| 进程观察 | Windows 通过 `native/agentwatch` 使用 Job Object；Linux 通过 `native/agentwatch-linux` 使用 eBPF；兜底为进程表采样 |
+| agent 接入 | stdio 上的 ACP，JSON-RPC 2.0，NDJSON 分帧 |
 
 | 路径 | 职责 |
 |---|---|
@@ -54,7 +65,7 @@ projector 读取 `session/update` 并写入 `AbsenceEvent`。进程与文件 wat
 
 | 模块 | 职责 |
 |---|---|
-| `AgentCatalog.ts`、`profiles.ts` | 解析本机存在哪些 agent、它们的启动数据、就绪状态与只读配置探测。 |
+| `AgentCatalog.ts`、`profiles.ts` | 解析当前主机存在哪些 agent、它们的启动数据、就绪状态与只读配置探测。 |
 | `AcpConnection.ts`、`protocol/**` | stdio 传输与 JSON-RPC/NDJSON 分帧；`initialize`、会话方法、请求路由。 |
 | `AcpAdapter.ts`、`AcpSession.ts` | 会话生命周期：启动进程、打开或恢复会话、发送 prompt、取消回合、应答审批。 |
 | `AcpToolMapper.ts`、`ToolRules.ts`、`toolRules.json` | 按 ACP `kind` 与字段形状把工具调用投影成 `AbsenceEvent`。 |
@@ -65,7 +76,7 @@ projector 读取 `session/update` 并写入 `AbsenceEvent`。进程与文件 wat
 
 ### 3.2 会话与归档 — `apps/server/src/sessions`
 
-`SessionStore.ts` 持有实时会话状态：有序事件列表、当前 run、Stage 动作、聊天消息、文件状态、进程 watcher 与指标采样器。`storage/**` 负责持久化。实时状态的权威来源是内存中的 `SessionStore`；SQLite 只负责持久化。
+`SessionStore.ts` 持有实时会话状态：有序事件列表、当前 run、Stage 动作、聊天消息、文件状态、进程 watcher 与指标采样器。`storage/**` 负责持久化。内存中的 `SessionStore` 是实时状态的来源；SQLite 提供持久化。
 
 ### 3.3 进程观察 — `apps/server/src/process`
 
@@ -85,7 +96,7 @@ HTTP API 提供项目列表、会话创建与观察、会话快照、分页事�
 
 ### 3.7 Web 客户端 — `apps/web`
 
-客户端渲染三个可切换 face 与一个浮层，见第 6 节。它从 WebSocket 接收事件与会话状态，并从 HTTP API 读取历史、文件版本与指标。客户端不知道事件由哪个 agent 产生；它只消费 `AbsenceEvent`。
+客户端渲染三个可切换 face 与一个浮层，见第 6 节。它从 WebSocket 接收事件与会话状态，并从 HTTP API 读取历史、文件版本与指标。客户端只消费 `AbsenceEvent`，不区分产生事件的 agent。
 
 ### 3.8 桌面壳 — `apps/desktop`
 
@@ -123,12 +134,12 @@ type AbsenceEventType =
 模型、上下文用量、agent 广告的命令与认证方法通过 `session_state` 消息传输，不进入事件流。指标走独立通道。
 
 `usage` 是每个 run 一条、在 run 结束时发出的事件。它携带该 run 的 token 估算：
-`outputEst`（由最终 assistant 文本长度估算）、`inputEst`（上报的 context 窗口在本
-run 期间的增量，减去输出侧——运行时未上报 context 时为 `null`）、context 占用与
-模型名。每个数字都是估算值，payload 以 `estimated: true` 声明。Absence 不解析模型
-响应，因此拿不到真实 token 数；估算是启发式（CJK ≈ 每字 1 token，其他文本 ≈ 每
-4 字符 1 token，见 `packages/core/src/tokens.ts`）。该事件是 run 范围 token 合计的
-数据管道，不是展示用活动：它不进入 Activity 流。
+`outputEst`（由最终 assistant 文本长度估算）、`inputEst`（上报的 context 窗口在该
+run 期间的增量，减去输出侧；运行时未上报 context 时为 `null`）、context 占用与
+模型名。所有数值都是估算值，payload 以 `estimated: true` 标记。Absence 不解析模型
+响应，真实 token 数不可得；估算采用启发式（CJK ≈ 每字 1 token，其他文本 ≈ 每
+4 字符 1 token，见 `packages/core/src/tokens.ts`）。该事件为 run 范围的 token 合计
+提供数据，不属于展示活动，因此不进入 Activity 流。
 
 观察层次：
 
@@ -138,13 +149,13 @@ run 期间的增量，减去输出侧——运行时未上报 context 时为 `nu
 | 终端镜像 | Absence 以 PTY 启动 agent 时复制的原始 stdout/stderr 字节，不解析。 | 仅当 Absence 以 PTY 启动 agent 时存在。当前 Web 客户端未连接终端 WebSocket。 |
 | ACP 语义 | 工具调用、文件、命令、MCP 调用、审批、思考与消息。 | agent 上报时可用。缺失字段保持 `unknown`。 |
 
-ACP 层缺失时界面仍可用：OS 事实仍可生成 Activity 行、Agent Eggs、文件变化与报告。
+ACP 层缺失时，界面仍然可用：OS 事实仍可生成 Activity 行、Agent Eggs、文件变化与报告。
 
 ## 5. 存储
 
 一个 SQLite 数据库 `~/.absence/absence.db` 同时保存归档与指标。`ABSENCE_STATE_DIR` 改变数据库与归档根目录。`agents.json` 与 `registry.json` 属于 catalog 文件；它们位于 `ABSENCE_CATALOG_DIR` 或 `~/.absence` 下，不受 `ABSENCE_STATE_DIR` 影响。`db.ts` 以 WAL、`synchronous=NORMAL`、busy timeout 与外键打开数据库，持有 schema 与迁移，并通过 `openDatabase()` 暴露共享句柄。
 
-SQLite 访问不只发生在 `db.ts`：
+SQLite 访问分布在以下模块：
 
 | 模块 | 直接访问 SQLite 的工作 |
 |---|---|
@@ -166,7 +177,7 @@ SQLite 访问不只发生在 `db.ts`：
 | `egg_metric_summary` | 每个 egg 的首末样本、CPU 基线与终值、RSS 积分、样本数。 |
 | `host_metric_chunks` | 主机指标 chunk，使用相同的打包结构。 |
 
-归档写入缓冲 50 ms，并以一个事务提交。一次进程或文件事件突发因此只产生一次提交。`drainArchive()` 在 dispose 时冲刷。
+归档写入缓冲 50 ms，并以一个事务提交，因此一次进程或文件事件突发只产生一次提交。`drainArchive()` 在 dispose 时冲刷。
 
 保留策略：
 
@@ -194,16 +205,16 @@ face：
 | Chart | 整页 Absence Report：结论、KPI、时间线、Changes、Executions、Knows、Attention 与证据预览。 |
 | Drip | 独立于 face 切换器的浮层开关。紧凑卡片包含实时事件、最终回复与输入框。 |
 
-`ViewMode` 为 `rounds | monitor | chart | drip`；切换器只暴露前三个。Drip 作为开关存储。默认 face 是 Monitor；未知或过期的存储值解析为 Monitor。
+`ViewMode` 为 `rounds | monitor | chart | drip`；切换器暴露前三个。Drip 作为开关存储。默认 face 是 Monitor；未知或过期的存储值解析为 Monitor。
 
 Stage 行为：
 
 - `SessionStore.applyToState` 决定哪条事件拥有 Stage。`message` 清空 Stage 并把 agent 状态设为 `speaking`；`process` 不拥有 Stage。
 - Web 客户端在 `apps/web/src/lib/events.ts` 与 `apps/web/src/components/stage/StageItemView.tsx` 中把事件转换成 file、diff、terminal、thought、speech、process 与 approval 卡片。
-- Monitor 的 Stage 有两个页面标签：`METRICS` 与 `CHAT`。Activity 卡片按 follow、pin 或 replay 状态显示。没有 `FILE`、`DIFF` 或 `TERMINAL` 标签条。
+- Monitor 的 Stage 有两个页面标签：`METRICS` 与 `CHAT`。Activity 卡片按 follow、pin 或 replay 状态显示。Stage 不提供 `FILE`、`DIFF` 或 `TERMINAL` 标签条。
 - `activityViews.ts` 从一个 pinned 事件派生 file、diff 与 terminal 视图。
 
-Absence Report 完全由 Web 端的 `apps/web/src/lib/report.ts` 计算，输入是一个 run 的事件切片（`run.fromIndex` 到 `run.toIndex`）。它是确定性归约，不调用 LLM，不解析命令。命令文本仅用于把 `tool_start` 与 `tool_end` 配对。缺失退出码记为 `exitCodeKnown=false`。
+Absence Report 完全由 Web 端的 `apps/web/src/lib/report.ts` 计算，输入是一个 run 的事件切片（`run.fromIndex` 到 `run.toIndex`）。它是确定性归约，不调用 LLM，不解析命令语义。命令文本仅用于把 `tool_start` 与 `tool_end` 配对。缺失退出码记为 `exitCodeKnown=false`。
 
 ## 7. 回放
 
@@ -242,9 +253,9 @@ Docker 容器运行在 daemon VM 内，Job Object 与 eBPF 都无法触及。`Do
 
 ## 9. 桌面打包
 
-`apps/desktop` 是 Electron 壳，使用 Electron 37 与 electron-builder。`main.cjs` 在同一进程内启动 server，因此应用只有一套生命周期，也不会产生额外的控制台窗口。开发检出通过 `tsx` 加载 server；打包版本加载 `apps/server-bundle.cjs`。
+`apps/desktop` 是 Electron 壳，使用 Electron 37 与 electron-builder。`main.cjs` 在同一进程内启动 server，因此应用只有一套生命周期，也不会产生额外的控制台窗口。源码目录通过 `tsx` 加载 server；打包版本加载 `apps/server-bundle.cjs`。
 
-打包阶段装入打包后的 server、它的运行时 `node_modules`、`dist/web` 中的 web 构建与一个启动脚本。Windows 包额外加入 `native/agentwatch/agentwatch.exe`；Linux 包额外加入 `native/agentwatch-linux/agentwatch-linux`。web 构建与浏览器使用的构建相同。
+打包阶段装入打包后的 server、它的运行时 `node_modules`、`dist/web` 中的 web 构建与一个启动脚本。Windows 包加入 `native/agentwatch/agentwatch.exe`；Linux 包加入 `native/agentwatch-linux/agentwatch-linux`。web 构建与浏览器使用的构建相同。
 
 Electron 必须捆绑 Node 22.19 或更高版本，因为 server 使用 `node:sqlite`。仓库通过 `engines` 与 `.nvmrc` 固定 Node 版本。
 
@@ -252,11 +263,8 @@ Drip 在桌面壳中作为独立的透明置顶窗口打开。在浏览器构建
 
 ## 10. 边界
 
-- ACP 的上报义务为 `SHOULD`；协议不要求 `MUST`。`kind` 缺失时变成 `other`；`locations` 缺失时读取范围标记为 unknown，除非返回文本与磁盘文件精确且唯一地匹配——那会核实出范围。Absence 不猜测缺失字段。
+- ACP 的上报义务为 `SHOULD`；协议不要求 `MUST`。`kind` 缺失时变成 `other`；`locations` 缺失时读取范围标记为 unknown，除非返回文本与磁盘文件精确且唯一地匹配，从而核实出范围。Absence 不猜测缺失字段。
 - `kind` 缺失或无法使用的工具调用走 `ToolRules` 的字段形状规则。部分工具载荷无法按形状归类。
 - 并发命令的命令行不匹配时，进程归因可能出错。兜底策略保留该进程，不丢弃。
 - 快照模式可能漏掉短命进程。
 - Codex 的 Windows 沙箱是否把子进程留在 Job Object 内取决于 agent 实现。Absence 不对这一点作断言。
-</content>
-</file_path>
-</invoke>

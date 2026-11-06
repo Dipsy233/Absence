@@ -11,7 +11,7 @@
 | 风格 | `theme-nixie` / `theme-ink` / `theme-glass` | 非颜色属性：字体栈、字距、字号缩放、边框粗细、圆角、图案、效果 |
 | 色系 | `scheme-dark` / `scheme-light` | 颜色：背景、文字、边框、语义色、表面色 |
 
-风格规则定义非颜色属性。颜色值来自色系的 token，材质定义按「材质与派生效果」一节处理。两者独立，可以单独切换。
+风格规则定义非颜色属性。颜色值来自色系的 token，材质定义按「材质与派生效果」一节处理。两个维度相互独立，可以分别切换。
 
 ## 运行时
 
@@ -47,7 +47,7 @@
 风格块可以定义：
 
 - `--mon-sans`：正文与控件字体。默认栈包含 `PingFang SC`、`Microsoft YaHei`、`Noto Sans SC` 以覆盖 CJK。
-- `--mon-mono`：等宽位（计数、路径、时间戳）。风格可以把它换成展示字体；Monaco 与 Tailwind 的 `font-mono` 保留各自字体栈。
+- `--mon-mono`：等宽位（计数、路径、时间戳）。风格可以把它换成展示字体；Monaco 与 Tailwind 的 `font-mono` 保留各自的字体栈。
 - `--mon-hand`：供风格内部使用的可选手写族。
 - 字号、字距、`@font-face` 的 `size-adjust`。
 - 边框粗细与圆角，包含不对称的有机圆角。
@@ -126,7 +126,7 @@ Monaco 不能读取 CSS 变量。`App.tsx` 的 effect 用 `getComputedStyle` 从
 1. 正文文字对其表面达到 4.5:1。
 2. `--mon-t3` 达到 4.5:1；默认调色板中在 `--mon-s1` 上为 5.9:1。
 3. 控件与图形达到 3:1。默认调色板中语义种类色在面板上达到 5.5:1。
-4. normal、hover、active、focus、selected 五态可辨。hover 换面，active 下沉，focus 绘制 outline ring，selected 带强调边。`shared.css` 提供基线；风格可以加码，不能减码。
+4. normal、hover、active、focus、selected 五态可辨。hover 换面，active 下沉，focus 绘制 outline ring，selected 带强调边。`shared.css` 提供基线；风格可以在此基础上增加规则，不能删除基线规则。
 5. divider 保持可见。
 6. `outline: none` 不单独出现。文本输入以光标作为焦点提示并保留边框颜色；其他可聚焦元素绘制 ring。
 7. `prefers-reduced-motion: reduce` 停止动画与过渡，包括头像动画。
