@@ -90,15 +90,13 @@ Linux：运行 `Absence-0.5.0.AppImage`，或解压 `Absence-0.5.0.tar.gz` 后�
 
 ## 界面
 
-当前版本有三个可切换的 face：Rounds、Monitor、Chart，另有 Drip 浮层。Monitor 按
-实时 run 组织；Chart 以整页展示某个 run 的 Absence Report；报告也可以作为详情视图
-打开，包含该 run 的请求与回复。
+当前版本有三个可切换的 face：Rounds、Monitor、Chart，另有 Drip 浮层。Rounds 以桌面场景呈现 run，包含角色与故事卡片；Monitor 按实时 run 组织；Chart 以整页展示某个 run 的 Absence Report。
+
+![Rounds face：run 的故事卡片](docs/screenshots/rounds.png)
 
 ![run 进行中的 Monitor](docs/screenshots/monitor.png)
 
 ![Chart face 中的 Absence Report](docs/screenshots/Chart.png)
-
-![Absence Report 详情](docs/screenshots/report.png)
 
 ## 文档
 

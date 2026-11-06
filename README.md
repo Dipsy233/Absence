@@ -101,13 +101,13 @@ requests.
 
 ## Interface
 
-The build provides three switchable faces, Rounds, Monitor and Chart, plus the Drip overlay. Monitor is arranged for a live run. Chart presents the Absence Report for a run. The report also opens as a detail view with the run's request and response.
+The build provides three switchable faces, Rounds, Monitor and Chart, plus the Drip overlay. Rounds presents a run as a desktop scene with a character and story cards. Monitor is arranged for a live run. Chart presents the Absence Report for a run.
+
+![Rounds face with a run's story cards](docs/screenshots/rounds.png)
 
 ![Monitor during a run](docs/screenshots/monitor.png)
 
 ![Chart face with the Absence Report](docs/screenshots/Chart.png)
-
-![Absence Report detail](docs/screenshots/report.png)
 
 ## Documentation
 
