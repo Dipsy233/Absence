@@ -647,8 +647,8 @@ async function main(): Promise<void> {
     await fs.rm(dir, { recursive: true, force: true });
   }
 
-  section("close reaps the command subtree of an Absence-started agent");
-  if (process.platform === "win32") {
+  section("close leaves the agent's processes alive — Absence observes, it never kills");
+  {
     const { ProcessWatcher } = await import("../../apps/server/src/process/ProcessWatcher");
     const dir = await tempDir();
     const wrapperPath = path.join(dir, "wrapper.mjs");
@@ -667,11 +667,6 @@ async function main(): Promise<void> {
       stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
     });
-    // An unrelated long-running process started by this check, not the agent.
-    const unrelated = spawn("ping", ["-n", "30", "127.0.0.1"], {
-      stdio: "ignore",
-      windowsHide: true,
-    });
     try {
       const childPid = await new Promise<number>((resolve, reject) => {
         let text = "";
@@ -684,37 +679,27 @@ async function main(): Promise<void> {
         setTimeout(() => reject(new Error("wrapper printed no child pid")), 5000);
       });
 
-      const tableBefore = await snapshotProcesses();
-      const sawChild = await waitFor(() => tableBefore.has(childPid), 2000);
-      check("the command child is visible before close", sawChild, `pid ${childPid}`);
-
+      // Watch the command the way a session would, then close the session.
+      // Absence is an observer: closing a session stops watching, and the
+      // processes the agent laid — this child included — are never touched.
       const watcher = new ProcessWatcher({ onProcess: () => {} });
-      const killed = await watcher.terminateCommands(wrapper.pid);
+      watcher.warm();
+      const commandId = watcher.begin("test: observed command");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      watcher.end(commandId);
       watcher.stop();
-      check("the close path reports how many command roots it terminated", killed >= 1, String(killed));
 
-      let gone = false;
-      const deadline = Date.now() + 3000;
-      while (Date.now() < deadline) {
-        if (!(await snapshotProcesses()).has(childPid)) {
-          gone = true;
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      check("the command process is gone after close", gone, `pid ${childPid}`);
-      check(
-        "an unrelated process is not killed",
-        unrelated.pid !== undefined && (await snapshotProcesses()).has(unrelated.pid),
-        `pid ${unrelated.pid}`,
-      );
+      const stillAlive = (await snapshotProcesses()).has(childPid);
+      check("the watched command process survives the session's close", stillAlive, `pid ${childPid}`);
     } finally {
-      wrapper.kill();
-      unrelated.kill();
+      // The check's own cleanup — the harness reaps what it spawned.
+      if (process.platform === "win32" && wrapper.pid !== undefined) {
+        spawn("taskkill", ["/PID", String(wrapper.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+      } else {
+        wrapper.kill();
+      }
       await fs.rm(dir, { recursive: true, force: true });
     }
-  } else {
-    check("the command reaper is Windows-specific; skipped on this platform", true);
   }
 
   finish("acp-lifecycle");
