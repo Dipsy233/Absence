@@ -660,6 +660,101 @@ static void sample_all(void)
 
 static HANDLE g_sample_event = NULL;
 
+/* ------------------------------------------------------------------ */
+/* table: one full process-table snapshot on demand                     */
+/* ------------------------------------------------------------------ */
+
+/* The server asks for the whole machine's process table with "table" on
+ * stdin. This is what a baseline snapshot or a fallback sweep used to spawn a
+ * PowerShell/CIM query for — about a second of CPU and a ~100 MB transient
+ * working set. A Toolhelp walk plus one handle per process answers in tens of
+ * milliseconds with no spawned process at all. Rows go out as one JSON line
+ * each, terminated by table_done. Rows interleave freely with sampling
+ * output: every line is serialized by the write lock, and the server pairs
+ * rows with its request by the table_done terminator. */
+static void emit_table(void)
+{
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe;
+        pe.dwSize = sizeof pe;
+        if (Process32FirstW(snap, &pe)) {
+            do {
+                DWORD pid = pe.th32ProcessID;
+                /* Our own reflection: the server never wants the observer. */
+                if (pid == GetCurrentProcessId()) continue;
+
+                FILETIME created, exitT, kernel, user;
+                ULONGLONG s = 0;
+                int haveTimes = 0;
+                HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+                if (h) {
+                    haveTimes = GetProcessTimes(h, &created, &exitT, &kernel, &user) ? 1 : 0;
+                    if (haveTimes) s = filetime_to_unix_ms(created);
+                }
+                size_t cmdChars = 0;
+                int truncated = 0;
+                WCHAR *cmd = h ? read_command_line(h, &cmdChars, &truncated) : NULL;
+                if (h) CloseHandle(h);
+
+                /* Worst case six UTF-8 bytes per wide char. */
+                size_t nameCap = wcslen(pe.szExeFile) * 6 + 16;
+                char *nameEsc = (char *)malloc(nameCap);
+                size_t nameLen = nameEsc
+                    ? json_escape_utf8(pe.szExeFile, wcslen(pe.szExeFile), nameEsc, nameCap)
+                    : 0;
+                size_t cmdCap = cmdChars * 6 + 16;
+                char *cmdEsc = cmdChars ? (char *)malloc(cmdCap) : NULL;
+                size_t cmdLen = cmdEsc ? json_escape_utf8(cmd, cmdChars, cmdEsc, cmdCap) : 0;
+
+                size_t cap = 128 + nameLen + cmdLen;
+                char *line = (char *)malloc(cap);
+                if (line) {
+                    int n = -1;
+                    if (cmdEsc && cmdLen > 0 && haveTimes) {
+                        n = snprintf(line, cap,
+                            "{\"ev\":\"table_row\",\"pid\":%lu,\"ppid\":%lu,\"s\":%llu,"
+                            "\"name\":\"%s\",\"cmd\":\"%s\"}",
+                            (unsigned long)pid,
+                            (unsigned long)pe.th32ParentProcessID,
+                            (unsigned long long)s,
+                            nameEsc ? nameEsc : "",
+                            cmdEsc);
+                    } else if (cmdEsc && cmdLen > 0) {
+                        n = snprintf(line, cap,
+                            "{\"ev\":\"table_row\",\"pid\":%lu,\"ppid\":%lu,"
+                            "\"name\":\"%s\",\"cmd\":\"%s\"}",
+                            (unsigned long)pid,
+                            (unsigned long)pe.th32ParentProcessID,
+                            nameEsc ? nameEsc : "",
+                            cmdEsc);
+                    } else if (haveTimes) {
+                        n = snprintf(line, cap,
+                            "{\"ev\":\"table_row\",\"pid\":%lu,\"ppid\":%lu,\"s\":%llu,\"name\":\"%s\"}",
+                            (unsigned long)pid,
+                            (unsigned long)pe.th32ParentProcessID,
+                            (unsigned long long)s,
+                            nameEsc ? nameEsc : "");
+                    } else {
+                        n = snprintf(line, cap,
+                            "{\"ev\":\"table_row\",\"pid\":%lu,\"ppid\":%lu,\"name\":\"%s\"}",
+                            (unsigned long)pid,
+                            (unsigned long)pe.th32ParentProcessID,
+                            nameEsc ? nameEsc : "");
+                    }
+                    if (n > 0 && (size_t)n < cap) emit_json_line(line);
+                    free(line);
+                }
+                free(cmdEsc);
+                free(nameEsc);
+                free(cmd);
+            } while (Process32NextW(snap, &pe));
+        }
+        CloseHandle(snap);
+    }
+    emit_json_line("{\"ev\":\"table_done\"}");
+}
+
 static DWORD WINAPI sampler_thread(LPVOID param)
 {
     (void)param;
@@ -670,14 +765,19 @@ static DWORD WINAPI sampler_thread(LPVOID param)
     return 0;
 }
 
-/* stdin carries one command per line. Only "sample" exists: the server asks
- * for a metric pass, this thread wakes the sampler. Closing stdin ends the
- * thread; the helper keeps observing either way. */
+/* stdin carries one command per line. "sample" asks for a metric pass (this
+ * thread wakes the sampler); "table" asks for one full process-table snapshot,
+ * answered synchronously here — a Toolhelp walk is fast enough to not need its
+ * own thread. Closing stdin ends the thread; the helper keeps observing. */
 static DWORD WINAPI stdin_thread(LPVOID param)
 {
     (void)param;
     char buf[4096];
     while (fgets(buf, sizeof buf, stdin)) {
+        if (strncmp(buf, "table", 5) == 0) {
+            emit_table();
+            continue;
+        }
         if (strncmp(buf, "sample", 6) != 0) continue;
         /* Optional pid list: the observed agent's tree is not in our job, so
          * the server names the pids it wants measured. */

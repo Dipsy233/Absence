@@ -39,6 +39,20 @@ async function main(): Promise<void> {
   }
   check("agentwatch is watching", monitor.available);
 
+  // The native table replaces the PowerShell/CIM snapshot: one stdin round-trip
+  // must return the whole machine's table, with this process and its command
+  // line among the rows.
+  const table = await monitor.readTable();
+  check(
+    "native table answers with rows",
+    table !== undefined && table.length > 20,
+    `got ${table?.length ?? 0} rows`,
+  );
+  check(
+    "native table carries this process with its command line",
+    table?.some((row) => row.pid === process.pid && (row.commandLine?.length ?? 0) > 0) ?? false,
+  );
+
   const events: ProcessPayload[] = [];
   const watcher = new ProcessWatcher({ onProcess: (payload) => events.push(payload) });
   watcher.warm();

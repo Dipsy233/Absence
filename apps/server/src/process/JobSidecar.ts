@@ -3,7 +3,14 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { WatchExit, WatchHostMetric, WatchMetric, WatchStart, WatchStatus } from "./observer";
+import type {
+  WatchExit,
+  WatchHostMetric,
+  WatchMetric,
+  WatchStart,
+  WatchStatus,
+  WatchTableRow,
+} from "./observer";
 
 /**
  * The Windows process observer: the Absence-side half of `native/agentwatch`.
@@ -21,6 +28,8 @@ export interface SidecarEvents {
   metric: (event: WatchMetric) => void;
   /** Host counters, once per sampling pass. */
   host: (event: WatchHostMetric) => void;
+  /** One row of a process-table snapshot, in answer to a `table` request. */
+  tableRow: (row: WatchTableRow) => void;
 }
 
 type Listener<K extends keyof SidecarEvents> = SidecarEvents[K];
@@ -39,7 +48,8 @@ type Listener<K extends keyof SidecarEvents> = SidecarEvents[K];
  * job — Windows 8 and later support nested jobs, so the server is placed in a
  * second job as well, and both jobs' events are delivered (the old job's
  * completion port is gone with the old helper, so only the new one is heard).
- * A baseline snapshot taken by the caller covers the gap.
+ * Processes spawned during the restart gap are missed — a window the polling
+ * fallback's baseline covers only when no kernel observer is attached.
  */
 export class JobSidecar {
   private readonly emitter = new EventEmitter();
@@ -47,6 +57,8 @@ export class JobSidecar {
   private buffer = "";
   /** Resolvers waiting for the helper's `sample_done`. */
   private readonly sampleWaiters = new Set<() => void>();
+  /** Resolvers waiting for the helper's `table_done`. */
+  private readonly tableWaiters = new Set<() => void>();
   private statusValue: WatchStatus = "starting";
   /** True once a helper has reported `ready` — post-ready errors get logged. */
   private ready = false;
@@ -135,8 +147,9 @@ export class JobSidecar {
 
       child.on("exit", () => {
         this.child = undefined;
-        // Nothing will answer a pending sample request now.
+        // Nothing will answer a pending sample or table request now.
         this.settleSamples();
+        this.settleTables();
         if (this.disposed) return;
         if (!settled) {
           settled = true;
@@ -195,6 +208,21 @@ export class JobSidecar {
       case "sample_done":
         this.settleSamples();
         return { kind: "sample_done" };
+      case "table_row": {
+        const pid = numberOrUndefined(parsed.pid);
+        if (pid === undefined) return undefined;
+        this.emitter.emit("tableRow", {
+          pid,
+          ppid: numberOrUndefined(parsed.ppid) ?? 0,
+          name: typeof parsed.name === "string" ? parsed.name : "?",
+          commandLine: typeof parsed.cmd === "string" ? parsed.cmd : undefined,
+          startedAt: numberOrUndefined(parsed.s),
+        } satisfies WatchTableRow);
+        return { kind: "table_row" };
+      }
+      case "table_done":
+        this.settleTables();
+        return { kind: "table_done" };
       case "host": {
         this.emitter.emit("host", {
           cpuMs: numberOrUndefined(parsed.cpuMs) ?? 0,
@@ -269,6 +297,43 @@ export class JobSidecar {
   private settleSamples(): void {
     for (const resolve of this.sampleWaiters) resolve();
     this.sampleWaiters.clear();
+  }
+
+  private settleTables(): void {
+    for (const resolve of this.tableWaiters) resolve();
+    this.tableWaiters.clear();
+  }
+
+  /**
+   * Ask the helper for one full process-table snapshot and wait for it.
+   *
+   * Resolves `false` when no answer arrives in time (a helper predating the
+   * `table` command, a restart in progress), which tells the caller to fall
+   * back to a CIM read.
+   */
+  requestTable(timeoutMs = 2500): Promise<boolean> {
+    const child = this.child;
+    const stdin = child?.stdin;
+    if (!child || !stdin || stdin.destroyed) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        this.tableWaiters.delete(onDone);
+        clearTimeout(timer);
+        resolve(ok);
+      };
+      const onDone = () => finish(true);
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      timer.unref?.();
+      this.tableWaiters.add(onDone);
+      try {
+        stdin.write("table\n");
+      } catch {
+        finish(false);
+      }
+    });
   }
 
   /**

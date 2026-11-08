@@ -7,6 +7,7 @@ import type {
   WatchSample,
   WatchStart,
   WatchStatus,
+  WatchTableRow,
 } from "./observer";
 
 /**
@@ -57,6 +58,7 @@ export class JobMonitor {
   private sidecarOn(event: "exit", listener: (event: WatchExit) => void): () => void;
   private sidecarOn(event: "metric", listener: (event: WatchMetric) => void): () => void;
   private sidecarOn(event: "host", listener: (event: WatchHostMetric) => void): () => void;
+  private sidecarOn(event: "tableRow", listener: (row: WatchTableRow) => void): () => void;
   private sidecarOn(event: "status", listener: (status: WatchStatus, detail?: string) => void): () => void;
   private sidecarOn(event: string, listener: (...args: never[]) => void): () => void {
     return (this.sidecar as unknown as { on(e: string, l: unknown): () => void }).on(event, listener);
@@ -147,6 +149,30 @@ export class JobMonitor {
     });
     this.sampling = promise;
     return promise;
+  }
+
+  /**
+   * One full process-table snapshot, from the helper's `table` command.
+   *
+   * The same facts a CIM query returns, read over the stdin channel the helper
+   * is already on: tens of milliseconds, no spawned process, no transient
+   * PowerShell. `undefined` means this platform has no live Windows helper
+   * (or one predating the command), and the caller should fall back.
+   */
+  async readTable(timeoutMs = 2500): Promise<WatchTableRow[] | undefined> {
+    if (process.platform !== "win32" || !this.available) return undefined;
+    const sidecar = this.sidecar as unknown as {
+      requestTable?(timeoutMs?: number): Promise<boolean>;
+    };
+    if (!sidecar.requestTable) return undefined;
+    const rows: WatchTableRow[] = [];
+    const offRows = this.sidecarOn("tableRow", (row) => rows.push(row));
+    try {
+      const answered = await sidecar.requestTable(timeoutMs);
+      return answered ? rows : undefined;
+    } finally {
+      offRows();
+    }
   }
 
   onStatus(listener: (status: WatchStatus, detail?: string) => void): () => void {

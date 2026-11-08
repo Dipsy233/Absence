@@ -242,7 +242,7 @@ Metrics and eggs are separate live views. The terminal mirror is not replayed.
 
 `JobMonitor` is created once per server process, before any session exists. On Windows it uses `native/agentwatch` to place the server process in a Job Object and reports descendant creation and exit. On Linux it uses `native/agentwatch-linux` eBPF tracepoints, which require `CAP_BPF`/`CAP_PERFMON` or root.
 
-When the helper is unavailable, or when a root process is outside the Job Object, `ProcessWatcher` falls back to process-table snapshots. On Windows the snapshot uses PowerShell `Get-CimInstance Win32_Process`; elsewhere it uses `ps`. The fallback has a sampling floor of about 0.5 seconds, and the metric precision is marked `sampled`. Kernel-sourced values are marked `exact` when they come from a held handle.
+When the helper is unavailable, or when a root process is outside the Job Object, `ProcessWatcher` falls back to process-table snapshots. On Windows the snapshot prefers the helper's `table` command (a Toolhelp walk, tens of milliseconds) and only falls back to PowerShell `Get-CimInstance Win32_Process` when no live helper exists; elsewhere it uses `ps`. The fallback has a sampling floor of about 0.5 seconds, and the metric precision is marked `sampled`. Kernel-sourced values are marked `exact` when they come from a held handle.
 
 Attribution:
 

@@ -83,6 +83,22 @@ export interface WatchSample {
   host?: WatchHostMetric;
 }
 
+/**
+ * One row of a full process-table snapshot, from the Windows helper's `table`
+ * command. The same facts a CIM query would return, read from a handle per
+ * process: the fallback sweep and the session baseline use this instead of
+ * spawning PowerShell. A row without `commandLine` or `startedAt` is one the
+ * helper could not open (a system process owned by another user).
+ */
+export interface WatchTableRow {
+  pid: number;
+  ppid: number;
+  name: string;
+  commandLine?: string;
+  /** Unix ms the OS says the process started. */
+  startedAt?: number;
+}
+
 /** How a process observer is doing, for the UI's precision indication. */
 export type WatchStatus = "starting" | "watching" | "unavailable";
 

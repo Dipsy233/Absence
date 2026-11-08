@@ -239,7 +239,7 @@ Absence Report 完全由 Web 端的 `apps/web/src/lib/report.ts` 计算，输入
 
 `JobMonitor` 在 server 进程内创建一次，早于任何会话存在。Windows 使用 `native/agentwatch` 把 server 进程放入 Job Object，并报告后代进程的创建与退出。Linux 使用 `native/agentwatch-linux` 的 eBPF tracepoint，需要 `CAP_BPF`/`CAP_PERFMON` 或 root。
 
-助手不可用，或根进程不在 Job Object 内时，`ProcessWatcher` 退化为进程表快照。Windows 使用 PowerShell `Get-CimInstance Win32_Process`，其他平台使用 `ps`。采样下限约为 0.5 秒，指标精度标记为 `sampled`。来自已持有句柄的内核数值标记为 `exact`。
+助手不可用，或根进程不在 Job Object 内时，`ProcessWatcher` 退化为进程表快照。Windows 优先使用 `agentwatch` 的 `table` 命令（Toolhelp 遍历，约几十毫秒），helper 不在时才退到 PowerShell `Get-CimInstance Win32_Process`；其他平台使用 `ps`。采样下限约为 0.5 秒，指标精度标记为 `sampled`。来自已持有句柄的内核数值标记为 `exact`。
 
 归因：
 

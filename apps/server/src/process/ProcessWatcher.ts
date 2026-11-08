@@ -378,8 +378,13 @@ export class ProcessWatcher {
    * Take the session baseline: what is already running before the agent has done
    * anything. Called when the session opens, so the snapshot (half a second) has
    * landed long before the first command.
+   *
+   * Kernel mode skips it: the baseline is read only by snapshot adoption, and
+   * kernel events attribute by ancestry instead, so this read would be a whole
+   * process-table sweep whose result nobody looks at.
    */
   warm(): void {
+    if (this.jobMode) return;
     void this.ensureBaseline();
   }
 

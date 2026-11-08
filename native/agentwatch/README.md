@@ -66,6 +66,11 @@ One JSON object per line, on stdout. Diagnostics go to stderr.
 | `start` (lost) | `pid`, `lost:true` — the process exited before it could be opened |
 | `exit` | `pid`, `durMs`, `cpuMs`, `code` |
 | `exit` (unseen) | `pid` — an exit with no matching start |
+| `metric` | `pid`, `cpuMs`, `rss`, `vsz`, `threads`, `handles`, `ioR`, `ioW` |
+| `host` | `cpuMs`, `idleMs`, `cores`, `memTotal`, `memAvail` |
+| `table_row` | `pid`, `ppid`, `s` (unix ms), `name`, `cmd` — one process of a table snapshot |
+| `table_done` | a `table` request is finished |
+| `sample_done` | one sampling pass finished |
 | `active_zero` | the job is momentarily empty (informational) |
 | `target_gone` | the observed server exited; the helper is about to stop |
 | `error` | `what`, `code` |
@@ -73,6 +78,19 @@ One JSON object per line, on stdout. Diagnostics go to stderr.
 A `lost:true` start is not a failure. It means a process was created *and*
 exited before `agentwatch` could open it — the event still proves it existed,
 which is exactly what polling could never do.
+
+### stdin commands
+
+| Command | Effect |
+|---|---|
+| `sample [pid,pid,…]` | one resource pass over the handles held (borrowing handles for the named pids) |
+| `table` | one full process-table snapshot: Toolhelp walk, one handle per process, rows out as `table_row` lines until `table_done` |
+
+`table` is what the server uses instead of spawning a PowerShell/CIM query for
+a baseline or a fallback sweep — tens of milliseconds instead of about a
+second. Rows interleave freely with other output; every line is serialized by
+the write lock and the server pairs rows with its request by the
+`table_done` terminator. The helper excludes its own pid from the rows.
 
 ## Build
 

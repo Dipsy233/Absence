@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
+import { JobMonitor } from "./JobMonitor";
+import type { WatchTableRow } from "./observer";
 
 /** A process table is a few hundred KB on a busy machine; `ps` output too. */
 const MAX_BUFFER = 32 * 1024 * 1024;
@@ -20,16 +22,22 @@ export type ProcessTable = Map<number, ProcInfo>;
 /**
  * Snapshot every process on the machine, keyed by pid.
  *
- * Windows has no cheap way to get parent pid *and* command line together, so we
- * ask CIM once and parse JSON; everything else comes from `ps`. Either way this
- * costs a few hundred ms, which is why the watcher never calls it on the agent's
- * hot path (see ProcessWatcher).
+ * On Windows the kernel observer's helper answers a `table` request over the
+ * stdin channel it is already on — tens of milliseconds, no spawned process.
+ * When no live helper exists (no agentwatch.exe, no rights, or one predating
+ * the command) the old CIM path remains: ask PowerShell once and parse JSON.
+ * Everything else comes from `ps`. Either way the read costs hundreds of
+ * milliseconds at worst, which is why the watcher never calls it on the
+ * agent's hot path (see ProcessWatcher).
  *
  * The snapshot command's own process tree is removed from the result: Absence
- * spawned it, and a process cannot help but observe itself.
+ * spawned it, and a process cannot help but observe itself. (The helper needs
+ * no such trimming — it excludes its own pid and spawns nothing.)
  */
 export async function snapshotProcesses(): Promise<ProcessTable> {
   if (process.platform === "win32") {
+    const native = await JobMonitor.get().readTable();
+    if (native && native.length > 0) return tableFromRows(native);
     const { stdout, pid } = await runCapturingPid("powershell", [
       "-NoProfile",
       "-NonInteractive",
@@ -40,6 +48,22 @@ export async function snapshotProcesses(): Promise<ProcessTable> {
   }
   const { stdout, pid } = await runCapturingPid("ps", ["-eo", "pid=,ppid=,etimes=,args="]);
   return dropSubtree(parsePosix(stdout), pid);
+}
+
+/** The helper's rows, in the shape the watcher's adoption logic reads. */
+function tableFromRows(rows: WatchTableRow[]): ProcessTable {
+  const table: ProcessTable = new Map();
+  for (const row of rows) {
+    if (!Number.isInteger(row.pid) || row.pid <= 0) continue;
+    table.set(row.pid, {
+      pid: row.pid,
+      ppid: Number.isInteger(row.ppid) ? row.ppid : 0,
+      name: row.name || "?",
+      commandLine: row.commandLine ?? "",
+      startedAt: row.startedAt ?? 0,
+    });
+  }
+  return table;
 }
 
 /** `execFile` with the child's pid, so the caller can mute its own reflection. */
