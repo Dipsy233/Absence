@@ -1,4 +1,5 @@
 import Editor from "@monaco-editor/react";
+import { useMonacoReady } from "../../lib/monaco";
 
 interface CodeViewProps {
   value: string;
@@ -7,6 +8,12 @@ interface CodeViewProps {
 
 /** A small read-only code preview for in-panel detail views. */
 export function CodeView({ value, language }: CodeViewProps) {
+  // Monaco is a lazy chunk; mounting the editor before it lands would send
+  // @monaco-editor/react off to a CDN. Hold the existing loading state instead.
+  const monacoReady = useMonacoReady();
+  if (!monacoReady) {
+    return <div className="p-2 font-mono text-[10px] text-desk-dim">loading…</div>;
+  }
   return (
     <Editor
       height="100%"

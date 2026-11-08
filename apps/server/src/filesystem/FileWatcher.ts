@@ -5,8 +5,6 @@ import { isIgnoredDir, isIgnoredFile } from "./FileTree";
 
 export type FsChangeKind = "created" | "modified" | "deleted";
 
-const WATCH_IGNORE_DIRS = new Set(["node_modules", ".git", "dist", "build", "out", "coverage", ".cache", ".turbo", ".vite"]);
-
 /** How many external directories and target files may be watched at once. */
 const MAX_EXTERNAL_DIRS = 32;
 const MAX_EXTERNAL_PATHS = 128;
@@ -90,7 +88,9 @@ export class FileWatcher {
       awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 },
       ignored: (candidate: string) => {
         const base = candidate.split(/[\\/]/).pop() ?? candidate;
-        return WATCH_IGNORE_DIRS.has(base) || isIgnoredFile(base);
+        // The same ignore set the tree view uses, so the watcher never walks a
+        // directory the UI would not show (.next, .svn, …).
+        return isIgnoredDir(base) || isIgnoredFile(base);
       },
     });
 
@@ -112,7 +112,7 @@ export class FileWatcher {
           const abs = path.resolve(candidate);
           if (abs === projectAbs || abs.startsWith(projectAbs + path.sep)) return true;
           const base = candidate.split(/[\\/]/).pop() ?? candidate;
-          return WATCH_IGNORE_DIRS.has(base) || isIgnoredFile(base) || isIgnoredDir(base);
+          return isIgnoredDir(base) || isIgnoredFile(base);
         },
       });
       this.outside.on("add", (p) => this.onOutsideChange!("created", p));

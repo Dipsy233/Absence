@@ -62,11 +62,9 @@ let teardownStatus = null;
 function logLine(message) {
   const line = `[${new Date().toISOString()}] ${message}\n`;
   if (IS_DEV) process.stdout.write(line);
-  try {
-    fs.appendFileSync(path.join(app.getPath("userData"), "desktop.log"), line);
-  } catch {
-    // Logging must never take the app down.
-  }
+  // Async: the main process never blocks on disk for a log line, and a failed
+  // append must not take the app down.
+  fs.appendFile(path.join(app.getPath("userData"), "desktop.log"), line, () => {});
 }
 
 /**

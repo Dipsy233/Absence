@@ -76,6 +76,20 @@ interface SummaryRow {
 const openChunks = new Map<string, OpenChunk>();
 const openHostChunks = new Map<string, OpenHostChunk>();
 const summaries = new Map<string, SummaryRow>();
+
+/**
+ * How many egg summaries may stay resident before the quietest ones are
+ * dropped, and how long a summary must have gone unsampled to be droppable.
+ *
+ * Each row is the running total of one egg in one session and lives in memory
+ * only so a live session's averages survive without a read per frame; the
+ * same values are upserted to SQLite on every flush, so an evicted row comes
+ * back intact via `ensureSummariesLoaded` if its session is ever reopened.
+ * A live session is sampled every few seconds, so the staleness floor makes
+ * it impossible to evict one whose last samples have not been flushed.
+ */
+const MAX_SUMMARIES = 512;
+const SUMMARY_IDLE_MS = 5 * 60_000;
 let flushTimer: NodeJS.Timeout | undefined;
 let failed = false;
 
@@ -406,6 +420,27 @@ export function flushMetrics(): void {
     }
   } catch (error) {
     warn(error);
+  }
+  // Only after a successful flush: from here SQLite holds every evicted row.
+  pruneSummaries();
+}
+
+/**
+ * Drop the summaries of long-quiet sessions once the map outgrows its cap.
+ *
+ * Eviction is by `lastTs` — oldest first — and skips anything sampled within
+ * the idle floor, so no live session is ever touched. Without this, a server
+ * that archives many sessions grows one entry per (session, egg) forever.
+ */
+function pruneSummaries(): void {
+  if (summaries.size <= MAX_SUMMARIES) return;
+  const floor = Date.now() - SUMMARY_IDLE_MS;
+  const candidates = [...summaries.entries()]
+    .filter(([, row]) => row.lastTs < floor)
+    .sort((a, b) => a[1].lastTs - b[1].lastTs);
+  for (const [key] of candidates) {
+    if (summaries.size <= MAX_SUMMARIES) break;
+    summaries.delete(key);
   }
 }
 

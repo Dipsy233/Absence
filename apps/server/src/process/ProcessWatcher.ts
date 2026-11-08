@@ -170,6 +170,24 @@ export function retiredPids(
   return finished.slice(0, excess).map((egg) => egg.pid);
 }
 
+/**
+ * Whether a pid still belongs to some process, without looking it up.
+ *
+ * Signal 0 asks the kernel only for existence. `ESRCH` means gone; anything
+ * else — success, or `EPERM` for a live process owned by someone else — means
+ * it is still there. This is what the alive tick uses instead of a full
+ * process-table snapshot: one syscall per egg rather than one spawned
+ * `powershell`/`ps` per tick.
+ */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (cause) {
+    return (cause as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
 export interface ProcessWatcherOptions {
   /** Every egg state change, ready to become a `process` AbsenceEvent. */
   onProcess: (payload: ProcessPayload) => void;
@@ -1187,14 +1205,16 @@ export class ProcessWatcher {
   private async checkAlive(): Promise<void> {
     this.aliveTimer = undefined;
     if (this.disposed) return;
-    const table = await this.table();
-    if (this.disposed) return;
 
     const at = this.now();
     let live = 0;
     for (const egg of this.eggs.values()) {
       if (egg.status === "exited") continue;
-      if (table.has(egg.info.pid)) {
+      // A signal-0 probe answers the same question the table snapshot did — is
+      // this pid still somebody — without paying for a full machine snapshot
+      // every few seconds. A reused pid reads as alive either way, so the
+      // fallback loses nothing the table had.
+      if (pidAlive(egg.info.pid)) {
         live += 1;
         continue;
       }

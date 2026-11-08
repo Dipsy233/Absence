@@ -4,6 +4,7 @@ import type * as Monaco from "monaco-editor";
 import { formatBytes } from "../../lib/format";
 import { fileContext, selectionContext } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
+import { useMonacoReady } from "../../lib/monaco";
 import { useT } from "../../lib/i18n";
 
 interface FileStageProps {
@@ -41,6 +42,9 @@ export function FileStage({
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const collectionRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
   const addContext = useChatStore((s) => s.addContext);
+  // Monaco is a lazy chunk; hold the editor's own loading state until it lands,
+  // so @monaco-editor/react never reaches for a CDN.
+  const monacoReady = useMonacoReady();
   const t = useT();
 
   const applyDecorations = useCallback(() => {
@@ -121,6 +125,9 @@ export function FileStage({
         </div>
       ) : null}
       <div className="min-h-0 flex-1">
+        {!monacoReady ? (
+          <div className="p-4 font-mono text-xs text-desk-dim">{t("loading editor…")}</div>
+        ) : (
         <Editor
           height="100%"
           language={language}
@@ -176,6 +183,7 @@ export function FileStage({
             scrollbar: { verticalScrollbarSize: 9, horizontalScrollbarSize: 9 },
           }}
         />
+        )}
       </div>
       {caption ? (
         <div className="shrink-0 border-t border-desk-line px-3 py-1.5 text-center text-xs italic text-desk-dim">
