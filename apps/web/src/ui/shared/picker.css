@@ -376,12 +376,26 @@
 }
 
 .picker__hmeta {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   overflow: hidden;
   font: 10px var(--mon-mono);
   color: var(--mon-t3);
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The middle text yields; the session id holds the bottom-right corner. */
+.picker__hmetatext {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picker__hsid {
+  flex: none;
+  margin-left: auto;
+  font-style: normal;
+  opacity: 0.75;
 }
 
 .picker__hmeta i {

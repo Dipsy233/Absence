@@ -218,13 +218,18 @@ export function ProjectPicker() {
     return () => window.removeEventListener("keydown", onKey);
   }, [customOpen]);
 
-  const query = path.trim().toLowerCase();
+  // 反斜杠与正斜杠一个意思:历史里的路径存的是正斜杠形式,Windows 用户
+  // 按习惯输入 E:\0down\daze-demo 也必须命中同一批会话,所以比较与打开前
+  // 都把两侧统一成正斜杠。
+  const normalizePath = (value: string) => value.trim().toLowerCase().replace(/\\/g, "/");
+  const query = normalizePath(path);
   const selected = runtimes.find((row) => row.kind === agent);
   const canStart = selected?.state === "ready";
 
   const visibleSessions = useMemo(() => {
     const byRuntime = sessions.filter((s) => s.runtime === agent);
-    return query ? byRuntime.filter((s) => s.projectPath.toLowerCase().includes(query)) : byRuntime;
+    return query ? byRuntime.filter((s) => normalizePath(s.projectPath).includes(query)) : byRuntime;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, agent, query]);
 
   const start = async (projectPath: string) => {
@@ -237,7 +242,7 @@ export function ProjectPicker() {
     setError(undefined);
     try {
       resetAllStores();
-      await startSession(projectPath.trim(), agent);
+      await startSession(projectPath.trim().replace(/\\/g, "/"), agent);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -629,14 +634,19 @@ export function ProjectPicker() {
                     title={session.projectPath}
                   >
                     <span className="picker__hrow">
-                      <b>{session.name ?? session.projectName}</b>
+                      <b>{session.projectPath}</b>
                       <em>{formatWhen(session.updatedAt)}</em>
                     </span>
                     <span className="picker__hmeta">
-                      <i data-runtime={session.runtime}>{session.runtime}</i>
-                      {" · "}
-                      {session.messageCount} 条消息
-                      {session.firstPrompt ? ` · ${session.firstPrompt}` : null}
+                      <span className="picker__hmetatext">
+                        <i data-runtime={session.runtime}>{session.runtime}</i>
+                        {" · "}
+                        {session.messageCount} 条消息
+                        {session.firstPrompt ? ` · ${session.firstPrompt}` : null}
+                      </span>
+                      <em className="picker__hsid" title={session.id}>
+                        {session.id}
+                      </em>
                     </span>
                   </button>
                 ))
