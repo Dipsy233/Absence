@@ -378,6 +378,16 @@
 /* Scoped under .picker__history: the generic `.picker__list span` rule above
    sets display: block on every span (0,1,1), which would fold both rows back
    into stacked blocks. Two classes (0,2,0) win the cascade. */
+.picker__history .picker__hrow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.picker__history .picker__hrow b {
+  min-width: 0;
+}
+
 .picker__history .picker__hmeta {
   display: flex;
   align-items: baseline;
