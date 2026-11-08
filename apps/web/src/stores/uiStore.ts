@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useRunsStore } from "./runsStore";
 
 export interface MenuItem {
   label: string;
@@ -19,6 +20,14 @@ interface UiStore {
   filesView: FilesView;
   /** History run selected in the left rail; drives the Activity filter. */
   selectedRunId?: string;
+  /**
+   * The session's newest run at the moment the pin was set. A run arriving
+   * after that supersedes the pin (see `useSelectedRun`): the Monitor is the
+   * live face, so its panels follow the newest work instead of staying on a
+   * run the user browsed earlier — which is how "replayed an old round, went
+   * back to live, sent a message" used to leave every panel on the old run.
+   */
+  selectedRunTailId?: string;
   /** Whether the metrics dashboard covers the Stage (when not the default page). */
   metricsOpen: boolean;
   /** Event highlighted in the Activity panel after following a report link. */
@@ -45,7 +54,12 @@ export const useUiStore = create<UiStore>((set) => ({
   openMenu: (x, y, items) => set({ menu: { x, y, items } }),
   closeMenu: () => set({ menu: undefined }),
   setFilesView: (filesView) => set({ filesView }),
-  selectRun: (selectedRunId) => set({ selectedRunId, focusedEventId: undefined }),
+  selectRun: (selectedRunId) =>
+    set({
+      selectedRunId,
+      focusedEventId: undefined,
+      selectedRunTailId: useRunsStore.getState().runs.at(-1)?.id,
+    }),
 
   openMetrics: () => set({ metricsOpen: true }),
   closeMetrics: () => set({ metricsOpen: false }),

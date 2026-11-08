@@ -23,14 +23,31 @@ export function useSelectedRun(): SelectedRun {
   const liveEvents = useEvents();
   const runs = useRunsStore((s) => s.runs);
   const selectedRunId = useUiStore((s) => s.selectedRunId);
+  const selectedRunTailId = useUiStore((s) => s.selectedRunTailId);
   const loaded = useRunsStore((s) => s.selectedEvents);
   const eventsLoading = useRunsStore((s) => s.eventsLoading);
   const loadRunEvents = useRunsStore((s) => s.loadRunEvents);
   const sessionId = useSessionStore((s) => s.session?.id);
 
+  /**
+   * The pin holds until a newer run arrives. A replay gesture or the run
+   * selector pins one run; the moment a run newer than the pinned tail
+   * exists, the pin is superseded — the Monitor is the live face, and every
+   * panel follows the newest work. Without this, "replay an old round, go
+   * back to live, send a message" left the panels on the replayed run: the
+   * selection was still set, so `runs.find` kept answering with it and the
+   * "new run started" signals downstream never fired.
+   */
+  const pinSuperseded =
+    selectedRunId !== undefined &&
+    selectedRunTailId !== undefined &&
+    runs[runs.length - 1]?.id !== selectedRunTailId;
+
   const selected = useMemo<RunSummary | undefined>(
-    () => runs.find((run) => run.id === selectedRunId) ?? runs[runs.length - 1],
-    [runs, selectedRunId],
+    () =>
+      (pinSuperseded ? undefined : runs.find((run) => run.id === selectedRunId)) ??
+      runs[runs.length - 1],
+    [runs, selectedRunId, pinSuperseded],
   );
 
   // The live window's last run is the one still being written. Its server
