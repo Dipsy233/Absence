@@ -219,6 +219,7 @@ const ZH: Record<string, string> = {
   Files: "文件",
   inspect: "查看",
   "{n} seen": "已见 {n} 个",
+  "Created on disk by the agent's command": "由 agent 的命令在磁盘上创建",
   "Loading project…": "正在加载项目…",
   Inspect: "查看",
   "View History": "查看历史",

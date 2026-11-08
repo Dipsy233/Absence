@@ -257,7 +257,22 @@ export function MonitorLeft({
             onClick={() => setView("files")}
           >
             {t("Files")}
-            <em>{t("{n} seen", { n: data.facts?.files.read.length ?? 0 })}</em>
+            {/* Every file the agent demonstrably touched — read, created or
+                modified — not just the ones it read: a run that only lays a
+                file would otherwise badge the tab "0 seen" while the file
+                exists. Watcher events nobody attributes to the agent stay
+                out. */}
+            <em>
+              {t("{n} seen", {
+                n: data.facts
+                  ? new Set([
+                      ...data.facts.files.read,
+                      ...data.facts.files.created,
+                      ...data.facts.files.modified,
+                    ]).size
+                  : 0,
+              })}
+            </em>
           </button>
           <button
             type="button"

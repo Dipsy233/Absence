@@ -234,7 +234,9 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
     }
     case "file_write": {
       const { path, content } = event.payload;
-      const emptied = content.length === 0;
+      // Same distinction as the row verb: a watcher-synthesized write (source
+      // `os`) is a creation on disk; the agent's own write tool is a write.
+      const fromDisk = event.source === "os";
       return baseItem(
         event,
         "file",
@@ -244,10 +246,9 @@ export function eventToStageItem(event: AbsenceEvent): StageItem | undefined {
           path,
           content,
           language: languageFromPath(path),
-          badge: emptied ? "EMPTIED" : "written",
-          badgeTone: emptied ? "warn" : "normal",
-          caption: emptied
-            ? "Agent wrote an empty file — it still exists on disk. Deleting a file needs the bash tool (rm)."
+          badge: fromDisk ? "created" : "written",
+          caption: fromDisk
+            ? "Created on disk by the agent's command"
             : "Agent wrote this file",
         },
         path,
@@ -586,15 +587,19 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
       };
     case "file_write": {
       const bytes = event.payload.content.length;
-      if (bytes === 0) {
+      // A write synthesized from the watcher (source `os`) is a file's first
+      // appearance on disk — the server emits one only for a path it had not
+      // seen — so it reads as a creation, whatever its size: a `touch` lays a
+      // 0-byte file and that is the whole content of the action.
+      if (event.source === "os") {
         return {
           id,
           event,
           time,
-          action: "EMPTIED",
+          action: "CREATE",
           primary: event.payload.path,
-          secondary: "0 B · file still on disk",
-          tone: "warn",
+          secondary: formatBytes(bytes),
+          tone: "edit",
           stageItem,
         };
       }
