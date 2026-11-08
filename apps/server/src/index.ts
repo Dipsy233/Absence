@@ -19,7 +19,9 @@ import { closeArchive, expireArchives } from "./sessions/archive";
 import { drainMetrics, expireMetrics } from "./sessions/storage/metrics";
 
 export interface StartServerOptions {
-  /** Port to listen on. `0` lets the OS pick a free one (the desktop shell). */
+  /** Port to listen on. `0` lets the OS pick a free one — but prefer a fixed
+      one for any caller whose renderer stores state per origin (the desktop
+      shell picks from its own stable candidates and remembers the choice). */
   port?: number;
   host?: string;
   /** Suppress Fastify's request logging (the desktop shell logs to its own file). */

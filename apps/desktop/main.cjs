@@ -188,11 +188,55 @@ async function startEmbeddedServer() {
 
   mod = loadServerModule();
   const { startServer } = mod;
-  return startServer({
-    port: 0, // let the OS pick a free port — no conflicts, no config
-    quiet: !IS_DEV,
-    config: { webDist },
-  });
+  // A stable origin is what keeps the renderer's localStorage — every setting
+  // — alive between launches: the UI stores them per origin, so a port the OS
+  // picks at random (the old `port: 0`) handed the app a fresh origin each
+  // start and silently reset every setting. The port is chosen from a fixed
+  // candidate list instead, the previous launch's choice first; a port taken
+  // by an unrelated process just moves the app to the next candidate, which
+  // is then remembered. Single-instance lock (above) keeps two copies of the
+  // app from racing for the same port.
+  const candidates = [...new Set([rememberedPort(), ...SERVER_PORTS].filter(Boolean))];
+  let lastError;
+  for (const port of candidates) {
+    try {
+      const running = await startServer({ port, quiet: !IS_DEV, config: { webDist } });
+      rememberPort(running.port);
+      return running;
+    } catch (error) {
+      // Only a taken port moves on; anything else is a real failure.
+      if (!/already taken|EADDRINUSE/i.test(error instanceof Error ? error.message : String(error))) {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+/** Fixed candidates for the embedded server, most preferred first. */
+const SERVER_PORTS = [8848, 8849, 8850];
+
+/** Where the last launch's chosen port is remembered. */
+function portMemoPath() {
+  return path.join(app.getPath("userData"), "server-port");
+}
+
+function rememberedPort() {
+  try {
+    const port = Number(fs.readFileSync(portMemoPath(), "utf8").trim());
+    return Number.isInteger(port) && port > 0 && port <= 65535 ? port : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberPort(port) {
+  try {
+    fs.writeFileSync(portMemoPath(), String(port));
+  } catch {
+    // A lost memo costs one launch on the default port, nothing more.
+  }
 }
 
 /**

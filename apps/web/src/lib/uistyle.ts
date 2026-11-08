@@ -10,6 +10,9 @@ export type UiStyleId = "nixie" | "ink" | "glass";
 
 export const UI_STYLES: UiStyleId[] = ["nixie", "ink", "glass"];
 
+/** The look a fresh install starts in (glass is designed around dark). */
+export const DEFAULT_UI_STYLE: UiStyleId = "glass";
+
 export type ColorScheme = "dark" | "light";
 
 export const SCHEMES: ColorScheme[] = ["dark", "light"];
@@ -28,8 +31,8 @@ export function isScheme(value: unknown): value is ColorScheme { return value ==
 export function readStoredUiStyle(): UiStyleId {
   try {
     const parsed = JSON.parse(localStorage.getItem(STYLE_KEY) ?? "null");
-    return isUiStyle(parsed) ? parsed : UI_STYLES[0] as UiStyleId;
-  } catch { return UI_STYLES[0] as UiStyleId; }
+    return isUiStyle(parsed) ? parsed : DEFAULT_UI_STYLE;
+  } catch { return DEFAULT_UI_STYLE; }
 }
 
 export function storeUiStyle(style: UiStyleId): void {
