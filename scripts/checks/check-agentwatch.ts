@@ -43,9 +43,16 @@ async function main(): Promise<void> {
   const watcher = new ProcessWatcher({ onProcess: (payload) => events.push(payload) });
   watcher.warm();
 
-  // One "command": short-lived children are the hard case the sidecar exists for.
+  // One "command": short-lived children are the hard case the sidecar exists
+  // for. The subjects are `node -e` — a process that lives a few tens of
+  // milliseconds and is not shell-shaped. A `cmd /c` child is spawned too, as
+  // the executor-shell case: since the one-action-row change the executor is
+  // plumbing (its command row covers it), so it must NOT become an egg.
   const commandId = watcher.begin("test: short-lived children");
   const spawnCount = 8;
+  for (let i = 0; i < spawnCount; i++) {
+    spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore", windowsHide: true });
+  }
   for (let i = 0; i < spawnCount; i++) {
     spawn("cmd.exe", ["/c", "exit", "0"], { stdio: "ignore", windowsHide: true });
   }
@@ -53,22 +60,30 @@ async function main(): Promise<void> {
   watcher.end(commandId);
 
   const running = events.filter((event) => event.status === "running");
-  const cmdEggs = running.filter((event) => event.name.toLowerCase() === "cmd.exe");
+  const nodeEggs = running.filter((event) => event.name.toLowerCase() === "node.exe");
   check(
-    `caught all ${spawnCount} short-lived cmd.exe`,
-    cmdEggs.length >= spawnCount,
-    `got ${cmdEggs.length} of ${spawnCount}: ${cmdEggs.map((e) => e.pid).join(",")}`,
+    `caught all ${spawnCount} short-lived node.exe`,
+    nodeEggs.length >= spawnCount,
+    `got ${nodeEggs.length} of ${spawnCount}: ${nodeEggs.map((e) => e.pid).join(",")}`,
   );
   check(
     "the eggs carry a command line (shell wrapper stripped)",
-    cmdEggs.every((event) => event.commandLine.length > 0) &&
-      cmdEggs.every((event) => !event.commandLine.toLowerCase().includes("cmd.exe")),
-    cmdEggs.map((event) => event.commandLine).join(" | "),
+    nodeEggs.every((event) => event.commandLine.length > 0) &&
+      nodeEggs.every((event) => !event.commandLine.toLowerCase().includes("cmd.exe")),
+    nodeEggs.map((event) => event.commandLine).join(" | "),
   );
   check(
     "every egg is attributed to the command that laid it",
-    cmdEggs.every((event) => event.command === "test: short-lived children"),
-    cmdEggs.map((event) => `${event.pid}=${event.command}`).join(" | "),
+    nodeEggs.every((event) => event.command === "test: short-lived children"),
+    nodeEggs.map((event) => `${event.pid}=${event.command}`).join(" | "),
+  );
+  check(
+    "executor shells are plumbing, not eggs",
+    !running.some(
+      (event) =>
+        event.name.toLowerCase() === "cmd.exe" && event.command === "test: short-lived children",
+    ),
+    running.filter((event) => event.name.toLowerCase() === "cmd.exe").map((e) => e.pid).join(","),
   );
   check(
     "console hosts are filtered out",
