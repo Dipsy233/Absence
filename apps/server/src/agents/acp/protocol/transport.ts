@@ -12,7 +12,8 @@
  *   - stderr is a diagnostics channel only and is never parsed as protocol.
  */
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { statSync } from "node:fs";
 import path from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { parseJsonRpcMessage, type JsonRpcMessage } from "./jsonrpc";
@@ -162,26 +163,60 @@ export function createStdioTransport(
  * Turn a launch command into something CreateProcess can start.
  *
  * On Windows a bare `npx` / `uvx` / `qwen` is a `.cmd` shim on PATH, and
- * `spawn("npx")` fails with ENOENT. `where` applies PATHEXT, so ask it once.
- * Its output can list an extensionless shim *before* the `.cmd` that Windows
- * itself would run (`D:\nodejs\npx` then `D:\nodejs\npx.cmd`), so the first
- * hit is not enough: choose by PATHEXT priority instead. An absolute path or a
- * name that already carries an extension is left alone; a lookup failure falls
- * through to spawn's own error, which the adapter reports as "not installed".
+ * `spawn("npx")` fails with ENOENT. The lookup that used to be a spawned
+ * `where` is a pure Node scan (see `whereLines`), so launching an agent
+ * creates no extra process and no console host. The scan can list an
+ * extensionless shim *before* the `.cmd` that Windows itself would run
+ * (`D:\nodejs\npx` then `D:\nodejs\npx.cmd`), so the first hit is not enough:
+ * choose by PATHEXT priority instead. An absolute path or a name that already
+ * carries an extension is left alone; a lookup failure falls through to
+ * spawn's own error, which the adapter reports as "not installed".
  */
 export function resolveExecutable(entry: string, env: NodeJS.ProcessEnv = process.env): string {
   if (process.platform !== "win32" || path.isAbsolute(entry)) return entry;
   if (path.extname(entry).length > 0) return entry;
+  return pickExecutable(whereLines(entry, env), entry, env.PATHEXT);
+}
+
+/**
+ * Every PATH match for `entry`, in the order `where` would print them.
+ *
+ * No spawned process: walk the current directory and then PATH in order, and
+ * in each directory test the bare name first (an extensionless shim, like
+ * Git's `npx`) followed by each PATHEXT extension in its own priority order.
+ * Name case follows the filesystem, which is case-insensitive on Windows, as
+ * `where` does. An unreadable or vanished directory simply contributes no
+ * lines — a `stat` miss is the normal shape of "not here".
+ */
+function whereLines(entry: string, env: NodeJS.ProcessEnv): string[] {
+  const dirs = [
+    process.cwd(),
+    ...(env.PATH ?? "")
+      .split(path.delimiter)
+      .map((dir) => dir.trim().replace(/^"(.*)"$/, "$1"))
+      .filter((dir) => dir.length > 0),
+  ];
+  const exts = (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+    .split(";")
+    .map((ext) => ext.trim())
+    .filter((ext) => ext.length > 0);
+  const lines: string[] = [];
+  for (const dir of dirs) {
+    const base = path.join(dir, entry);
+    if (isFile(base)) lines.push(base);
+    for (const ext of exts) {
+      const candidate = `${base}${ext}`;
+      if (isFile(candidate)) lines.push(candidate);
+    }
+  }
+  return lines;
+}
+
+function isFile(candidate: string): boolean {
   try {
-    const result = spawnSync("where", [entry], { encoding: "utf8", windowsHide: true });
-    if (result.status !== 0 || !result.stdout) return entry;
-    const lines = result.stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-    return pickExecutable(lines, entry, env.PATHEXT);
+    return statSync(candidate).isFile();
   } catch {
-    return entry;
+    return false;
   }
 }
 
