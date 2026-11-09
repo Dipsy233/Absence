@@ -162,7 +162,7 @@ Tool and file events are also assistant-message boundaries: `AcpAdapter` closes 
 
 OS-watcher facts are tagged where they are created: `process`, `file_change` and the derived `file_write`/`file_edit` carry `source: "os"` and `fidelity: "exact"`; the `unknown` default does not apply. A shell write produces one action: when the disk diff derives a content event from the same change, the raw `file_change` is marked `echo: true` (Activity hides it, the Report does not count it twice). A `file_change kind: "modified"` indicates that the file existed, so the derived write is recorded as a modification.
 
-## 7. Approvals and `/auth`
+## 7. Approvals, `/auth` and `/model`
 
 Approvals:
 
@@ -179,7 +179,13 @@ Authentication:
 - `initialize.authMethods` supplies the options shown for `/auth`.
 - `/auth <methodId>` calls ACP `authenticate` and then reopens the blocked session.
 - Absence does not read tokens, fill credentials or proxy an OAuth flow. It performs only the read-only inspection described in section 4.
-- Any other `/…` line is sent as a prompt. `SessionStore.forwardCommand(text)` is `this.prompt(text)`. The command panel combines commands advertised through `available_commands_update` with the `/auth` action.
+
+Model selection:
+
+- The agent's config options (`session/set_config_option`) are the selector. `session/new` and `config_option_update` replace the set Absence holds; the `model` category drives the `/model` command.
+- `/model` is offered in the palette only when the agent advertises a model selector; its choices are the option's values, and choosing one calls `session/set_config_option` rather than sending a prompt.
+- `/model <model>` applies the value and reports what the agent returned. An agent that advertises no selector has no `/model` entry, and a typed `/model …` line is forwarded like any other command so an agent implementing it itself still receives it.
+- Any other `/…` line is sent as a prompt. `SessionStore.forwardCommand(text)` is `this.prompt(text)`. The command panel combines commands advertised through `available_commands_update` with the `/auth` and `/model` actions.
 
 ## 8. Earlier per-product adapters
 

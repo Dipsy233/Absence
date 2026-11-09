@@ -55,11 +55,15 @@ export class MockAdapter extends BaseAdapter {
 
   // --- command surface (stubs so the terminal box works without credentials) --
 
-  async listModels(): Promise<CommandOption[]> {
+  modelChoices(): CommandOption[] {
     return [
       { value: "mock/agent", label: "Mock Agent", description: "scripted runtime", active: this.model === "mock/agent" },
       { value: "mock/fast", label: "Mock Fast", description: "scripted runtime", active: this.model === "mock/fast" },
     ];
+  }
+
+  async listModels(): Promise<CommandOption[]> {
+    return this.modelChoices();
   }
 
   async setModel(value: string): Promise<string> {

@@ -294,18 +294,14 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
     );
   }
 
-  async listModels(): Promise<CommandOption[]> {
+  /**
+   * Model selectors the agent advertises, or `[]` when it exposes none.
+   * Used for the `session_state` push so the `/model` command only appears
+   * for agents that actually offer model switching.
+   */
+  modelChoices(): CommandOption[] {
     const choices = this.config.modelChoices();
-    if (choices.length === 0) {
-      return [
-        {
-          value: this.model,
-          label: this.model,
-          description: "reported by the agent",
-          active: true,
-        },
-      ];
-    }
+    if (choices.length === 0) return [];
     const current = this.config.modelName();
     return choices.map((option) => ({
       value: option.value,
@@ -313,6 +309,20 @@ export class AcpAdapter extends BaseAdapter implements AgentSessionPort {
       description: option.group ?? option.description,
       active: option.value === current,
     }));
+  }
+
+  async listModels(): Promise<CommandOption[]> {
+    const choices = this.modelChoices();
+    if (choices.length > 0) return choices;
+    // Legacy fallback: an agent with no config option still reports its model.
+    return [
+      {
+        value: this.model,
+        label: this.model,
+        description: "reported by the agent",
+        active: true,
+      },
+    ];
   }
 
   async setModel(value: string): Promise<string> {

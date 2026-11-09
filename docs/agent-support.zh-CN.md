@@ -162,7 +162,7 @@ profile 说明：
 
 OS 观察者的事实就地标注：`process`、`file_change` 与派生的 `file_write`/`file_edit` 携带 `source: "os"`、`fidelity: "exact"`，不依赖 `unknown` 默认值。shell 写文件产生一个动作：当磁盘 diff 会从同一次变化派生内容事件时，原始 `file_change` 标为 `echo: true`（Activity 隐藏它，Report 不重复计数）。`file_change kind: "modified"` 表明文件已存在，因此派生的写入记为修改。
 
-## 7. 审批与 `/auth`
+## 7. 审批、`/auth` 与 `/model`
 
 审批：
 
@@ -179,7 +179,13 @@ OS 观察者的事实就地标注：`process`、`file_change` 与派生的 `file
 - `initialize.authMethods` 提供 `/auth` 的选项。
 - `/auth <methodId>` 调用 ACP `authenticate`，然后重开被阻塞的会话。
 - Absence 不读取 token，不代填凭据，不代理 OAuth 流程。它只执行第 4 节描述的只读探测。
-- 其他 `/…` 行作为 prompt 发送。`SessionStore.forwardCommand(text)` 的实现是 `this.prompt(text)`。命令面板合并 `available_commands_update` 广告的命令与 `/auth` 动作。
+
+模型选择：
+
+- agent 的 config option（`session/set_config_option`）就是选择器。`session/new` 与 `config_option_update` 替换 Absence 持有的集合；`model` 类别驱动 `/model` 命令。
+- 只有 agent 广告了模型选择器时，`/model` 才出现在面板中；其选项来自该 option 的取值，选中一项调用 `session/set_config_option`，而不是发送 prompt。
+- `/model <model>` 应用该值并报告 agent 返回的结果。没有广告选择器的 agent 没有 `/model` 条目，手输的 `/model …` 行按普通命令转发，因此自行实现 `/model` 的 agent 仍能收到它。
+- 其他 `/…` 行作为 prompt 发送。`SessionStore.forwardCommand(text)` 的实现是 `this.prompt(text)`。命令面板合并 `available_commands_update` 广告的命令与 `/auth`、`/model` 动作。
 
 ## 8. 已废弃的专用 adapter
 

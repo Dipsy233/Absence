@@ -10,9 +10,10 @@ import type { ChatContext } from "../../types/chat";
    The chat input, as one implementation.
 
    A line starting with `/` is still a normal prompt: the agent owns what
-   `/model`, `/skill`, `/mcp` or any advertised command means. The palette is
-   only a completer — it suggests the commands the agent advertised and the one
-   ACP action Absence performs (`/auth`). Everything else is forwarded verbatim.
+   `/skill`, `/mcp` or any advertised command means. The palette is a completer
+   for the commands the agent advertised plus the two ACP actions Absence
+   performs (`/auth`, and `/model` when the agent exposes a model selector).
+   Everything else is forwarded verbatim.
 
    Every chat face uses it — Monitor's input row, Rounds' and Chart's bars — and
    the `/` palette has to behave the same in all of them: type `/`, the overlay
@@ -56,7 +57,8 @@ export function useChatInput(): ChatInput {
   const connected = useSessionStore((s) => s.connected);
   const agentCommands = useSessionStore((s) => s.agentCommands);
   const authMethods = useSessionStore((s) => s.authMethods);
-  const commands = useMemo(() => mergeAgentCommands(agentCommands), [agentCommands]);
+  const models = useSessionStore((s) => s.models);
+  const commands = useMemo(() => mergeAgentCommands(agentCommands, models), [agentCommands, models]);
   const sendPrompt = useSessionStore((s) => s.sendPrompt);
   const runCommand = useSessionStore((s) => s.runCommand);
 
@@ -78,22 +80,32 @@ export function useChatInput(): ChatInput {
     [commandMode, phase, cmdName, commands],
   );
 
-  // The one choice-backed action is the ACP port's sign-in: its options are the
-  // methods the agent advertised during the handshake. Every agent command is
-  // free text, so the interaction is driven by `kind`, not by a command name.
-  const authOptions: CommandOption[] = useMemo(
-    () =>
-      command?.kind === "choice"
-        ? (authMethods ?? []).map((method) => ({
-            value: method.id,
-            label: method.id,
-            description: method.description ?? method.name,
-          }))
-        : [],
-    [command?.kind, authMethods],
-  );
+  // The choice-backed commands are the ACP port actions Absence performs:
+  // `/auth` (the agent's advertised login methods) and `/model` (the model
+  // selector the agent advertised through its config options). Every agent
+  // command is free text, so the interaction is driven by `kind` and the
+  // command's own name, not by parsing the argument.
+  const choiceOptions: CommandOption[] = useMemo(() => {
+    if (command?.kind !== "choice") return [];
+    if (command.name === "auth") {
+      return (authMethods ?? []).map((method) => ({
+        value: method.id,
+        label: method.id,
+        description: method.description ?? method.name,
+      }));
+    }
+    if (command.name === "model") {
+      return (models ?? []).map((model) => ({
+        value: model.value,
+        label: model.label,
+        description: model.description,
+        active: model.active,
+      }));
+    }
+    return [];
+  }, [command?.kind, command?.name, authMethods, models]);
 
-  const activeOptions: CommandOption[] = phase === "arg" && command?.kind === "choice" ? authOptions : [];
+  const activeOptions: CommandOption[] = phase === "arg" && command?.kind === "choice" ? choiceOptions : [];
 
   const paletteItems: CommandOption[] =
     phase === "name"
@@ -128,9 +140,9 @@ export function useChatInput(): ChatInput {
     await sendPrompt(line);
   };
 
-  const authenticate = async (methodId: string) => {
+  const runChoice = async (name: string, value: string) => {
     closePalette();
-    await runCommand("auth", methodId);
+    await runCommand(name, value);
   };
 
   const openArgPhase = (spec: CommandSpec) => {
@@ -149,8 +161,10 @@ export function useChatInput(): ChatInput {
       return;
     }
     if (command?.kind === "choice") {
-      void authenticate(value);
-      return;
+      if (command.name === "auth" || command.name === "model") {
+        void runChoice(command.name, value);
+        return;
+      }
     }
     // A command-shaped line with a chosen argument is still just a prompt.
     void forward(`/${command?.name ?? ""} ${value}`);
@@ -171,8 +185,13 @@ export function useChatInput(): ChatInput {
     // interpret.
     if (phase === "name" && command?.kind === "choice") return openArgPhase(command);
     if (phase === "arg" && command?.kind === "choice") {
-      const item = activeOptions[highlight];
-      if (item) return void authenticate(item.value);
+      // Prefer exactly what the user typed (a full value still works without
+      // picking from the palette); otherwise use the highlighted choice.
+      const typed = body.slice(spaceAt + 1).trim();
+      const item = typed
+        ? (activeOptions.find((option) => option.value === typed) ?? { value: typed, label: typed })
+        : activeOptions[highlight];
+      if (item) return void runChoice(command.name, item.value);
     }
     // Everything else — an advertised command, `/model`, `/skill:<name>`,
     // `/mcp`, an unknown `/foo` — is sent to the agent verbatim. Absence no

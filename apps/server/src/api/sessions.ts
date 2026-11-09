@@ -399,10 +399,11 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * Forward a `/…` line (`/model`, `/skill:<name>`, `/mcp`, …). The agent owns
-   * their meaning; Absence only forwards the text as a prompt. `/auth` is the
-   * one ACP-native action Absence performs. The result streams back over the
-   * WebSocket as normal run events; this call only reports that it ran.
+   * Forward a `/…` line (`/skill:<name>`, `/mcp`, …). The agent owns their
+   * meaning; Absence only forwards the text as a prompt. `/auth` and `/model`
+   * are the ACP-native actions Absence performs (both are port calls, not
+   * prompts). The result streams back over the WebSocket as normal run events;
+   * this call only reports that it ran.
    */
   app.post("/api/sessions/:id/command", async (request, reply) => {
     const { id } = request.params as { id: string };

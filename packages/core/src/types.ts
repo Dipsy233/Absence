@@ -232,6 +232,12 @@ export interface SessionRuntimeState {
   authMethods?: AuthMethodInfo[];
   /** True when the agent requires authentication before a session can be created. */
   authRequired?: boolean;
+  /**
+   * Selectable models the agent advertised through its ACP config options.
+   * Absent when the agent exposes no model selector: the `/model` command is
+   * only offered when this is non-empty.
+   */
+  models?: CommandOption[];
 }
 
 /** Response body of GET /api/sessions/:id. */

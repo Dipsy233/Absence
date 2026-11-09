@@ -1,4 +1,4 @@
-import type { AgentCommandInfo } from "@absence/core";
+import type { AgentCommandInfo, CommandOption } from "@absence/core";
 
 /** How a command takes its argument. */
 export type CommandKind =
@@ -58,12 +58,37 @@ const AUTH_ACTION: CommandSpec = {
 };
 
 /**
- * What the `/` palette draws: the agent's catalog plus Absence's auth action.
- * Agent commands take free-text arguments and are forwarded by the server as
- * prompts; the auth action is the only local one.
+ * The model selector Absence drives: ACP config options, not a prompt.
+ *
+ * It is a palette entry only when the agent advertised selectable models, so
+ * the command never appears for an agent that cannot switch models.
  */
-export function mergeAgentCommands(specs: AgentCommandInfo[] | undefined): CommandSpec[] {
-  return [AUTH_ACTION, ...agentCommands(specs).filter((command) => command.name.toLowerCase() !== "auth")];
+const MODEL_ACTION: CommandSpec = {
+  name: "model",
+  description: "Switch the agent's model",
+  argHint: "<model>",
+  kind: "choice",
+};
+
+/**
+ * What the `/` palette draws: the agent's catalog plus the actions Absence owns.
+ * Agent commands take free-text arguments and are forwarded by the server as
+ * prompts; `/auth` and (when the agent exposes a model selector) `/model` are
+ * ACP port actions performed locally by the server.
+ *
+ * An owned name shadows the agent's own command of the same name; a `/model`
+ * an agent advertises as a text command survives only when no selector exists
+ * (then Absence has nothing better to offer and forwards it verbatim).
+ */
+export function mergeAgentCommands(
+  specs: AgentCommandInfo[] | undefined,
+  models?: CommandOption[],
+): CommandSpec[] {
+  const natives: CommandSpec[] = [];
+  if (models && models.length > 0) natives.push(MODEL_ACTION);
+  natives.push(AUTH_ACTION);
+  const owned = new Set(natives.map((command) => command.name.toLowerCase()));
+  return [...natives, ...agentCommands(specs).filter((command) => !owned.has(command.name.toLowerCase()))];
 }
 
 /**

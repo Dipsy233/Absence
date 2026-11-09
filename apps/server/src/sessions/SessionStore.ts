@@ -11,6 +11,7 @@ import {
   type AgentStatus,
   type ChatMessage,
   type ContextState,
+  type CommandOption,
   type AbsenceEvent,
   type FileState,
   type FileTreeNode,
@@ -457,18 +458,35 @@ export class AbsenceSession {
   /**
    * The HTTP command entry point.
    *
-   * `/auth` is the one command Absence performs, because signing in is an ACP
-   * port action (`authenticate`) rather than a prompt the agent can interpret.
-   * Every other `/…` line is forwarded to the agent untouched.
+   * `/auth` and `/model` are the two commands Absence itself performs, because
+   * both are ACP port actions (`authenticate`, `setConfigOption`) rather than
+   * prompts the agent can interpret. `/model` is driven by the model selector
+   * the agent advertised through its config options; an agent that exposes
+   * none has no `/model` entry and its typed `/model …` line is forwarded
+   * untouched like any other command. Every other `/…` line is forwarded.
    */
   async runCommand(name: string, args: string): Promise<void> {
-    if (name.trim() !== "auth") {
+    const command = name.trim();
+    const notice = (content: string): void =>
+      this.handleEvent(createEvent(this.id, "message", { role: "system", content, streaming: false }));
+
+    if (command === "model") {
+      // Only intercept when the agent advertises a model selector. An agent
+      // that exposes none may still implement `/model` itself, so the line is
+      // forwarded verbatim exactly as before.
+      const choices = this.adapter.modelChoices?.() ?? [];
+      if (choices.length === 0) {
+        this.forwardCommand(formatAgentCommand(name, args));
+        return;
+      }
+      return this.switchModel(choices, args.trim(), notice);
+    }
+
+    if (command !== "auth") {
       this.forwardCommand(formatAgentCommand(name, args));
       return;
     }
     const adapter = this.adapter;
-    const notice = (content: string): void =>
-      this.handleEvent(createEvent(this.id, "message", { role: "system", content, streaming: false }));
     if (!adapter.authenticate) {
       return notice("This runtime does not support ACP authentication.");
     }
@@ -498,6 +516,38 @@ export class AbsenceSession {
     }
   }
 
+  /**
+   * Apply a model the agent advertised through its config options.
+   *
+   * With no argument it lists the choices (like `/auth`); with an argument it
+   * forwards the value to the agent and reports what the agent applied. The
+   * selector itself stays ACP-owned: Absence never invents a model value.
+   */
+  private async switchModel(
+    choices: CommandOption[],
+    value: string,
+    notice: (content: string) => void,
+  ): Promise<void> {
+    const adapter = this.adapter;
+    if (!value) {
+      const lines = choices.map(
+        (choice) => `  ${choice.value}  ${choice.label}${choice.active ? " (active)" : ""}`,
+      );
+      return notice(["Usage: /model <model>", ...lines].join(NL));
+    }
+    if (!adapter.setModel) {
+      return notice("This runtime does not support switching models.");
+    }
+    try {
+      const applied = await adapter.setModel(value);
+      this.session.model = applied;
+      this.scheduleState();
+      notice(`Model set to ${applied}.`);
+    } catch (error) {
+      notice(`/model failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   /** Where this session's events come from — see SessionSource. */
   private source(): SessionSource {
     return { kind: "runtime", runtime: this.session.agentRuntime };
@@ -513,6 +563,7 @@ export class AbsenceSession {
     const agentCommands = this.adapter?.getAvailableCommands?.();
     const authMethods = this.adapter?.getAuthMethods?.();
     const authRequired = this.adapter?.isAuthRequired?.() === true;
+    const models = this.adapter?.modelChoices?.();
     const includeTree = options.includeTree ?? true;
     return {
       session: this.session,
@@ -523,6 +574,7 @@ export class AbsenceSession {
       ...(agentCommands && agentCommands.length > 0 ? { agentCommands } : {}),
       ...(authMethods && authMethods.length > 0 ? { authMethods } : {}),
       ...(authRequired ? { authRequired } : {}),
+      ...(models && models.length > 0 ? { models } : {}),
     };
   }
 

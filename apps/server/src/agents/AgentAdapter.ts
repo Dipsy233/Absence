@@ -96,6 +96,12 @@ export interface AgentAdapter {
   /** Models the user could switch to. */
   listModels?(): Promise<CommandOption[]>;
   /**
+   * Synchronous view of the advertised model selectors for a `session_state`
+   * push. Returns `[]` (not a fallback row) when the agent exposes no model
+   * config option, so the `/model` command is only offered when it can work.
+   */
+  modelChoices?(): CommandOption[];
+  /**
    * Switch the active model. `value` is the chosen option's value
    * (`"provider/id"`); the adapter resolves it against its own model list, so a
    * provider or model id containing a slash is handled correctly. Returns the

@@ -4,6 +4,7 @@ import type {
   AgentStatus,
   AuthMethodInfo,
   ContextState,
+  CommandOption,
   AbsenceEvent,
   Session,
   SessionHistoryEntry,
@@ -97,6 +98,8 @@ interface SessionStore {
   authMethods?: AuthMethodInfo[];
   /** True when the agent is blocked until `/auth <methodId>` succeeds. */
   authRequired?: boolean;
+  /** Selectable models the agent advertised (drives the `/model` command). */
+  models?: CommandOption[];
   /**
    * Where the events come from: the runtime profile Absence drives. Undefined
    * from an older server.
@@ -137,6 +140,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   agentCommands: undefined,
   authMethods: undefined,
   authRequired: undefined,
+  models: undefined,
   source: undefined,
   connected: false,
   stopping: false,
@@ -222,6 +226,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       agentCommands: undefined,
       authMethods: undefined,
       authRequired: undefined,
+      models: undefined,
       source: undefined,
       connected: false,
       stopping: false,
@@ -251,6 +256,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       agentCommands: snapshot.agentCommands,
       authMethods: snapshot.authMethods,
       authRequired: snapshot.authRequired,
+      models: snapshot.models,
       source: snapshot.source,
       events: snapshot.events,
       eventsVersion: get().eventsVersion + 1,
@@ -269,6 +275,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       agentCommands: state.agentCommands,
       authMethods: state.authMethods,
       authRequired: state.authRequired,
+      models: state.models,
       source: state.source,
       ...(state.agent.status === "listening" && get().stopping ? { stopping: false } : {}),
     });

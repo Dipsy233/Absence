@@ -4,11 +4,13 @@
  *   npx tsx scripts/checks/check-capability-commands.ts
  *
  * Pins the decoupling contract:
- *   - `/model`, `/skill`, `/skill:<name>` and `/mcp` reach the agent verbatim
- *     as prompt text — Absence no longer parses or implements them;
- *   - `/auth` remains the one ACP port action Absence performs;
- *   - the web palette hard-codes only `/auth` and otherwise lists exactly the
- *     commands the agent advertised.
+ *   - `/skill`, `/skill:<name>` and `/mcp` reach the agent verbatim as prompt
+ *     text — Absence does not parse or implement them;
+ *   - `/model` is an ACP port action (config options) when the agent advertises
+ *     a model selector, and is forwarded verbatim when it does not;
+ *   - `/auth` remains an ACP port action Absence performs;
+ *   - the web palette hard-codes `/auth` (and `/model` when a selector exists)
+ *     and otherwise lists exactly the commands the agent advertised.
  */
 import { agentCommands, findCommand, matchCommands, mergeAgentCommands } from "../../apps/web/src/lib/commands";
 import { mergeCommandSources } from "../../apps/server/src/agents/commandSources";
@@ -17,9 +19,15 @@ import { check, finish, section } from "./harness";
 type Prompt = string;
 
 /** A bare session instance: only the fields the command handlers touch. */
-function makeSession(options: { authMethods?: Array<{ id: string; name: string }> } = {}) {
+function makeSession(
+  options: {
+    authMethods?: Array<{ id: string; name: string }>;
+    modelChoices?: Array<{ value: string; label: string; active?: boolean }>;
+  } = {},
+) {
   const prompts: Prompt[] = [];
   const authenticated: string[] = [];
+  const switched: string[] = [];
   const notices: string[] = [];
   const errors: string[] = [];
   const session = Object.create(AbsenceSession.prototype) as any;
@@ -41,8 +49,17 @@ function makeSession(options: { authMethods?: Array<{ id: string; name: string }
     authenticate: async (methodId: string) => {
       authenticated.push(methodId);
     },
+    ...(options.modelChoices
+      ? {
+          modelChoices: () => options.modelChoices!,
+          setModel: async (value: string) => {
+            switched.push(value);
+            return value;
+          },
+        }
+      : {}),
   };
-  return { session, prompts, authenticated, notices, errors };
+  return { session, prompts, authenticated, switched, notices, errors };
 }
 
 const { AbsenceSession } = await import("../../apps/server/src/sessions/SessionStore");
@@ -53,6 +70,15 @@ section("palette: only the ACP action is local");
   check("no /mcp spec is hard-coded", findCommand("mcp") === undefined);
   check("no /model spec is hard-coded", findCommand("model") === undefined);
   check("the palette is exactly /auth when the agent advertises nothing", mergeAgentCommands(undefined).map((c) => c.name).join(",") === "auth");
+  check("no /model without a selector", findCommand("model", mergeAgentCommands(undefined, [])) === undefined);
+  check(
+    "the palette offers /model when a selector exists",
+    findCommand("model", mergeAgentCommands(undefined, [{ value: "openai/gpt-5", label: "GPT-5" }]))?.kind === "choice",
+  );
+  check(
+    "an agent's own /model survives when no selector exists",
+    findCommand("model", mergeAgentCommands([{ name: "model" }]))?.kind === "text",
+  );
 
   const merged = mergeAgentCommands([
     { name: "compact", description: "agent compact" },
@@ -145,7 +171,7 @@ section("unknown commands reach the agent and its rejection is preserved");
   );
 }
 
-section("/model, /skill, /mcp and /skill:<name> are forwarded verbatim");
+section("/model, /skill, /mcp and /skill:<name> are forwarded when there is no selector");
 {
   const { session, prompts } = makeSession();
   await session.runCommand("model", "openai/gpt-5");
@@ -162,6 +188,28 @@ section("/model, /skill, /mcp and /skill:<name> are forwarded verbatim");
 
   session.forwardCommand("/unknown-agent-command --flag");
   check("an unknown slash line is not dropped", prompts.at(-1) === "/unknown-agent-command --flag", prompts.at(-1));
+}
+
+section("/model becomes an ACP action when the agent advertises a selector");
+{
+  const { session, prompts, switched, notices } = makeSession({
+    modelChoices: [
+      { value: "openai/gpt-5", label: "GPT-5", active: true },
+      { value: "openai/gpt-5-mini", label: "GPT-5 mini" },
+    ],
+  });
+  await session.runCommand("model", "openai/gpt-5-mini");
+  check("/model calls the port's setModel", switched.join(",") === "openai/gpt-5-mini", switched.join(","));
+  check("/model is not also sent as a prompt", prompts.length === 0, prompts.join(" | "));
+  check("the applied model updates the session", session.session.model === "openai/gpt-5-mini", session.session.model);
+
+  const bare = makeSession({ modelChoices: [{ value: "openai/gpt-5", label: "GPT-5" }] });
+  await bare.session.runCommand("model", "");
+  check(
+    "a bare /model lists the choices",
+    bare.notices.at(-1)?.includes("openai/gpt-5") === true,
+    bare.notices.at(-1),
+  );
 }
 
 section("/auth stays an ACP action");
