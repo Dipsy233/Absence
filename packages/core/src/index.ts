@@ -8,6 +8,8 @@ export * from "./stats";
 export * from "./tokens";
 export * from "./ws";
 export * from "./api";
+export * from "./reportTypes";
+export * from "./report";
 
 // The runtime-neutral agent contract and the monitor event bus.
 // `AgentCommandInfo` / `AuthMethodInfo` stay exported from ./types so the

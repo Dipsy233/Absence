@@ -1167,6 +1167,55 @@ export async function readRunEvents(
 }
 
 /**
+ * Every event of a session from the first up to and including `toSeq`, ordered
+ * oldest → newest.
+ *
+ * The report reduction walks a run's slice and also seeds "already known"
+ * paths from the events before it, so the server report needs the prefix up to
+ * the run's end, not just the run's own rows.
+ */
+export async function readEventsThrough(
+  id: string,
+  toSeq: number,
+): Promise<AbsenceEvent[]> {
+  flushPending();
+  let rows: SqlRow[];
+  try {
+    rows = open()
+      .prepare(
+        "SELECT seq, id, ts, type, payload, source, fidelity FROM events WHERE session_id = ? AND seq <= ? ORDER BY seq ASC",
+      )
+      .all(id, toSeq) as SqlRow[];
+  } catch (error) {
+    console.error("[absence] sqlite event-through read failed:", error);
+    return [];
+  }
+  const events: AbsenceEvent[] = [];
+  for (const row of rows) {
+    try {
+      events.push(eventFromRow(id, row));
+    } catch {
+      // Skip a row written by an older/broken version.
+    }
+  }
+  return events;
+}
+
+/** How many events of a session have `seq` strictly below `seqExclusive`. */
+export async function countEventsBefore(id: string, seqExclusive: number): Promise<number> {
+  flushPending();
+  try {
+    const row = open()
+      .prepare("SELECT COUNT(*) AS n FROM events WHERE session_id = ? AND seq < ?")
+      .get(id, seqExclusive) as SqlRow | undefined;
+    return Number(row?.n ?? 0);
+  } catch (error) {
+    console.error("[absence] sqlite event count failed:", error);
+    return 0;
+  }
+}
+
+/**
  * One forward page of a run's events, oldest → newest.
  *
  * A long run can span tens of thousands of events, so it is fetched in

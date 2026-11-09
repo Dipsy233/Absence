@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import type { SessionHistoryEntry } from "@absence/core";
+import type { SessionHistoryEntry, RunSummary, HistoryRun, RunReport } from "@absence/core";
+import { buildRunFacts, renderRun } from "@absence/core";
 import type { AgentKind } from "../config";
 import { config } from "../config";
 import {
@@ -10,6 +11,8 @@ import {
   queryArchives,
   readEventsPage,
   readEventsPageForward,
+  readEventsThrough,
+  countEventsBefore,
   readFileVersionContent,
   readFileVersions,
   readFileVersionSummaries,
@@ -201,6 +204,57 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     const run = (await readRuns(id)).find((candidate) => candidate.index === runIndex);
     if (!run) return reply.code(404).send({ error: "run not found" });
     return { run };
+  });
+
+  /**
+   * One run's Absence Report, reduced on the server.
+   *
+   *   GET /api/sessions/:id/report            → the latest run
+   *   GET /api/sessions/:id/report?run=<n>    → run #n (1-based)
+   *
+   * The reduction is the same deterministic, LLM-free engine the web runs
+   * (`buildRunFacts` + `renderRun` from `@absence/core`), so a headless caller,
+   * CI or the desktop can get the identical report without a browser. Returns
+   * `{ run, report, facts }`.
+   */
+  app.get("/api/sessions/:id/report", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!sessionStore.get(id) && !(await readMeta("", id))) {
+      return reply.code(404).send({ error: "session not found" });
+    }
+    const query = (request.query ?? {}) as { run?: string };
+    const wantRun = parsePositiveInt(query.run);
+    if (query.run !== undefined && wantRun === undefined) {
+      return reply.code(400).send({ error: "run must be a positive integer" });
+    }
+    const runs = await readRuns(id);
+    if (runs.length === 0) return reply.code(404).send({ error: "no runs recorded" });
+    const summary: RunSummary | undefined = wantRun !== undefined
+      ? runs.find((candidate) => candidate.index === wantRun)
+      : runs[runs.length - 1];
+    if (!summary) return reply.code(404).send({ error: "run not found" });
+
+    const events = await readEventsThrough(id, summary.toSeq);
+    const fromIndex = await countEventsBefore(id, summary.fromSeq);
+    const toIndex = events.length - 1;
+    if (toIndex < fromIndex) {
+      return reply.code(404).send({ error: "run events are not available" });
+    }
+    const historyRun: HistoryRun = {
+      id: summary.id,
+      index: summary.index,
+      prompt: summary.prompt,
+      startedAt: summary.startedAt,
+      ...(summary.endedAt !== undefined ? { endedAt: summary.endedAt } : {}),
+      status: summary.status,
+      fromIndex,
+      toIndex,
+      counts: summary.counts,
+      ...(summary.partial ? { partial: true } : {}),
+    };
+    const facts = buildRunFacts(events, historyRun);
+    const report: RunReport = renderRun(facts);
+    return { run: summary, report, facts };
   });
 
   /**

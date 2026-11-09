@@ -28,6 +28,8 @@ export {
   readFileVersionSummaries,
   readFileVersionContent,
   readEvents,
+  readEventsThrough,
+  countEventsBefore,
   readProcessEvents,
   readEventsPage,
   readEventsPageForward,
