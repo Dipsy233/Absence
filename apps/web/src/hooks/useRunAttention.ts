@@ -37,16 +37,36 @@ export function useRunAttention(
   const eventsRef = useRef(events);
   eventsRef.current = events;
 
+  // Only redo the whole-run reduction when the run's event slice actually
+  // changed. The 500 ms tick exists to *notice* appended events (they arrive
+  // through a ref, not a dependency), but while the agent is thinking nothing
+  // is appended — the old code rebuilt the entire run twice a second for no
+  // change. This cache keys on the run identity plus the slice's tail, so a
+  // streamed chunk (a new last id) still triggers a rebuild.
+  const cacheRef = useRef<{ sig: string; options: unknown; facts?: RunFacts }>({
+    sig: "",
+    options: undefined,
+    facts: undefined,
+  });
+
   const facts = useMemo(() => {
     void tick;
     if (!run) return undefined;
+    const current = eventsRef.current;
+    const last = current[current.length - 1];
+    const sig = `${run.id}|${run.status}|${current.length}|${last?.id ?? ""}`;
+    const cache = cacheRef.current;
+    if (cache.sig === sig && cache.options === options) return cache.facts;
+    let next: RunFacts | undefined;
     try {
-      return buildRunFacts(eventsRef.current, run, options);
+      next = buildRunFacts(current, run, options);
     } catch {
       // A partially-built run (a snapshot that arrived mid-stream) must not
       // take the face down; the feed still works without the facts.
-      return undefined;
+      next = undefined;
     }
+    cacheRef.current = { sig, options, facts: next };
+    return next;
   }, [run?.id, run?.status, tick, options]);
 
   const running = run?.status === "running";
