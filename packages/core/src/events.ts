@@ -46,18 +46,30 @@ export interface ToolStartPayload {
   toolCallId: string;
   toolName: string;
   args: unknown;
+  /** ACP's own `kind`, verbatim, when the agent sent one. */
+  kind?: string;
+  /** ACP's own `title`, verbatim, when the agent sent one. */
+  title?: string;
 }
 
 export interface ToolUpdatePayload {
   toolCallId: string;
   toolName: string;
   partial: unknown;
+  /** ACP's own `kind`, verbatim, when the agent sent one. */
+  kind?: string;
+  /** ACP's own `title`, verbatim, when the agent sent one. */
+  title?: string;
 }
 
 export interface ToolEndPayload {
   toolCallId: string;
   toolName: string;
   isError: boolean;
+  /** ACP's own `kind`, verbatim, when the agent sent one. */
+  kind?: string;
+  /** ACP's own `title`, verbatim, when the agent sent one. */
+  title?: string;
 }
 
 export interface FileReadPayload {

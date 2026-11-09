@@ -234,14 +234,29 @@ export class AcpToolMapper {
     const replaced = inputOldContent(facts.rawInput);
 
     if (resolved.write) {
+      // Whole new content, reported directly by the agent's call. Empty is a
+      // real value here: creating a 0-byte file is a write, not a no-op.
+      if (written !== undefined) {
+        return [
+          reported({
+            type: "file_write",
+            payload: { path: this.display(resolved.path), content: written },
+          }),
+        ];
+      }
+      // The call was a write but carried no content Absence could read (a field
+      // name outside the shape table). The post-state on disk is the authority:
+      // record the whole file, labeled as read from disk rather than reported.
+      const diskContent = await readFileSafe(abs);
+      if (diskContent === null) return this.fileChange(resolved, "modified");
       return [
-        reported({
-          type: "file_write",
-          payload: {
-            path: this.display(resolved.path),
-            content: written ?? ((await readFileSafe(abs)) ?? ""),
-          },
-        }),
+        {
+          ...exact({
+            type: "file_write",
+            payload: { path: this.display(resolved.path), content: diskContent },
+          }),
+          source: "os",
+        },
       ];
     }
 
@@ -255,7 +270,12 @@ export class AcpToolMapper {
     // the file's complete content (and the FileWatcher does not echo a second,
     // bogus edit).
     let before = oldText ?? "";
-    let after = newText ?? content;
+    // The tool's result `content` is a *message*, never the file's bytes. The
+    // post-state comes from the structured new text, or — when the agent sent
+    // none — from disk after the call ran. If neither exists, record the touch
+    // instead of silently dropping the call.
+    let after: string | undefined = newText;
+    if (after === undefined && disk !== null) after = disk;
     let fullContent = false;
     if (disk !== null && oldText && newText) {
       if (disk.includes(oldText)) {
@@ -268,7 +288,7 @@ export class AcpToolMapper {
         fullContent = true;
       }
     }
-    if (!after) return [];
+    if (after === undefined) return this.fileChange(resolved, "modified");
     // Some agents' edit sends the whole old/new file in the `diff` block. When
     // the reported text *is* the file on disk, say so explicitly; otherwise
     // this was a snippet and `fullContent` stays false.

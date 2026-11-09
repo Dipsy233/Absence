@@ -776,7 +776,7 @@ export class AbsenceSession {
         // about to touch a path. Opening the watch now (before the write) is
         // what makes an outside echo observable without watching the disk.
         this.watchToolPaths(event.payload.args);
-        this.setStatus(statusForTool(event.payload.toolName));
+        this.setStatus(statusForTool(event.payload.toolName, event.payload.kind));
         break;
 
       // An MCP call is an action with an output, like a command: it holds the
@@ -1434,7 +1434,25 @@ function mergeObservedRange(
   return list.slice(-50);
 }
 
-function statusForTool(toolName: string): AgentStatus {
+function statusForTool(toolName: string, kind?: string): AgentStatus {
+  // ACP's own `kind` is the protocol's word, so it wins over any name matching:
+  // an agent whose tool title is `write_file` or `str_replace` still reads as
+  // editing without teaching the session that name.
+  switch (kind) {
+    case "read":
+      return "reading";
+    case "edit":
+    case "delete":
+    case "move":
+      return "editing";
+    case "search":
+      return "searching";
+    case "execute":
+    case "fetch":
+      return "running";
+    case "think":
+      return "thinking";
+  }
   switch (toolName) {
     case "read":
       return "reading";

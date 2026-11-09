@@ -150,6 +150,10 @@ profile 说明：
 
 `tool_end` 的 `isError` 来自 `status === "failed"`。一个工具调用恰好产生一条 `tool_start` 与一条 `tool_end`；重复的终态更新被忽略。
 
+每条 `tool_start` / `tool_update` / `tool_end` 都原样携带 agent 的 ACP `kind` 与 `title`（当 agent 发送了它们），与用于展示的 `toolName` 并列。不做任何意译，UI 因此能显示协议实际说的话。agent 自己的 `kind` 还先于任何工具名匹配来驱动 agent 状态标签（`read`→reading、`edit`/`delete`/`move`→editing、`execute`→running 等），所以不熟悉的工具名也能正确显示。
+
+任何改变文件的调用都不会被丢弃。协议说是 `edit` 但调用没带 Absence 能读到的内容时，从磁盘读取 post-state 记为 `file_write`（`source: "os"`）；连磁盘也读不到时，仍留下一条 `file_change` 而非消失。空内容的写（`content: ""`）是真正的写——创建一个 0 字节文件——不是未分类调用。
+
 `execute` 窗口同时驱动进程归因。projector 在出现 `execute` 工具调用时调用 `ProcessWatcher.begin(command, cwd, toolCallId)`，在终态调用 `end`。该窗口内上报的进程归因到这条命令，命令级的 Agent Eggs 由此产生。窗口携带 ACP 工具调用 id 作为 `ref`，`command` 事件与其观察到的每条 `process` 事件都以 `toolCallId` 携带同一个 id。feed 用这个 id 把一条命令与它自己的进程合并成一个动作行，因此子进程计数更新不会在命令行旁新增一行 RUN。
 
 命令自身的执行器不成为 egg。runtime 为执行命令字符串而启动的 shell（`bash -c "…"`、`pwsh -Command "…"`）就是 `command` 事件已经上报的那条命令。每条工具调用都产出一个 shell egg 会让 Agent Eggs 面板变成命令日志。该 shell 保持 owned，以便后代归因，但不注册为父 egg：它的子进程重新生根、按自身形态判定。命令留下的 daemon 仍成为 egg，沿路的 `ls`/`cat` 仍按 tool 分类。agent 有意启动的 shell（`bash daemon.sh`，无 `-c`）照常参与判定。

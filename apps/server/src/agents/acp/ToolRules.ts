@@ -172,6 +172,14 @@ export function resolveTool(facts: AcpToolFacts): ResolvedTool {
 
   const hasField = (bucket: string): boolean => first(bucket) !== undefined;
 
+  // A content field that is present but empty is still a write: creating an
+  // empty file is a write, and `first` filters empty strings out. Presence of
+  // the key (a string, even "") is what proves the call carries content.
+  const hasContent = (): boolean => {
+    if (!record) return false;
+    return (fields.content ?? []).some((key) => typeof record[key] === "string");
+  };
+
   // `other` is not a classification: it is the absence of one. A real ACP kind
   // is authoritative and is never overridden by the shape table.
   const declared = normalizeKind(facts.kind);
@@ -196,8 +204,16 @@ export function resolveTool(facts: AcpToolFacts): ResolvedTool {
   const mcp = mcpParts(facts.name);
 
   // An `edit` that carries whole new content and no old text is a write: same
-  // kind in ACP, different first-class event in Absence.
-  if ((usable ?? resolved.kind) === "edit" && hasField("content") && !hasField("oldContent")) {
+  // kind in ACP, different first-class event in Absence. Empty content counts
+  // (creating a 0-byte file is a write), and so does absent content when the
+  // protocol already said `edit` — the mapper then reads the post-state from
+  // disk. A diff block is a real edit, not a whole-file write, so it is
+  // excluded.
+  if (
+    (usable ?? resolved.kind) === "edit" &&
+    !hasField("oldContent") &&
+    !hasContentType(facts.content, "diff")
+  ) {
     resolved.write = true;
   }
 
@@ -212,8 +228,11 @@ export function resolveTool(facts: AcpToolFacts): ResolvedTool {
 
   if (usable) return resolved;
 
+  // Match the shape table with a bucket-aware predicate: `content` counts when
+  // the key is present (even empty), every other bucket needs a real value.
+  const present = (bucket: string): boolean => (bucket === "content" ? hasContent() : hasField(bucket));
   for (const rule of rules.rules) {
-    if (!matches(rule, hasField, facts.content)) continue;
+    if (!matches(rule, present, facts.content)) continue;
     resolved.kind = normalizeKind(rule.kind);
     resolved.rule = rule.id;
     if (rule.as === "write") resolved.write = true;
@@ -224,12 +243,12 @@ export function resolveTool(facts: AcpToolFacts): ResolvedTool {
 
 function matches(
   rule: RuleSet["rules"][number],
-  hasField: (bucket: string) => boolean,
+  present: (bucket: string) => boolean,
   content: unknown,
 ): boolean {
   const { when } = rule;
-  if (when.anyField && !hasField(when.anyField)) return false;
-  if (when.allFields && !when.allFields.every((bucket) => hasField(bucket))) return false;
+  if (when.anyField && !present(when.anyField)) return false;
+  if (when.allFields && !when.allFields.every((bucket) => present(bucket))) return false;
   if (when.contentType && !hasContentType(content, when.contentType)) return false;
   return true;
 }

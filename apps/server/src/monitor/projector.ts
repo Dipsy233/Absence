@@ -197,6 +197,7 @@ export class AcpMonitorProjector {
         {
           toolCallId: record.facts.toolCallId,
           toolName: record.facts.name,
+          ...rawKind(record.facts),
           partial: text.length > 0 ? { kind: resolved.kind, text } : { status },
         },
         "reported",
@@ -263,6 +264,7 @@ export class AcpMonitorProjector {
       {
         toolCallId: record.facts.toolCallId,
         toolName: record.facts.name,
+        ...rawKind(record.facts),
         // `unknown` when the protocol omitted rawInput: an empty object would
         // claim the agent passed no arguments.
         args: record.facts.rawInput,
@@ -290,6 +292,7 @@ export class AcpMonitorProjector {
         {
           toolCallId: record.facts.toolCallId,
           toolName: record.facts.name,
+          ...rawKind(record.facts),
           isError: String(update.status ?? "") === "failed",
         },
         "exact",
@@ -421,6 +424,22 @@ function foldStream(current: string, chunk: string, sameSnapshot: boolean): stri
 
 function ctx(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/**
+ * The raw ACP `kind` and `title` the agent sent, carried onto the tool event
+ * verbatim.
+ *
+ * `toolName` is a display name Absence may synthesize from `kind` or a
+ * placeholder; these two fields are the protocol's own words, so the UI can
+ * show "ACP said: kind=edit, title=write" without Absence paraphrasing. Absent
+ * when the agent did not send them.
+ */
+function rawKind(facts: AcpToolFacts): { kind?: string; title?: string } {
+  return {
+    ...(facts.kind !== undefined ? { kind: facts.kind } : {}),
+    ...(facts.title !== undefined ? { title: facts.title } : {}),
+  };
 }
 
 /** Merge a partial ACP update over what earlier updates reported for the call. */

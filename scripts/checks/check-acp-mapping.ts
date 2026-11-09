@@ -115,6 +115,31 @@ async function main(): Promise<void> {
     });
     check("no kind + path/content is an edit-as-write", writeByShape.kind === "edit" && writeByShape.write === true && writeByShape.rule === "write-with-content");
 
+    // An empty file a write tool creates is still a write. `content` is present
+    // and "", which the value-based shape checks would otherwise skip.
+    const emptyWriteByShape = resolveTool({
+      toolCallId: "k6e",
+      name: "write_file",
+      rawInput: { path: "empty.txt", content: "" },
+    });
+    check(
+      "no kind + path/content:'' is an edit-as-write, not a read",
+      emptyWriteByShape.kind === "edit" && emptyWriteByShape.write === true && emptyWriteByShape.rule === "write-with-content",
+      JSON.stringify(emptyWriteByShape),
+    );
+
+    const emptyWriteWithKind = resolveTool({
+      toolCallId: "k6k",
+      name: "write",
+      kind: "edit",
+      rawInput: { path: "empty.txt", content: "" },
+    });
+    check(
+      "kind edit + content:'' is an edit-as-write",
+      emptyWriteWithKind.kind === "edit" && emptyWriteWithKind.write === true,
+      JSON.stringify(emptyWriteWithKind),
+    );
+
     const searchByShape = resolveTool({
       toolCallId: "k7",
       name: "search",
@@ -573,6 +598,55 @@ async function main(): Promise<void> {
       writeEvent?.event.type === "file_write" && writeEvent.event.payload.content === "hello\n",
     );
 
+    // The reported regression: a write tool asked to create an empty file. The
+    // creation must reach the file index as a `file_write` with content "" —
+    // not vanish because an empty `after` looked like "nothing happened".
+    const emptyWrite = await mapper.mapCompletedDetailed({
+      toolCallId: "w-empty",
+      name: "write",
+      kind: "edit",
+      rawInput: { path: "empty.txt", content: "" },
+    });
+    const emptyWriteEvent = firstOf(emptyWrite, "file_write");
+    check(
+      "an empty-content write records a file_write",
+      emptyWriteEvent?.event.type === "file_write" && emptyWriteEvent.event.payload.path === "empty.txt" && emptyWriteEvent.event.payload.content === "",
+      JSON.stringify(emptyWrite.map((record) => record.event.type)),
+    );
+
+    // kind-first disk fallback: the protocol said `edit`, but the call carried
+    // no content field Absence could read. The post-state on disk is recorded
+    // as a whole-file write, honestly labeled as read from disk.
+    await fs.writeFile(path.join(dir, "fromdisk.txt"), "on disk after the call\n");
+    const diskFallback = await mapper.mapCompletedDetailed({
+      toolCallId: "w-disk",
+      name: "edit",
+      kind: "edit",
+      rawInput: { path: "fromdisk.txt" },
+    });
+    const diskWrite = firstOf(diskFallback, "file_write");
+    check(
+      "kind edit with no content reads the post-state from disk",
+      diskWrite?.event.type === "file_write" &&
+        diskWrite.event.payload.content === "on disk after the call\n" &&
+        diskWrite.source === "os",
+      diskWrite?.event.type === "file_write" ? `${diskWrite.source}:${JSON.stringify(diskWrite.event.payload.content)}` : "no file_write",
+    );
+
+    // Never drop: the edit named a path but neither content nor disk is
+    // available. The call still leaves a `file_change` rather than nothing.
+    const touchOnly = await mapper.mapCompletedDetailed({
+      toolCallId: "w-touch",
+      name: "edit",
+      kind: "edit",
+      rawInput: { path: "does-not-exist/yet.txt" },
+    });
+    check(
+      "an edit with no content and no disk records a file_change, not nothing",
+      firstOf(touchOnly, "file_change")?.event.type === "file_change",
+      JSON.stringify(touchOnly.map((record) => record.event.type)),
+    );
+
     // A failed call changed nothing on disk. Its output text is a message
     // about the file, never the file itself — recording it would put a version
     // that never existed into the file index.
@@ -962,6 +1036,20 @@ async function main(): Promise<void> {
       "tool_start args come from the protocol rawInput",
       firstOf(events, "tool_start")?.event.type === "tool_start" &&
         JSON.stringify(firstOf(events, "tool_start")?.event.payload.args) === JSON.stringify({ command: "npm test" }),
+    );
+    check(
+      "tool_start carries ACP's raw kind and title verbatim",
+      firstOf(events, "tool_start")?.event.type === "tool_start" &&
+        firstOf(events, "tool_start")?.event.payload.kind === "execute" &&
+        firstOf(events, "tool_start")?.event.payload.title === "Run tests",
+      JSON.stringify(firstOf(events, "tool_start")?.event.payload),
+    );
+    check(
+      "tool_end carries ACP's raw kind and title verbatim",
+      firstOf(events, "tool_end")?.event.type === "tool_end" &&
+        firstOf(events, "tool_end")?.event.payload.kind === "execute" &&
+        firstOf(events, "tool_end")?.event.payload.title === "Run tests",
+      JSON.stringify(firstOf(events, "tool_end")?.event.payload),
     );
 
     const command = firstOf(events, "command");

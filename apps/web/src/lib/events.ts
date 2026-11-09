@@ -789,7 +789,25 @@ export function eventToActivityRow(event: AbsenceEvent): ActivityRow | undefined
   }
 }
 
-export function statusForTool(toolName: string): AgentStatus {
+export function statusForTool(toolName: string, kind?: string): AgentStatus {
+  // ACP's own `kind` is the protocol's word, so it wins over any name matching:
+  // an agent whose tool title is `write_file` or `str_replace` still reads as
+  // editing without teaching the UI that name. The name is only the fallback.
+  switch (kind) {
+    case "read":
+      return "reading";
+    case "edit":
+    case "delete":
+    case "move":
+      return "editing";
+    case "search":
+      return "searching";
+    case "execute":
+    case "fetch":
+      return "running";
+    case "think":
+      return "thinking";
+  }
   switch (toolName) {
     case "read":
       return "reading";
@@ -823,7 +841,7 @@ export function statusFromEvent(event: AbsenceEvent): AgentStatus | undefined {
     case "message":
       return event.payload.role === "system" ? undefined : "speaking";
     case "tool_start":
-      return statusForTool(event.payload.toolName);
+      return statusForTool(event.payload.toolName, event.payload.kind);
     case "file_read":
       return "reading";
     case "file_write":
