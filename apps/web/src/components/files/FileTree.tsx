@@ -1,13 +1,11 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import type { FileTreeNode } from "@absence/core";
-import { useChatStore } from "../../stores/chatStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useUiStore } from "../../stores/uiStore";
 import { basename, formatAgo, relativeTo } from "../../lib/format";
 import { createStageItem, eventPath } from "../../lib/events";
-import { fileContext } from "../../lib/context";
 import { unifiedDiff } from "../../lib/diff";
 import { languageFromPath } from "../../lib/language";
 import { openUserFile } from "../../lib/openFile";
@@ -29,11 +27,9 @@ export function FileTree({ onOpen = (rel) => void openUserFile(rel) }: { onOpen?
   const following = useStageStore((s) => s.following);
   const activeId = useStageStore((s) => s.activeItem?.id);
   const userFile = useStageStore((s) => s.userFile);
-  const sendPrompt = useSessionStore((s) => s.sendPrompt);
   const openStage = useStageStore((s) => s.openStage);
   const openMenu = useUiStore((s) => s.openMenu);
   const setFilesView = useUiStore((s) => s.setFilesView);
-  const addContext = useChatStore((s) => s.addContext);
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -102,12 +98,6 @@ export function FileTree({ onOpen = (rel) => void openUserFile(rel) }: { onOpen?
             ),
           );
         },
-      },
-      { label: "", onSelect: () => {}, separator: true },
-      { label: t("Add file to Chat"), onSelect: () => addContext(fileContext(rel, content)) },
-      {
-        label: t("Explain this"),
-        onSelect: () => void sendPrompt(`${fileContext(rel, content).label}\n\`\`\`${languageFromPath(rel)}\n${content.slice(0, 2000)}\n\`\`\`\n\nExplain this file.`),
       },
     ]);
   };

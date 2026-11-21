@@ -354,6 +354,31 @@ const ZH: Record<string, string> = {
   "save paths": "保存路径",
   recent: "最近",
 
+  // ── Observatory (observation board) ────────────────────────────────────
+  "The observation board — nothing here starts an agent.":
+    "观测台——这里的一切都不会启动智能体。",
+  "Live observation — transcripts": "活跃观测——转录",
+  "Session files the agent software writes on its own. Attach one to monitor it, whenever you like.":
+    "智能体软件自己写下的会话文件。随时可以挂载一份来监控它。",
+  "No transcripts found yet.": "还没有发现转录。",
+  "{time} active": "{time} 前活跃",
+  "attaching…": "挂载中…",
+  Attach: "挂载",
+  "ACP proxies": "ACP 代理",
+  "Agents an editor ACP client reaches through Absence's proxy — byte-level facts, exact processes.":
+    "编辑器 ACP 客户端经由 Absence 代理接入的智能体——字节级事实、精确的进程。",
+  "No proxy sessions on this host.": "本机没有代理会话。",
+  "closed {time}": "{time} 关闭",
+  "waiting for a client": "等待客户端接入",
+  "Everything Absence has already recorded.": "Absence 已经记录下来的一切。",
+  "This archive predates Absence's own session ids and cannot be reopened.":
+    "该归档早于 Absence 自己的会话 id,无法重新打开。",
+  "The transcript could not be attached (identity unknown).":
+    "转录无法挂载(身份未知)。",
+  "observed — answered elsewhere": "旁观——应答发生在别处",
+  "Absence only watches — the choice belongs to the agent's own client.":
+    "Absence 只旁观——选择权属于智能体自己的客户端。",
+
   // ── Report ─────────────────────────────────────────────────────────────
   "ABSENCE REPORT": "发呆报告",
   "Collapse the Absence Report": "收起发呆报告",

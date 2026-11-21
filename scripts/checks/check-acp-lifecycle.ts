@@ -47,7 +47,6 @@ async function main(): Promise<void> {
   // Load after the abort timeout env is set: the adapter reads it at import time.
   const { AcpAdapter } = await import("../../apps/server/src/agents/acp/AcpAdapter");
   const { AcpToolMapper } = await import("../../apps/server/src/agents/acp/AcpToolMapper");
-  const { mergeAgentCommands, findCommand } = await import("../../apps/web/src/lib/commands");
   const { formatAgentCommand } = await import("../../apps/server/src/agents/slashCommands");
   const { parseRegistryEntries, registryProfiles, syncRegistry } = await import(
     "../../apps/server/src/agents/acp/AgentCatalog"
@@ -290,31 +289,9 @@ async function main(): Promise<void> {
 
   section("slash commands: forwarded to the agent, never implemented by Absence");
   {
-    const commands = [
-      { name: "compact", description: "agent compact" },
-      { name: "custom-fix", description: "agent custom" },
-      { name: "mcp", description: "agent mcp" },
-      { name: "model", description: "agent model" },
-    ];
     check(
       "the line preserves the agent's spelling and arguments",
       formatAgentCommand("custom-fix", " --fast ") === "/custom-fix --fast",
-    );
-
-    const merged = mergeAgentCommands(commands);
-    check("the palette contains every agent-advertised command", ["compact", "custom-fix", "mcp", "model"].every(
-      (name) => findCommand(name, merged) !== undefined,
-    ));
-    check(
-      "an advertised command is a free-text prompt, not a local action",
-      findCommand("switch-model", merged) === undefined &&
-        findCommand("custom-fix", merged)?.kind === "text",
-    );
-    check("Absence's only local command is ACP auth", findCommand("auth", merged)?.kind === "choice");
-    check(
-      "no product command is hard-coded in the palette",
-      mergeAgentCommands(undefined).map((command) => command.name).join(",") === "auth",
-      mergeAgentCommands(undefined).map((command) => command.name).join(","),
     );
   }
 

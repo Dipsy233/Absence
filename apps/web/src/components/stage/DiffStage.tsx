@@ -1,7 +1,5 @@
 import { motion } from "framer-motion";
-import { diffContext } from "../../lib/context";
 import { unifiedDiff } from "../../lib/diff";
-import { useChatStore } from "../../stores/chatStore";
 import { useT } from "../../lib/i18n";
 
 interface DiffStageProps {
@@ -75,7 +73,6 @@ function diffLineClass(line: string): string {
  */
 export function DiffStage({ path, before, after, diff, emptied = false }: DiffStageProps) {
   const t = useT();
-  const addContext = useChatStore((s) => s.addContext);
   // Prefer the run's own diff (Pi annotates it with line numbers); if it is
   // missing, generate a standard unified diff from the two versions.
   const text = (diff ?? "").trim().length > 0 ? (diff as string) : unifiedDiff(before, after, path, path);
@@ -97,14 +94,6 @@ export function DiffStage({ path, before, after, diff, emptied = false }: DiffSt
         <div className="flex items-center gap-3">
           <span className="text-desk-teal">+{added}</span>
           <span className="text-desk-ember">-{removed}</span>
-          <button
-            type="button"
-            onClick={() => addContext(diffContext(path, diff ?? `${before}\n→\n${after}`))}
-            className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-            title={t("Add this diff to Chat")}
-          >
-            {t("+ Chat")}
-          </button>
         </div>
         <motion.span
           className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-desk-amber to-transparent"

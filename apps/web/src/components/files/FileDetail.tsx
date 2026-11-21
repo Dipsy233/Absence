@@ -1,11 +1,9 @@
-import { useChatStore } from "../../stores/chatStore";
 import { useFileStore } from "../../stores/fileStore";
 import { useStageStore } from "../../stores/stageStore";
 import { useUiStore } from "../../stores/uiStore";
 import { formatAgo } from "../../lib/format";
 import { createStageItem } from "../../lib/events";
 import { openKnownFile } from "../../lib/openFile";
-import { fileContext } from "../../lib/context";
 import { unifiedDiff } from "../../lib/diff";
 import { CodeView } from "../common/CodeView";
 import { PanelNav } from "../common/PanelNav";
@@ -17,7 +15,6 @@ export function FileDetail({ path }: { path: string }) {
   const file = useFileStore((s) => s.files[path]);
   const setFilesView = useUiStore((s) => s.setFilesView);
   const openStage = useStageStore((s) => s.openStage);
-  const addContext = useChatStore((s) => s.addContext);
 
   const content = file?.content ?? "";
   // Only whole-file versions can be diffed; v0 is an accumulated read.
@@ -75,9 +72,6 @@ export function FileDetail({ path }: { path: string }) {
         </button>
         <button type="button" className={button} disabled={history.length < 2} onClick={openDiffInStage}>
           {t("View Diff")}
-        </button>
-        <button type="button" className={button} disabled={!file} onClick={() => addContext(fileContext(path, content))}>
-          {t("Add to Chat")}
         </button>
       </div>
 

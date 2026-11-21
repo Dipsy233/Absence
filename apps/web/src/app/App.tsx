@@ -4,7 +4,7 @@ import { useSounds } from "../hooks/useSounds";
 import { useSessionStore } from "../stores/sessionStore";
 import { useViewModeStore } from "../stores/viewModeStore";
 import { ContextMenu } from "../components/common/ContextMenu";
-import { ProjectPicker } from "../components/ProjectPicker/ProjectPicker";
+import { Observatory } from "../components/Observatory/Observatory";
 import { MonitorUI } from "../ui/monitor/MonitorUI";
 import { RoundsUI } from "../ui/rounds/RoundsUI";
 import { ChartUI } from "../ui/chart/ChartUI";
@@ -114,7 +114,7 @@ export default function App() {
   if (!session) {
     return (
       <>
-        <ProjectPicker />
+        <Observatory />
         <ContextMenu />
       </>
     );

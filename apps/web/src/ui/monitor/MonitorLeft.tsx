@@ -11,8 +11,6 @@ import { FilePanel } from "../../components/files/FilePanel";
 import { AttentionList } from "../../components/attention/AttentionNotice";
 import { attentionRecords, type AttentionNotice } from "../../hooks/useAttentionNotices";
 import { useAttentionOptions } from "../../hooks/useAttentionOptions";
-import { useChatStore } from "../../stores/chatStore";
-import { eventContext } from "../../lib/context";
 import { Nixie } from "../shared/Nixie";
 import { activityPulse, feedAnchors, groupFeedRows, replayRowAt, stripFeedAnchors } from "../../lib/history";
 import type { ActivityRow } from "../../types/stage";
@@ -502,7 +500,6 @@ function FeedRow({
 }) {
   const t = useT();
   const openMenu = useUiStore((s) => s.openMenu);
-  const addContext = useChatStore((s) => s.addContext);
   const inReplay = useStageStore((s) => s.mode === "replay");
   const seek = useReplayStore((s) => s.seekTimestamp);
   const tone = TONE_FOR_ROW[row.tone];
@@ -535,7 +532,6 @@ function FeedRow({
             disabled: !inReplay && !openable,
             onSelect: activate,
           },
-          { label: t("Add event to Chat"), onSelect: () => addContext(eventContext(row.event)) },
         ]);
       }}
       title={inReplay ? t("Scrub to this event") : openable ? row.primary : `${row.action} · ${row.primary}`}

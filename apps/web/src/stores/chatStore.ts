@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import type { ChatMessage, AbsenceEvent, SessionSnapshot } from "@absence/core";
-import type { ChatContext } from "../types/chat";
 
 function lastStreamingIndex(chat: ChatMessage[]): number {
   for (let i = chat.length - 1; i >= 0; i--) {
@@ -58,12 +57,6 @@ function applyChatEvent(chat: ChatMessage[], event: AbsenceEvent): ChatMessage[]
 
 interface ChatStore {
   messages: ChatMessage[];
-  /** Explicit context the user attached (read02 §30). */
-  pending: ChatContext[];
-
-  addContext: (context: ChatContext) => void;
-  removeContext: (index: number) => void;
-  clearContext: () => void;
   ingest: (event: AbsenceEvent) => void;
   ingestEvents: (events: AbsenceEvent[]) => void;
   /** Append a locally generated system notice (never an agent message). */
@@ -74,11 +67,6 @@ interface ChatStore {
 
 export const useChatStore = create<ChatStore>((set, get) => ({
   messages: [],
-  pending: [],
-
-  addContext: (context) => set({ pending: [...get().pending, context] }),
-  removeContext: (index) => set({ pending: get().pending.filter((_, i) => i !== index) }),
-  clearContext: () => set({ pending: [] }),
 
   ingestEvents: (events) => {
     let messages = get().messages;
@@ -108,6 +96,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       ],
     }),
 
-  hydrate: (snapshot) => set({ messages: snapshot.chat, pending: [] }),
-  reset: () => set({ messages: [], pending: [] }),
+  hydrate: (snapshot) => set({ messages: snapshot.chat }),
+  reset: () => set({ messages: [] }),
 }));

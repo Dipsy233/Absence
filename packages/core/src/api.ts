@@ -144,3 +144,23 @@ export interface ObserveDiscoveryResponse {
   sessions: ObserveSessionRow[];
   sources: ObserveSourceRow[];
 }
+
+/** One ACP proxy session as the observation board lists it. */
+export interface AcpProxySessionRow {
+  id: string;
+  label: string;
+  cwd: string;
+  /** The Absence session the proxy persists into, once the agent spawned. */
+  sessionId?: string;
+  status: "waiting" | "running" | "closed" | "failed";
+  createdAt: number;
+  closedAt?: number;
+  pid?: number;
+  error?: string;
+  /** The localhost endpoint an ACP client attaches to (tcp transports). */
+  endpoint?: { host: string; port: number };
+}
+
+export interface AcpProxySessionsResponse {
+  sessions: AcpProxySessionRow[];
+}

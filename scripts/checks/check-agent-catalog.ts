@@ -597,26 +597,20 @@ try {
     walk(agentsDir);
     check("agents/** has no product-name equality branch", offenders.length === 0, offenders.join("\n"));
 
-    // The picker renders server rows; it must not decide anything per product.
-    const pickerFile = path.join(
+    // The board renders server rows; it must not decide anything per product.
+    const boardFile = path.join(
       repoRoot,
       "apps",
       "web",
       "src",
       "components",
-      "ProjectPicker",
-      "ProjectPicker.tsx",
+      "Observatory",
+      "Observatory.tsx",
     );
-    const pickerSource = fs.readFileSync(pickerFile, "utf8");
+    const boardSource = fs.readFileSync(boardFile, "utf8");
     check(
-      "the picker has no product-name branch",
-      !/(===|!==|case)\s*["'](pi|codex|dsh|claude|qwen|gemini)["']/.test(pickerSource),
-    );
-    const addTiles = pickerSource.match(/aria-label="添加自定义 ACP"/g) ?? [];
-    check("the grid has exactly one + tile", addTiles.length === 1, String(addTiles.length));
-    check(
-      "the + tile comes after the agent tiles",
-      pickerSource.indexOf('aria-label="添加自定义 ACP"') > pickerSource.indexOf("{runtimes.map"),
+      "the observation board has no product-name branch",
+      !/(===|!==|case)\s*["'](pi|codex|dsh|claude|qwen|gemini)["']/.test(boardSource),
     );
   }
 } finally {

@@ -1,17 +1,13 @@
 import { create } from "zustand";
 import type {
-  AgentCommandInfo,
   AgentStatus,
-  AuthMethodInfo,
   ContextState,
-  CommandOption,
   AbsenceEvent,
   Session,
   SessionHistoryEntry,
   SessionRuntimeState,
   SessionSnapshot,
   SessionSource,
-  RuntimeKind,
 } from "@absence/core";
 import type { StageItem } from "../types/stage";
 import { MAX_SESSION_EVENTS } from "@absence/core";
@@ -20,26 +16,6 @@ import { isStageEvent, clearsStage, lastStageAction } from "../lib/events";
 import { applyProcessEvent, sortEggs, type Egg } from "../lib/eggs";
 import { eventsBase, markEventsBase, resetEventCaches } from "../lib/history";
 import { useRunsStore } from "./runsStore";
-import { useChatStore } from "./chatStore";
-
-/**
- * How long the UI waits for the server to confirm a stop.
- *
- * The server's own watchdog settles a hung turn after ~10s and emits
- * `agent_end aborted`. This is the client-side backstop for a build/agent where
- * that never arrives: after it, the UI is unlocked and a system notice says the
- * stop was not confirmed.
- */
-const STOP_CONFIRM_MS = 12_000;
-let stopToken = 0;
-let stopTimer: ReturnType<typeof setTimeout> | undefined;
-
-/** Invalidate the pending stop confirmation and cancel its timer. */
-function clearStopWatch(): void {
-  stopToken += 1;
-  if (stopTimer) clearTimeout(stopTimer);
-  stopTimer = undefined;
-}
 
 /**
  * Eggs folded incrementally from `process` events.
@@ -50,7 +26,6 @@ function clearStopWatch(): void {
  * process whose first event had been cut, and the panel's count would shrink.
  * One `Map.set` per event instead of a full rebuild per render.
  */
-
 
 /**
  * Mutable egg map plus a version counter.
@@ -91,34 +66,26 @@ interface SessionStore {
   eggState: EggStateHandle;
   /** The most recent event that owns the Stage (read02 §14). */
   currentAction?: AbsenceEvent;
+  /** The agent's own context-window report, for the FaceBar meter. */
   context?: ContextState;
-  /** `/` commands the agent advertised; merged into the palette. */
-  agentCommands?: AgentCommandInfo[];
-  /** ACP authentication methods, when the agent advertised any. */
-  authMethods?: AuthMethodInfo[];
-  /** True when the agent is blocked until `/auth <methodId>` succeeds. */
-  authRequired?: boolean;
-  /** Selectable models the agent advertised (drives the `/model` command). */
-  models?: CommandOption[];
   /**
-   * Where the events come from: the runtime profile Absence drives. Undefined
-   * from an older server.
+   * Where the events come from: `acp`, `acp-proxy`, `transcript` — which
+   * channel observes this conversation.
    */
   source?: SessionSource;
   connected: boolean;
-  /** A stop was requested and the server has not confirmed it yet. */
-  stopping: boolean;
   error?: string;
 
-  startSession: (projectPath: string, agent?: RuntimeKind) => Promise<void>;
-  /** Reopen a persisted session from the history list. */
+  /**
+   * Reopen a persisted session from the history list (the archive's own
+   * resume semantics live server-side; the client only names the archive).
+   */
   resumeSession: (entry: SessionHistoryEntry) => Promise<void>;
-  sendPrompt: (text: string) => Promise<void>;
-  /** Run a terminal-box command (its output streams back as a system message). */
-  runCommand: (name: string, args: string) => Promise<void>;
-  /** Answer an approval prompt the agent raised (the `approval` event). */
-  respondApproval: (id: string, value: string) => Promise<void>;
-  abort: () => Promise<void>;
+  /**
+   * Enter a session that already exists on the server — an observed session
+   * the discovery found, or one a proxy spawned. Nothing is created here.
+   */
+  openSession: (sessionId: string) => Promise<void>;
   reset: () => void;
   hydrate: (snapshot: SessionSnapshot) => void;
   applyRuntimeState: (state: SessionRuntimeState) => void;
@@ -134,23 +101,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   events: [],
   eventsVersion: 0,
   eggState: { eggs: new Map(), version: 0, retired: 0 },
-  eventWindowSize: MAX_SESSION_EVENTS,
   currentAction: undefined,
   context: undefined,
-  agentCommands: undefined,
-  authMethods: undefined,
-  authRequired: undefined,
-  models: undefined,
   source: undefined,
   connected: false,
-  stopping: false,
   error: undefined,
-
-  startSession: async (projectPath, agent) => {
-    set({ error: undefined });
-    const snapshot = await api.createSession(projectPath, agent);
-    get().hydrate(snapshot);
-  },
 
   resumeSession: async (entry) => {
     set({ error: undefined });
@@ -163,57 +118,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     get().hydrate(snapshot);
   },
 
-  sendPrompt: async (text) => {
-    const id = get().session?.id;
-    if (!id || !text.trim()) return;
-    // A new prompt supersedes any pending stop confirmation.
-    clearStopWatch();
-    if (get().stopping) set({ stopping: false });
-    await api.sendPrompt(id, text);
-  },
-
-  runCommand: async (name, args) => {
-    const id = get().session?.id;
-    if (!id) return;
-    await api.runCommand(id, name, args);
-  },
-
-  respondApproval: async (approvalId, value) => {
-    const id = get().session?.id;
-    if (!id) return;
-    await api.respondApproval(id, approvalId, value);
-  },
-
-  abort: async () => {
-    const id = get().session?.id;
-    if (!id) return;
-    clearStopWatch();
-    const token = stopToken;
-    set({ stopping: true });
-    stopTimer = setTimeout(() => {
-      stopTimer = undefined;
-      if (token !== stopToken || !get().stopping) return;
-      // The server never confirmed the stop. Unlock the UI locally and say so;
-      // the server-side watchdog is the normal path (see AcpSession).
-      set({ stopping: false, agent: { ...get().agent, status: "listening" } });
-      useChatStore
-        .getState()
-        .appendSystem(
-          "Stop was not acknowledged by the agent within 12s; the run was unlocked locally.",
-        );
-    }, STOP_CONFIRM_MS);
-    try {
-      await api.abortSession(id);
-    } catch (error) {
-      clearStopWatch();
-      set({ stopping: false });
-      throw error;
-    }
+  openSession: async (sessionId) => {
+    set({ error: undefined });
+    const snapshot = await api.fetchSession(sessionId);
+    get().hydrate(snapshot);
   },
 
   reset: () => {
     resetEventCaches();
-    clearStopWatch();
     useRunsStore.getState().clear();
     set({
       session: undefined,
@@ -223,13 +135,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       eggState: { eggs: new Map(), version: 0, retired: 0 },
       currentAction: undefined,
       context: undefined,
-      agentCommands: undefined,
-      authMethods: undefined,
-      authRequired: undefined,
-      models: undefined,
       source: undefined,
       connected: false,
-      stopping: false,
       error: undefined,
     });
   },
@@ -253,10 +160,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       session: snapshot.session,
       agent: snapshot.agent,
       context: snapshot.context,
-      agentCommands: snapshot.agentCommands,
-      authMethods: snapshot.authMethods,
-      authRequired: snapshot.authRequired,
-      models: snapshot.models,
       source: snapshot.source,
       events: snapshot.events,
       eventsVersion: get().eventsVersion + 1,
@@ -266,18 +169,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   applyRuntimeState: (state) => {
-    // The server saying "listening" is the confirmation a stop was waiting for.
-    if (state.agent.status === "listening" && get().stopping) clearStopWatch();
     set({
       session: state.session,
       agent: state.agent,
       context: state.context,
-      agentCommands: state.agentCommands,
-      authMethods: state.authMethods,
-      authRequired: state.authRequired,
-      models: state.models,
       source: state.source,
-      ...(state.agent.status === "listening" && get().stopping ? { stopping: false } : {}),
     });
   },
 
@@ -323,16 +219,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       }
     }
 
-    if (incoming.some((event) => event.type === "agent_end") && get().stopping) {
-      // The run closed: the stop request has been answered.
-      clearStopWatch();
-    }
     const patch: Partial<SessionStore> = {
       events,
       eventsVersion: get().eventsVersion + 1,
-      ...(incoming.some((event) => event.type === "agent_end") && get().stopping
-        ? { stopping: false }
-        : {}),
     };
     if (eggsChanged) {
       patch.eggState = { eggs, version: get().eggState.version + 1, retired };

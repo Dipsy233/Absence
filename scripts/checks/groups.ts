@@ -154,7 +154,6 @@ export const GROUPS: CheckGroup[] = [
     label: "agent 适配层（ACP 契约 / 命令转发）",
     paths: ["apps/server/src/agents/**"],
     checks: [
-      { script: "check-capability-commands.ts", timeout: 60_000 },
       { script: "check-mcp-events.ts", timeout: 60_000 },
       { script: "check-acp.ts", timeout: 120_000 },
       { script: "check-acp-lifecycle.ts", timeout: 180_000 },

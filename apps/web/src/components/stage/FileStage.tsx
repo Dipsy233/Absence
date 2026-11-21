@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef } from "react";
 import Editor from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
 import { formatBytes } from "../../lib/format";
-import { fileContext, selectionContext } from "../../lib/context";
-import { useChatStore } from "../../stores/chatStore";
 import { useMonacoReady } from "../../lib/monaco";
 import { useT } from "../../lib/i18n";
 
@@ -41,7 +39,6 @@ export function FileStage({
 }: FileStageProps) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const collectionRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
-  const addContext = useChatStore((s) => s.addContext);
   // Monaco is a lazy chunk; hold the editor's own loading state until it lands,
   // so @monaco-editor/react never reaches for a CDN.
   const monacoReady = useMonacoReady();
@@ -113,14 +110,6 @@ export function FileStage({
             ) : (
               <span className="text-desk-dim">{t("{n} lines", { n: content.split("\n").length })}</span>
             )}
-            <button
-              type="button"
-              onClick={() => addContext(fileContext(path, content))}
-              className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-              title={t("Add this file to Chat")}
-            >
-              {t("+ Chat")}
-            </button>
           </div>
         </div>
       ) : null}
@@ -137,35 +126,6 @@ export function FileStage({
           onMount={(editor) => {
             editorRef.current = editor;
             applyDecorations();
-            editor.addAction({
-              id: "absence.addSelectionToChat",
-              label: t("Add selection to Chat"),
-              contextMenuGroupId: "z_absence",
-              contextMenuOrder: 1,
-              run: (instance) => {
-                const model = instance.getModel();
-                const selection = instance.getSelection();
-                if (!model || !selection || selection.isEmpty()) return;
-                const text = model.getValueInRange(selection);
-                if (!text.trim()) return;
-                // Report line numbers as they appear in the file.
-                addContext(
-                  selectionContext(
-                    path,
-                    selection.startLineNumber + lineOffset,
-                    selection.endLineNumber + lineOffset,
-                    text,
-                  ),
-                );
-              },
-            });
-            editor.addAction({
-              id: "absence.addFileToChat",
-              label: t("Add file to Chat"),
-              contextMenuGroupId: "z_absence",
-              contextMenuOrder: 2,
-              run: () => addContext(fileContext(path, content)),
-            });
           }}
           options={{
             readOnly: true,

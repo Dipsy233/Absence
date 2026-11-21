@@ -1,5 +1,6 @@
 import type {
   AbsenceEvent,
+  AcpProxySessionsResponse,
   AvatarSkinMeta,
   AvatarSkinState,
   EggFilterProfileMeta,
@@ -8,6 +9,8 @@ import type {
   FileContent,
   FileVersionInfo,
   MetricsResponse,
+  ObserveDiscoveryResponse,
+  ObserveSessionRow,
   Project,
   ResumeTarget,
   RunSummary,
@@ -153,20 +156,6 @@ export async function fetchAllSessionEvents(sessionId: string): Promise<AbsenceE
   }
 }
 
-export async function sendPrompt(id: string, prompt: string): Promise<void> {
-  await json(
-    await fetch(`/api/sessions/${id}/prompt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    }),
-  );
-}
-
-export async function abortSession(id: string): Promise<void> {
-  await json(await fetch(`/api/sessions/${id}/abort`, { method: "POST" }));
-}
-
 /**
  * Leave a session: stop its watchers and metrics sampling, keep its archive.
  * Best effort — the UI leaves either way, but a failure is worth a console line
@@ -183,26 +172,32 @@ export async function readFile(sessionId: string, path: string): Promise<FileCon
   );
 }
 
-/** Forward a chat command; its output arrives over the socket as run events. */
-export async function runCommand(sessionId: string, name: string, args: string): Promise<void> {
-  await json(
-    await fetch(`/api/sessions/${sessionId}/command`, {
+/** A session snapshot for a session that already exists (the board's entry). */
+export async function fetchSession(id: string): Promise<SessionSnapshot> {
+  return json<SessionSnapshot>(await fetch(`/api/sessions/${encodeURIComponent(id)}`));
+}
+
+/* ── Observation board ────────────────────────────────────────────────────── */
+
+/** What the tails found: transcripts, their state, and the sources watched. */
+export async function fetchObserveBoard(): Promise<ObserveDiscoveryResponse> {
+  return json<ObserveDiscoveryResponse>(await fetch("/api/observe/sessions"));
+}
+
+/** Attach one transcript (full backfill) and get its row with the session id. */
+export async function attachTranscript(file: string): Promise<ObserveSessionRow> {
+  return json<ObserveSessionRow>(
+    await fetch("/api/observe/attach", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, args }),
+      body: JSON.stringify({ file }),
     }),
   );
 }
 
-/** Answer an approval prompt the agent raised; unblocks the runtime request. */
-export async function respondApproval(sessionId: string, id: string, value: string): Promise<void> {
-  await json(
-    await fetch(`/api/sessions/${sessionId}/approval`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, value }),
-    }),
-  );
+/** ACP proxy sessions on this host (the board's proxy section). */
+export async function fetchProxySessions(): Promise<AcpProxySessionsResponse> {
+  return json<AcpProxySessionsResponse>(await fetch("/api/acp-proxy/sessions"));
 }
 
 /* ── Agent Eggs filter profiles (server-side named files) ───────────────── */

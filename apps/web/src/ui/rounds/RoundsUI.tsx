@@ -18,7 +18,6 @@ import { useRoundsData } from "./useRoundsData";
 import { RoundsScene } from "./RoundsScene";
 import { RoundsPeek } from "./RoundsPeek";
 import { RoundsStory } from "./RoundsStory";
-import { RoundsChat } from "./RoundsChat";
 import { RoundsDock, DockBody, WINDOW_TITLE, type DockPanel } from "./RoundsDock";
 import { RoundsWindow } from "./RoundsWindow";
 import "./rounds.css";
@@ -263,7 +262,6 @@ export function RoundsUI() {
 
         <RoundsStory data={data} onLive={goLive} selectedId={storySel} onSelect={toggleStory} />
 
-        <RoundsChat />
 
         {liveItem ? (
           <RoundsWindow

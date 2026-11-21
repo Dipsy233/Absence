@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
+import type { AcpProxySessionsResponse, AcpProxySessionRow } from "@absence/core";
 import { proxySessions } from "../agents/acp/proxy";
 
 /**
@@ -44,9 +45,26 @@ function asCommand(value: unknown): string[] | undefined {
   return value as string[];
 }
 
+/** The board's view of a proxy session: identity and lifecycle, not internals. */
+function boardRow(info: ReturnType<typeof proxySessions.list>[number]): AcpProxySessionRow {
+  const row: AcpProxySessionRow = {
+    id: info.id,
+    label: info.label,
+    cwd: info.cwd,
+    status: info.status,
+    createdAt: info.createdAt,
+    ...(info.sessionId !== undefined ? { sessionId: info.sessionId } : {}),
+    ...(info.closedAt !== undefined ? { closedAt: info.closedAt } : {}),
+    ...(info.pid !== undefined ? { pid: info.pid } : {}),
+    ...(info.error !== undefined ? { error: info.error } : {}),
+    ...(info.endpoint !== undefined ? { endpoint: { ...info.endpoint } } : {}),
+  };
+  return row;
+}
+
 export async function acpProxyRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/api/acp-proxy/sessions", async () => {
-    return { sessions: proxySessions.list() };
+  app.get("/api/acp-proxy/sessions", async (): Promise<AcpProxySessionsResponse> => {
+    return { sessions: proxySessions.list().map(boardRow) };
   });
 
   app.post("/api/acp-proxy/sessions", async (request, reply) => {
