@@ -240,6 +240,13 @@ export class AbsenceSession {
   private disposed = false;
   /** Set on an observed session: facts arrive, nothing is ever sent back. */
   readonly observe?: ObserveMeta;
+  /**
+   * True when this session really drives a runtime. After the drive-mode
+   * demolition the only drivable runtime is the mock fixture (development and
+   * checks); everything else — observed transcripts, proxy sessions, reopened
+   * archives — is read-only, and every write-back path refuses.
+   */
+  readonly runtimeDriven: boolean;
 
   constructor(
     projectPath: string,
@@ -249,6 +256,7 @@ export class AbsenceSession {
   ) {
     this.id = resume?.absenceSessionId ?? newId("sess");
     this.observe = options?.observe;
+    this.runtimeDriven = !this.observe && kind === "mock";
     // Dwell time is accrued across visits: a session reopened later continues
     // the clock instead of restarting it (see `Session.dwellMs`).
     this.dwellBase = Math.max(0, resume?.dwellMs ?? 0);
@@ -276,6 +284,9 @@ export class AbsenceSession {
       // exits beyond the cap are retired. See ProcessWatcher.retireOverflow.
       maxFinishedEggs: config.maxEggs,
       externalTranscript: this.observe?.transcriptFile,
+      // Only the mock fixture is a runtime Absence drives; its curve may root
+      // at the server. Every observed variant attributes by its own evidence.
+      drivesRuntime: !this.observe && kind === "mock",
       // Observed sessions share one machine-wide sweep instead of polling the
       // process table once per session (see ExternalScanner).
       externalScanner: this.observe?.transcriptFile ? ExternalScanner.get() : undefined,
@@ -283,18 +294,21 @@ export class AbsenceSession {
     // Say how precise process watching is, so the UI can be honest about it.
     // A proxy session's agent is spawned by Absence itself and carries the
     // ABSENCE_SESSION_ID marker, so the kernel observer reports it exactly;
-    // a transcript session's agent belongs to some other process tree.
+    // every other session's agent belongs to some other process tree.
     this.session.processPrecision =
       JobMonitor.get().available && (!this.observe || this.observe.channel === "acp-proxy")
         ? "exact"
         : "sampled";
     if (this.observe) this.processWatcher.beginSession(this.id);
-    // An observed session owns no runtime: the transcript feed pushes facts
-    // through the same subscription seam a runtime adapter would.
-    this.adapter = options?.observe ? new ObserveAdapter() : createAdapter(kind, {
-      processWatcher: this.processWatcher,
-      onStateChange: () => this.scheduleState(),
-    });
+    // Only the mock fixture drives. Everything else rides the no-op adapter:
+    // an observed session is fed by the discovery feed or the proxy tap, and a
+    // reopened archive is a view over its own transcript of record.
+    this.adapter = this.runtimeDriven
+      ? createAdapter(kind, {
+          processWatcher: this.processWatcher,
+          onStateChange: () => this.scheduleState(),
+        })
+      : new ObserveAdapter();
     // Baseline now: what is already running before the agent starts. The snapshot
     // costs half a second, so it has to be taken here rather than when the first
     // command begins.
@@ -336,14 +350,32 @@ export class AbsenceSession {
   }
 
   async start(): Promise<void> {
-    // Observed: there is no runtime to start. The discovery feed pushes
-    // transcript facts through `ingestObservation`; tree, file watching,
-    // process watching and metrics run exactly as in a driven session —
-    // unless the project is a wholesale scope (the home directory, a drive
-    // root), where watching would be a hazard rather than observation.
-    if (this.observe) {
+    // Not drivable: there is no runtime to start. Observed sessions are fed by
+    // the discovery feed or the proxy tap; a reopened archive replays its own
+    // history first — ABSENCE's own record is the fact source, the same way a
+    // transcript is for an observed session. Tree, file watching, process
+    // watching and metrics run as in a driven session — unless the project is
+    // a wholesale scope (the home directory, a drive root), where watching
+    // would be a hazard rather than observation.
+    if (!this.runtimeDriven) {
       this.unsubAdapter = this.adapter.subscribe((event) => this.handleEvent(event));
-      if (this.observe.watchProject !== false) {
+      const archiveId = this.resume?.absenceSessionId;
+      if (archiveId !== undefined) {
+        const events = await readEvents(this.session.projectPath, archiveId);
+        for (const event of events) this.applyToState(event);
+        this.events = events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events;
+        // A reopened session is not mid-run: whatever it was doing is over,
+        // and the Stage rests on its default page. A run the archive still
+        // marks `running` is one whose `agent_end` never arrived — close it as
+        // interrupted rather than following work that already stopped.
+        this.setStatus("listening");
+        this.currentAction = undefined;
+        await closeStaleOpenRun(archiveId);
+        // Containers this session laid may still be running. The archive
+        // already holds their eggs; re-attach before the snapshot is served.
+        await this.dockerEggs?.restore(events);
+      }
+      if (this.observe?.watchProject !== false) {
         this.tree = await buildTree(this.session.projectPath);
         this.treeDirty = true;
         this.watcher = new FileWatcher(
@@ -440,7 +472,7 @@ export class AbsenceSession {
 
   /** Fire-and-forget: the run streams over the bus, the HTTP call returns at once. */
   prompt(text: string): void {
-    if (this.observe) {
+    if (!this.runtimeDriven) {
       throw new Error(
         "This session is observed, not driven — Absence only watches it. Send your prompts in the agent's own terminal.",
       );
@@ -502,7 +534,7 @@ export class AbsenceSession {
   }
 
   async abort(): Promise<void> {
-    if (this.observe) return;
+    if (!this.runtimeDriven) return;
     await this.adapter.abort();
   }
 
@@ -562,7 +594,7 @@ export class AbsenceSession {
     const notice = (content: string): void =>
       this.handleEvent(createEvent(this.id, "message", { role: "system", content, streaming: false }));
 
-    if (this.observe) {
+    if (!this.runtimeDriven) {
       return notice("Observed sessions accept no commands — Absence only watches this session.");
     }
     if (command === "model") {

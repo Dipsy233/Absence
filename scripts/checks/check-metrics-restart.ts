@@ -73,7 +73,7 @@ async function main(): Promise<void> {
     let up = false;
     for (let attempt = 0; attempt < 90 && !up; attempt++) {
       await sleep(500);
-      up = await fetch(`http://127.0.0.1:${port}/api/runtimes`)
+      up = await fetch(`http://127.0.0.1:${port}/api/sessions/history`)
         .then((r) => r.ok)
         .catch(() => false);
     }

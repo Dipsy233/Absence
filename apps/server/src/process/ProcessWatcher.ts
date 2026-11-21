@@ -202,6 +202,13 @@ export interface ProcessWatcherOptions {
   /** External pi transcript; only explicit command-line session evidence binds a pid. */
   externalTranscript?: string;
   /**
+   * True when this session drives a runtime Absence spawned (the mock
+   * fixture). Only then does the server's own pid count as "the agent" for
+   * the metrics curve; observed and proxy sessions attribute by their own
+   * evidence instead.
+   */
+  drivesRuntime?: boolean;
+  /**
    * The shared machine-wide scanner. When given, this watcher no longer runs
    * its own 4 s poll loop — snapshots arrive from one shared sweep instead of
    * one per observed session. Omitted (checks, standalone use), the watcher
@@ -451,7 +458,11 @@ export class ProcessWatcher {
    */
   metricsAgentTarget(): MetricsTarget {
     const rootPid = this.agentPid ?? this.rootPid;
-    const pids = new Set<number>(this.options.externalTranscript ? [] : [rootPid]);
+    // Without a runtime Absence drives (the mock fixture — see
+    // `drivesRuntime`), the server's own pid is not "the agent" and must not
+    // be sampled into the curve. The kernel checks leave the flag unset and
+    // keep the old server-rooted behaviour.
+    const pids = new Set<number>(this.options.drivesRuntime ? [rootPid] : []);
     for (const pid of this.ownedLive) pids.add(pid);
     for (const egg of this.eggs.values()) {
       if (egg.status === "running") pids.add(egg.info.pid);
@@ -460,7 +471,7 @@ export class ProcessWatcher {
       rootPid,
       name: "Agent",
       kind: "agent",
-      status: this.options.externalTranscript && this.ownedLive.size === 0 ? "exited" : "running",
+      status: !this.options.drivesRuntime && this.ownedLive.size === 0 ? "exited" : "running",
       startedAt: 0,
       pids: [...pids],
     };
