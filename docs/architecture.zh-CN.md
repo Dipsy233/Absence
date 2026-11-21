@@ -6,23 +6,22 @@
 
 ## 1. 数据流
 
-Absence 启动一个 ACP agent，或附着到一个已经运行的 agent。两种情况下，服务端都收集三类事实，把它们转换成 `AbsenceEvent`，再分发给界面、归档、回放与报告。
+Absence 不驱动任何 agent。它是纯旁观者:用户照常在自己的终端(或编辑器)里使用 agent 软件,Absence 通过三条只读通道观察同一套事件管线。
 
 ```text
-Agent 进程（任意 ACP agent）
-    │  通过 stdio 传输 ACP session/update（NDJSON JSON-RPC）
-    ▼
-AcpConnection → AcpSession / AcpAdapter
-    │
-    ├── projector（AcpToolMapper + ToolRules）─────────┐
-    │                                                 ▼
-    │                                          AbsenceEvent
-    │                                                 │
-OS 事实                                                │
-    ProcessWatcher（Job Object / eBPF / 快照采样）──────┤
-    FileWatcher ───────────────────────────────────────┤
-                                                       │
-            ┌──────────────────┬───────────────┬────────┴──────────┐
+        ┌────────────────────────────┬─────────────────────────────┐
+        │ 通道 A:转录尾随             │ 通道 B:ACP 代理              │
+        │ 尾随 agent 软件自己写的      │ 编辑器 ACP client 把入口指向  │
+        │ 会话文件(observe/,pi 格式)  │ Absence 代理,tap 投影流量    │
+        └──────────────┬─────────────┴──────────────┬──────────────┘
+                       │      AbsenceEvent          │
+OS 事实                │                            │
+    ProcessWatcher(Job Object / eBPF / 共享扫描)     │
+    ExternalScanner · FileWatcher · DockerMonitor ────┤
+                                                      ▼
+                                               AbsenceEvent
+                                                      │
+            ┌──────────────────┬───────────────┬──────┴────────────┐
             ▼                  ▼               ▼                   ▼
        WebSocket          SQLite 归档      回放（Web）    Absence Report（Web）
             │                  │
@@ -30,9 +29,9 @@ OS 事实                                                │
       face / Stage      History / Agent Folder
 ```
 
-projector 读取 `session/update` 并写入 `AbsenceEvent`。进程与文件 watcher 直接写入 `AbsenceEvent`。`SessionStore` 把两个来源合并成一条有序事件流，通过 WebSocket 广播，并缓冲写入 SQLite。回放与 Absence Report 是 Web 端对该事件流某个切片的归约；服务端不计算它们。
+转录尾随与代理 tap 把各自来源投影成 `AbsenceEvent`(共用 `AcpToolMapper` 的语义层);进程、文件与容器 watcher 直接写入 `AbsenceEvent`。`SessionStore` 把所有通道合并成一条有序事件流,通过 WebSocket 广播,并缓冲写入 SQLite。回放与 Absence Report 是 Web 端对该事件流某个切片的归约;服务端不计算它们。
 
-会话通过 ACP adapter 驱动：Absence 持有子进程，并发送 `session/new`、`session/prompt`、审批响应与 `/auth`。
+会话是**发现**出来的,不是创建出来的:一份转录被挂载(活跃时自动,或在观测台显式挂载)就打开一个会话;一个代理会话把自己的 agent spawn 进一个会话;所有会话都拒绝 prompt、abort、审批与命令流量,写回路由对它们一律 403。唯一的例外是开发与检查使用的 `mock` fixture。
 
 ## 2. 仓库结构与技术选型
 
@@ -61,18 +60,18 @@ projector 读取 `session/update` 并写入 `AbsenceEvent`。进程与文件 wat
 
 ## 3. 模块职责
 
-### 3.1 ACP 接入 — `apps/server/src/agents/acp`
+### 3.1 agent 接入 — `apps/server/src/agents/acp` 与 `apps/server/src/observe`
 
 | 模块 | 职责 |
 |---|---|
-| `AgentCatalog.ts`、`profiles.ts` | 解析当前主机存在哪些 agent、它们的启动数据、就绪状态与只读配置探测。 |
-| `AcpConnection.ts`、`protocol/**` | stdio 传输与 JSON-RPC/NDJSON 分帧；`initialize`、会话方法、请求路由。 |
-| `AcpAdapter.ts`、`AcpSession.ts` | 会话生命周期：启动进程、打开或恢复会话、发送 prompt、取消回合、应答审批。 |
-| `AcpToolMapper.ts`、`ToolRules.ts`、`toolRules.json` | 按 ACP `kind` 与字段形状把工具调用投影成 `AbsenceEvent`。 |
-| `AcpPermissionBridge.ts`、`AcpAuth.ts`、`AcpConfigOptions.ts` | 审批转发、认证桥接与配置项。 |
-| `proxy/**` | 透明 ACP 代理：在外部 client 与 agent 之间原样转发行，同时旁听同一份流量生成事件。 |
+| `observe/` | 旁观核心:`transcriptSources.ts`(pi 转录源 profile)、`parsers/pi.ts`(pi 转录 → `AbsenceEvent`)、`Discovery.ts`(三态尾随:unknown / attached / missing,活跃转录自动挂载,`POST /api/observe/attach` 显式挂载并完整回填)、`ObserveAdapter.ts`(所有非驱动会话运行的 no-op 适配器)。 |
+| `AcpToolMapper.ts`、`ToolRules.ts`、`toolRules.json` | 按 ACP `kind` 与字段形状把工具调用投影成 `AbsenceEvent`;转录解析器与 projector 共用。 |
+| `proxy/**` | 透明 ACP 代理:自己 spawn agent,在外部 client 与 agent 之间原样转发行,旁听同一份流量生成事件,注入 `ABSENCE_SESSION_ID` 获得精确进程归因,并经 `SessionStore.createObserved` 持久化(channel `acp-proxy`)。 |
+| `MockAdapter.ts` | 开发与检查使用的脚本化 fixture——Absence 仍然驱动的唯一运行时。 |
 
-`apps/server/src/agents/createAdapter.ts` 中的 `createAdapter` 是会话层使用的入口。profile 为 ready 时返回 `AcpAdapter`，否则抛出 catalog 给出的就绪原因。非 ACP adapter 是检查使用的 `mock` fixture。
+`createAdapter` 只解析一个可驱动运行时(mock fixture)。其他任何 kind 都创建 `ObserveAdapter` 会话;带 `resume` 的 POST 重开归档(回放 + 目录树 + watcher),不再 respawn 任何东西。
+
+驱动模式的客户端(AcpAdapter / AcpConnection / AcpSession / AcpPermissionBridge / AcpAuth / AcpConfigOptions / AgentCatalog / profiles)已在旁观化重构中移除:Absence 不再发送 prompt、取消回合、应答审批或切换模型。
 
 ### 3.2 会话与归档 — `apps/server/src/sessions`
 
@@ -92,7 +91,7 @@ projector 读取 `session/update` 并写入 `AbsenceEvent`。进程与文件 wat
 
 ### 3.6 HTTP 与 WebSocket — `apps/server/src/api`、`apps/server/src/websocket`
 
-HTTP API 提供项目列表、会话创建与观察、会话快照、分页事件、run 摘要、文件版本、文件内容、prompt、审批、命令、指标与 agent catalog 管理。会话 WebSocket 先发送 `snapshot`，随后发送批量 `event` 与 `session_state` 消息。另一个终端 WebSocket 暴露 PTY 字节镜像。事件帧按 50 ms 或 200 条合批。
+HTTP API 提供项目列表、会话观察(`GET /api/observe/sessions`、`POST /api/observe/attach`)、代理会话管理、会话快照、分页事件、run 摘要、文件版本、文件内容、指标,以及写回路由(`prompt`/`abort`/`approval`/`command`——除 mock fixture 外一律 403)。`POST /api/sessions` 只用于重开归档(或启动 fixture)。会话 WebSocket 先发送 `snapshot`,随后发送批量 `event` 与 `session_state` 消息。事件帧按 50 ms 或 200 条合批。
 
 ### 3.7 Web 客户端 — `apps/web`
 
@@ -119,9 +118,10 @@ type AbsenceEventType =
 
 | `source` | 来源 |
 |---|---|
-| `acp` | ACP `session/update`。 |
+| `acp` | ACP `session/update`(mock fixture 的 projector)。 |
 | `acp-proxy` | 通过透明代理观察到的 ACP 流量。 |
 | `os` | 进程或文件观察。 |
+| `transcript` | 从 agent 自己写的会话转录投影出的事实(通道 A)。 |
 | `unknown` | 未记录来源。 |
 
 | `fidelity` | 含义 |
@@ -169,7 +169,7 @@ SQLite 访问分布在以下模块：
 | 表 | 内容 |
 |---|---|
 | `store_meta` | schema 版本与存储级元数据。 |
-| `sessions` | 每个归档会话一行：项目、时间戳、runtime、模型、消息数、首条 prompt 与不透明 ACP resume handle。 |
+| `sessions` | 每个归档会话一行：项目、时间戳、runtime(agent kind)、模型、消息数、首条 prompt、不透明 ACP resume handle,以及 schema v5 的观察身份(`channel` + `external_id`)——重启后的 re-attach 靠它查回。 |
 | `events` | 有序事件，含 `seq`、payload、`source` 与 `fidelity`。 |
 | `runs` | run 索引：事件范围、prompt、开始与结束、状态与计数。 |
 | `file_versions` | 完整与部分文件版本，含来源、行范围与已知行数据。 |

@@ -13,6 +13,39 @@ notes are under `docs/releases/`. The release process is described in
 | v0.3.0 | Codex, DSH and shell takeover | [v0.3.0](docs/releases/v0.3.0.md) |
 | v0.2.0 | Personal avatars and Agent Eggs filters | [v0.2.0](docs/releases/v0.2.0.md) |
 
+## Unreleased — the observer refactor (`re` branch)
+
+Absence no longer starts, drives or answers for any agent. It is a pure
+observer: three read-only channels feed one event pipeline, and every
+write-back path is refused.
+
+- Channel A — transcript tails: `observe/` tails the session files agent
+  software writes on its own (pi format; `ABSENCE_OBSERVE_PI_ROOT` override).
+  Attach is automatic while a transcript is active and explicit
+  (`POST /api/observe/attach`) with full backfill otherwise.
+- Channel B — the ACP proxy: a proxy session spawns its agent into a
+  persisted observed session (channel `acp-proxy`), injects
+  `ABSENCE_SESSION_ID` for exact kernel attribution, and projects the
+  client's prompt as the run boundary.
+- Channel C — OS observation: a shared machine-wide scanner (`ExternalScanner`)
+  dispatches every observed transcript its bound process subtree; default-pi
+  runs bind by unambiguous 1:1 new-transcript/new-process pairing only.
+- The web app is the Observatory: it lists transcripts, proxies and history
+  and never launches anything. The chat input, slash palette, approval
+  buttons, `/model` switching and every "+ Chat" affordance are gone; the
+  approval card is read-only.
+- The ACP drive stack (AcpAdapter / AcpConnection / AcpSession / permission
+  bridge / auth / config options / AgentCatalog / profiles) was removed.
+  `createAdapter` resolves only the mock fixture; every other session is
+  observed and answers 403 on the write-back routes.
+- SQLite schema v5: `sessions.channel`/`external_id` (the observation
+  identity), `runs.boundary_source`. Re-attach after a restart reuses the
+  archive row instead of duplicating it; observed sessions archive
+  automatically after `ABSENCE_ARCHIVE_SILENCE_MS` of silence with no viewer.
+- Windows Docker capture is force-disabled (no WSL daemon probing, no env
+  re-enable); non-Windows container attribution works from transcript command
+  windows.
+
 ## v0.5.0 — ACP access layer and UI rebuild
 
 [v0.5.0 notes](docs/releases/v0.5.0.md)

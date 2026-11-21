@@ -6,23 +6,23 @@ This document describes the internal structure of Absence and the mechanisms tha
 
 ## 1. Data flow
 
-Absence starts an ACP agent, or attaches to an agent that already runs. In both cases the server collects three kinds of facts, converts them into `AbsenceEvent`, and distributes that event stream to the interface, the archive, replay and the report.
+Absence drives no agent. It is a pure observer: the user runs agent software in their own terminal (or editor) exactly as they always did, and Absence watches three read-only channels that all feed one event pipeline.
 
 ```text
-Agent process (any ACP agent)
-    │  ACP session/update over stdio (NDJSON JSON-RPC)
-    ▼
-AcpConnection → AcpSession / AcpAdapter
-    │
-    ├── projector (AcpToolMapper + ToolRules) ────────┐
-    │                                                 ▼
-    │                                          AbsenceEvent
-    │                                                 │
-OS facts                                                │
-    ProcessWatcher (Job Object / eBPF / sampling) ──────┤
-    FileWatcher ────────────────────────────────────────┤
-                                                        │
-            ┌──────────────────┬───────────────┬────────┴──────────┐
+        ┌────────────────────────────┬─────────────────────────────┐
+        │ Channel A: transcripts     │ Channel B: ACP proxy        │
+        │ tail the session files the │ an editor ACP client points │
+        │ agent software writes      │ at Absence's proxy; the tap │
+        │ (observe/, pi format)      │ projects the traffic        │
+        └──────────────┬─────────────┴──────────────┬──────────────┘
+                       │      AbsenceEvent          │
+OS facts               │                            │
+    ProcessWatcher (Job Object / eBPF / shared scan) │
+    ExternalScanner · FileWatcher · DockerMonitor ────┤
+                                                      ▼
+                                               AbsenceEvent
+                                                      │
+            ┌──────────────────┬───────────────┬──────┴────────────┐
             ▼                  ▼               ▼                   ▼
        WebSocket         SQLite archive   Replay (web)     Absence Report (web)
             │                  │
@@ -30,9 +30,9 @@ OS facts                                                │
       faces / Stage     History / Agent Folder
 ```
 
-The projector reads `session/update` and writes `AbsenceEvent`. Process and file watchers write `AbsenceEvent` directly. `SessionStore` merges both sources into one ordered stream, broadcasts it over the WebSocket, and buffers it for SQLite. Replay and the Absence Report are web-side reductions over a slice of that stream; the server does not compute them.
+The transcript tail and the proxy tap project their sources into `AbsenceEvent` (both reuse `AcpToolMapper` semantics); process, file and container watchers write `AbsenceEvent` directly. `SessionStore` merges every channel into one ordered stream, broadcasts it over the WebSocket, and buffers it for SQLite. Replay and the Absence Report are web-side reductions over a slice of that stream; the server does not compute them.
 
-A session is driven through the ACP adapter: Absence owns the child process and sends `session/new`, `session/prompt`, approval responses and `/auth`.
+Sessions are *discovered*, not created: a transcript that attaches (automatically while active, or explicitly from the observation board) opens a session; a proxy session spawns its agent into one; every session refuses prompt, abort, approval and command traffic, and answers 403 at the write-back routes. The sole exception is the `mock` fixture used by development and checks.
 
 ## 2. Repository layout and stack
 
@@ -61,18 +61,18 @@ Main technology choices:
 
 ## 3. Modules and responsibilities
 
-### 3.1 ACP access — `apps/server/src/agents/acp`
+### 3.1 Agent access — `apps/server/src/agents/acp` and `apps/server/src/observe`
 
 | Module | Responsibility |
 |---|---|
-| `AgentCatalog.ts`, `profiles.ts` | Resolve which agents exist on the host, their launch data, readiness state and read-only configuration inspection. |
-| `AcpConnection.ts`, `protocol/**` | stdio transport and JSON-RPC/NDJSON framing; `initialize`, session methods, request routing. |
-| `AcpAdapter.ts`, `AcpSession.ts` | Session lifecycle: start the process, open or resume a session, send prompts, cancel turns, answer permissions. |
-| `AcpToolMapper.ts`, `ToolRules.ts`, `toolRules.json` | Project ACP tool calls into `AbsenceEvent` by ACP `kind` and field shape. |
-| `AcpPermissionBridge.ts`, `AcpAuth.ts`, `AcpConfigOptions.ts` | Approval forwarding, authentication bridging and configuration options. |
-| `proxy/**` | Transparent ACP proxy: forwards raw lines between an external client and an agent, and taps the same traffic for events. |
+| `observe/` | The observation core: `transcriptSources.ts` (the pi source profile), `parsers/pi.ts` (pi transcript → `AbsenceEvent`), `Discovery.ts` (three-state tails: unknown / attached / missing, auto-attach for active transcripts, `POST /api/observe/attach` for explicit attach with full backfill), `ObserveAdapter.ts` (the no-op adapter every non-driving session runs on). |
+| `AcpToolMapper.ts`, `ToolRules.ts`, `toolRules.json` | Project ACP tool calls into `AbsenceEvent` by ACP `kind` and field shape; shared by the projector and the transcript parser. |
+| `proxy/**` | Transparent ACP proxy: spawns the agent itself, forwards raw lines between an external client and the agent, taps the traffic for events, injects `ABSENCE_SESSION_ID` for exact process attribution, and persists the session through `SessionStore.createObserved` (channel `acp-proxy`). |
+| `MockAdapter.ts` | The scripted fixture used by development and checks — the only runtime Absence still drives. |
 
-`createAdapter` in `apps/server/src/agents/createAdapter.ts` is the entry point used by the session layer. It returns an `AcpAdapter` for a ready profile and throws the catalog's readiness reason otherwise. The non-ACP adapter is the `mock` fixture used by checks.
+`createAdapter` resolves exactly one drivable runtime (the mock fixture). Any other kind creates an `ObserveAdapter` session; a POST with a `resume` reopens the archive (replay + tree + watcher) instead of respawning anything.
+
+The drive-mode client (AcpAdapter / AcpConnection / AcpSession / AcpPermissionBridge / AcpAuth / AcpConfigOptions / AgentCatalog / profiles) was removed in the observer refactor: Absence cannot send prompts, cancel turns, answer permissions or switch models any more.
 
 ### 3.2 Sessions and archive — `apps/server/src/sessions`
 
@@ -92,7 +92,7 @@ Metrics do not use `AbsenceEvent`. They are sampled every five seconds on a wall
 
 ### 3.6 HTTP and WebSocket — `apps/server/src/api`, `apps/server/src/websocket`
 
-The HTTP API exposes projects, session creation and observation, session snapshots, paged events, run summaries, file versions, file contents, prompts, approvals, commands, metrics and agent catalog management. The session WebSocket sends a `snapshot` first, then batched `event` and `session_state` messages. A separate terminal WebSocket exposes the PTY byte mirror. Event frames are batched at 50 ms or 200 events.
+The HTTP API exposes projects, session observation (`GET /api/observe/sessions`, `POST /api/observe/attach`), proxy session management, session snapshots, paged events, run summaries, file versions, file contents, metrics, and the write-back routes (`prompt`/`abort`/`approval`/`command`) that answer 403 for every session except the mock fixture. `POST /api/sessions` only reopens an archive (or launches the fixture). The session WebSocket sends a `snapshot` first, then batched `event` and `session_state` messages. Event frames are batched at 50 ms or 200 events.
 
 ### 3.7 Web client — `apps/web`
 
@@ -119,9 +119,10 @@ Each event carries `source` and `fidelity`:
 
 | `source` | Origin |
 |---|---|
-| `acp` | ACP `session/update`. |
+| `acp` | ACP `session/update` (the mock fixture's projector). |
 | `acp-proxy` | ACP traffic observed through the transparent proxy. |
 | `os` | Process or file observation. |
+| `transcript` | Facts projected from an agent-written session transcript (channel A). |
 | `unknown` | Origin not recorded. |
 
 | `fidelity` | Meaning |
@@ -172,7 +173,7 @@ Tables:
 | Table | Content |
 |---|---|
 | `store_meta` | Schema version and store-level metadata. |
-| `sessions` | One row per archived session: project, timestamps, runtime, model, message count, first prompt and an opaque ACP resume handle. |
+| `sessions` | One row per archived session: project, timestamps, runtime (the agent kind), model, message count, first prompt, an opaque ACP resume handle and — schema v5 — the observation identity (`channel` + `external_id`), which is what re-attach looks up after a restart. |
 | `events` | Ordered events with `seq`, payload, `source` and `fidelity`. |
 | `runs` | Run index: event range, prompt, start and end, status and counts. |
 | `file_versions` | Complete and partial file versions, with source, line range and known-line data. |

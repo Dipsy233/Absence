@@ -83,11 +83,26 @@ Absence 已从"驾驶位 + 行车记录仪"重构为**纯旁观监控看板**:�
 - **用户新增决定:Windows 不做 Docker 容器捕获**(强制关闭,不能用环境变量开启;移除 WSL Docker 探测)。非 Windows 保留;转录命令事实照常展示。
 - `check:agentwatch-external` 四节:显式归因、默认 pi 配对、共享扫描器、观察会话 Docker 归因;三包 typecheck、offline 35/35、observe-transcript 29/29 通过。
 
+### Phase 3:proxy 会话持久化(已完成,c8b4c48)
 
-- **Phase 2** 归因重做:`reachesOwned` → `reachesAttributed`(签名识别 + pid 祖先链),指标/eggs/Docker 扩展到非 owned 进程
-- **Phase 3** proxy 升级:持久化、Web 可 attach、注入 `ABSENCE_SESSION_ID`;**此时定 schema v5 的 channel/external_id**
-- **Phase 4** 交互面拆除:删 prompt/abort/approval/command 四端点 + drive-mode 残骸;Picker → Observatory(用 `GET /api/observe/sessions` + `POST /api/observe/attach`);chat → 只读 Transcript
-- **Phase 5** schema v5 迁移 + 自动归档(静默阈值)+ re-attach(修重启重复)+ 双语文档
+- `ProxySessions.useSessionStore(store)`(index.ts 在 `ABSENCE_OBSERVE=1` 时注入):每个 proxy 会话经 `createObserved` 落地为 `channel: "acp-proxy"` 的观察会话——tap 投影事实 → `ingestObservation` → 既有管线(SQLite / run index / WS);`ProxySessionInfo.sessionId` 供 Web 关联。
+- spawn 注入 `ABSENCE_SESSION_ID`(值 = absence 会话 id)→ Windows Job 观察者精确归因;`AbsenceSession.declareRuntimePid` 补全归因对;`processPrecision` 对 acp-proxy 会话标 exact。attach 失败降级为透明代理(诊断记录),不挡客户端。
+- tap 增补:`session/prompt` 请求投影为 user message(run 边界);turn 缓冲移入 `AcpMonitorProjector`(`beginTurn`/`finalizeTurn`,活动边界断句与 driven adapter 同语义),agent 的 prompt **应答**关闭回合(final message + agent_end,不编造 usage)。
+- **修了两个真 bug**:① `createStreamTransport` 在 listener 挂上前丢弃到达的行(本地回环/stdio 竞速吃掉 initialize)——先缓冲,首个订阅者后微任务重放;② `FileWatcher` 主/外圈 watcher 无 error 处理,junction EPERM 直接炸进程——按降级契约吞掉。
+- `ObserveMeta.channel` 扩为 `"transcript" | "acp-proxy"`;`isNarrowScope` 移入 observe/types;新增 `observe` check 组(补注册此前漏组的 observe-transcript)。`check:observe-proxy` 15 断言。
+
+### Phase 4:交互面拆除(已完成,75cb625 + 00ec65c)
+
+- **Web(75cb625)**:Observatory 观测台替换 ProjectPicker(转录挂载 / 代理列表 / 历史;`AcpProxySessionRow` core 契约);删除全部驱动 UI——chat 输入与 `/` 面板、四个 face 的 chat bar、Drip 表单与 Stop、ApprovalStage 应答(只读权限卡)、Stage/文件面板全部 "+ Chat"、sessionStore 的 sendPrompt/runCommand/respondApproval/abort 与 stop 机制;新增 `openSession(id)`。
+- **服务端(00ec65c)**:驱动栈整体删除(AcpAdapter / AcpConnection / AcpSession / AcpPermissionBridge / AcpAuth / AcpConfigOptions / AgentCatalog / profiles / api/runtimes / api/agents + 四个驱动检查);`createAdapter` 只剩 mock fixture;其他 kind 一律 `ObserveAdapter`,带 resume 的 POST 重开归档(回放 + 目录树 + watcher),不 respawn;无 resume 的 POST 只许 mock。prompt/abort/approval/command 对非 fixture 会话 403(路由仅为 mock 检查保留,最终删除与 mock 检查改写绑定)。
+- 遗留:`scripts/mock-agent`(14 场景经 profile 驱动,已从 check:acp-all 摘除)需改写为 proxy 流(其 agent.mjs 是协议级 fixture,可复用);check:e2e 用 mock fixture 仍绿。
+
+### Phase 5:schema v5 + re-attach + 自动归档(已完成,fcee2ad)
+
+- v5:`sessions.channel/external_id`(索引;runtime 即 agent kind)+ `runs.boundary_source`(预埋列);`ArchiveMeta` 携带身份;legacy 导入与 flush upsert 同步写新列。
+- **re-attach**:`createObserved` 先按 (channel, external_id) 查归档——重启后同一外部会话复用原 absence id、回放历史作为开场事实,不再每次重启新增归档行(Phase 1 已知代价已修);check-observe-transcript 31/31 钉住。
+- **自动归档**:`config.archiveSilenceMs`(`ABSENCE_ARCHIVE_SILENCE_MS`,默认 30 分钟,0 关)——分钟级清扫归档"无 viewer + 无新事实"的观察会话(dispose 不删除;归档留在 History,按需 re-attach);mock fixture 与有 viewer 的会话永不触碰;ws 连接 attach/detach viewer。
+- 剩余小项:双语文档已更新(本文件 + architecture 双语);CHANGELOG;gemini/qwen/dsh 转录源未做(接口缝已在,注册即用);"辅助启动"入口未做(可选,Phase 5 后评估)。
 
 ## 6. 踩坑记录
 
