@@ -165,6 +165,12 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   const expireSessionsTimer = setInterval(expireSessions, 24 * 60 * 60_000);
   expireSessionsTimer.unref?.();
 
+  // The auto-archive sweep: observed sessions whose facts have gone quiet
+  // with nobody watching are archived (dispose, not delete). Every minute —
+  // the threshold is minutes by nature, the sweep is only a janitor.
+  const archiveIdleTimer = setInterval(() => sessionStore.archiveIdle(), 60_000);
+  archiveIdleTimer.unref?.();
+
   app.log.info(`ABSENCE server listening on ${url} (agent=${config.defaultAgent})`);
   app.log.info(`projects root: ${config.projectsRoot}`);
 
@@ -176,6 +182,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
       close: async () => {
         clearInterval(expireTimer);
         clearInterval(expireSessionsTimer);
+        clearInterval(archiveIdleTimer);
         // Stop the transcript tails before the archive flushes underneath them.
         await discovery?.stop();
         // Proxy sessions own child processes; none should outlive the server.

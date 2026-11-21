@@ -68,6 +68,14 @@ export interface AbsenceConfig {
    */
   maxArchivedSessions: number;
   /**
+   * How long an observed session may sit silent (no new fact, no open
+   * WebSocket) before its live view is archived. The archive stays readable
+   * in History, and the conversation's identity re-attaches on demand, so
+   * this only retires the watchers and the sampling cadence — it never loses
+   * a fact. 0 (ABSENCE_ARCHIVE_SILENCE_MS=0) disables the sweep.
+   */
+  archiveSilenceMs: number;
+  /**
    * Watch Docker containers through the daemon's own event stream (see
    * process/DockerMonitor.ts). A container's processes live inside the
    * daemon's VM, where neither the Job Object nor eBPF can reach, so its
@@ -131,6 +139,9 @@ export const config: AbsenceConfig = {
   maxArchivedSessions: Number.isFinite(Number(process.env.ABSENCE_MAX_ARCHIVED_SESSIONS))
     ? Math.max(0, Math.floor(Number(process.env.ABSENCE_MAX_ARCHIVED_SESSIONS)))
     : 0,
+  archiveSilenceMs: Number.isFinite(Number(process.env.ABSENCE_ARCHIVE_SILENCE_MS))
+    ? Math.max(0, Math.floor(Number(process.env.ABSENCE_ARCHIVE_SILENCE_MS)))
+    : 30 * 60_000,
   dockerEnabled: process.platform !== "win32" && envFlag(process.env.ABSENCE_DOCKER, true),
   dockerBin: process.env.ABSENCE_DOCKER_BIN,
   observeEnabled: envFlag(process.env.ABSENCE_OBSERVE, true),

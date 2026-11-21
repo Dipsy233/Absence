@@ -68,6 +68,13 @@ export interface ArchiveMeta {
    * the hours in between. Absent on archives written before this was tracked.
    */
   dwellMs?: number;
+  /**
+   * The observation channel that produced this session (`transcript`,
+   * `acp-proxy`), empty for driven fixture sessions and old archives.
+   */
+  channel?: string;
+  /** The agent-side conversation id (see `ObserveMeta.externalId`). */
+  externalId?: string;
 }
 
 type SqlRow = Record<string, unknown>;
@@ -102,7 +109,7 @@ const nodeRequire = createRequire(import.meta.url);
 const { DatabaseSync } = nodeRequire("node:sqlite") as typeof import("node:sqlite");
 
 const DB_FILE = "absence.db";
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const FLUSH_MS = 50;
 
 let database: DatabaseSyncType | undefined;
@@ -274,6 +281,18 @@ function open(): DatabaseSyncType {
     // `unknown` is exactly what Absence can honestly say about them.
     ensureColumn(db, "events", "source", "TEXT NOT NULL DEFAULT 'unknown'");
     ensureColumn(db, "events", "fidelity", "TEXT NOT NULL DEFAULT 'unknown'");
+    // v5: the observation identity. `runtime` is the agent kind; these two say
+    // *how* the facts reach Absence and *which* agent-side conversation they
+    // belong to — the key re-attach looks up after a restart. Empty for the
+    // mock fixture and archives written before the observer existed (they
+    // have no observation identity to recover).
+    ensureColumn(db, "sessions", "channel", "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(db, "sessions", "external_id", "TEXT NOT NULL DEFAULT ''");
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_external ON sessions(channel, external_id)`);
+    // v5: which fact opens a run. Every run opens at a user message today;
+    // the column is the seam a future OS-only channel (activity bursts) fills
+    // without another migration.
+    ensureColumn(db, "runs", "boundary_source", "TEXT NOT NULL DEFAULT 'user-message'");
     importLegacyArchives(db);
     const runs = new RunIndex(db);
     ensureRunsMigrated(db, runs);
@@ -333,8 +352,9 @@ function importLegacyArchives(db: DatabaseSyncType): void {
   const insertSession = db.prepare(`
     INSERT OR IGNORE INTO sessions
       (id, project_path, project_name, started_at, updated_at, runtime, model,
-       pi_session_file, pi_session_id, message_count, first_prompt, meta_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       pi_session_file, pi_session_id, message_count, first_prompt, meta_json,
+       channel, external_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertEvent = db.prepare(`
     INSERT OR IGNORE INTO events (session_id, seq, id, ts, type, payload, source, fidelity)
@@ -448,6 +468,8 @@ function sessionParams(meta: ArchiveMeta): [
   number,
   string | null,
   string,
+  string,
+  string,
 ] {
   const projectPath = toPosix(path.resolve(meta.projectPath));
   return [
@@ -463,6 +485,8 @@ function sessionParams(meta: ArchiveMeta): [
     meta.messageCount ?? 0,
     meta.firstPrompt ?? null,
     JSON.stringify(meta),
+    meta.channel ?? "",
+    meta.externalId ?? "",
   ];
 }
 
@@ -483,6 +507,8 @@ function rowToMeta(row: SqlRow): ArchiveMeta | undefined {
     messageCount: Number(row.message_count ?? 0),
     firstPrompt: typeof row.first_prompt === "string" ? row.first_prompt : undefined,
     dwellMs: readDwell(row),
+    channel: typeof row.channel === "string" && row.channel.length > 0 ? row.channel : undefined,
+    externalId: typeof row.external_id === "string" && row.external_id.length > 0 ? row.external_id : undefined,
   };
 }
 
@@ -520,8 +546,9 @@ export async function writeMeta(cwd: string, meta: ArchiveMeta): Promise<void> {
         `
         INSERT INTO sessions
           (id, project_path, project_name, started_at, updated_at, runtime, model,
-           pi_session_file, pi_session_id, message_count, first_prompt, meta_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           pi_session_file, pi_session_id, message_count, first_prompt, meta_json,
+           channel, external_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           project_path    = excluded.project_path,
           project_name    = excluded.project_name,
@@ -533,7 +560,9 @@ export async function writeMeta(cwd: string, meta: ArchiveMeta): Promise<void> {
           pi_session_id   = excluded.pi_session_id,
           message_count   = excluded.message_count,
           first_prompt    = excluded.first_prompt,
-          meta_json       = excluded.meta_json
+          meta_json       = excluded.meta_json,
+          channel         = excluded.channel,
+          external_id     = excluded.external_id
       `,
       )
       .run(...sessionParams(meta));
@@ -1127,6 +1156,34 @@ export async function closeStaleOpenRun(id: string, endedAt?: number): Promise<v
 }
 
 /** Run summaries for History, oldest first. */
+/**
+ * The archive an observed conversation already has, by its identity.
+ *
+ * A transcript (or a proxy session) survives the server restarting; without
+ * this lookup, the restart would build a brand-new absence session for the
+ * same agent-side conversation and the archive would grow a duplicate row per
+ * restart. The newest row wins (an external id should be unique, but an old
+ * duplicate must not poison the lookup).
+ */
+export async function findArchivedExternal(
+  channel: string,
+  externalId: string,
+): Promise<string | undefined> {
+  if (channel.length === 0 || externalId.length === 0) return undefined;
+  try {
+    const row = open()
+      .prepare(
+        "SELECT id FROM sessions WHERE channel = ? AND external_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1",
+      )
+      .get(channel, externalId) as SqlRow | undefined;
+    const id = row?.id;
+    return typeof id === "string" && id.length > 0 ? id : undefined;
+  } catch (error) {
+    console.error("[absence] sqlite external lookup failed:", error);
+    return undefined;
+  }
+}
+
 export async function readRuns(id: string): Promise<RunSummary[]> {
   flushPending();
   try {

@@ -224,6 +224,15 @@ check("a command is answered with a notice, not forwarded", notices.some((event)
 const again = await sessionStore.createObserved(project, "pi", { channel: "transcript", externalId: EXTERNAL_ID });
 check("attach is idempotent per (channel, externalId)", again.id === sessionId);
 
+// Re-attach across a restart: the archive keyed (channel, externalId) is
+// found, the same absence session id is reused, and the replayed history is
+// the session's opening facts — no duplicate archive row per server lifetime.
+await sessionStore.remove(sessionId!);
+const reattached = await sessionStore.createObserved(project, "pi", { channel: "transcript", externalId: EXTERNAL_ID });
+check("a restart re-attaches by identity, not a new archive row", reattached.id === sessionId, reattached.id);
+const replayed = reattached.history().length;
+check("the reopened archive replays its history", replayed > 0, `${replayed} events`);
+
 await discovery.stop();
 await sessionStore.remove(sessionId!);
 

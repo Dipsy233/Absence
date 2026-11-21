@@ -36,6 +36,7 @@ export {
   readRunEvents,
   readRunEventsPage,
   readRuns,
+  findArchivedExternal,
   readMeta,
   writeMeta,
 } from "./storage/db";

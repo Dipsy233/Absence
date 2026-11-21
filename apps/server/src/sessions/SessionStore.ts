@@ -27,6 +27,7 @@ import {
   appendEvents,
   closeStaleOpenRun,
   drainArchive,
+  findArchivedExternal,
   readEvents,
   readMeta,
   readProcessEvents,
@@ -224,6 +225,8 @@ export class AbsenceSession {
   private treeDirty = true;
   private assistantStreamId?: string;
   private lastActiveAt: number;
+  /** Open WebSocket connections (see attachView/detachView). */
+  private viewers = 0;
   /** Dwell time accrued before this visit, in ms. */
   private readonly dwellBase: number;
   /** When this visit opened; the live dwell time is `dwellBase` + now - this. */
@@ -765,6 +768,29 @@ export class AbsenceSession {
     this.metricsSampler.setHotEgg(eggPid);
   }
 
+  /**
+   * Live viewers (open WebSocket connections). The auto-archive sweep reads
+   * this: an observed session nobody is watching and whose transcript has
+   * fallen silent is closed, but one on screen is kept whatever it is doing.
+   */
+  attachView(): void {
+    this.viewers += 1;
+  }
+
+  detachView(): void {
+    this.viewers = Math.max(0, this.viewers - 1);
+  }
+
+  /** Open WebSocket connections (the sweep's "somebody is watching" test). */
+  viewerCount(): number {
+    return this.viewers;
+  }
+
+  /** Epoch ms of the last fact this session recorded. */
+  lastActiveAtMs(): number {
+    return this.lastActiveAt;
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true;
     this.releaseAllCommandWatches();
@@ -888,6 +914,9 @@ export class AbsenceSession {
       // Persisted while the visit is open so a crash still keeps the clock, not
       // only a clean close.
       dwellMs: this.dwellNow(),
+      // The observation identity: what re-attach looks up after a restart.
+      channel: this.observe?.channel,
+      externalId: this.observe?.externalId,
     });
   }
 
@@ -1694,7 +1723,15 @@ export class SessionStore {
   async createObserved(projectPath: string, kind: AgentKind, observe: ObserveMeta): Promise<AbsenceSession> {
     const existing = this.findObserved(observe);
     if (existing) return existing;
-    const session = new AbsenceSession(projectPath, kind, undefined, { observe });
+    // Re-attach: the conversation may already have an archive from before a
+    // restart. Resuming from it reuses its absence session id (one archive row
+    // per agent-side conversation, not one per server lifetime), and the
+    // replay branch reopens its history as the session's facts.
+    const archived = observe.externalId
+      ? await findArchivedExternal(observe.channel, observe.externalId)
+      : undefined;
+    const resume = archived ? { absenceSessionId: archived } : undefined;
+    const session = new AbsenceSession(projectPath, kind, resume, { observe });
     this.sessions.set(session.id, session);
     try {
       await session.start();
@@ -1727,6 +1764,27 @@ export class SessionStore {
     if (!session) return;
     this.sessions.delete(id);
     await session.dispose();
+  }
+
+  /**
+   * Archive observed sessions whose facts have gone quiet with nobody
+   * watching (see `config.archiveSilenceMs`). Archiving = dispose: the live
+   * watchers stop, the archive and its metrics stay on disk, and the
+   * conversation's (channel, externalId) identity re-attaches whenever the
+   * transcript moves again or the board asks for it. Never touches a session
+   * a viewer has open, or the mock fixture (its lifetime belongs to its
+   * check).
+   */
+  archiveIdle(): void {
+    const threshold = config.archiveSilenceMs;
+    if (threshold <= 0) return;
+    const now = Date.now();
+    for (const session of [...this.sessions.values()]) {
+      if (session.runtimeDriven) continue;
+      if (session.viewerCount() > 0) continue;
+      if (now - session.lastActiveAtMs() < threshold) continue;
+      void this.remove(session.id).catch(() => undefined);
+    }
   }
 }
 
