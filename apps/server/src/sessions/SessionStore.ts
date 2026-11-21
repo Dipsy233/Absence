@@ -43,6 +43,7 @@ import { formatAgentCommand } from "../agents/slashCommands";
 import { EXTERNAL_WATCH_TTL_MS, FileWatcher, outsideWatchRoot } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
 import { ProcessWatcher } from "../process/ProcessWatcher";
+import { ExternalScanner } from "../process/ExternalScanner";
 import { ProcessMetricsSampler } from "../process/ProcessMetrics";
 import { JobMonitor } from "../process/JobMonitor";
 import { DockerMonitor } from "../process/DockerMonitor";
@@ -274,6 +275,9 @@ export class AbsenceSession {
       // exits beyond the cap are retired. See ProcessWatcher.retireOverflow.
       maxFinishedEggs: config.maxEggs,
       externalTranscript: this.observe?.transcriptFile,
+      // Observed sessions share one machine-wide sweep instead of polling the
+      // process table once per session (see ExternalScanner).
+      externalScanner: this.observe?.transcriptFile ? ExternalScanner.get() : undefined,
     });
     // Say how precise process watching is, so the UI can be honest about it.
     this.session.processPrecision = !this.observe && JobMonitor.get().available ? "exact" : "sampled";

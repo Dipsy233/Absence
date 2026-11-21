@@ -63,14 +63,16 @@ Absence 已从"驾驶位 + 行车记录仪"重构为**纯旁观监控看板**:�
 
 ## 5. 后续阶段(摘要)
 
-### 本轮续作：Phase 2 部分落地
+### 本轮续作:Phase 2 完成
 
-- 新增 `process/ProcessScanner.ts`：pi 入口签名 + 绝对 `--session` 转录路径唯一匹配；不凭 cwd 猜 PID，歧义不绑定。
-- `ProcessWatcher.reachesAttributed`、外部树四秒轮询 → 既有 Eggs / 指标目标；观察会话声明身份，未绑定时不采样服务器，精度标为 sampled。
-- 近期转录命令打开/关闭监控窗口，旧回填不归因当前活动。
-- **用户新增决定：Windows 不做 Docker 容器捕获**（强制关闭，不能用环境变量开启；移除 WSL Docker 探测）。非 Windows 保留；转录命令事实照常展示。
-- 新增 `check:agentwatch-external`，注册 offline；三包 typecheck、offline 35/35、observe-transcript 29/29 已通过（Windows Docker 门禁追加后另跑专项）。
-- Phase 2 未完：默认 `pi` 无显式 session 参数的可靠关联、共享扫描/节流、非 Windows Docker 归因。当前扫描按观察会话运行，尚非共享扫描器。
+- 新增 `process/ProcessScanner.ts`:pi 入口签名 + 绝对 `--session` 转录路径唯一匹配;不凭 cwd 猜 PID,歧义不绑定。
+- 新增 `process/ExternalScanner.ts`:**共享扫描器**——全机快照每 4s 一次,分发给所有观察会话(此前每会话各扫一遍);绑定证据分两级:`--session` 显式命令行 > 默认 pi 的 1:1 新配对(新进程 × 新转录,时间窗 5 分钟,歧义不绑定,`pairDefaultSessions` 纯函数钉在检查里)。
+- `ProcessWatcher` 外部模式拆出 `applyExternalScan(root, rows)`:私有 4s 轮询(checks/单机用)与共享扫描共用同一条归因路径;`SessionStore` 给观察会话注入共享扫描器。
+- `ProcessWatcher.reachesAttributed`、外部树四秒轮询 → 既有 Eggs / 指标目标;观察会话声明身份,未绑定时不采样服务器,精度标为 sampled。
+- 近期转录命令打开/关闭监控窗口,旧回填不归因当前活动。
+- Docker 归因(非 Windows):转录命令窗口经 `ingestObservation` → `commandContexts` → `DockerEggs.attribute` 全链已通,`check:agentwatch-external` 用 ContainerEvent 直接钉住(预测匹配才下蛋,窗口内不匹配拒绝;无需 docker daemon)。
+- **用户新增决定:Windows 不做 Docker 容器捕获**(强制关闭,不能用环境变量开启;移除 WSL Docker 探测)。非 Windows 保留;转录命令事实照常展示。
+- `check:agentwatch-external` 四节:显式归因、默认 pi 配对、共享扫描器、观察会话 Docker 归因;三包 typecheck、offline 35/35、observe-transcript 29/29 通过。
 
 
 - **Phase 2** 归因重做:`reachesOwned` → `reachesAttributed`(签名识别 + pid 祖先链),指标/eggs/Docker 扩展到非 owned 进程

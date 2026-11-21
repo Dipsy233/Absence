@@ -8,6 +8,7 @@ import type { WatchExit, WatchStart } from "./observer";
 import { snapshotProcesses, type ProcessTable, type ProcInfo } from "./ProcessTable";
 import { detectCommand, unwrapCommandText } from "./CommandLine";
 import { attributedTree, findPiSession } from "./ProcessScanner";
+import type { ExternalScanner } from "./ExternalScanner";
 
 /** How long after a command returns we take the final look. */
 const SETTLE_MS = 2500;
@@ -200,6 +201,13 @@ export interface ProcessWatcherOptions {
   onCommandEnd?: (id: number) => void;
   /** External pi transcript; only explicit command-line session evidence binds a pid. */
   externalTranscript?: string;
+  /**
+   * The shared machine-wide scanner. When given, this watcher no longer runs
+   * its own 4 s poll loop — snapshots arrive from one shared sweep instead of
+   * one per observed session. Omitted (checks, standalone use), the watcher
+   * keeps its private loop so a single instance is self-contained.
+   */
+  externalScanner?: ExternalScanner;
   /** Injectable for tests. */
   snapshot?: () => Promise<ProcessTable>;
   /**
@@ -328,6 +336,8 @@ export class ProcessWatcher {
   private agentPid?: number;
   private externalTimer?: ReturnType<typeof setTimeout>;
   private externalLive = new Map<number, ProcInfo>();
+  /** The shared scanner this watcher registered with, when there is one. */
+  private readonly externalScanner?: ExternalScanner;
   /**
    * Pids this session owns: the agent itself plus every accepted descendant.
    * Retained after exit so a late child can still prove its ancestry.
@@ -347,7 +357,14 @@ export class ProcessWatcher {
     this.snapshot = options.snapshot ?? snapshotProcesses;
     this.now = options.now ?? Date.now;
     this.maxFinishedEggs = Math.max(0, options.maxFinishedEggs ?? 0);
-    if (!options.externalTranscript) this.attachJobObserver();
+    if (options.externalTranscript && options.externalScanner) {
+      // Shared sweep: register and let the scanner drive; no private loop.
+      this.externalScanner = options.externalScanner;
+      const transcript = options.externalTranscript;
+      this.externalScanner.register(transcript, (root, rows) => this.applyExternalScan(root, rows));
+    } else if (!options.externalTranscript) {
+      this.attachJobObserver();
+    }
   }
 
   /**
@@ -389,7 +406,9 @@ export class ProcessWatcher {
    */
   warm(): void {
     if (this.options.externalTranscript) {
-      void this.scanExternal();
+      // With the shared scanner the sweep is already running; without one,
+      // this watcher is its own 4 s poll loop (checks, standalone use).
+      if (!this.externalScanner) void this.scanExternal();
       return;
     }
     if (this.jobMode) return;
@@ -592,6 +611,9 @@ export class ProcessWatcher {
   /** Stop watching. Never touches the processes themselves. */
   stop(): void {
     this.disposed = true;
+    if (this.externalScanner !== undefined && this.options.externalTranscript) {
+      this.externalScanner.unregister(this.options.externalTranscript);
+    }
     if (this.externalTimer !== undefined) clearTimeout(this.externalTimer);
     if (this.tickTimer !== undefined) clearTimeout(this.tickTimer);
     if (this.aliveTimer !== undefined) clearTimeout(this.aliveTimer);
@@ -614,30 +636,40 @@ export class ProcessWatcher {
       if (this.disposed) return;
       const root = findPiSession(table, this.options.externalTranscript!);
       const rows = root ? [root, ...attributedTree(table, root.pid)] : [];
-      const live = new Map(rows.map((info) => [info.pid, info]));
-      for (const [pid, previous] of this.externalLive) {
-        const current = live.get(pid);
-        if (!current || Math.abs(current.startedAt - previous.startedAt) > WINDOW_SLACK_MS) {
-          this.onJobExit({ pid, exitedAt: this.now() });
-          this.ownedPids.delete(pid);
-          this.jobPpid.delete(pid);
-        }
-      }
-      this.agentPid = root?.pid;
-      if (root) this.markOwned(root.pid);
-      for (const info of rows) {
-        this.onJobStart({
-          pid: info.pid, ppid: info.ppid,
-          comm: info.name, commandLine: info.commandLine,
-          createdAt: info.startedAt || this.now(),
-        });
-      }
-      this.externalLive = live;
+      this.applyExternalScan(root, rows);
     } catch {
       // A failed table read is missing evidence, not evidence of process exit.
     } finally {
       if (!this.disposed) this.externalTimer = setTimeout(() => void this.scanExternal(), TICK_SLOW_MS);
     }
+  }
+
+  /**
+   * One external snapshot, bound and fed. The private poll loop (above) and
+   * the shared ExternalScanner both land here, so attribution — exits, the
+   * agent pid, the subtree — is identical whichever way the table arrived.
+   */
+  applyExternalScan(root: ProcInfo | undefined, rows: ProcInfo[]): void {
+    if (this.disposed) return;
+    const live = new Map(rows.map((info) => [info.pid, info]));
+    for (const [pid, previous] of this.externalLive) {
+      const current = live.get(pid);
+      if (!current || Math.abs(current.startedAt - previous.startedAt) > WINDOW_SLACK_MS) {
+        this.onJobExit({ pid, exitedAt: this.now() });
+        this.ownedPids.delete(pid);
+        this.jobPpid.delete(pid);
+      }
+    }
+    this.agentPid = root?.pid;
+    if (root) this.markOwned(root.pid);
+    for (const info of rows) {
+      this.onJobStart({
+        pid: info.pid, ppid: info.ppid,
+        comm: info.name, commandLine: info.commandLine,
+        createdAt: info.startedAt || this.now(),
+      });
+    }
+    this.externalLive = live;
   }
 
   /** Look while a command is still running. */
