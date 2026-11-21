@@ -98,6 +98,11 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
     discovery = new DiscoveryService(sessionStore);
     discovery.start();
     await app.register(observeRoutes, { discovery });
+    // ACP proxy sessions persist through the same pipeline: with the store
+    // attached, each proxy spawns its agent into an observed session (marker
+    // env for exact attribution) and the tap's facts land in SQLite and on
+    // the WS. Without the store, proxies stay transient byte-forwarders.
+    proxySessions.useSessionStore(sessionStore);
     app.log.info("observation: transcript discovery active (ABSENCE_OBSERVE=0 to disable)");
   }
 

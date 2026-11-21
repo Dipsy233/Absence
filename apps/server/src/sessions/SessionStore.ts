@@ -42,6 +42,7 @@ import { createAdapter } from "../agents/createAdapter";
 import { formatAgentCommand } from "../agents/slashCommands";
 import { EXTERNAL_WATCH_TTL_MS, FileWatcher, outsideWatchRoot } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
+import type { ProjectorCommandWindow } from "../monitor/projector";
 import { ProcessWatcher } from "../process/ProcessWatcher";
 import { ExternalScanner } from "../process/ExternalScanner";
 import { ProcessMetricsSampler } from "../process/ProcessMetrics";
@@ -280,7 +281,13 @@ export class AbsenceSession {
       externalScanner: this.observe?.transcriptFile ? ExternalScanner.get() : undefined,
     });
     // Say how precise process watching is, so the UI can be honest about it.
-    this.session.processPrecision = !this.observe && JobMonitor.get().available ? "exact" : "sampled";
+    // A proxy session's agent is spawned by Absence itself and carries the
+    // ABSENCE_SESSION_ID marker, so the kernel observer reports it exactly;
+    // a transcript session's agent belongs to some other process tree.
+    this.session.processPrecision =
+      JobMonitor.get().available && (!this.observe || this.observe.channel === "acp-proxy")
+        ? "exact"
+        : "sampled";
     if (this.observe) this.processWatcher.beginSession(this.id);
     // An observed session owns no runtime: the transcript feed pushes facts
     // through the same subscription seam a runtime adapter would.
@@ -452,25 +459,46 @@ export class AbsenceSession {
 
   private readonly observedCommands = new Map<string, number>();
 
-  /** One fact from an observation channel (the transcript tail). */
+  /** One fact from an observation channel (the transcript tail, the proxy tap). */
   ingestObservation(event: AbsenceEvent): void {
-    // Historical backfill is not a live command window. Do not credit today's
-    // processes/files/containers to commands replayed from an old transcript.
-    if (event.type === "tool_start" && Math.abs(Date.now() - event.timestamp) < 10_000) {
-      const args = event.payload.args;
-      const command = args && typeof args === "object" && "command" in args ? args.command : undefined;
-      if (typeof command === "string") {
-        const id = this.processWatcher.begin(command, this.session.projectPath, event.payload.toolCallId, event.timestamp);
-        this.observedCommands.set(event.payload.toolCallId, id);
-      }
-    } else if (event.type === "tool_end") {
-      const id = this.observedCommands.get(event.payload.toolCallId);
-      if (id !== undefined) {
-        this.processWatcher.end(id);
-        this.observedCommands.delete(event.payload.toolCallId);
+    // Transcript commands open their command windows here: a backfilled
+    // (historical) command must not credit today's processes, files or
+    // containers, so only a fact younger than a few seconds opens one. The
+    // proxy channel's projector opens its own windows against the same
+    // watcher — with the tool-call ref — so it passes straight through.
+    if (this.observe?.channel === "transcript") {
+      if (event.type === "tool_start" && Math.abs(Date.now() - event.timestamp) < 10_000) {
+        const args = event.payload.args;
+        const command = args && typeof args === "object" && "command" in args ? args.command : undefined;
+        if (typeof command === "string") {
+          const id = this.processWatcher.begin(command, this.session.projectPath, event.payload.toolCallId, event.timestamp);
+          this.observedCommands.set(event.payload.toolCallId, id);
+        }
+      } else if (event.type === "tool_end") {
+        const id = this.observedCommands.get(event.payload.toolCallId);
+        if (id !== undefined) {
+          this.processWatcher.end(id);
+          this.observedCommands.delete(event.payload.toolCallId);
+        }
       }
     }
     this.handleEvent(event);
+  }
+
+  /**
+   * The narrow command-window seam a proxy channel feeds: execute tool calls
+   * open and close windows here, so eggs, metrics and container attribution
+   * work for a proxied agent exactly as for a driven one. Undefined for
+   * sessions that own no watcher role to play in command attribution.
+   */
+  processWindows(): ProjectorCommandWindow {
+    return this.processWatcher;
+  }
+
+  /** Declare the runtime pid an observed proxy spawned (kernel attribution). */
+  declareRuntimePid(pid: number | undefined): void {
+    if (!this.observe) return;
+    this.processWatcher.beginSession(this.id, pid);
   }
 
   async abort(): Promise<void> {

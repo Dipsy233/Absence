@@ -1,13 +1,4 @@
-import {
-  createEvent,
-  type AbsenceEvent,
-  type AbsenceEventPayloadMap,
-  type AbsenceEventType,
-  type MonitorBus,
-  type MonitorEvent,
-  type MonitorFidelity,
-  type MonitorSource,
-} from "@absence/core";
+import { createEvent, type StopReason, type AbsenceEvent, type AbsenceEventPayloadMap, type AbsenceEventType, type MonitorBus, type MonitorEvent, type MonitorFidelity, type MonitorSource } from "@absence/core";
 import { AcpToolMapper, type MappedEventRecord } from "../agents/acp/AcpToolMapper";
 import {
   textOfContentBlock,
@@ -81,25 +72,113 @@ interface CallRecord {
 export class AcpMonitorProjector {
   private readonly mapper: AcpToolMapper;
   private readonly calls = new Map<string, CallRecord>();
+  /** The open turn's streamed text (see `beginTurn`). */
+  private turn?: { message: string; thinking: string };
 
   constructor(private readonly options: AcpMonitorProjectorOptions) {
     this.mapper = options.mapper ?? new AcpToolMapper(options.cwd);
   }
 
   /** Project one agent notification. Anything other than session/update is ignored. */
+  /**
+   * A client prompt opened a turn: the streamed chunks accumulate here so the
+   * turn can be flushed as durable facts when the agent answers. This mirrors
+   * what the driven adapter does around its own turns.
+   */
+  beginTurn(): void {
+    this.turn = { message: "", thinking: "" };
+    this.wrap("agent_start", { model: "unknown" }, "unknown");
+  }
+
+  /**
+   * The agent answered the prompt: the streamed text becomes one durable
+   * message (the thought ends first, as in the driven adapter) and the run
+   * closes with an `agent_end` carrying the protocol's own stopReason. The
+   * response carries no usage, so none is claimed.
+   */
+  finalizeTurn(stopReason: string | undefined, failed = false): MonitorEvent[] {
+    const events = this.flushTurnText();
+    const reason = failed
+      ? "error"
+      : stopReasonToReason((stopReason ?? "end_turn") as StopReason, false);
+    events.push(this.wrap("agent_end", { reason }, "exact"));
+    this.turn = undefined;
+    return events;
+  }
+
+  /** The open turn's text as durable facts; the buffers reset once flushed. */
+  private flushTurnText(): MonitorEvent[] {
+    const turn = this.turn;
+    const events: MonitorEvent[] = [];
+    if (turn === undefined) return events;
+    if (turn.thinking.length > 0) {
+      events.push(this.wrap("thinking", { content: turn.thinking, streaming: false }, "exact"));
+      turn.thinking = "";
+    }
+    if (turn.message.length > 0) {
+      events.push(this.wrap("message", { role: "assistant", content: turn.message, streaming: false }, "exact"));
+      turn.message = "";
+    }
+    return events;
+  }
+
   async project(method: string, params: any): Promise<MonitorEvent[]> {
+    // A proxied client's prompt is projected too — it is the run boundary of
+    // the turn (see `projectPrompt`).
+    if (method === "session/prompt") {
+      this.beginTurn();
+      return this.projectPrompt(params);
+    }
     if (method !== "session/update") return [];
     const update = params?.update;
     if (!update || typeof update !== "object") return [];
-    return this.projectUpdate(update);
+    const events = await this.projectUpdate(update);
+    return this.spliceTurnBoundaries(events);
+  }
+
+  /**
+   * A tool call, a file fact, a command or an error is a message boundary:
+   * the streamed text before it is one assistant message, the text after it
+   * another — the same durable-vs-streaming split the driven adapter makes.
+   */
+  private spliceTurnBoundaries(events: MonitorEvent[]): MonitorEvent[] {
+    if (this.turn === undefined || events.length === 0) return events;
+    const out: MonitorEvent[] = [];
+    for (const event of events) {
+      const type = event.event.type;
+      if (type !== "message" && type !== "thinking") {
+        out.push(...this.flushTurnText());
+      }
+      out.push(event);
+    }
+    return out;
+  }
+
+  /**
+   * Project a client's `session/prompt` request: the user message a proxied
+   * turn starts from. The tap sees the request pass through to the agent; the
+   * text blocks are the protocol's own words, so this is `exact` — and it is
+   * what gives a proxy session its run boundaries, the same way a driven
+   * session's prompts do. Non-text prompts (images) name no readable text and
+   * project nothing rather than a fabricated placeholder.
+   */
+  projectPrompt(params: any): MonitorEvent[] {
+    const blocks = Array.isArray(params?.prompt) ? params.prompt : [];
+    const parts: string[] = [];
+    for (const block of blocks) {
+      if (block?.type === "text" && typeof block.text === "string") parts.push(block.text);
+    }
+    const text = parts.join("\n").trim();
+    if (text.length === 0) return [];
+    return [this.wrap("message", { role: "user", content: text, streaming: false }, "exact")];
   }
 
   /** Project one `session/update` body directly. */
-  async projectUpdate(update: any): Promise<MonitorEvent[]> {
-    switch (update.sessionUpdate) {
+  async projectUpdate(update: any): Promise<MonitorEvent[]> {    switch (update.sessionUpdate) {
       case "agent_message_chunk": {
         const text = textOfContentBlock(update.content);
         if (text.length === 0) return [];
+        if (this.turn) this.turn.message += text;
         return [
           this.wrap(
             "message",
@@ -112,6 +191,7 @@ export class AcpMonitorProjector {
       case "agent_thought_chunk": {
         const text = textOfContentBlock(update.content);
         if (text.length === 0) return [];
+        if (this.turn) this.turn.thinking += text;
         return [this.wrap("thinking", { content: text, delta: text, streaming: true }, "exact")];
       }
 
@@ -393,6 +473,20 @@ export class AcpMonitorProjector {
     };
     this.options.bus?.publish(projected);
     return projected;
+  }
+}
+
+/** Map ACP's stopReason to the legacy `agent_end` reason vocabulary. Shared
+ *  with the driven adapter, which maps the same protocol value. */
+export function stopReasonToReason(reason: StopReason, aborted: boolean): string {
+  if (aborted || reason === "cancelled") return "aborted";
+  switch (reason) {
+    case "max_tokens":
+    case "max_turn_requests":
+    case "refusal":
+      return "error";
+    default:
+      return "completed";
   }
 }
 

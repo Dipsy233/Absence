@@ -97,6 +97,10 @@ export class FileWatcher {
     this.watcher.on("add", (p) => this.onChange("created", p));
     this.watcher.on("change", (p) => this.onChange("modified", p));
     this.watcher.on("unlink", (p) => this.onChange("deleted", p));
+    // A watcher error (a junction realpath cannot resolve, a permission lost
+    // mid-scan) is missing evidence, never a crash: the session keeps its
+    // tree, transcript facts and command windows without live FS events.
+    this.watcher.on("error", () => {});
 
     // Outside the project: the parent directory minus the project itself,
     // shallow. A change there is rare and worth a human's attention — the agent
@@ -118,6 +122,8 @@ export class FileWatcher {
       this.outside.on("add", (p) => this.onOutsideChange!("created", p));
       this.outside.on("change", (p) => this.onOutsideChange!("modified", p));
       this.outside.on("unlink", (p) => this.onOutsideChange!("deleted", p));
+      // Same contract as the project watcher: swallow, keep observing.
+      this.outside.on("error", () => {});
     }
 
     await Promise.all([whenReady(this.watcher), whenReady(this.outside)]);

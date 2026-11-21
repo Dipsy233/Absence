@@ -1,4 +1,3 @@
-import os from "node:os";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
@@ -6,7 +5,7 @@ import type { AbsenceEvent } from "@absence/core";
 import type { AbsenceSession, SessionStore } from "../sessions/SessionStore";
 import { PiTranscriptParser } from "./parsers/pi";
 import { TRANSCRIPT_SOURCES, sourceRoots, type TranscriptSourceProfile } from "./transcriptSources";
-import type { ObserveMeta } from "./types";
+import { isNarrowScope, type ObserveMeta } from "./types";
 
 /**
  * DiscoveryService — the observer's front door.
@@ -359,17 +358,4 @@ export class DiscoveryService {
 function isWithin(root: string, file: string): boolean {
   const rel = path.relative(root, file);
   return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
-}
-
-/**
- * True when the path is a project-sized scope worth watching: not the user's
- * home directory itself and not a drive root. Everything else gets transcript
- * facts only (see `ObserveMeta.watchProject`).
- */
-function isNarrowScope(projectPath: string): boolean {
-  const resolved = path.resolve(projectPath);
-  const parsed = path.parse(resolved);
-  if (parsed.root === resolved) return false;
-  if (resolved === path.resolve(os.homedir())) return false;
-  return true;
 }

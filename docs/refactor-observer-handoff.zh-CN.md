@@ -61,6 +61,15 @@ Absence 已从"驾驶位 + 行车记录仪"重构为**纯旁观监控看板**:�
 6. 测试隔离:spawn 真实服务器的测试一律 `ABSENCE_OBSERVE=0` + 独立 `ABSENCE_STATE_DIR`
 7. Absence 不碰 agent:不注入/shim/改 PATH/读凭据
 
+### Phase 3:proxy 会话持久化(已完成)
+
+- `ProxySessions.useSessionStore(store)`(index.ts 在 `ABSENCE_OBSERVE=1` 时注入):每个 proxy 会话经 `createObserved` 落地为 `channel: "acp-proxy"` 的观察会话——tap 投影事实 → `ingestObservation` → 既有管线(SQLite / run index / WS)。
+- spawn 注入 `ABSENCE_SESSION_ID`(值 = absence 会话 id)→ Windows Job 观察者精确归因;agent pid 经 `AbsenceSession.declareRuntimePid` 声明;`processPrecision` 对 acp-proxy 会话标 exact。attach 失败降级为透明代理(诊断记录),不挡客户端。
+- tap 增补:`session/prompt` 请求投影为 user message(run 边界);turn 缓冲移入 `AcpMonitorProjector`(`beginTurn`/`finalizeTurn`,活动边界断句与 driven adapter 同语义),agent 的 prompt **应答**关闭回合(final message + agent_end,不编造 usage)。
+- **修了两个真 bug**:① `createStreamTransport` 在 listener 挂上前丢弃到达的行(本地回环/stdio 竞速会吃掉 initialize)——先缓冲,首个订阅者后微任务重放;② `FileWatcher` 主/外圈 watcher 无 error 处理,junction EPERM 直接炸进程——按既有降级契约吞掉。
+- `ObserveMeta.channel` 扩为 `"transcript" | "acp-proxy"`;`isNarrowScope` 移入 observe/types 共享;`ProxySessionInfo.sessionId` 供 Web 关联。
+- `check:observe-proxy`(15 断言:身份幂等/env 标记/事件落库/来源标记/run 边界/拒绝驱动/归档脱离 proxy 生命周期);新增 `observe` check 组(并补注册了此前漏组的 check-observe-transcript)。offline 37/37、acp 88/88、acp-proxy 30/30 全绿。
+
 ## 5. 后续阶段(摘要)
 
 ### 本轮续作:Phase 2 完成

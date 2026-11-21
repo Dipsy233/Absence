@@ -654,18 +654,7 @@ function fidelityOf(event: AbsenceEvent): MonitorFidelity {
   }
 }
 
-/** Map ACP's stopReason to the legacy `agent_end` reason vocabulary. */
-function stopReasonToReason(reason: StopReason, aborted: boolean): string {
-  if (aborted || reason === "cancelled") return "aborted";
-  switch (reason) {
-    case "max_tokens":
-    case "max_turn_requests":
-    case "refusal":
-      return "error";
-    default:
-      return "completed";
-  }
-}
+import { stopReasonToReason } from "../../monitor/projector";
 
 function toNumber(value: unknown): number {
   const n = Number(value);

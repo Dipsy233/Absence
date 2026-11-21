@@ -184,6 +184,20 @@ export const GROUPS: CheckGroup[] = [
     ],
   },
   {
+    name: "observe",
+    label: "旁观通道（转录发现 / proxy 持久化 / 外部归因）",
+    paths: [
+      "apps/server/src/observe/**",
+      "apps/server/src/api/observe.ts",
+      "apps/server/src/process/ExternalScanner.ts",
+      "apps/server/src/agents/acp/proxy/**",
+    ],
+    checks: [
+      { script: "check-observe-transcript.ts", timeout: 120_000 },
+      { script: "check-observe-proxy.ts", timeout: 120_000 },
+    ],
+  },
+  {
     name: "io",
     label: "文件与协议（fsdiff 引擎）",
     paths: [
