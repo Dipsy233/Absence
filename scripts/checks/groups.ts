@@ -114,11 +114,13 @@ export const GROUPS: CheckGroup[] = [
       "apps/server/src/process/eggFilter.ts",
       "apps/server/src/process/egg-filters/**",
       "apps/server/src/process/ProcessWatcher.ts",
+      "apps/server/src/process/ProcessScanner.ts",
       "apps/server/src/process/observer.ts",
       "packages/core/src/runs.ts",
     ],
     checks: [
       { script: "check-eggs.ts", timeout: 60_000 },
+      { script: "check-agentwatch-external.ts", timeout: 60_000 },
       { script: "check-classify.ts", timeout: 60_000 },
       { script: "check-outside-attr.ts", timeout: 60_000 },
       { script: "check-outside-scope.ts", timeout: 180_000 },

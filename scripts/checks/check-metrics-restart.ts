@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   const boot = async (port: number) => {
     const child = spawn(process.execPath, [tsxCli, "apps/server/src/index.ts"], {
       cwd: REPO_ROOT,
-      env: { ...process.env, PORT: String(port), ABSENCE_STATE_DIR: stateDir, HOST: "127.0.0.1" },
+      env: { ...process.env, PORT: String(port), ABSENCE_STATE_DIR: stateDir, HOST: "127.0.0.1", ABSENCE_OBSERVE: "0" },
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
     });

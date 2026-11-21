@@ -403,7 +403,7 @@ export const ABSENCE_EVENT_TYPES = [
 ] as const satisfies readonly AbsenceEventType[];
 
 /** Which observer produced an event. */
-export type EventSource = "acp" | "acp-proxy" | "os" | "terminal" | "legacy" | "unknown";
+export type EventSource = "acp" | "acp-proxy" | "transcript" | "os" | "terminal" | "legacy" | "unknown";
 
 /** How sure Absence is about the fact. */
 export type EventFidelity = "exact" | "reported" | "inferred" | "unknown";

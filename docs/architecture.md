@@ -240,6 +240,9 @@ Metrics and eggs are separate live views. The terminal mirror is not replayed.
 
 ## 8. Process observation
 
+Observer refactor (Phase 2, partial): transcript sessions never use the server PID as an agent metric target. `process/ProcessScanner.ts` conservatively binds a pi process only when its executable/entrypoint signature and absolute `--session` path identify exactly one process for the transcript. Missing or ambiguous evidence leaves agent metrics unavailable; cwd alone is not identity. External trees are polled every four seconds, including on Windows where server Job events do not cover terminal-launched agents. Descendants reuse the existing ancestry, egg classification and metric target pipeline. Only recent transcript execute calls open command windows; historical backfill does not attribute current OS activity. Polling can miss short-lived processes. Default pi launches without an explicit session path, shared scan throttling and expanded Docker attribution remain Phase 2 follow-ups.
+
+
 `JobMonitor` is created once per server process, before any session exists. On Windows it uses `native/agentwatch` to place the server process in a Job Object and reports descendant creation and exit. On Linux it uses `native/agentwatch-linux` eBPF tracepoints, which require `CAP_BPF`/`CAP_PERFMON` or root.
 
 When the helper is unavailable, or when a root process is outside the Job Object, `ProcessWatcher` falls back to process-table snapshots. On Windows the snapshot prefers the helper's `table` command (a Toolhelp walk, tens of milliseconds) and only falls back to PowerShell `Get-CimInstance Win32_Process` when no live helper exists; elsewhere it uses `ps`. The fallback has a sampling floor of about 0.5 seconds, and the metric precision is marked `sampled`. Kernel-sourced values are marked `exact` when they come from a held handle.
@@ -253,6 +256,8 @@ Attribution:
 Classification (`classify.ts`) checks, in order: outlived its command, has children, named by the command, backgrounded and redirected, installed tool directory, runs from the workspace, lifetime under 300 ms, short-lived name prior under 2 seconds, otherwise unclassified. Primary processes become Agent Eggs; helpers fold into a count and name summary.
 
 Docker containers run inside the daemon VM, outside both the Job Object and eBPF. `DockerMonitor` reads lifecycle from `docker events` and resources from `docker stats`. Containers started inside a command window become egg entries with a synthetic pid at or above 1,000,000,000. Containers started outside a command window are not attributed.
+
+Windows Docker container capture is unsupported: no Docker events/stats or Docker/WSL daemon probes, even with `ABSENCE_DOCKER=1`. Docker commands recorded by a transcript remain ordinary command facts. Optional container monitoring remains available on non-Windows platforms.
 
 ## 9. Desktop packaging
 

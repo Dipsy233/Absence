@@ -104,3 +104,43 @@ export interface SoundSetState {
   sets: SoundSetMeta[];
   activeFiles: Partial<Record<string, string>>;
 }
+
+/* ── Observation board (transcript discovery) ────────────────────────────── */
+
+/** One transcript a tail is following (GET /api/observe/sessions). */
+export interface ObserveSessionRow {
+  /** The agent software's own session id. */
+  externalId: string;
+  /** Transcript source profile id (`claude-code`). */
+  source: string;
+  /** Agent kind recorded on the observed session. */
+  agentKind: string;
+  /** The project the transcript belongs to, when a record named one. */
+  projectPath?: string;
+  /** The transcript file being tailed. */
+  file: string;
+  /** Absence session id, once attached — the id every session endpoint takes. */
+  sessionId?: string;
+  /** Last write the tail saw on the transcript. */
+  lastActivityAt: number;
+  /** Parsed events so far. */
+  events: number;
+  /** Lines that were not JSON. */
+  malformed: number;
+}
+
+/** The transcript source this host watches. */
+export interface ObserveSourceRow {
+  id: string;
+  label: string;
+  agentKind: string;
+  /** The directories watched. */
+  roots: string[];
+  /** True when at least one tailed transcript belongs to this source. */
+  watched: boolean;
+}
+
+export interface ObserveDiscoveryResponse {
+  sessions: ObserveSessionRow[];
+  sources: ObserveSourceRow[];
+}

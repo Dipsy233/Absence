@@ -237,6 +237,11 @@ Absence Report 完全由 Web 端的 `apps/web/src/lib/report.ts` 计算，输入
 
 ## 8. 进程观察
 
+旁观化 Phase 2（部分落地）：`process/ProcessScanner.ts` 仅在 pi 可执行文件/入口签名与绝对 `--session` 转录路径共同唯一匹配时绑定 PID；缺证据或存在歧义时不猜归属。外部进程树每四秒轮询，复用祖先链、Eggs 分类和指标目标管线；未绑定的观察会话不再把服务器 PID 当作 agent。仅近期转录工具调用打开命令窗口，历史回填不归因当前 OS 活动。轮询会漏掉短命进程；默认 pi 启动的身份关联、共享扫描节流仍待完成。
+
+**Windows 不支持 Docker 容器捕获**：不启动 Docker events/stats，不探测 Docker/WSL daemon，`ABSENCE_DOCKER=1` 也不能开启。转录里的 Docker 命令仍作为普通命令事实保留；非 Windows 保留可选容器监控。
+
+
 `JobMonitor` 在 server 进程内创建一次，早于任何会话存在。Windows 使用 `native/agentwatch` 把 server 进程放入 Job Object，并报告后代进程的创建与退出。Linux 使用 `native/agentwatch-linux` 的 eBPF tracepoint，需要 `CAP_BPF`/`CAP_PERFMON` 或 root。
 
 助手不可用，或根进程不在 Job Object 内时，`ProcessWatcher` 退化为进程表快照。Windows 优先使用 `agentwatch` 的 `table` 命令（Toolhelp 遍历，约几十毫秒），helper 不在时才退到 PowerShell `Get-CimInstance Win32_Process`；其他平台使用 `ps`。采样下限约为 0.5 秒，指标精度标记为 `sampled`。来自已持有句柄的内核数值标记为 `exact`。

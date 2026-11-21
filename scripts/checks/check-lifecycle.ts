@@ -35,7 +35,7 @@ const SERVER_DIR = fileURLToPath(new URL("../../apps/server", import.meta.url));
 const SERVER = [process.execPath, "--import", "tsx", "src/index.ts", "serve"] as const;
 const SPAWN_OPTS = {
   cwd: SERVER_DIR,
-  env: { ...process.env, PORT: String(PORT), ABSENCE_ORPHAN_TICK_MS: "1000" },
+  env: { ...process.env, PORT: String(PORT), ABSENCE_ORPHAN_TICK_MS: "1000", ABSENCE_OBSERVE: "0" },
   stdio: ["pipe", "pipe", "pipe"],
 } as const;
 

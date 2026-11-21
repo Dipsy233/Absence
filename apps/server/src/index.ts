@@ -12,10 +12,13 @@ import { avatarSkinRoutes } from "./api/avatarSkins";
 import { soundRoutes } from "./api/sounds";
 import { runtimeRoutes } from "./api/runtimes";
 import { acpProxyRoutes } from "./api/acpProxy";
+import { observeRoutes } from "./api/observe";
 import { proxySessions } from "./agents/acp/proxy";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
+import { DiscoveryService } from "./observe/Discovery";
 import { closeArchive, expireArchives } from "./sessions/archive";
+import { sessionStore } from "./sessions/SessionStore";
 import { drainMetrics, expireMetrics } from "./sessions/storage/metrics";
 
 export interface StartServerOptions {
@@ -86,6 +89,17 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   await app.register(runtimeRoutes);
   await app.register(acpProxyRoutes);
   await app.register(wsRoutes);
+
+  // The observer: tail the transcripts agent software writes on its own and
+  // attach each one to a session. This starts no agent and talks to none —
+  // see observe/Discovery.ts. ABSENCE_OBSERVE=0 keeps the server drive-only.
+  let discovery: DiscoveryService | undefined;
+  if (config.observeEnabled) {
+    discovery = new DiscoveryService(sessionStore);
+    discovery.start();
+    await app.register(observeRoutes, { discovery });
+    app.log.info("observation: transcript discovery active (ABSENCE_OBSERVE=0 to disable)");
+  }
 
   // Serve the built web app when it exists (production / single-origin).
   if (fs.existsSync(config.webDist)) {
@@ -159,15 +173,17 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
       close: async () => {
         clearInterval(expireTimer);
         clearInterval(expireSessionsTimer);
-      // Proxy sessions own child processes; none should outlive the server.
-      proxySessions.closeAll("server closing");
-      await app.close();
-      // Flush metrics before the database handle is closed, then the 50ms
-      // event buffer and WAL checkpoint.
-      await drainMetrics();
-      closeArchive();
-    },
-  };
+        // Stop the transcript tails before the archive flushes underneath them.
+        await discovery?.stop();
+        // Proxy sessions own child processes; none should outlive the server.
+        proxySessions.closeAll("server closing");
+        await app.close();
+        // Flush metrics before the database handle is closed, then the 50ms
+        // event buffer and WAL checkpoint.
+        await drainMetrics();
+        closeArchive();
+      },
+    };
 }
 
 /**

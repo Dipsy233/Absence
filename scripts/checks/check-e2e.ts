@@ -81,7 +81,7 @@ async function main(): Promise<void> {
   const tsxCli = path.join(REPO_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
   const server = spawn(process.execPath, [tsxCli, "apps/server/src/index.ts"], {
     cwd: REPO_ROOT,
-    env: { ...process.env, PORT: String(port), ABSENCE_STATE_DIR: stateDir, HOST: "127.0.0.1" },
+    env: { ...process.env, PORT: String(port), ABSENCE_STATE_DIR: stateDir, HOST: "127.0.0.1", ABSENCE_OBSERVE: "0" },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });

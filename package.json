@@ -28,6 +28,8 @@
     "check:agentwatch": "tsx scripts/checks/check-agentwatch.ts",
     "check:ebpf": "tsx scripts/checks/check-ebpf.ts",
     "check:history": "tsx scripts/checks/check-history.ts",
+    "check:observe-transcript": "tsx scripts/checks/check-observe-transcript.ts",
+    "check:agentwatch-external": "tsx scripts/checks/check-agentwatch-external.ts",
     "check:mcp": "tsx scripts/checks/check-mcp-events.ts",
     "check:acp": "tsx scripts/checks/check-acp.ts",
     "check:acp-lifecycle": "tsx scripts/checks/check-acp-lifecycle.ts",

@@ -7,6 +7,7 @@ import type { MetricsTarget } from "./ProcessMetrics";
 import type { WatchExit, WatchStart } from "./observer";
 import { snapshotProcesses, type ProcessTable, type ProcInfo } from "./ProcessTable";
 import { detectCommand, unwrapCommandText } from "./CommandLine";
+import { attributedTree, findPiSession } from "./ProcessScanner";
 
 /** How long after a command returns we take the final look. */
 const SETTLE_MS = 2500;
@@ -197,6 +198,8 @@ export interface ProcessWatcherOptions {
    */
   onCommandWindow?: (command: string, cwd: string, id: number) => void;
   onCommandEnd?: (id: number) => void;
+  /** External pi transcript; only explicit command-line session evidence binds a pid. */
+  externalTranscript?: string;
   /** Injectable for tests. */
   snapshot?: () => Promise<ProcessTable>;
   /**
@@ -323,6 +326,8 @@ export class ProcessWatcher {
   private jobSessionId?: string;
   /** The agent process Absence spawned for this session, once it exists. */
   private agentPid?: number;
+  private externalTimer?: ReturnType<typeof setTimeout>;
+  private externalLive = new Map<number, ProcInfo>();
   /**
    * Pids this session owns: the agent itself plus every accepted descendant.
    * Retained after exit so a late child can still prove its ancestry.
@@ -342,7 +347,7 @@ export class ProcessWatcher {
     this.snapshot = options.snapshot ?? snapshotProcesses;
     this.now = options.now ?? Date.now;
     this.maxFinishedEggs = Math.max(0, options.maxFinishedEggs ?? 0);
-    this.attachJobObserver();
+    if (!options.externalTranscript) this.attachJobObserver();
   }
 
   /**
@@ -370,7 +375,7 @@ export class ProcessWatcher {
 
   /** True while events, rather than snapshots, drive this watcher. */
   private get jobMode(): boolean {
-    return this.jobUnsubscribe !== undefined;
+    return this.options.externalTranscript !== undefined || this.jobUnsubscribe !== undefined;
   }
 
   /**
@@ -383,6 +388,10 @@ export class ProcessWatcher {
    * process-table sweep whose result nobody looks at.
    */
   warm(): void {
+    if (this.options.externalTranscript) {
+      void this.scanExternal();
+      return;
+    }
     if (this.jobMode) return;
     void this.ensureBaseline();
   }
@@ -423,14 +432,16 @@ export class ProcessWatcher {
    */
   metricsAgentTarget(): MetricsTarget {
     const rootPid = this.agentPid ?? this.rootPid;
-    const pids = new Set<number>([rootPid]);
+    const pids = new Set<number>(this.options.externalTranscript ? [] : [rootPid]);
     for (const pid of this.ownedLive) pids.add(pid);
-    for (const egg of this.eggs.values()) pids.add(egg.info.pid);
+    for (const egg of this.eggs.values()) {
+      if (egg.status === "running") pids.add(egg.info.pid);
+    }
     return {
       rootPid,
       name: "Agent",
       kind: "agent",
-      status: "running",
+      status: this.options.externalTranscript && this.ownedLive.size === 0 ? "exited" : "running",
       startedAt: 0,
       pids: [...pids],
     };
@@ -495,7 +506,7 @@ export class ProcessWatcher {
    * the observer is machine-wide (Linux) or server-wide (Windows), so "no
    * marker" must not mean "ours".
    */
-  private reachesOwned(ppid: number): boolean {
+  private reachesAttributed(ppid: number): boolean {
     const visited = new Set<number>();
     let current = ppid;
     while (current > 0 && !visited.has(current)) {
@@ -581,6 +592,7 @@ export class ProcessWatcher {
   /** Stop watching. Never touches the processes themselves. */
   stop(): void {
     this.disposed = true;
+    if (this.externalTimer !== undefined) clearTimeout(this.externalTimer);
     if (this.tickTimer !== undefined) clearTimeout(this.tickTimer);
     if (this.aliveTimer !== undefined) clearTimeout(this.aliveTimer);
     this.tickTimer = undefined;
@@ -593,6 +605,39 @@ export class ProcessWatcher {
     this.ownedLive.clear();
     this.jobUnsubscribe?.();
     this.jobUnsubscribe = undefined;
+  }
+
+  /** Snapshot external trees: Windows Job events cover server children only. */
+  private async scanExternal(): Promise<void> {
+    try {
+      const table = await this.snapshot();
+      if (this.disposed) return;
+      const root = findPiSession(table, this.options.externalTranscript!);
+      const rows = root ? [root, ...attributedTree(table, root.pid)] : [];
+      const live = new Map(rows.map((info) => [info.pid, info]));
+      for (const [pid, previous] of this.externalLive) {
+        const current = live.get(pid);
+        if (!current || Math.abs(current.startedAt - previous.startedAt) > WINDOW_SLACK_MS) {
+          this.onJobExit({ pid, exitedAt: this.now() });
+          this.ownedPids.delete(pid);
+          this.jobPpid.delete(pid);
+        }
+      }
+      this.agentPid = root?.pid;
+      if (root) this.markOwned(root.pid);
+      for (const info of rows) {
+        this.onJobStart({
+          pid: info.pid, ppid: info.ppid,
+          comm: info.name, commandLine: info.commandLine,
+          createdAt: info.startedAt || this.now(),
+        });
+      }
+      this.externalLive = live;
+    } catch {
+      // A failed table read is missing evidence, not evidence of process exit.
+    } finally {
+      if (!this.disposed) this.externalTimer = setTimeout(() => void this.scanExternal(), TICK_SLOW_MS);
+    }
   }
 
   /** Look while a command is still running. */
@@ -784,7 +829,7 @@ export class ProcessWatcher {
         this.jobSeen.add(pid);
         return;
       }
-      if (this.agentPid === undefined || !this.reachesOwned(event.ppid)) {
+      if (this.agentPid === undefined || !this.reachesAttributed(event.ppid)) {
         this.jobSeen.add(pid);
         return;
       }

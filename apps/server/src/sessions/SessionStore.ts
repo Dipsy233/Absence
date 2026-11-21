@@ -47,6 +47,8 @@ import { ProcessMetricsSampler } from "../process/ProcessMetrics";
 import { JobMonitor } from "../process/JobMonitor";
 import { DockerMonitor } from "../process/DockerMonitor";
 import { DockerEggs } from "../process/DockerEggs";
+import { ObserveAdapter } from "../observe/ObserveAdapter";
+import type { ObserveMeta } from "../observe/types";
 import { unifiedDiff } from "../util/diff";
 import { newId } from "../util/ids";
 import { toPosix } from "../util/paths";
@@ -234,13 +236,17 @@ export class AbsenceSession {
   private stateTimer?: NodeJS.Timeout;
   private treeTimer?: NodeJS.Timeout;
   private disposed = false;
+  /** Set on an observed session: facts arrive, nothing is ever sent back. */
+  readonly observe?: ObserveMeta;
 
   constructor(
     projectPath: string,
     kind: AgentKind,
     private readonly resume?: AbsenceResume,
+    options?: { observe?: ObserveMeta },
   ) {
     this.id = resume?.absenceSessionId ?? newId("sess");
+    this.observe = options?.observe;
     // Dwell time is accrued across visits: a session reopened later continues
     // the clock instead of restarting it (see `Session.dwellMs`).
     this.dwellBase = Math.max(0, resume?.dwellMs ?? 0);
@@ -267,10 +273,14 @@ export class AbsenceSession {
       // Bound the live egg view: running eggs always stay, only the oldest
       // exits beyond the cap are retired. See ProcessWatcher.retireOverflow.
       maxFinishedEggs: config.maxEggs,
+      externalTranscript: this.observe?.transcriptFile,
     });
     // Say how precise process watching is, so the UI can be honest about it.
-    this.session.processPrecision = JobMonitor.get().available ? "exact" : "sampled";
-    this.adapter = createAdapter(kind, {
+    this.session.processPrecision = !this.observe && JobMonitor.get().available ? "exact" : "sampled";
+    if (this.observe) this.processWatcher.beginSession(this.id);
+    // An observed session owns no runtime: the transcript feed pushes facts
+    // through the same subscription seam a runtime adapter would.
+    this.adapter = options?.observe ? new ObserveAdapter() : createAdapter(kind, {
       processWatcher: this.processWatcher,
       onStateChange: () => this.scheduleState(),
     });
@@ -315,6 +325,27 @@ export class AbsenceSession {
   }
 
   async start(): Promise<void> {
+    // Observed: there is no runtime to start. The discovery feed pushes
+    // transcript facts through `ingestObservation`; tree, file watching,
+    // process watching and metrics run exactly as in a driven session —
+    // unless the project is a wholesale scope (the home directory, a drive
+    // root), where watching would be a hazard rather than observation.
+    if (this.observe) {
+      this.unsubAdapter = this.adapter.subscribe((event) => this.handleEvent(event));
+      if (this.observe.watchProject !== false) {
+        this.tree = await buildTree(this.session.projectPath);
+        this.treeDirty = true;
+        this.watcher = new FileWatcher(
+          this.session.projectPath,
+          (kind, abs) => this.onFsChange(kind, abs),
+          (kind, abs) => this.onOutsideFsChange(kind, abs),
+        );
+        await this.watcher.start();
+      }
+      await this.flushMeta();
+      this.scheduleState();
+      return;
+    }
     // Bring ABSENCE's own history back first, so the UI already has the Stage,
     // Activity, files and chat from before the restart.
     const archiveId = this.resume?.absenceSessionId;
@@ -398,6 +429,11 @@ export class AbsenceSession {
 
   /** Fire-and-forget: the run streams over the bus, the HTTP call returns at once. */
   prompt(text: string): void {
+    if (this.observe) {
+      throw new Error(
+        "This session is observed, not driven — Absence only watches it. Send your prompts in the agent's own terminal.",
+      );
+    }
     this.handleEvent(
       createEvent(this.id, "message", { role: "user", content: text, streaming: false }),
     );
@@ -410,7 +446,31 @@ export class AbsenceSession {
     });
   }
 
+  private readonly observedCommands = new Map<string, number>();
+
+  /** One fact from an observation channel (the transcript tail). */
+  ingestObservation(event: AbsenceEvent): void {
+    // Historical backfill is not a live command window. Do not credit today's
+    // processes/files/containers to commands replayed from an old transcript.
+    if (event.type === "tool_start" && Math.abs(Date.now() - event.timestamp) < 10_000) {
+      const args = event.payload.args;
+      const command = args && typeof args === "object" && "command" in args ? args.command : undefined;
+      if (typeof command === "string") {
+        const id = this.processWatcher.begin(command, this.session.projectPath, event.payload.toolCallId, event.timestamp);
+        this.observedCommands.set(event.payload.toolCallId, id);
+      }
+    } else if (event.type === "tool_end") {
+      const id = this.observedCommands.get(event.payload.toolCallId);
+      if (id !== undefined) {
+        this.processWatcher.end(id);
+        this.observedCommands.delete(event.payload.toolCallId);
+      }
+    }
+    this.handleEvent(event);
+  }
+
   async abort(): Promise<void> {
+    if (this.observe) return;
     await this.adapter.abort();
   }
 
@@ -470,6 +530,9 @@ export class AbsenceSession {
     const notice = (content: string): void =>
       this.handleEvent(createEvent(this.id, "message", { role: "system", content, streaming: false }));
 
+    if (this.observe) {
+      return notice("Observed sessions accept no commands — Absence only watches this session.");
+    }
     if (command === "model") {
       // Only intercept when the agent advertises a model selector. An agent
       // that exposes none may still implement `/model` itself, so the line is
@@ -1554,6 +1617,37 @@ export class SessionStore {
       throw error;
     }
     return session;
+  }
+
+  /**
+   * Attach an observation to a session the agent started on its own.
+   *
+   * Idempotent per (channel, externalId): a transcript discovered twice — or
+   * two transcripts of the same agent session — land on one session. Creating
+   * starts no runtime; the caller (the discovery feed) then pushes facts
+   * through `ingestObservation`.
+   */
+  async createObserved(projectPath: string, kind: AgentKind, observe: ObserveMeta): Promise<AbsenceSession> {
+    const existing = this.findObserved(observe);
+    if (existing) return existing;
+    const session = new AbsenceSession(projectPath, kind, undefined, { observe });
+    this.sessions.set(session.id, session);
+    try {
+      await session.start();
+    } catch (error) {
+      this.sessions.delete(session.id);
+      throw error;
+    }
+    return session;
+  }
+
+  private findObserved(observe: ObserveMeta): AbsenceSession | undefined {
+    for (const session of this.sessions.values()) {
+      if (session.observe?.channel === observe.channel && session.observe?.externalId === observe.externalId) {
+        return session;
+      }
+    }
+    return undefined;
   }
 
   get(id: string): AbsenceSession | undefined {

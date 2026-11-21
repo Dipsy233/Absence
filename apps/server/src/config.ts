@@ -72,15 +72,21 @@ export interface AbsenceConfig {
    * process/DockerMonitor.ts). A container's processes live inside the
    * daemon's VM, where neither the Job Object nor eBPF can reach, so its
    * lifecycle and resource usage ride `docker events` and `docker stats`
-   * instead. On by default; ABSENCE_DOCKER=0 turns it off, and a machine with
-   * no docker at all degrades to exactly today's behavior.
+   * instead. Unsupported on Windows (including WSL daemon probing). On other
+   * platforms it defaults on; ABSENCE_DOCKER=0 turns it off.
    */
   dockerEnabled: boolean;
   /**
+   * The observer subsystem: watch the transcripts agent software writes on its
+   * own (`observe/`), build sessions from what they record, and let the OS
+   * watchers attach to the projects they name. Absence starts no agent here —
+   * it only reads. On by default; ABSENCE_OBSERVE=0 turns it off.
+   */
+  observeEnabled: boolean;
+  /**
    * The docker CLI to drive, when the default resolution is not enough
-   * (ABSENCE_DOCKER_BIN). Absence tries `docker` on PATH first, then — on
-   * Windows only — `wsl docker` for a daemon that lives in a WSL distro. The
-   * variable may be a bare binary or a prefix such as `wsl docker`.
+   * (ABSENCE_DOCKER_BIN), on non-Windows platforms only. Defaults to `docker`
+   * on PATH. The variable may be a bare binary or a command prefix.
    */
   dockerBin?: string;
   /** Serve the built web app from this directory when present. */
@@ -125,8 +131,9 @@ export const config: AbsenceConfig = {
   maxArchivedSessions: Number.isFinite(Number(process.env.ABSENCE_MAX_ARCHIVED_SESSIONS))
     ? Math.max(0, Math.floor(Number(process.env.ABSENCE_MAX_ARCHIVED_SESSIONS)))
     : 0,
-  dockerEnabled: envFlag(process.env.ABSENCE_DOCKER, true),
+  dockerEnabled: process.platform !== "win32" && envFlag(process.env.ABSENCE_DOCKER, true),
   dockerBin: process.env.ABSENCE_DOCKER_BIN,
+  observeEnabled: envFlag(process.env.ABSENCE_OBSERVE, true),
   // Built UI lives at the repo root under dist/web (see apps/web/vite.config.ts
   // and the desktop staging script). Override with ABSENCE_WEB_DIST if hosting
   // elsewhere.
