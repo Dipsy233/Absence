@@ -119,22 +119,16 @@ export class DiscoveryService {
   }
 
   /**
-   * Explicit attach from the observation board: identify, then backfill the
-   * transcript's whole history into a session — regardless of recency.
-   * Returns the row, or undefined when no tail follows the file.
+   * Explicit attach from the observation board: identify, then put the
+   * transcript's history into a session — regardless of recency. Returns the
+   * row, or undefined when no tail follows the file.
    */
   async attach(file: string): Promise<ObserveDiscoveryRow | undefined> {
     const tail = this.tails.get(file);
     if (!tail) return undefined;
     tail.missing = false;
-    if (!tail.session) {
-      await this.feedForIdentity(tail);
-      await this.ensureSession(tail, true);
-      if (!tail.session) return this.rowFor(tail); // identity never arrived; nothing to attach
-      await this.backfillTail(tail);
-    } else {
-      await this.feedAttached(tail);
-    }
+    if (!tail.session) await this.attachTransition(tail);
+    if (tail.session) await this.feedAttached(tail);
     return this.rowFor(tail);
   }
 
@@ -177,11 +171,9 @@ export class DiscoveryService {
       feeding: false,
     };
     this.tails.set(file, tail);
-    await this.feedForIdentity(tail);
     // A file the agent wrote moments ago is live: attach and backfill at once.
     if (!tail.session && (await this.isRecentlyModified(tail.file))) {
-      await this.ensureSession(tail, true);
-      if (tail.session) await this.backfillTail(tail);
+      await this.attachTransition(tail);
     }
   }
 
@@ -199,12 +191,27 @@ export class DiscoveryService {
       await this.feedAttached(tail);
       return;
     }
-    await this.feedForIdentity(tail);
     // The write itself is the recency evidence: attach and backfill now.
-    if (!tail.session) {
-      await this.ensureSession(tail, true);
-      if (tail.session) await this.backfillTail(tail);
-    }
+    await this.attachTransition(tail);
+    if (tail.session) await this.feedAttached(tail);
+  }
+
+  /**
+   * The attach transition: identity, session, then the transcript's history.
+   *
+   * A session whose history already came from its archive (re-attach after a
+   * restart, or a conversation the board resumed) gets the parser **warmed**
+   * instead: read from byte 0 so its tool-call state is complete, but deliver
+   * nothing — replaying facts the session already holds would duplicate the
+   * conversation in the chat, the archive and the report. A fresh session is
+   * backfilled for real: the backfill is its history.
+   */
+  private async attachTransition(tail: FileTail): Promise<void> {
+    await this.feedForIdentity(tail);
+    await this.ensureSession(tail, true);
+    if (!tail.session) return; // identity never arrived; nothing to attach
+    if (tail.session.replayedFromArchive) await this.warmTail(tail);
+    else await this.backfillTail(tail);
   }
 
   private async onFileGone(file: string): Promise<void> {
@@ -259,11 +266,26 @@ export class DiscoveryService {
   }
 
   /**
-   * The attach transition: a fresh parser reads the file from byte 0 — the
-   * backfill is the transcript's whole history — and delivers everything to
-   * the session.
+   * The attach transition for a fresh session: a fresh parser reads the file
+   * from byte 0 — the backfill is the transcript's whole history — and
+   * delivers everything to the session.
    */
   private async backfillTail(tail: FileTail): Promise<void> {
+    await this.rereadTail(tail, true);
+  }
+
+  /**
+   * The attach transition for a session whose history is already in place
+   * (archive replay): same fresh read from byte 0 — the parser's tool-call
+   * state must be complete for the lines still to come — but the parsed
+   * facts are discarded instead of delivered.
+   */
+  private async warmTail(tail: FileTail): Promise<void> {
+    await this.rereadTail(tail, false);
+  }
+
+  /** Read the whole file through a fresh parser; deliver only when asked. */
+  private async rereadTail(tail: FileTail, deliver: boolean): Promise<void> {
     if (!tail.session) return;
     tail.feeding = true;
     try {
@@ -276,7 +298,7 @@ export class DiscoveryService {
       }
       tail.lastActivityAt = Date.now();
       const events = tail.parser.drain();
-      if (events.length > 0) this.deliver(tail, events);
+      if (deliver && events.length > 0) this.deliver(tail, events);
     } finally {
       tail.feeding = false;
     }
@@ -326,9 +348,15 @@ export class DiscoveryService {
     if (parser.externalId === undefined || parser.cwd === undefined) return;
     const key = `${tail.source.id}:${parser.externalId}`;
     const existing = this.sessionsByExternal.get(key);
-    if (existing) {
-      tail.session = existing;
-      return;
+    if (existing !== undefined) {
+      if (!existing.isDisposed()) {
+        tail.session = existing;
+        return;
+      }
+      // The session was closed from under us (the board's ✕, a teardown):
+      // forget it, or this map would feed a dead session forever and the
+      // transcript could never be watched again.
+      this.sessionsByExternal.delete(key);
     }
     const observe: ObserveMeta = {
       channel: "transcript",

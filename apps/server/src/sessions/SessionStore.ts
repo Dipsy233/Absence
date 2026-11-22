@@ -227,6 +227,17 @@ export class AbsenceSession {
   private lastActiveAt: number;
   /** Open WebSocket connections (see attachView/detachView). */
   private viewers = 0;
+  /**
+   * True when this session's history came from its own archive replay
+   * (re-attach). The discovery feed consults it so a re-attach warms the
+   * transcript parser silently instead of backfilling the same facts twice.
+   */
+  private replayedArchive = false;
+
+  /** The transcript history is already in place (see `replayedArchive`). */
+  get replayedFromArchive(): boolean {
+    return this.replayedArchive;
+  }
   /** Dwell time accrued before this visit, in ms. */
   private readonly dwellBase: number;
   /** When this visit opened; the live dwell time is `dwellBase` + now - this. */
@@ -241,6 +252,11 @@ export class AbsenceSession {
   private stateTimer?: NodeJS.Timeout;
   private treeTimer?: NodeJS.Timeout;
   private disposed = false;
+
+  /** True once dispose ran — a session the store removed, not to be fed again. */
+  isDisposed(): boolean {
+    return this.disposed;
+  }
   /** Set on an observed session: facts arrive, nothing is ever sent back. */
   readonly observe?: ObserveMeta;
   /**
@@ -377,6 +393,10 @@ export class AbsenceSession {
         // Containers this session laid may still be running. The archive
         // already holds their eggs; re-attach before the snapshot is served.
         await this.dockerEggs?.restore(events);
+        // The transcript's history is already in place from the archive — the
+        // discovery feed must not backfill it a second time (see
+        // `replayedFromArchive`).
+        this.replayedArchive = events.length > 0;
       }
       if (this.observe?.watchProject !== false) {
         this.tree = await buildTree(this.session.projectPath);

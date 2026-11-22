@@ -128,7 +128,7 @@ fs.writeFileSync(transcriptFile, turn1.join("\n") + "\n", "utf8");
 
 section("discovery");
 
-const discovery = new DiscoveryService(sessionStore);
+let discovery = new DiscoveryService(sessionStore);
 discovery.start();
 
 const found = await waitFor(() => discovery.list().some((row) => row.externalId === EXTERNAL_ID && row.sessionId !== undefined), 8_000);
@@ -227,11 +227,37 @@ check("attach is idempotent per (channel, externalId)", again.id === sessionId);
 // Re-attach across a restart: the archive keyed (channel, externalId) is
 // found, the same absence session id is reused, and the replayed history is
 // the session's opening facts — no duplicate archive row per server lifetime.
+// A real restart means a brand-new discovery service: the old one's session
+// map and tail offsets do not survive it.
+discovery.stop();
+discovery = new DiscoveryService(sessionStore);
+discovery.start();
 await sessionStore.remove(sessionId!);
 const reattached = await sessionStore.createObserved(project, "pi", { channel: "transcript", externalId: EXTERNAL_ID });
 check("a restart re-attaches by identity, not a new archive row", reattached.id === sessionId, reattached.id);
 const replayed = reattached.history().length;
 check("the reopened archive replays its history", replayed > 0, `${replayed} events`);
+
+// Re-attach then attach again: the session already holds the transcript's
+// history from the archive replay, so attaching warms the parser silently —
+// the conversation must NOT appear twice in the chat.
+await discovery.attach(transcriptFile);
+const afterWarm = reattached.history().length;
+check("a re-attach does not backfill its history twice", afterWarm === replayed, `${replayed} → ${afterWarm}`);
+
+// …and an append still flows incrementally into the warmed session.
+fs.appendFileSync(
+  transcriptFile,
+  `${JSON.stringify({
+    type: "message",
+    id: "ff000010",
+    parentId: null,
+    timestamp: new Date().toISOString(),
+    message: { role: "user", content: [{ type: "text", text: "turn three" }], timestamp: Date.now() },
+  })}\n`,
+);
+const changeReady = await waitForAsync(() => reattached.history().some((event) => event.type === "message" && (event.payload as any).content === "turn three"));
+check("an append after a warm re-attach still reaches the session", changeReady, "turn three seen");
 
 // The launcher spec is profile data: a fresh run is the bare command, a
 // resume points the agent at the transcript file itself (the same shape
