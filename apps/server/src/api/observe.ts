@@ -75,8 +75,11 @@ export async function observeRoutes(app: FastifyInstance, options: { discovery: 
     }
 
     // Resolve which transcript the launch continues, if any. Strongest first:
-    // an explicit file, a live observed session, the archive's resume handle,
-    // and finally the tail list keyed by the archive's external id.
+    // an explicit file, then a live observed session, then the tail list —
+    // keyed by the conversation's pi id, which both new archives (external_id)
+    // and old driven ones (piSessionId, the resume handle) carry. The tail row
+    // also knows the transcript's own cwd: the project the terminal must open
+    // in, so pi does not ask to fork the session into another directory.
     let file = fileInput;
     let projectPath: string | undefined;
     let externalId: string | undefined;
@@ -84,12 +87,16 @@ export async function observeRoutes(app: FastifyInstance, options: { discovery: 
       const live = sessionStore.get(absenceId);
       file ??= live?.observe?.transcriptFile;
       externalId = live?.observe?.externalId;
+      projectPath = live?.session.projectPath;
       const meta = await readMeta("", absenceId);
-      file ??= meta?.piSessionFile;
-      projectPath = meta?.projectPath;
-      externalId ??= meta?.externalId;
-      if (file === undefined && externalId !== undefined) {
-        file = options.discovery.list().find((row) => row.externalId === externalId)?.file;
+      projectPath ??= meta?.projectPath;
+      externalId ??= meta?.externalId ?? meta?.piSessionId;
+      if (externalId !== undefined) {
+        const row = options.discovery.list().find((candidate) => candidate.externalId === externalId);
+        if (row !== undefined) {
+          file ??= row.file;
+          projectPath ??= row.projectPath;
+        }
       }
     }
 
@@ -99,41 +106,66 @@ export async function observeRoutes(app: FastifyInstance, options: { discovery: 
       return undefined;
     }
 
-    const cwd = cwdInput !== undefined ? cwdInput : file !== undefined ? path.dirname(file) : undefined;
+    // The terminal must open where the conversation lives: the session's own
+    // project. The transcript file's directory is pi's sessions store — pi
+    // compares its recorded project against the cwd and asks to fork on a
+    // mismatch, so the project path always wins over dirname(file).
+    const cwd = cwdInput !== undefined
+      ? cwdInput
+      : projectPath !== undefined
+        ? projectPath
+        : file !== undefined
+          ? path.dirname(file)
+          : undefined;
     if (cwd === undefined) {
       reply.code(400).send({ error: "a directory is required (cwd, or a file to resume)" });
       return undefined;
     }
-    const resolvedCwd = toPosix(path.resolve(cwd));
-    if (!(await isDirectory(resolvedCwd))) {
-      reply.code(400).send({ error: `not a directory: ${resolvedCwd}` });
+    if (!(await isDirectory(path.resolve(cwd)))) {
+      reply.code(400).send({ error: `not a directory: ${cwd}` });
       return undefined;
     }
     if (file !== undefined && projectPath === undefined) projectPath = path.dirname(file);
 
+    // Native separators: cmd's `start /D` misparses a POSIX path's `/…` as
+    // switches on Windows; path.resolve gives each platform its own form.
+    const nativeCwd = path.resolve(cwd);
+
     try {
-      await launchTerminal(profile, resolvedCwd, file);
+      await launchTerminal(profile, nativeCwd, file);
     } catch (error) {
       reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
       return undefined;
     }
 
-    // Re-attach the resumed conversation so the board can watch it at once.
-    // createObserved dedupes live sessions and reuses the archive row by
-    // (channel, externalId); archives without an identity simply get none.
+    // Attach the transcript so the board can watch the resumed conversation
+    // at once: attach backfills its whole history into the session the
+    // discovery service attaches it to (idempotent per (channel, externalId),
+    // reusing the archive row when the identity has one), and every later
+    // write pi makes streams into that same session. Archives without an
+    // identity get their session here, keyed by the transcript's own header.
     let sessionId: string | undefined;
-    if (absenceId !== undefined && externalId !== undefined && file !== undefined) {
+    if (absenceId !== undefined && file !== undefined) {
       try {
-        const watch = await sessionStore.createObserved(
-          projectPath ?? resolvedCwd,
-          profile.agentKind,
-          { channel: "transcript", externalId, transcriptFile: file },
-        );
-        sessionId = watch.id;
+        const row = await options.discovery.attach(file);
+        sessionId = row?.sessionId;
+        if (sessionId === undefined && externalId !== undefined) {
+          const watch = await sessionStore.createObserved(
+            projectPath ?? nativeCwd,
+            profile.agentKind,
+            { channel: "transcript", externalId, transcriptFile: file },
+          );
+          sessionId = watch.id;
+        }
       } catch {
         // The launch itself succeeded; watching can attach later.
       }
     }
-    return { ok: true, cwd: resolvedCwd, ...(file !== undefined ? { file } : {}), ...(sessionId !== undefined ? { sessionId } : {}) };
+    return {
+      ok: true,
+      cwd: toPosix(nativeCwd),
+      ...(file !== undefined ? { file } : {}),
+      ...(sessionId !== undefined ? { sessionId } : {}),
+    };
   });
 }
