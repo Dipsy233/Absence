@@ -165,6 +165,11 @@ export async function closeSession(id: string): Promise<void> {
   await fetch(`/api/sessions/${encodeURIComponent(id)}/close`, { method: "POST" });
 }
 
+/** Delete one archived session's rows entirely. The server refuses live ones. */
+export async function deleteSessionArchive(id: string): Promise<void> {
+  await json(await fetch(`/api/sessions/${encodeURIComponent(id)}/archive`, { method: "DELETE" }));
+}
+
 /** Read a project file from disk (the user's view of the project). */
 export async function readFile(sessionId: string, path: string): Promise<FileContent> {
   return json<FileContent>(

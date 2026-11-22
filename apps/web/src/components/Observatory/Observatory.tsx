@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import type { AcpProxySessionRow, ObserveSessionRow, SessionHistoryEntry } from "@absence/core";
-import { attachTranscript, fetchObserveBoard, fetchProxySessions, fetchSessionHistory } from "../../lib/api";
+import { attachTranscript, deleteSessionArchive, fetchObserveBoard, fetchProxySessions, fetchSessionHistory } from "../../lib/api";
 import { useSessionStore } from "../../stores/sessionStore";
 import { resetAllStores } from "../../stores/reset";
 import { useT } from "../../lib/i18n";
 import { WindowControls } from "../common/WindowControls";
 import "../../ui/shared/themes.css";
-import "../../ui/shared/picker.css";
+import "../../ui/shared/observatory.css";
 
 /**
  * The Observatory — the observation board, the app's entry page.
@@ -115,6 +115,15 @@ export function Observatory() {
       if (!row.sessionId) return;
       resetAllStores();
       await openSession(row.sessionId);
+    });
+
+  /** Remove one archive entirely (events, runs, files, metrics, the row). */
+  const removeArchive = (entry: SessionHistoryEntry) =>
+    withBusy(`del-${entry.id}`, async () => {
+      if (!entry.absenceSessionId) return;
+      if (!window.confirm(t("Delete the archive of {path}? This cannot be undone.", { path: entry.projectPath }))) return;
+      await deleteSessionArchive(entry.absenceSessionId);
+      setSessions((current) => current.filter((row) => row.id !== entry.id));
     });
 
   void tick; // the clock re-renders the "ago" columns
@@ -241,18 +250,29 @@ export function Observatory() {
                     </span>
                   </span>
                   <span className="picker-row__meta">
-                    {formatWhen(entry.updatedAt)} ·{" "}
-                    {t("· {n} msgs", { n: entry.messageCount })}
+                    {formatWhen(entry.updatedAt)} · {t("{n} msgs", { n: entry.messageCount })}
+                    {entry.firstPrompt ? ` · ${entry.firstPrompt}` : ""}
                   </span>
                   {entry.absenceSessionId ? (
-                    <button
-                      type="button"
-                      className="picker-btn"
-                      disabled={busy !== undefined}
-                      onClick={() => void resume(entry)}
-                    >
-                      {t("Resume {id}", { id: entry.absenceSessionId!.slice(-4) })}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="picker-btn"
+                        disabled={busy !== undefined}
+                        onClick={() => void resume(entry)}
+                      >
+                        {t("Resume {id}", { id: entry.absenceSessionId.slice(-4) })}
+                      </button>
+                      <button
+                        type="button"
+                        className="picker-btn picker-btn--danger"
+                        title={t("Delete archive")}
+                        disabled={busy !== undefined}
+                        onClick={() => void removeArchive(entry)}
+                      >
+                        ✕
+                      </button>
+                    </>
                   ) : null}
                 </li>
               ))}

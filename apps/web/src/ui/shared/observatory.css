@@ -1,0 +1,200 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   OBSERVATORY — the observation board's own layer. One centered card, three
+   sections (transcripts, proxies, history); every row is main + meta + one or
+   two actions. Dressed through the shared tokens like the rest of the app.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.picker-root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 24px;
+  overflow: auto;
+}
+
+.picker-shell {
+  display: flex;
+  flex-direction: column;
+  width: min(860px, 100%);
+  height: min(760px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 16px;
+  background: var(--mon-s1);
+  box-shadow: 0 30px 70px -30px rgb(0 0 0 / 0.55);
+}
+
+.picker-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 18px 22px 12px;
+  border-bottom: 1px solid var(--mon-bd);
+  position: relative;
+}
+
+.picker-title {
+  margin: 0;
+  font-family: var(--mon-mono);
+  font-size: 15px;
+  letter-spacing: 0.18em;
+  color: var(--mon-t);
+}
+
+.picker-sub {
+  margin: 0;
+  flex: 1;
+  font-size: 12px;
+  color: var(--mon-t3);
+}
+
+.picker-error {
+  margin: 0;
+  padding: 8px 22px;
+  font-size: 12px;
+  color: var(--mon-err);
+  border-bottom: 1px solid var(--mon-bd);
+}
+
+/* The sections scroll as one sheet; the header stays put. */
+.picker-shell > .picker-card,
+.picker-shell > .picker-error {
+  flex-shrink: 0;
+}
+
+.picker-shell > .picker-card:first-of-type {
+  margin-top: 0;
+}
+
+.picker-shell {
+  overflow-y: auto;
+}
+
+.picker-card {
+  padding: 16px 22px 18px;
+  border-bottom: 1px solid var(--mon-bd);
+}
+
+.picker-card:last-child {
+  border-bottom: none;
+}
+
+.picker-card__title {
+  margin: 0 0 4px;
+  font-family: var(--mon-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mon-t);
+}
+
+.picker-card__note {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  color: var(--mon-t3);
+}
+
+.picker-card__note--dim {
+  opacity: 0.7;
+  word-break: break-all;
+}
+
+.picker-empty {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--mon-t3);
+  font-style: italic;
+}
+
+.picker-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--mon-bd);
+}
+
+.picker-row:first-child {
+  border-top: none;
+}
+
+.picker-row__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.picker-row__kind {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 999px;
+  font-family: var(--mon-mono);
+  font-size: 10px;
+  color: var(--mon-t3);
+}
+
+.picker-row__path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mon-mono);
+  font-size: 12px;
+  color: var(--mon-t);
+}
+
+.picker-row__meta {
+  flex-shrink: 0;
+  font-family: var(--mon-mono);
+  font-size: 10.5px;
+  color: var(--mon-t3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46%;
+}
+
+.picker-btn {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--mon-bd2);
+  border-radius: 8px;
+  background: transparent;
+  font-family: var(--mon-mono);
+  font-size: 11px;
+  color: var(--mon-t3);
+  cursor: pointer;
+  transition: color 120ms, border-color 120ms, background 120ms;
+}
+
+.picker-btn:hover:not(:disabled) {
+  color: var(--mon-t);
+  border-color: var(--mon-t);
+}
+
+.picker-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.picker-btn--pri {
+  color: var(--mon-t);
+  border-color: var(--mon-t);
+}
+
+.picker-btn--danger:hover:not(:disabled) {
+  color: var(--mon-err);
+  border-color: var(--mon-err);
+}

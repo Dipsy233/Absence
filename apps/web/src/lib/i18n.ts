@@ -376,6 +376,10 @@ const ZH: Record<string, string> = {
   "The transcript could not be attached (identity unknown).":
     "转录无法挂载(身份未知)。",
   "observed — answered elsewhere": "旁观——应答发生在别处",
+  "{n} msgs": "{n} 条消息",
+  "Delete archive": "删除归档",
+  "Delete the archive of {path}? This cannot be undone.":
+    "删除 {path} 的归档?此操作不可撤销。",
   "Absence only watches — the choice belongs to the agent's own client.":
     "Absence 只旁观——选择权属于智能体自己的客户端。",
 
