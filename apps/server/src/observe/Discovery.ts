@@ -171,6 +171,10 @@ export class DiscoveryService {
       feeding: false,
     };
     this.tails.set(file, tail);
+    // Identify first: the header is what the observation board's row needs,
+    // and what a resume launch resolves the transcript by. Everything past
+    // the identity stays unparsed until the transcript attaches.
+    await this.feedForIdentity(tail);
     // A file the agent wrote moments ago is live: attach and backfill at once.
     if (!tail.session && (await this.isRecentlyModified(tail.file))) {
       await this.attachTransition(tail);
@@ -332,7 +336,7 @@ export class DiscoveryService {
         const lastNewline = buffer.lastIndexOf(0x0a);
         if (lastNewline === -1) return undefined;
         tail.offset += lastNewline + 1;
-        return buffer.subarray(0, lastNewline + 1).toString("utf8");
+          return buffer.subarray(0, lastNewline + 1).toString("utf8");
       } finally {
         await handle.close();
       }
