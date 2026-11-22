@@ -1,23 +1,13 @@
-import { useEffect, useState } from "react";
-import type { AcpProxySessionRow, ObserveSessionRow, SessionHistoryEntry } from "@absence/core";
-import { attachTranscript, deleteSessionArchive, fetchObserveBoard, fetchProxySessions, fetchSessionHistory } from "../../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import type { Project, SessionHistoryEntry } from "@absence/core";
+import { fetchProjects, fetchSessionHistory, fetchObserveBoard, launchTerminal, deleteSessionArchive } from "../../lib/api";
 import { useSessionStore } from "../../stores/sessionStore";
 import { resetAllStores } from "../../stores/reset";
-import { useT } from "../../lib/i18n";
 import { WindowControls } from "../common/WindowControls";
+import { useT } from "../../lib/i18n";
 import "../../ui/shared/themes.css";
+import "../../ui/shared/picker.css";
 import "../../ui/shared/observatory.css";
-
-/**
- * The Observatory — the observation board, the app's entry page.
- *
- * Absence starts no agent here. It lists what it can already see: the
- * transcripts agent software writes on its own (attach = monitor one), the ACP
- * proxies running on this host, and the archived sessions it has already
- * recorded. Opening a row never launches anything; the agents the rows describe
- * are running in the user's own terminal (or editor), exactly as they always
- * were.
- */
 
 function formatWhen(timestamp: number): string {
   const date = new Date(timestamp);
@@ -27,61 +17,55 @@ function formatWhen(timestamp: number): string {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${time}`;
 }
 
-function formatAgo(timestamp: number): string {
-  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
-}
-
+/**
+ * The observation board — the original switcher page, launcher edition.
+ *
+ * Absence opens the user's own terminal running the agent and steps back: a
+ * path plus 打开 starts a fresh session in that directory; a history row
+ * resumes that conversation (`pi --session <transcript>`). Absence never
+ * talks to the agent — the transcript channel observes whatever it writes,
+ * and a resumed conversation lands on its own archive through re-attach.
+ */
 export function Observatory() {
   const t = useT();
-  const resumeSession = useSessionStore((s) => s.resumeSession);
   const openSession = useSessionStore((s) => s.openSession);
 
-  const [tails, setTails] = useState<ObserveSessionRow[]>([]);
-  const [sources, setSources] = useState<Array<{ id: string; label: string; roots: string[]; watched: boolean }>>([]);
-  const [proxies, setProxies] = useState<AcpProxySessionRow[]>([]);
+  const [path, setPath] = useState("");
+  const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<SessionHistoryEntry[]>([]);
+  const [agentKind, setAgentKind] = useState<string>("pi");
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
-  const [tick, setTick] = useState(0);
+  const [notice, setNotice] = useState<string>();
 
   useEffect(() => {
-    let alive = true;
-    const refresh = () => {
-      fetchObserveBoard()
-        .then((board) => {
-          if (!alive) return;
-          setTails(board.sessions);
-          setSources(board.sources);
-        })
-        .catch(() => undefined);
-      fetchProxySessions()
-        .then((body) => alive && setProxies(body.sessions))
-        .catch(() => undefined);
-      fetchSessionHistory()
-        .then((list) => alive && setSessions(list))
-        .catch(() => undefined);
-    };
-    refresh();
-    // The board is a glance: tails move on their own, so the lists refresh on a
-    // slow cadence while the page is open.
-    const refreshTimer = window.setInterval(refresh, 5000);
-    const clockTimer = window.setInterval(() => setTick((v) => v + 1), 1000);
-    return () => {
-      alive = false;
-      window.clearInterval(refreshTimer);
-      window.clearInterval(clockTimer);
-    };
+    fetchProjects()
+      .then(setProjects)
+      .catch(() => setProjects([]));
+    fetchSessionHistory()
+      .then(setSessions)
+      .catch(() => setSessions([]));
+    // The runtime the board lists and launches is profile data, not a
+    // hard-coded product name: the transcript sources' own agent kind.
+    fetchObserveBoard()
+      .then((board) => setAgentKind(board.sources[0]?.agentKind ?? "pi"))
+      .catch(() => undefined);
   }, []);
+
+  // 反斜杠与正斜杠一个意思:历史里的路径存的是正斜杠形式,Windows 用户
+  // 按习惯输入 E:\0down\daze-demo 也必须命中同一批会话。
+  const normalizePath = (value: string) => value.trim().toLowerCase().replace(/\\/g, "/");
+  const query = normalizePath(path);
+
+  const visibleSessions = useMemo(() => {
+    const byRuntime = sessions.filter((s) => s.runtime === agentKind);
+    return query ? byRuntime.filter((s) => normalizePath(s.projectPath).includes(query)) : byRuntime;
+  }, [sessions, agentKind, query]);
 
   const withBusy = async (key: string, action: () => Promise<void>) => {
     setBusy(key);
     setError(undefined);
+    setNotice(undefined);
     try {
       await action();
     } catch (err) {
@@ -91,33 +75,30 @@ export function Observatory() {
     }
   };
 
-  /** Attach a transcript (full backfill) and enter the session it names. */
-  const attach = (row: ObserveSessionRow) =>
-    withBusy(row.file, async () => {
-      resetAllStores();
-      const attached = row.sessionId ? row : await attachTranscript(row.file);
-      if (attached.sessionId) await openSession(attached.sessionId);
-      else setError(t("The transcript could not be attached (identity unknown)."));
+  /** 在这个路径打开一个跑 pi 的终端;观察随转录自动跟上。 */
+  const start = (projectPath: string) =>
+    withBusy(projectPath, async () => {
+      await launchTerminal({ cwd: projectPath.trim().replace(/\\/g, "/") });
+      setNotice(t("pi is running in a new terminal — Absence is watching."));
     });
 
+  /** 点击历史会话:唤起终端继续这场对话,并立即进入它的观察视图。 */
   const resume = (entry: SessionHistoryEntry) =>
-    withBusy(entry.absenceSessionId ?? entry.id, async () => {
+    withBusy(entry.id, async () => {
       if (!entry.absenceSessionId) {
         setError(t("This archive predates Absence's own session ids and cannot be reopened."));
         return;
       }
-      resetAllStores();
-      await resumeSession(entry);
+      const launched = await launchTerminal({ absenceSessionId: entry.absenceSessionId });
+      if (launched.sessionId) {
+        resetAllStores();
+        await openSession(launched.sessionId);
+      } else {
+        setNotice(t("pi is continuing that conversation in a new terminal — Absence is watching."));
+      }
     });
 
-  const openProxy = (row: AcpProxySessionRow) =>
-    withBusy(row.id, async () => {
-      if (!row.sessionId) return;
-      resetAllStores();
-      await openSession(row.sessionId);
-    });
-
-  /** Remove one archive entirely (events, runs, files, metrics, the row). */
+  /** 删除一份归档(事件、run、文件版本、指标与行本身)。 */
   const removeArchive = (entry: SessionHistoryEntry) =>
     withBusy(`del-${entry.id}`, async () => {
       if (!entry.absenceSessionId) return;
@@ -126,159 +107,130 @@ export function Observatory() {
       setSessions((current) => current.filter((row) => row.id !== entry.id));
     });
 
-  void tick; // the clock re-renders the "ago" columns
-
   return (
-    <div className="picker-root">
-      <div className="picker-shell">
-        <header className="picker-head">
-          <h1 className="picker-title">ABSENCE</h1>
-          <p className="picker-sub">{t("The observation board — nothing here starts an agent.")}</p>
+    <div className="mon-root picker-root">
+      {window.absenceDesktop ? (
+        <div className="absence-drag absolute inset-x-0 top-0 z-10 flex h-8 items-stretch justify-end">
           <WindowControls />
+        </div>
+      ) : null}
+
+      <div className="picker">
+        <header className="picker__brand">
+          <h1>
+            ABSENCE
+            <span>发呆症</span>
+          </h1>
         </header>
 
-        {error ? <p className="picker-error">{error}</p> : null}
+        <div className="picker__body">
+          <div className="picker__main">
+            <section className="picker__block">
+              <label className="picker__label" htmlFor="project-path">
+                {t("project path")}
+              </label>
+              <div className="picker__openrow">
+                <input
+                  id="project-path"
+                  value={path}
+                  onChange={(e) => setPath(e.target.value)}
+                  placeholder="E:/path/to/project"
+                  spellCheck={false}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && path.trim() && !busy) void start(path);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={busy !== undefined || !path.trim()}
+                  aria-label="打开项目"
+                  onClick={() => void start(path)}
+                >
+                  {busy === path ? t("opening…") : t("Open")}
+                </button>
+              </div>
+              {error ? <div className="picker__error">{error}</div> : null}
+              {notice ? <div className="picker__note">{notice}</div> : null}
+            </section>
 
-        <section className="picker-card">
-          <h2 className="picker-card__title">{t("Live observation — transcripts")}</h2>
-          <p className="picker-card__note">
-            {t("Session files the agent software writes on its own. Attach one to monitor it, whenever you like.")}
-          </p>
-          {sources.length > 0 ? (
-            <p className="picker-card__note picker-card__note--dim">
-              {sources
-                .map((source) => `${source.label}: ${source.roots.join(", ")}`)
-                .join(" · ")}
-            </p>
-          ) : null}
-          {tails.length === 0 ? (
-            <p className="picker-empty">{t("No transcripts found yet.")}</p>
-          ) : (
-            <ul className="picker-list">
-              {tails.map((row) => (
-                <li key={row.file} className="picker-row">
-                  <span className="picker-row__main">
-                    <span className="picker-row__kind">{row.agentKind}</span>
-                    <span className="picker-row__path" title={row.file}>
-                      {row.projectPath ?? row.file}
-                    </span>
-                  </span>
-                  <span className="picker-row__meta">
-                    {t("{time} active", { time: formatAgo(row.lastActivityAt) })} ·{" "}
-                    {t("{n} events", { n: row.events })}
-                    {row.malformed > 0 ? ` · ${t("{n} malformed", { n: row.malformed })}` : ""}
-                  </span>
-                  {row.sessionId ? (
+            {projects.length > 0 ? (
+              <section className="picker__block">
+                <label className="picker__label">{t("recent")}</label>
+                <div className="picker__list picker__projects">
+                  {projects.map((project) => (
+                    <button
+                      key={project.path}
+                      type="button"
+                      disabled={busy !== undefined}
+                      aria-label={`打开 ${project.path}`}
+                      onClick={() => void start(project.path)}
+                      title={project.path}
+                    >
+                      <b>{project.name}</b>
+                      <span>{project.path}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </div>
+
+          <section className="picker__block picker__side">
+            <div className="picker__hhead">
+              <label className="picker__label">{t("History")}</label>
+              <span>{t("{n} sessions", { n: visibleSessions.length })}</span>
+            </div>
+            <div className="picker__list picker__history">
+              {visibleSessions.length === 0 ? (
+                <p className="picker__note">
+                  {query
+                    ? t("No saved sessions for this path.")
+                    : t("No saved sessions yet — open a project to start one.")}
+                </p>
+              ) : (
+                visibleSessions.map((session) => (
+                  <div key={session.id} className="picker__hrowwrap">
                     <button
                       type="button"
-                      className="picker-btn"
                       disabled={busy !== undefined}
-                      onClick={() => void attach(row)}
+                      aria-label={`唤起会话 ${session.absenceSessionId ?? session.id}`}
+                      onClick={() => void resume(session)}
+                      title={session.projectPath}
                     >
-                      {busy === row.file ? t("opening…") : t("Open")}
+                      <span className="picker__hrow">
+                        <b>{session.projectPath}</b>
+                        <em>{formatWhen(session.updatedAt)}</em>
+                      </span>
+                      <span className="picker__hmeta">
+                        <span className="picker__hmetatext">
+                          <i data-runtime={session.runtime}>{session.runtime}</i>
+                          {" · "}
+                          {session.messageCount} 条消息
+                          {session.firstPrompt ? ` · ${session.firstPrompt}` : null}
+                        </span>
+                        <em className="picker__hsid" title={session.id}>
+                          {session.absenceSessionId?.slice(-4) ?? session.id.slice(-4)}
+                        </em>
+                      </span>
                     </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="picker-btn picker-btn--pri"
-                      disabled={busy !== undefined}
-                      onClick={() => void attach(row)}
-                    >
-                      {busy === row.file ? t("attaching…") : t("Attach")}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="picker-card">
-          <h2 className="picker-card__title">{t("ACP proxies")}</h2>
-          <p className="picker-card__note">
-            {t("Agents an editor ACP client reaches through Absence's proxy — byte-level facts, exact processes.")}
-          </p>
-          {proxies.length === 0 ? (
-            <p className="picker-empty">{t("No proxy sessions on this host.")}</p>
-          ) : (
-            <ul className="picker-list">
-              {proxies.map((row) => (
-                <li key={row.id} className="picker-row">
-                  <span className="picker-row__main">
-                    <span className="picker-row__kind">{row.label}</span>
-                    <span className="picker-row__path" title={row.cwd}>
-                      {row.cwd}
-                    </span>
-                  </span>
-                  <span className="picker-row__meta">
-                    {row.status}
-                    {row.pid ? ` · pid ${row.pid}` : ""}
-                    {row.endpoint ? ` · ${row.endpoint.host}:${row.endpoint.port}` : ""}
-                    {row.closedAt ? ` · ${t("closed {time}", { time: formatWhen(row.closedAt) })}` : ""}
-                  </span>
-                  {row.sessionId ? (
-                    <button
-                      type="button"
-                      className="picker-btn"
-                      disabled={busy !== undefined}
-                      onClick={() => void openProxy(row)}
-                    >
-                      {t("Open")}
-                    </button>
-                  ) : (
-                    <span className="picker-row__meta">{t("waiting for a client")}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="picker-card">
-          <h2 className="picker-card__title">{t("History")}</h2>
-          <p className="picker-card__note">{t("Everything Absence has already recorded.")}</p>
-          {sessions.length === 0 ? (
-            <p className="picker-empty">{t("No saved sessions yet.")}</p>
-          ) : (
-            <ul className="picker-list">
-              {sessions.map((entry) => (
-                <li key={entry.id} className="picker-row">
-                  <span className="picker-row__main">
-                    <span className="picker-row__kind">{entry.runtime}</span>
-                    <span className="picker-row__path" title={entry.projectPath}>
-                      {entry.projectPath}
-                    </span>
-                  </span>
-                  <span className="picker-row__meta">
-                    {formatWhen(entry.updatedAt)} · {t("{n} msgs", { n: entry.messageCount })}
-                    {entry.firstPrompt ? ` · ${entry.firstPrompt}` : ""}
-                  </span>
-                  {entry.absenceSessionId ? (
-                    <>
+                    {session.absenceSessionId ? (
                       <button
                         type="button"
-                        className="picker-btn"
-                        disabled={busy !== undefined}
-                        onClick={() => void resume(entry)}
-                      >
-                        {t("Resume {id}", { id: entry.absenceSessionId.slice(-4) })}
-                      </button>
-                      <button
-                        type="button"
-                        className="picker-btn picker-btn--danger"
+                        className="picker__hdel"
+                        aria-label={t("Delete archive")}
                         title={t("Delete archive")}
                         disabled={busy !== undefined}
-                        onClick={() => void removeArchive(entry)}
+                        onClick={() => void removeArchive(session)}
                       >
                         ✕
                       </button>
-                    </>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );

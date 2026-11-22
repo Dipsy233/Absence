@@ -380,6 +380,10 @@ const ZH: Record<string, string> = {
   "Delete archive": "删除归档",
   "Delete the archive of {path}? This cannot be undone.":
     "删除 {path} 的归档?此操作不可撤销。",
+  "pi is running in a new terminal — Absence is watching.":
+    "已在新终端启动 pi —— Absence 正在旁观。",
+  "pi is continuing that conversation in a new terminal — Absence is watching.":
+    "已在新终端继续这场对话 —— Absence 正在旁观。",
   "Absence only watches — the choice belongs to the agent's own client.":
     "Absence 只旁观——选择权属于智能体自己的客户端。",
 

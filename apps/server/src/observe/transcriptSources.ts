@@ -10,6 +10,15 @@ import path from "node:path";
  * (`feed`/`drain` → AbsenceEvent) registered here; nothing else in the server
  * knows or cares where facts came from.
  */
+export interface TranscriptLaunch {
+  /** The command the user's terminal runs, resolved via PATH like always. */
+  command: string;
+  /** Extra args for a fresh session. */
+  args?: string[];
+  /** Args that point the agent at an existing transcript (resume). */
+  resume?(transcriptFile: string): string[];
+}
+
 export interface TranscriptSourceProfile {
   id: string;
   label: string;
@@ -23,6 +32,13 @@ export interface TranscriptSourceProfile {
   dirEnvSuffix?: string;
   /** The env naming the sessions directory directly; wins over `dirEnv`. */
   sessionDirEnv?: string;
+  /**
+   * How Absence opens the user's own terminal on this agent (the auxiliary
+   * launcher). Absence spawns the terminal application and nothing else: it
+   * never speaks to the agent, and observation still rides the transcript.
+   * Absent for sources Absence cannot launch.
+   */
+  launch?: TranscriptLaunch;
 }
 
 export const TRANSCRIPT_SOURCES: readonly TranscriptSourceProfile[] = [
@@ -36,6 +52,12 @@ export const TRANSCRIPT_SOURCES: readonly TranscriptSourceProfile[] = [
     // pi moves its session store with `--session-dir`, the `sessionDir`
     // setting, or this env (docs.pi.dev/latest/sessions.md).
     sessionDirEnv: "PI_CODING_AGENT_SESSION_DIR",
+    // `--session <file>` continues that transcript (real-machine verified:
+    // this exact shape is what ProcessScanner binds attribution by).
+    launch: {
+      command: "pi",
+      resume: (file) => ["--session", file],
+    },
   },
 ];
 

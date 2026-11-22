@@ -205,6 +205,23 @@ export async function fetchProxySessions(): Promise<AcpProxySessionsResponse> {
   return json<AcpProxySessionsResponse>(await fetch("/api/acp-proxy/sessions"));
 }
 
+/**
+ * The auxiliary launcher: open the user's own terminal running the agent —
+ * a fresh session in `cwd`, or continuing the transcript of a known session.
+ * Absence only spawns the terminal; the conversation stays the user's.
+ */
+export async function launchTerminal(
+  target: { cwd?: string; absenceSessionId?: string },
+): Promise<{ ok: true; cwd: string; file?: string; sessionId?: string }> {
+  return json(
+    await fetch("/api/observe/launch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(target),
+    }),
+  );
+}
+
 /* ── Agent Eggs filter profiles (server-side named files) ───────────────── */
 
 export async function fetchEggFilter(): Promise<EggFilterState> {
