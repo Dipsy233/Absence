@@ -21,8 +21,9 @@ write-back path is refused.
 
 - Channel A — transcript tails: `observe/` tails the session files agent
   software writes on its own (pi format; `ABSENCE_OBSERVE_PI_ROOT` override).
-  Attach is automatic while a transcript is active and explicit
-  (`POST /api/observe/attach`) with full backfill otherwise.
+  Discovery lists targets without opening a session; selecting one
+  (`POST /api/observe/watch`, or `absence observe`) attaches it with full
+  backfill. `ABSENCE_AUTO_ATTACH=1` restores recency-based auto-attach.
 - Channel B — the ACP proxy: a proxy session spawns its agent into a
   persisted observed session (channel `acp-proxy`), injects
   `ABSENCE_SESSION_ID` for exact kernel attribution, and projects the
@@ -45,9 +46,6 @@ write-back path is refused.
 - Windows Docker capture is force-disabled (no WSL daemon probing, no env
   re-enable); non-Windows container attribution works from transcript command
   windows.
-- Monitoring is chosen, not assumed: discovery only lists targets, and
-  `POST /api/observe/watch` (or `absence observe`) starts a session with a
-  lease. `ABSENCE_AUTO_ATTACH=1` restores the old recency-based auto-attach.
 - Mid-session attachment is honest: backfill streams in chunks (a record may
   span chunks), the first run is marked `attach`/`truncatedBefore` with no
   invented prompt, and appends during a backfill are read once at the end.

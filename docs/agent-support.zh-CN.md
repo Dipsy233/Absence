@@ -1,202 +1,181 @@
-# Agent 接入（ACP）
+# Agent 接入
 
 [English](agent-support.md) | [简体中文](agent-support.zh-CN.md)
 
-Absence 是 ACP client。本文描述 agent 如何出现在选择器中、Absence 如何启动并驱动它，以及 ACP 更新如何变成 `AbsenceEvent`。系统结构见 [architecture.zh-CN.md](architecture.zh-CN.md)。
+本文说明 Absence 如何观察每种支持的 agent、各通道能看到与看不到什么，以及通道如何配置。系统结构见 [architecture.zh-CN.md](architecture.zh-CN.md)，启动与选择目标见 [observation.zh-CN.md](observation.zh-CN.md)。
 
-## 1. 唯一驱动路径
+## 1. 通道与 agent
 
-```text
-AgentCatalog（profile 数据）
-  → AcpAdapter（会话层）
-  → AcpConnection（NDJSON JSON-RPC 传输）
-  → ACP agent 进程
+除代理通道外，Absence 不启动任何 agent，不发送提示词，也不应答权限请求。
+
+| 通道 | agent | 内容 | 进程归因 |
+|---|---|---|---|
+| `transcript` | Pi | 消息、思考、工具调用与结果、文件写入与编辑、模型切换、用量、回合边界 | pi 可执行文件签名加绝对 `--session` 路径；默认 `pi` 只在与新转录形成无歧义一对一配对时绑定 |
+| `acp-proxy` | 任意 ACP agent | 协议携带的全部内容，含审批与 MCP 调用 | 代理自己 spawn agent 并注入 `ABSENCE_SESSION_ID`，内核观察器精确报告 |
+| `os` | 任意进程 | 进程、文件与资源；不含对话内容 | 用户选择的 pid 与启动时间，或进程表证明的绑定 |
+
+三条通道都不适用的 agent 不可观察。除 pi 的格式外，Absence 不解析任何私有格式。
+
+## 2. Pi 转录
+
+### 2.1 来源
+
+转录源定义在 `apps/server/src/observe/transcriptSources.ts`，当前只有一条 profile：
+
+| 属性 | 值 |
+|---|---|
+| watch 根目录 | `~/.pi/agent/sessions` |
+| 目录覆盖 | `PI_CODING_AGENT_DIR`，其后追加 `sessions` |
+| 会话目录覆盖 | `PI_CODING_AGENT_SESSION_DIR`（优先于目录覆盖） |
+| 测试覆盖 | `ABSENCE_OBSERVE_PI_ROOT` |
+| 记录在会话上的 agent kind | `pi` |
+
+只有位于源根目录内的 `.jsonl` 文件会被观察。
+
+### 2.2 记录映射
+
+解析器是 `apps/server/src/observe/parsers/pi.ts`。格式为 pi 自身的持久化格式，文档在 `docs.pi.dev/latest/session-format.md`；pi 开源，格式可审计。所有事实标记 `source: "transcript"`。
+
+| pi 记录 | Absence 事件 | 保真度 |
+|---|---|---|
+| `session` header（`id`、`cwd`） | 无。提供外部身份与项目路径 | — |
+| `message` 且 `role: "user"` | `message`（`role: user`） | `reported` |
+| `message` 且 `role: "assistant"`，`text` 块 | `message`（`role: assistant`） | `reported` |
+| `message` 且 `role: "assistant"`，`thinking` 块 | `thinking` | `reported` |
+| `message` 且 `role: "assistant"`，`toolCall` 块 | `tool_start` | `reported` |
+| `message` 且 `role: "toolResult"` | `tool_end` 与映射后的事实 | `reported` |
+| `message` 且 `role: "assistant"`，`stopReason` ≠ `toolUse` | `agent_end`，有 token 数据时随后 `usage` | `inferred` / `reported` |
+| `message` 且 `role: "assistant"`，回合首条记录 | `agent_start` | `inferred` |
+| `model_change` | `message`（`role: system`），内容为模型名 | `reported` |
+| `compaction`、`branch_summary`、`custom_message` | `message`（`role: system`），内容为摘要文本 | `reported` |
+| `system` 消息、`usage`、`context_edit`、`label`、`custom`、`session_info`、`thinking_level_change` | 无 | — |
+
+工具结果经共享的 `AcpToolMapper` 映射，因此转录产出的事实形状与 ACP 会话一致。`write` 与 `edit` 直接由参数映射，避免 mapper 的写入路径重复报告同一次写入。
+
+### 2.3 回合边界
+
+`stopReason` 取值为 `stop`、`toolUse`、`error`、`aborted`、`length`。`toolUse` 保持回合打开，其他值以 `agent_end` 关闭回合。原因映射为 run 状态：`aborted` 为 `interrupted`，`error` 为 `error`，其余为 `completed`。
+
+run 由用户消息打开。文件在回合中间开始时，首个 run 标记 `boundarySource: "attach"` 与 `truncatedBefore: true`，prompt 为空，不编造内容。
+
+### 2.4 用量
+
+每条 assistant 记录携带 `input`、`output`、`cacheRead`、`cacheWrite` 与 `reasoning`。回合结束时解析器发出一条 `usage` 事件，包含输出合计、context 占用最大值（`input + cacheRead + cacheWrite`）与模型名。数值来自转录，payload 标记 `estimated: true`。
+
+### 2.5 树语义
+
+pi 记录通过 `id`/`parentId` 构成树。解析器按文件顺序处理，即用户实际经历的次序；不回放分支。`context_edit` 改写模型视角，不应用。
+
+### 2.6 降级
+
+| 情况 | 行为 |
+|---|---|
+| 行不是 JSON | 计入 malformed，跳过 |
+| `toolResult` 无匹配的 `toolCall` | 计入 orphan result，跳过 |
+| 记录类型未知 | 静默跳过 |
+| 文件缺失 | 行保留并标记 `missing`，不读取 |
+| 文件超过 200 MiB | 从文件当前末尾开始观察 |
+
+## 3. ACP 代理
+
+### 3.1 启动代理会话
+
+```bash
+npx tsx apps/server/src/cli.ts proxy --project /path/to/project --label pi-acp -- pi-acp
 ```
 
-`AgentCatalog` 把一个 profile 解析成启动命令、就绪状态与可选的发现来源。`AcpAdapter` 启动进程并持有会话。`AcpConnection` 执行 `initialize`、`session/new` 或恢复、`session/prompt`、`session/cancel` 与 `session/close`。所有内置 agent 与自定义入口都使用这条路径。
+客户端的 stdin/stdout 承载 ACP JSON-RPC 流，Absence 自身的信息只写 stderr。也可以通过 HTTP 启动代理会话，返回一个 localhost 端点供客户端连接：
 
-`apps/server/src/agents/acp` 中没有按产品划分的 adapter 类。产品差异是 `profiles.ts` 中的数据与 `toolRules.json` 中的字段形状规则。`apps/server/src/agents/createAdapter.ts` 的 `createAdapter` 在 profile 为 ready 时返回 `AcpAdapter`，否则抛出 catalog 给出的就绪原因。非 ACP adapter 是检查使用的 `mock` fixture。
+```text
+POST /api/acp-proxy/sessions
+{ "command": ["pi-acp"], "cwd": "/path/to/project", "label": "pi-acp" }
+```
 
-## 2. 发现顺序与回退
+`GET /api/acp-proxy/sessions` 列出代理会话；`DELETE /api/acp-proxy/sessions/:id` 关闭一个。
 
-`AgentCatalog` 按以下顺序解析每个 profile，第一个命中项生效。
+### 3.2 转发与旁听
 
-1. **显式 launch line**
-   - `~/.absence/agents.json` 中的 `launch` 覆盖或自定义 `agents` 条目。
-   - profile 的 `ABSENCE_*_BIN` 环境变量。
-   - 旧版 `~/.absence/runtimes.json` 只读兼容，不写入。
-2. **PATH 上的 ACP 可执行文件** — 依次解析 `discovery.acpBins`，例如 `pi-acp`、`codex-acp`。
-3. **`node_modules` 中的适配器包** — 依次解析 `discovery.acpPackages`，入口默认 `dist/index.js`。搜索向上最多 5 层。
-4. **agent CLI 自带 ACP 模式** — `discovery.cli` 加 `acpArgs`，例如 `gemini --acp`、`qwen --experimental-acp`、`dsh --profile acp`。
-5. **npx 兜底** — 仅当 `ABSENCE_ALLOW_NPX=1` 或 `~/.absence/agents.json` 中 `allowNpx: true` 时启用。版本优先取 profile 的 `npxVersionEnv`，否则取 `npxVersion`。该行标注为临时下载。
-6. **没有 ACP 入口** — agent CLI 存在但没有 ACP 入口时，状态为 `needs-adapter`；两者都不存在时，状态为 `unavailable`。
+代理先把每一行原样转发，再解析。tap 读取已解析的消息，发布标记 `source: "acp-proxy"` 的 `MonitorEvent`，从不向任一传输写入。非 JSON 行记为诊断；始终未获应答的权限请求被记录，而不是代为应答。
 
-显式 launch line 优先于自动发现。显式命令找不到时，该行变为 `unavailable`，原因中给出命令。
+### 3.3 会话持久化
 
-选择器行为：
+观察启用时，代理通过 `SessionStore.createObserved` 创建 channel 为 `acp-proxy` 的观察会话。agent 进程收到指向该会话的 `ABSENCE_SESSION_ID`，内核观察器因此精确归因其进程。会话创建失败时，代理继续转发并记录诊断。
 
-- `unavailable` 行与 `mock` fixture 不显示。
-- `ready`、`needs-adapter` 与 `needs-auth` 行显示。
-- 选择器没有 `allowNpx` 开关。该设置来自 `ABSENCE_ALLOW_NPX` 或 `agents.json` 的 `allowNpx` 字段；服务端 API 可以写入该字段，选择器不暴露它。
-- 选择器没有任意 profile 的 launch line 编辑控件。服务端 `POST /api/runtimes` 接受 launch 覆盖，选择器不调用它。选择器中的编辑入口是自定义 ACP 表单，它写入一条 `agents` 条目。
-- `npm run registry:sync` 把 ACP registry 写入 `~/.absence/registry.json`。服务端启动时不自动同步 registry。registry 条目通过 `npx`、`uvx` 或二进制启动；只有二进制存在或允许 npx 时才可启动。
+### 3.4 投影
 
-## 3. 内置 profile
+`apps/server/src/monitor/projector.ts` 投影 ACP `session/update` 消息：
 
-`apps/server/src/agents/acp/profiles.ts` 内置 7 条 profile。
-
-| profile id | 产品 | 别名 | ACP 入口 / 启动方式 | 认证 | 覆盖变量 |
-|---|---|---|---|---|---|
-| `pi` | Pi | `pi-acp` | PATH `pi-acp`，`node_modules` 中的包 `pi-acp`；只有 `pi` CLI 时为 `needs-adapter`；npx `pi-acp@0.0.34` | 不需要 | `ABSENCE_PI_ACP_BIN`；npx 版本 `ABSENCE_PI_ACP_VERSION` |
-| `codex` | Codex | `codex-acp` | PATH `codex-acp`，`node_modules` 中的包 `@zed-industries/codex-acp`；npx `@zed-industries/codex-acp@0.16.0` | 必须 | `ABSENCE_CODEX_ACP_BIN`；npx 版本 `ABSENCE_CODEX_ACP_VERSION` |
-| `codex-acp-alt` | Codex，替代 ACP 包 | — | 无 PATH 二进制；`node_modules` 中的包 `codex-acp`；显式路径、覆盖或 npx `codex-acp@1.11.0` | 必须 | `ABSENCE_CODEX_ACP_ALT_BIN`；npx 版本 `ABSENCE_CODEX_ACP_ALT_VERSION` |
-| `dsh` | DSH（DeepSeek Harness） | — | CLI `dsh --profile <dshProfile>`；默认 profile 为 `acp` | 不需要 | `ABSENCE_DSH_BIN`、`ABSENCE_DSH_PROFILE`、`ABSENCE_DSH_HOME`、`ABSENCE_DSH_PROVIDER`、`ABSENCE_DSH_MODEL` |
-| `claude-code` | Claude Code | — | PATH `claude-code-acp`，`node_modules` 中的包 `@zed-industries/claude-code-acp`；只有 `claude` CLI 时为 `needs-adapter`；npx `@zed-industries/claude-code-acp` | 可选 | `ABSENCE_CLAUDE_ACP_BIN` |
-| `qwen-code` | Qwen Code | — | CLI `qwen --experimental-acp` | 可选 | `ABSENCE_QWEN_ACP_BIN` |
-| `gemini` | Gemini | `gemini-cli` | CLI `gemini --acp` | 可选 | `ABSENCE_GEMINI_ACP_BIN` |
-
-profile 说明：
-
-- `npxVersion` 只描述 npx 兜底。Absence 不固定已安装适配器的版本；已安装的包保持自身版本。
-- Pi 通过 `pi-acp` 适配器接入。`pi-acp` 是 ACP server；Absence 启动 PATH 或 `node_modules` 中已安装的 `pi-acp`。
-- `codex-acp-alt` 对应替代 `codex-acp` 包，该包声明不同的会话能力。profile 未声明 PATH 二进制；其包名为 `codex-acp`，解析器的 `node_modules` 步骤适用。显式路径或覆盖也可以启动它。
-- DSH profile 的说明提到已保存路径与 DSH Desktop 安装。解析器实现 PATH、显式覆盖与 `ABSENCE_DSH_BIN`，不探测 DSH Desktop 安装目录。
-- Claude Code 的 profile 从宿主环境转发 `ANTHROPIC_API_KEY` 与 `ANTHROPIC_BASE_URL`。Qwen Code 的 profile 从宿主环境转发 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 与 `OPENAI_MODEL`。
-
-## 4. 就绪状态、认证与自定义入口
-
-就绪状态：
-
-| 状态 | 含义 |
+| `sessionUpdate` | 结果 |
 |---|---|
-| `ready` | 找到可执行的 ACP 入口。 |
-| `needs-adapter` | agent CLI 存在，但没有 ACP 入口。该行带安装提示；Absence 不执行提示中的命令。 |
-| `needs-auth` | 入口存在，profile 要求认证，且只读探测未找到凭据。 |
-| `unavailable` | ACP 入口与 agent CLI 都不存在。该行在选择器中隐藏。 |
+| `agent_message_chunk` | `message`（`role: assistant`，流式） |
+| `agent_thought_chunk` | `thinking`（流式） |
+| `tool_call` | `tool_start`；终态时 `tool_end` 与映射事实 |
+| `tool_call_update` | 运行中节流的 `tool_update`；终态时 `tool_end` 与映射事实 |
+| `plan` | `message`（`role: system`），内容为 plan entries 的 JSON |
+| `current_mode_update` | `message`（`role: system`），内容为 mode id |
+| `usage_update` | 不生成事件；更新 context 计数 |
+| `config_option_update`、`available_commands_update`、`session_info_update` | 不生成事件；更新会话状态 |
 
-`finalize` 在 profile 的 `auth` 为 `required` 且探测结果为 `missing` 时，把 `ready` 改为 `needs-auth`。探测结果为 `unknown` 时保持 `ready`，并在状态原因中说明登录要求未知，直到 agent 给出答复。
+客户端发来的 `session/prompt` 请求被投影为用户 `message` 并打开 run。agent 对该 prompt 的应答以最终消息与 `agent_end` 关闭 run，不编造用量。
 
-认证状态来自对 agent 自身配置目录的只读探测：
+### 3.5 工具映射
 
-| 状态 | 含义 |
-|---|---|
-| `configured` | 找到凭据文件或环境变量键。 |
-| `missing` | 未找到凭据。 |
-| `unknown` | 位置存在但无法读取，或该 agent 没有探测规则。 |
-| `not-required` | profile 未声明认证要求。 |
+工具调用按 ACP `kind` 映射；`kind` 缺失或为 `other` 时按字段形状经 `ToolRules` 与 `toolRules.json` 判定。规则不按工具标题或产品名分支。
 
-探测位置：
-
-| Agent | 目录 |
-|---|---|
-| Pi | `~/.pi/agent`，或 `PI_CODING_AGENT_DIR` |
-| Codex | `~/.codex`，或 `CODEX_HOME` |
-| Claude Code | `~/.claude`，或 `CLAUDE_CONFIG_DIR` |
-
-探测检查文件是否存在以及声明的模型。它不读取凭据内容，不写入，也不修复或迁移 agent 配置。读取失败时结果为 `unknown`。
-
-自定义 ACP 入口保存在 `~/.absence/agents.json`。catalog 目录默认为 `~/.absence`，可用 `ABSENCE_CATALOG_DIR` 改变；`agents.json` 与 `registry.json` 位于该目录。条目包含 `id`、`label`、`command`、`args`、`env` 与 `cwd`。服务端通过 `/api/agents` 下的 `GET`/`POST`/`PUT`/`DELETE` 提供 CRUD。任何支持 ACP 的可执行文件都可以这样接入，不需要修改代码。
-
-## 5. 会话生命周期与能力门控
-
-`AcpConnection.start()`：
-
-1. 启动子进程，或使用传入的 transport。
-2. 发送 `initialize`，携带 `protocolVersion: 1`、`clientInfo` 与 `clientCapabilities`。文件系统与终端能力默认为 false。
-3. 检查协商版本。版本不为 1 时关闭连接。
-4. 握手前的请求进入 FIFO 队列，握手后按序 flush。
-
-协商的 ACP 协议版本恒为 1（`apps/server/src/agents/acp/protocol/version.ts` 中 `ACP_PROTOCOL_VERSION = 1`，`SUPPORTED_PROTOCOL_VERSIONS = [1]`）。
-
-会话方法：
-
-- `session/new` 发送 `{ cwd, mcpServers: [] }`。agent 读取自己的 MCP 配置。
-- 恢复时，agent 声明 `session/resume` 则调用它，否则在声明时调用 `session/load`。两者都未声明时抛出 `AcpUnsupportedCapabilityError`，`AcpSession.open` 回退到 `session/new`。
-- `session/close` 只在声明时发送，在管道销毁前 await，且可重复调用。
-- prompt block 按声明的 `promptCapabilities` 裁剪。未声明的 image、audio 与 resource block 不发送。
-- agent 发往 client 的 `fs/read_text_file`、`fs/write_text_file` 与 `terminal/*` 请求，因未声明对应能力而返回 JSON-RPC error。未知请求返回 `-32601`。
-- `AcpAdapter.start` 在启动进程前调用 `processWatcher.beginSession(sessionId)`，使进程观察按会话过滤。
-
-## 6. 事件投影
-
-投影入口是 `apps/server/src/monitor/projector.ts` 中的 `AcpMonitorProjector.projectUpdate`。
-
-| ACP `session/update.sessionUpdate` | 结果 |
-|---|---|
-| `agent_message_chunk` | `message` 事件，`role: assistant`，`streaming: true`，带 `delta`。`promptActive=false` 时收到的启动 chunk 被丢弃，因此 `## Skills` 横幅不会被当作说话回合。 |
-| `agent_thought_chunk` | `thinking` 事件，`streaming: true`，带 `delta`。 |
-| `tool_call` | 首次出现发出 `tool_start`；终态发出 `tool_end` 与映射事件。 |
-| `tool_call_update` | 非终态发出节流的 `tool_update`；终态发出 `tool_end` 与映射事件。未见过 `tool_call` 时补一条 `source: reported` 的 `tool_start`。 |
-| `plan` | `message`，`role: system`，内容为 plan entries 的 JSON。 |
-| `current_mode_update` | `message`，`role: system`，内容为 mode id；缺失值标记 `unknown`。 |
-| `usage_update` | 不生成事件。更新 `context.used/total`。 |
-| `config_option_update` | 不生成事件。更新 `AcpConfigOptions`。 |
-| `available_commands_update` | 不生成事件。更新命令补全列表。 |
-| `session_info_update` | 不生成事件。记录标题。 |
-
-工具调用映射依据 ACP `kind` 与字段形状。`kind` 缺失或为 `other` 时，由 `ToolRules` 与 `toolRules.json` 按字段形状判定。规则不按工具标题或产品名分支。
-
-| 解析后的 kind | 事件 | 规则 |
+| 解析后的 kind | 事件 | 说明 |
 |---|---|---|
-| `read` | `file_read` | 路径来自 raw input、`locations` 或 diff block。内容来自 ACP content block；缺失时从磁盘读取，标记 `source: "os"`、`fidelity: "exact"`。行范围来自 `locations.line` 或 raw `offset`/`limit`，否则 `rangeKnown: false`。 |
-| `edit` 且带 content、无旧内容 | `file_write` | 内容来自 raw `content` 或 `new_string`；缺失时从磁盘读取。 |
-| `edit` 其他形状 | `file_edit` | `before`/`after` 来自 ACP diff block 或 raw 旧值/新值。可从磁盘重建完整文件；无法重建时 `fullContent: false`。 |
-| `delete` | `file_change`，`kind: "deleted"` | 路径来自解析结果。 |
-| `move` | `file_change`，`kind: "modified"` | 路径来自解析结果。 |
-| `execute` | `command` | 命令优先级：`rawInput` 的命令字段，然后当调用为 `execute` 且 `rawInput` 无命令时使用 ACP `title`（仅展示兜底，不参与分类）。输出优先级：`rawOutput.aggregatedOutput`，然后 `rawOutput.stdout`/`stderr`，然后流式的 `_meta.terminal_output.data`，然后累积的 `content` chunk。退出码优先级：`rawOutput.exitCode`/`exit_code`/`code`，然后嵌套对象，然后 `_meta.terminal_exit`。缺失时 `exitCodeKnown: false`。被拒绝时 `permissionDenied: true`。terminal block 作为 `terminalId` 原样携带。 |
-| `search` | `search` | 有 query 时 tool 为 `grep`，否则为 `find`。matches 为非空行数。输出截断至 4,000 字符。 |
-| `mcp__<server>__<tool>` | `mcp` | 无论 `kind` 都生成，携带 args、result、structured 与 `isError`。result 截断至 20,000 字符。 |
-| `fetch`、`think`、`other` | 不生成映射事件 | 只保留 `tool_start` 与 `tool_end`。不编造 payload。 |
+| `read` | `file_read` | 路径来自 raw input、`locations` 或 diff 块；内容来自 ACP，或从磁盘读取（`source: os`、`fidelity: exact`）；行范围来自 `locations` 或 raw `offset`/`limit`，否则 `rangeKnown: false` |
+| `edit` 且带内容、无旧内容 | `file_write` | 内容来自 raw `content` 或 `new_string`，或从磁盘读取 |
+| `edit` 其他形状 | `file_edit` | `before`/`after` 来自 diff 块或 raw 值；无法重建文件时 `fullContent: false` |
+| `delete` | `file_change`（`kind: deleted`） | |
+| `move` | `file_change`（`kind: modified`） | |
+| `execute` | `command` | 命令来自 `rawInput`，其次为仅用于展示的 ACP `title`；输出来自聚合输出、stdout/stderr、流式终端输出或 content；退出码来自上报字段，否则 `exitCodeKnown: false`；被拒绝时 `permissionDenied: true` |
+| `search` | `search` | 有 query 时为 `grep`，否则为 `find`；输出截断至 4,000 字符 |
+| `mcp__<server>__<tool>` | `mcp` | 无论 `kind` 都生成；结果截断至 20,000 字符 |
+| `fetch`、`think`、`other` | 不生成映射事件 | 保留 `tool_start` 与 `tool_end`，不编造 payload |
 
-`tool_end` 的 `isError` 来自 `status === "failed"`。一个工具调用恰好产生一条 `tool_start` 与一条 `tool_end`；重复的终态更新被忽略。
+一个工具调用恰好产生一条 `tool_start` 与一条 `tool_end`；重复的终态更新被忽略。每条 `tool_start` / `tool_update` / `tool_end` 原样携带 agent 的 `kind` 与 `title`，与用于展示的 `toolName` 并列。
 
-每条 `tool_start` / `tool_update` / `tool_end` 都原样携带 agent 的 ACP `kind` 与 `title`（当 agent 发送了它们），与用于展示的 `toolName` 并列。不做任何意译，UI 因此能显示协议实际说的话。agent 自己的 `kind` 还先于任何工具名匹配来驱动 agent 状态标签（`read`→reading、`edit`/`delete`/`move`→editing、`execute`→running 等），所以不熟悉的工具名也能正确显示。
+改变文件的调用不会被丢弃。协议称 `edit` 但读不到内容时，从磁盘读取 post-state 记为 `file_write`（`source: os`）；磁盘也读不到时保留一条 `file_change`。空内容的写创建 0 字节文件，是真实的写。
 
-任何改变文件的调用都不会被丢弃。协议说是 `edit` 但调用没带 Absence 能读到的内容时，从磁盘读取 post-state 记为 `file_write`（`source: "os"`）；连磁盘也读不到时，仍留下一条 `file_change` 而非消失。空内容的写（`content: ""`）是真正的写——创建一个 0 字节文件——不是未分类调用。
+### 3.6 审批
 
-`execute` 窗口同时驱动进程归因。projector 在出现 `execute` 工具调用时调用 `ProcessWatcher.begin(command, cwd, toolCallId)`，在终态调用 `end`。该窗口内上报的进程归因到这条命令，命令级的 Agent Eggs 由此产生。窗口携带 ACP 工具调用 id 作为 `ref`，`command` 事件与其观察到的每条 `process` 事件都以 `toolCallId` 携带同一个 id。feed 用这个 id 把一条命令与它自己的进程合并成一个动作行，因此子进程计数更新不会在命令行旁新增一行 RUN。
+只有 `session/request_permission` 转为 `approval` 事件。事件携带 agent 提供的选项。应答发生在 agent 真正运行的地方——代理会话是编辑器客户端，其他情况是 agent 自己的终端界面——由后续事件记录应答结果。Web 客户端只读渲染该卡片。
 
-命令自身的执行器不成为 egg。runtime 为执行命令字符串而启动的 shell（`bash -c "…"`、`pwsh -Command "…"`）就是 `command` 事件已经上报的那条命令。每条工具调用都产出一个 shell egg 会让 Agent Eggs 面板变成命令日志。该 shell 保持 owned，以便后代归因，但不注册为父 egg：它的子进程重新生根、按自身形态判定。命令留下的 daemon 仍成为 egg，沿路的 `ls`/`cat` 仍按 tool 分类。agent 有意启动的 shell（`bash daemon.sh`，无 `-c`）照常参与判定。
+### 3.7 命令窗口
 
-工具与文件事件同时是 assistant 消息的边界：`AcpAdapter` 在发布任何非流式事件前关闭打开中的思考与回复，因此工具调用两侧的文本形成两条消息，各自带有自己的起始时间。
+`execute` 工具调用打开 `ProcessWatcher` 命令窗口，终态更新关闭它。窗口内上报的进程归因到该命令，由此产生命令级 Agent Eggs。窗口携带工具调用 id，`command` 事件与每条观察到的 `process` 事件都带同一个 `toolCallId`，feed 因此把一条命令与其进程合并为一行。
 
-OS 观察者的事实就地标注：`process`、`file_change` 与派生的 `file_write`/`file_edit` 携带 `source: "os"`、`fidelity: "exact"`，不依赖 `unknown` 默认值。shell 写文件产生一个动作：当磁盘 diff 会从同一次变化派生内容事件时，原始 `file_change` 标为 `echo: true`（Activity 隐藏它，Report 不重复计数）。`file_change kind: "modified"` 表明文件已存在，因此派生的写入记为修改。
+执行命令字符串的 shell（`bash -c "…"`、`pwsh -Command "…"`）就是命令本身，不成为 egg；它的子进程重新生根并按自身形态分类。命令留下的 daemon 会成为 egg。agent 有意启动的 shell（`bash daemon.sh`，无 `-c`）照常参与分类。
 
-## 7. 审批、`/auth` 与 `/model`
+## 4. 仅 OS 观察
 
-审批：
+在观测台选择的进程打开 channel 为 `os` 的会话。会话采样其绑定的进程子树：进程、文件与资源，不含对话内容。
 
-- 只有 `session/request_permission` 转为 `approval` 事件。
-- `AcpPermissionBridge.request` 保留 agent 给出的选项。
-- `respondPermission` 把用户选中的 `optionId` 原样作为 ACP outcome 回传。
-- 选择拒绝类选项时记录 tool call id，映射事件带 `permissionDenied`。
-- 取消回合先调用 `permissions.cancelAll()`，等待一帧以确保 JSON-RPC 响应写出，再调用 `session.cancelTurn()`。
-- `session/cancel` 后，看门狗默认等待 10 秒（`ABSENCE_ACP_ABORT_TIMEOUT_MS`），超时后结算回合并报 `error`。
-- 没有自动审批策略。服务端转发用户的选择。
+活动记为 `boundarySource: "activity-burst"` 的 run；无新事实 90 秒（`RUN_BURST_IDLE_MS`）后关闭该 burst。若之后转录被证明属于同一 pid，转录折入同一会话，会话记录两个通道。
 
-认证：
+## 5. 转录与进程的绑定
 
-- `initialize.authMethods` 提供 `/auth` 的选项。
-- `/auth <methodId>` 调用 ACP `authenticate`，然后重开被阻塞的会话。
-- Absence 不读取 token，不代填凭据，不代理 OAuth 流程。它只执行第 4 节描述的只读探测。
+Absence 只在有证据时把转录绑定到 pid：
 
-模型选择：
+| 证据 | 绑定 |
+|---|---|
+| pi 命令行点名转录（`--session <文件>`） | 绝对路径精确匹配 |
+| 默认 `pi` 进程与新转录同时出现 | 仅当恰好一个新进程与恰好一份新转录在五分钟窗口内配对时绑定 |
+| 任何歧义 | 不绑定 |
 
-- agent 的 config option（`session/set_config_option`）就是选择器。`session/new` 与 `config_option_update` 替换 Absence 持有的集合；`model` 类别驱动 `/model` 命令。
-- 只有 agent 广告了模型选择器时，`/model` 才出现在面板中；其选项来自该 option 的取值，选中一项调用 `session/set_config_option`，而不是发送 prompt。
-- `/model <model>` 应用该值并报告 agent 返回的结果。没有广告选择器的 agent 没有 `/model` 条目，手输的 `/model …` 行按普通命令转发，因此自行实现 `/model` 的 agent 仍能收到它。
-- 其他 `/…` 行作为 prompt 发送。`SessionStore.forwardCommand(text)` 的实现是 `this.prompt(text)`。命令面板合并 `available_commands_update` 广告的命令与 `/auth`、`/model` 动作。
+复用的 pid 是不同进程：身份是（pid，启动时间）对。
 
-## 8. 已废弃的专用 adapter
+## 6. Windows 与 Docker
 
-Absence 早期通过每个产品专用的 adapter 接入：
+Windows 不捕获 Docker 容器。`DockerMonitor` 被禁用，不探测 Docker 或 WSL daemon，`ABSENCE_DOCKER=1` 也不会启用。转录中的 Docker 命令仍作为普通命令事实保留。
 
-- Codex adapter 驱动私有的 `codex app-server` 协议并拦截其 shell。DSH adapter 自带 ACP client。Pi adapter 在进程内加载 Pi SDK，并包装 Pi 的 bash 与 PowerShell 操作。
-- 每种实现都需要自己的传输、命令规整与 shell 处理。私有协议不在 Absence 的控制范围内，产品每次变更都需要对应的 adapter 变更。同一套生命周期、权限与事件映射逻辑按产品重复实现，shell 接管又让 Absence 承担了属于 agent 的语义。
-- 这些 adapter 已在 v0.5.0 移除。ACP 路径用 profile 数据与一个通用连接替代它们。自带 ACP 入口的产品不需要 Absence 代码；没有 ACP 入口的产品需要适配器包，或一条自定义 `agents.json` 条目。
+## 7. 开发 fixture
 
-## 9. 开发辅助
+| fixture | 用途 |
+|---|---|
+| `scripts/mock-agent/agent.mjs` | 按 ACP 协议应答的脚本化 agent，不需要模型或凭据。`check:acp-proxy` 与检查中的代理路径使用它 |
+| `apps/server/src/agents/MockAdapter.ts` | Absence 仍然驱动的唯一运行时；通过 `POST /api/sessions` 并指定 `agent: "mock"` 打开。`check:e2e` 使用它 |
+| `scripts/checks/fixtures/` | 离线检查使用的转录与协议 fixture |
 
-- `npm run probe:acp -- <scenario>` 用脚本化 fixture agent 驱动采集管道，并打印每条 `AbsenceEvent`。`ABSENCE_ACP_BIN` 可把它指向真实 agent。
-- `npm run check:agent-catalog` 检查发现顺序、就绪状态、`+` 格子与 registry 行为。
-- `scripts/acp-fixture/fake-agent.mjs` 是一个按真实 ACP 协议通信的脚本化 agent，不需要模型或凭据。`check:acp*` 检查与仿真以它为驱动对象。
+`scripts/mock-agent/run.ts` 仍通过已移除的 ACP profile 路径创建会话，在本构建上无法运行，因此 `npm run absence-sim` 不是可用的门禁。agent 层由 `npm run check:acp-all`（mapping 与 proxy）与 `npm run check:e2e` 覆盖。

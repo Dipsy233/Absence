@@ -8,6 +8,7 @@
 import { spawn } from "node:child_process";
 import { fstatSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseProxyArgs, type ProxyArgs } from "./cliArgs";
 import { startServer, type RunningServer } from "./index";
 import { proxySessions, createProcessTransport } from "./agents/acp/proxy";
@@ -446,4 +447,15 @@ export async function runCli(argv: string[]): Promise<void> {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+// `tsx apps/server/src/cli.ts …` is a documented entry point: run the CLI when
+// this module is the process entry, and stay importable otherwise (index.ts
+// and the desktop shell import `startServer` without binding a port twice).
+const entry = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+if (entry === import.meta.url) {
+  runCli(process.argv.slice(2)).catch((error) => {
+    process.stderr.write(`${messageOf(error)}${NL}`);
+    process.exit(1);
+  });
 }

@@ -27,7 +27,7 @@ export function createAdapter(kind: AgentKind, options: AdapterOptions): AgentAd
   if (adapter) return adapter;
   throw new Error(
     `Runtime "${kind}" cannot be driven — Absence only observes agents ` +
-      `(transcript tails and the ACP proxy; see docs/refactor-observer.zh-CN.md). ` +
+      `(transcript tails and the ACP proxy; see docs/observation.md). ` +
       `The "mock" fixture is the sole driving runtime, for development and checks.`,
   );
 }

@@ -1,202 +1,181 @@
-# Agent support (ACP)
+# Agent support
 
 [English](agent-support.md) | [简体中文](agent-support.zh-CN.md)
 
-Absence is an ACP client. This document describes how an agent becomes available in the picker, how Absence starts and drives it, and how ACP updates become `AbsenceEvent`. System structure is covered in [architecture.md](architecture.md).
+This document describes how Absence observes each supported agent, what each channel can and cannot see, and how the channels are configured. System structure is described in [architecture.md](architecture.md); starting and selecting targets is described in [observation.md](observation.md).
 
-## 1. The single driver path
+## 1. Channels and agents
 
-```text
-AgentCatalog (profile data)
-  → AcpAdapter (session layer)
-  → AcpConnection (NDJSON JSON-RPC transport)
-  → ACP agent process
+Absence never starts an agent outside the proxy channel, never sends a prompt, and never answers a permission request.
+
+| Channel | Agents | Content | Process attribution |
+|---|---|---|---|
+| `transcript` | Pi | Messages, thinking, tool calls and results, file writes and edits, model changes, usage, turn boundaries | Signature match on the pi executable plus the absolute `--session` path; a default `pi` run binds only on an unambiguous one-to-one pairing with a new transcript |
+| `acp-proxy` | Any ACP agent | Everything the protocol carries, including approvals and MCP calls | The proxy spawns the agent, injects `ABSENCE_SESSION_ID`, and the kernel observer reports it exactly |
+| `os` | Any process | Processes, files and resources; no conversation content | The pid and its start time, chosen by the user or proven by the process table |
+
+An agent with none of these channels is not observable. Absence does not parse any format other than pi's.
+
+## 2. Pi transcripts
+
+### 2.1 Source
+
+The transcript source is defined in `apps/server/src/observe/transcriptSources.ts`. One profile exists:
+
+| Property | Value |
+|---|---|
+| Watch root | `~/.pi/agent/sessions` |
+| Directory override | `PI_CODING_AGENT_DIR`, with `sessions` appended |
+| Session-directory override | `PI_CODING_AGENT_SESSION_DIR` (wins over the directory override) |
+| Test override | `ABSENCE_OBSERVE_PI_ROOT` |
+| Agent kind recorded on sessions | `pi` |
+
+A file is watched only when it is a `.jsonl` file inside a source root.
+
+### 2.2 Record mapping
+
+The parser is `apps/server/src/observe/parsers/pi.ts`. The format is pi's own persistence, documented at `docs.pi.dev/latest/session-format.md`; pi is open source, so the format is auditable. Every fact is tagged `source: "transcript"`.
+
+| pi record | Absence event | Fidelity |
+|---|---|---|
+| `session` header (`id`, `cwd`) | None. Supplies the external identity and project path. | — |
+| `message` with `role: "user"` | `message` (`role: user`) | `reported` |
+| `message` with `role: "assistant"`, `text` block | `message` (`role: assistant`) | `reported` |
+| `message` with `role: "assistant"`, `thinking` block | `thinking` | `reported` |
+| `message` with `role: "assistant"`, `toolCall` block | `tool_start` | `reported` |
+| `message` with `role: "toolResult"` | `tool_end` plus the mapped fact | `reported` |
+| `message` with `role: "assistant"`, `stopReason` ≠ `toolUse` | `agent_end`, then `usage` when tokens were reported | `inferred` / `reported` |
+| `message` with `role: "assistant"`, first record of a turn | `agent_start` | `inferred` |
+| `model_change` | `message` (`role: system`) naming the model | `reported` |
+| `compaction`, `branch_summary`, `custom_message` | `message` (`role: system`) with the summary text | `reported` |
+| `system` message, `usage`, `context_edit`, `label`, `custom`, `session_info`, `thinking_level_change` | None | — |
+
+Tool results are mapped through the shared `AcpToolMapper`, so a transcript produces the same fact shapes an ACP session does. `write` and `edit` are mapped directly from their arguments, because the mapper's write path would otherwise report the same write twice.
+
+### 2.3 Turn boundaries
+
+`stopReason` values are `stop`, `toolUse`, `error`, `aborted` and `length`. `toolUse` keeps the turn open; every other value closes it with `agent_end`. The reason becomes the run status: `aborted` is `interrupted`, `error` is `error`, everything else is `completed`.
+
+A run opens on a user message. A transcript whose file begins inside a turn opens its first run with `boundarySource: "attach"` and `truncatedBefore: true`, an empty prompt and no invented content.
+
+### 2.4 Usage
+
+Each assistant record carries `input`, `output`, `cacheRead`, `cacheWrite` and `reasoning`. At the end of a turn the parser emits one `usage` event with the summed output, the maximum context occupancy (`input + cacheRead + cacheWrite`) and the model. Values come from the transcript and the payload is marked `estimated: true`.
+
+### 2.5 Tree semantics
+
+pi records form a tree through `id`/`parentId`. The parser processes records in file order, which is the order the user experienced; branches are not replayed. `context_edit` rewrites the model's view and is not applied.
+
+### 2.6 Degradation
+
+| Condition | Behaviour |
+|---|---|
+| A line is not JSON | Counted as malformed, skipped |
+| A `toolResult` has no matching `toolCall` | Counted as an orphan result, skipped |
+| A record type is unknown | Skipped silently |
+| The file is missing | The row is kept and marked `missing`; nothing is read |
+| The file exceeds 200 MiB | Observation starts at the current end of the file |
+
+## 3. ACP proxy
+
+### 3.1 Starting a proxy session
+
+```bash
+npx tsx apps/server/src/cli.ts proxy --project /path/to/project --label pi-acp -- pi-acp
 ```
 
-`AgentCatalog` resolves a profile into a launch line, a readiness state and an optional discovery origin. `AcpAdapter` spawns the process and owns the session. `AcpConnection` performs `initialize`, `session/new` or resume, `session/prompt`, `session/cancel` and `session/close`. Every built-in agent and every custom entry uses this path.
+The client's stdin/stdout carry the ACP JSON-RPC stream; Absence writes its own messages to stderr only. The proxy can also be started over HTTP, which returns a localhost endpoint for a client to connect to:
 
-`apps/server/src/agents/acp` contains no per-product adapter class. Product differences are data in `profiles.ts` and field-shape rules in `toolRules.json`. `createAdapter` in `apps/server/src/agents/createAdapter.ts` returns an `AcpAdapter` for a ready profile and throws the catalog's readiness reason otherwise. The non-ACP adapter is the `mock` fixture used by checks.
+```text
+POST /api/acp-proxy/sessions
+{ "command": ["pi-acp"], "cwd": "/path/to/project", "label": "pi-acp" }
+```
 
-## 2. Discovery order and fallback
+`GET /api/acp-proxy/sessions` lists proxy sessions; `DELETE /api/acp-proxy/sessions/:id` closes one.
 
-`AgentCatalog` resolves each profile in this order. The first matching entry is used.
+### 3.2 Forwarding and tapping
 
-1. **Explicit launch line**
-   - A `launch` override or a custom `agents` entry in `~/.absence/agents.json`.
-   - The profile's `ABSENCE_*_BIN` environment variable.
-   - A legacy `~/.absence/runtimes.json` is read for compatibility and is not written.
-2. **ACP binary on PATH** — each `discovery.acpBins` entry, for example `pi-acp` or `codex-acp`.
-3. **Adapter package under `node_modules`** — each `discovery.acpPackages` entry, with the entry point defaulting to `dist/index.js`. The search walks up to five parent directories.
-4. **Agent CLI with a built-in ACP mode** — `discovery.cli` plus `acpArgs`, for example `gemini --acp`, `qwen --experimental-acp` or `dsh --profile acp`.
-5. **npx fallback** — only when `ABSENCE_ALLOW_NPX=1` or `allowNpx: true` is set in `~/.absence/agents.json`. The version comes from the profile's `npxVersionEnv` when set, otherwise `npxVersion`. The row is marked as a temporary download.
-6. **No ACP entry** — if the agent CLI exists but no ACP entry does, the state is `needs-adapter`. If neither exists, the state is `unavailable`.
+The proxy forwards each line unchanged before it parses it. The tap reads the parsed message, publishes `MonitorEvent`s tagged `source: "acp-proxy"` and never writes to either transport. Non-JSON lines are recorded as diagnostics; a permission request that is never answered is reported rather than answered.
 
-An explicit launch line takes precedence over discovery. If the explicit command cannot be found, the row becomes `unavailable` with the failed command in the reason.
+### 3.3 Session persistence
 
-Picker behaviour:
+When observation is enabled, the proxy creates an observed session through `SessionStore.createObserved` with channel `acp-proxy`. The agent process receives `ABSENCE_SESSION_ID` naming that session, so the kernel observer attributes its processes exactly. If the session cannot be created, the proxy still forwards and records a diagnostic.
 
-- Rows with `unavailable` and the `mock` fixture are hidden.
-- `ready`, `needs-adapter` and `needs-auth` rows are shown.
-- The picker has no `allowNpx` toggle. The setting comes from `ABSENCE_ALLOW_NPX` or the `allowNpx` field in `agents.json`; the server API can write the field, and the picker does not expose it.
-- The picker has no launch-line editor for arbitrary profiles. The server's `POST /api/runtimes` accepts launch overrides, and the picker does not call it. The editing surface in the picker is the custom ACP form, which writes an `agents` entry.
-- `npm run registry:sync` writes the ACP registry to `~/.absence/registry.json`. The server does not sync the registry at startup. Registry entries launch through `npx`, `uvx` or a binary and start only when the binary exists or npx is allowed.
+### 3.4 Projection
 
-## 3. Built-in profiles
+`apps/server/src/monitor/projector.ts` projects ACP `session/update` messages:
 
-Seven profiles ship in `apps/server/src/agents/acp/profiles.ts`.
-
-| Profile id | Product | Aliases | ACP entry / launch | Auth | Override env |
-|---|---|---|---|---|---|
-| `pi` | Pi | `pi-acp` | PATH `pi-acp`, package `pi-acp` under `node_modules`; CLI `pi` alone gives `needs-adapter`; npx `pi-acp@0.0.34` | none | `ABSENCE_PI_ACP_BIN`; npx version `ABSENCE_PI_ACP_VERSION` |
-| `codex` | Codex | `codex-acp` | PATH `codex-acp`, package `@zed-industries/codex-acp` under `node_modules`; npx `@zed-industries/codex-acp@0.16.0` | required | `ABSENCE_CODEX_ACP_BIN`; npx version `ABSENCE_CODEX_ACP_VERSION` |
-| `codex-acp-alt` | Codex, alternative ACP package | — | No PATH binary; package `codex-acp` under `node_modules`; explicit path, override or npx `codex-acp@1.11.0` | required | `ABSENCE_CODEX_ACP_ALT_BIN`; npx version `ABSENCE_CODEX_ACP_ALT_VERSION` |
-| `dsh` | DSH (DeepSeek Harness) | — | CLI `dsh --profile <dshProfile>`; default profile `acp` | none | `ABSENCE_DSH_BIN`, `ABSENCE_DSH_PROFILE`, `ABSENCE_DSH_HOME`, `ABSENCE_DSH_PROVIDER`, `ABSENCE_DSH_MODEL` |
-| `claude-code` | Claude Code | — | PATH `claude-code-acp`, package `@zed-industries/claude-code-acp` under `node_modules`; CLI `claude` alone gives `needs-adapter`; npx `@zed-industries/claude-code-acp` | optional | `ABSENCE_CLAUDE_ACP_BIN` |
-| `qwen-code` | Qwen Code | — | CLI `qwen --experimental-acp` | optional | `ABSENCE_QWEN_ACP_BIN` |
-| `gemini` | Gemini | `gemini-cli` | CLI `gemini --acp` | optional | `ABSENCE_GEMINI_ACP_BIN` |
-
-Profile notes:
-
-- `npxVersion` describes only the npx fallback. Absence does not pin the version of an installed adapter; the installed package keeps its own version.
-- Pi is not an ACP server. `pi-acp` is the adapter; Absence starts an installed `pi-acp` from PATH or `node_modules`.
-- `codex-acp-alt` covers the alternative `codex-acp` package, which declares different session capabilities. The profile declares no PATH binary; its package name is `codex-acp`, and the resolver's `node_modules` step applies. An explicit path or override also starts it.
-- The DSH profile note mentions a saved path and a DSH Desktop install. The resolver implements PATH, an explicit override and `ABSENCE_DSH_BIN`; it does not probe a DSH Desktop installation directory.
-- Claude Code's profile forwards `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` from the host environment. Qwen Code's profile forwards `OPENAI_API_KEY`, `OPENAI_BASE_URL` and `OPENAI_MODEL`.
-
-## 4. Readiness, authentication and custom entries
-
-Readiness states:
-
-| State | Meaning |
+| `sessionUpdate` | Result |
 |---|---|
-| `ready` | An executable ACP entry was found. |
-| `needs-adapter` | The agent CLI exists, and no ACP entry does. The row carries an install hint; Absence does not run it. |
-| `needs-auth` | The entry exists, and the profile requires authentication while the read-only inspection found no credentials. |
-| `unavailable` | Neither an ACP entry nor the agent CLI was found. The row is hidden from the picker. |
+| `agent_message_chunk` | `message` (`role: assistant`, streaming) |
+| `agent_thought_chunk` | `thinking` (streaming) |
+| `tool_call` | `tool_start`, then `tool_end` and the mapped fact at the terminal update |
+| `tool_call_update` | Throttled `tool_update` while running; `tool_end` and the mapped fact at the terminal update |
+| `plan` | `message` (`role: system`) with the plan entries as JSON |
+| `current_mode_update` | `message` (`role: system`) with the mode id |
+| `usage_update` | No event; updates the context counters |
+| `config_option_update`, `available_commands_update`, `session_info_update` | No event; updates session state |
 
-`finalize` changes a `ready` row to `needs-auth` when the profile's `auth` is `required` and inspection returns `missing`. When inspection returns `unknown`, the row stays `ready` and the state reason says the sign-in requirement is unknown until the agent answers.
+A `session/prompt` request from the client is projected as a user `message` and opens a run. The agent's response to that prompt closes the run with the final message and `agent_end`; no usage is invented.
 
-Authentication status comes from read-only inspection of the agent's own configuration directory:
+### 3.5 Tool mapping
 
-| Status | Meaning |
-|---|---|
-| `configured` | A credential file or environment key was found. |
-| `missing` | No credential was found. |
-| `unknown` | The location exists but cannot be read, or the agent has no inspect rule. |
-| `not-required` | The profile declares no authentication requirement. |
+Tool calls are mapped by ACP `kind` and, when `kind` is missing or `other`, by field shape through `ToolRules` and `toolRules.json`. Rules never branch on tool title or product name.
 
-Inspection locations:
-
-| Agent | Directory |
-|---|---|
-| Pi | `~/.pi/agent`, or `PI_CODING_AGENT_DIR` |
-| Codex | `~/.codex`, or `CODEX_HOME` |
-| Claude Code | `~/.claude`, or `CLAUDE_CONFIG_DIR` |
-
-Inspection checks file presence and declared models. It does not read credential contents, does not write, and does not repair or migrate agent configuration. A read failure produces `unknown`.
-
-Custom ACP entries live in `~/.absence/agents.json`. The catalog directory defaults to `~/.absence` and can be changed with `ABSENCE_CATALOG_DIR`; `agents.json` and `registry.json` live there. An entry has `id`, `label`, `command`, `args`, `env` and `cwd`. The server exposes CRUD through `GET`/`POST`/`PUT`/`DELETE` under `/api/agents`. Any executable that speaks ACP can be added this way without a code change.
-
-## 5. Session lifecycle and capability gating
-
-`AcpConnection.start()`:
-
-1. Spawns the child process or uses an injected transport.
-2. Sends `initialize` with `protocolVersion: 1`, `clientInfo` and `clientCapabilities`. File-system and terminal capabilities are false by default.
-3. Checks the negotiated version. A version other than 1 closes the connection.
-4. Queues requests received before the handshake in FIFO order and flushes them after it.
-
-The negotiated ACP protocol version is always 1 (`ACP_PROTOCOL_VERSION = 1`, `SUPPORTED_PROTOCOL_VERSIONS = [1]` in `apps/server/src/agents/acp/protocol/version.ts`).
-
-Session methods:
-
-- `session/new` sends `{ cwd, mcpServers: [] }`. The agent reads its own MCP configuration.
-- Resume calls `session/resume` if the agent declared it, otherwise `session/load` if declared. If neither is declared, `AcpUnsupportedCapabilityError` is thrown and `AcpSession.open` falls back to `session/new`.
-- `session/close` is sent only when declared, is awaited before the pipe is destroyed, and is idempotent.
-- Prompt blocks are trimmed to the declared `promptCapabilities`. Image, audio and resource blocks that were not declared are not sent.
-- Agent-to-client requests for `fs/read_text_file`, `fs/write_text_file` and `terminal/*` receive a JSON-RPC error because the corresponding capabilities were not declared. Unknown requests receive `-32601`.
-- `AcpAdapter.start` calls `processWatcher.beginSession(sessionId)` before spawning the process, so process observation filters by session.
-
-## 6. Event projection
-
-Projection starts at `AcpMonitorProjector.projectUpdate` in `apps/server/src/monitor/projector.ts`.
-
-| ACP `session/update.sessionUpdate` | Result |
-|---|---|
-| `agent_message_chunk` | `message` event with `role: assistant`, `streaming: true` and a `delta`. A startup chunk received while `promptActive=false` is dropped, so a `## Skills` banner is not treated as a speaking turn. |
-| `agent_thought_chunk` | `thinking` event with `streaming: true` and a `delta`. |
-| `tool_call` | First occurrence emits `tool_start`; the terminal state emits `tool_end` plus a mapped event. |
-| `tool_call_update` | Non-terminal updates emit a throttled `tool_update`; the terminal update emits `tool_end` plus a mapped event. If no `tool_call` was seen, a `tool_start` with `source: reported` is added. |
-| `plan` | `message` with `role: system`, whose content is the JSON of the plan entries. |
-| `current_mode_update` | `message` with `role: system`, whose content is the mode id; missing values are marked `unknown`. |
-| `usage_update` | No event. Updates `context.used/total`. |
-| `config_option_update` | No event. Updates `AcpConfigOptions`. |
-| `available_commands_update` | No event. Updates the command completion list. |
-| `session_info_update` | No event. Records the title. |
-
-Tool-call mapping uses the ACP `kind` and the field shape. When `kind` is missing or `other`, `ToolRules` and `toolRules.json` decide by field shape. The rules do not branch on tool title or product name.
-
-| Resolved kind | Event | Rule |
+| Resolved kind | Event | Notes |
 |---|---|---|
-| `read` | `file_read` | Path from raw input, `locations` or a diff block. Content from the ACP content block; when absent, read from disk with `source: "os"` and `fidelity: "exact"`. Line range from `locations.line` or raw `offset`/`limit`; otherwise `rangeKnown: false`. |
-| `edit` with content and no old content | `file_write` | Content from raw `content` or `new_string`; read from disk when absent. |
-| `edit`, other shapes | `file_edit` | `before`/`after` from the ACP diff block or raw old/new values. A complete file can be rebuilt from disk; if not, `fullContent: false`. |
-| `delete` | `file_change` with `kind: "deleted"` | Path from the resolved fields. |
-| `move` | `file_change` with `kind: "modified"` | Path from the resolved fields. |
-| `execute` | `command` | Command precedence: `rawInput` command fields, then the ACP `title` when the call is `execute` and `rawInput` carries none (a display fallback, never a classification). Output precedence: `rawOutput.aggregatedOutput`, then `rawOutput.stdout`/`stderr`, then streamed `_meta.terminal_output.data`, then accumulated `content` chunks. Exit-code precedence: `rawOutput.exitCode`/`exit_code`/`code`, then a nested object, then `_meta.terminal_exit`. Missing codes set `exitCodeKnown: false`. Rejection sets `permissionDenied: true`. A terminal block is carried as `terminalId`. |
-| `search` | `search` | Tool is `grep` when a query exists, otherwise `find`. Match count is non-empty lines. Output is truncated at 4,000 characters. |
-| `mcp__<server>__<tool>` | `mcp` | Emitted regardless of `kind`, with args, result, structured content and `isError`. Result is truncated at 20,000 characters. |
-| `fetch`, `think`, `other` | No mapped event | Only `tool_start` and `tool_end` are kept. No payload is invented. |
+| `read` | `file_read` | Path from raw input, `locations` or a diff block; content from ACP or read from disk (`source: os`, `fidelity: exact`); line range from `locations` or raw `offset`/`limit`, otherwise `rangeKnown: false` |
+| `edit` with content and no prior content | `file_write` | Content from raw `content` or `new_string`, or read from disk |
+| `edit`, other shapes | `file_edit` | `before`/`after` from a diff block or raw values; `fullContent: false` when the file cannot be reconstructed |
+| `delete` | `file_change` (`kind: deleted`) | |
+| `move` | `file_change` (`kind: modified`) | |
+| `execute` | `command` | Command from `rawInput`, then the ACP `title` for display only; output from aggregated output, stdout/stderr, streaming terminal output or content; exit code from reported fields, otherwise `exitCodeKnown: false`; `permissionDenied: true` when refused |
+| `search` | `search` | `grep` when a query is present, otherwise `find`; output truncated to 4,000 characters |
+| `mcp__<server>__<tool>` | `mcp` | Emitted regardless of `kind`; result truncated to 20,000 characters |
+| `fetch`, `think`, `other` | No mapped event | `tool_start` and `tool_end` are kept; no payload is invented |
 
-`tool_end` sets `isError` from `status === "failed"`. A tool call produces exactly one `tool_start` and one `tool_end`; duplicate terminal updates are ignored.
+A tool call produces exactly one `tool_start` and one `tool_end`. A repeated terminal update is ignored. Every `tool_start` / `tool_update` / `tool_end` carries the agent's own `kind` and `title` verbatim alongside the display `toolName`.
 
-Every `tool_start` / `tool_update` / `tool_end` carries the agent's raw ACP `kind` and `title` verbatim (when the agent sent them), alongside the display `toolName`. Nothing is paraphrased, so the UI can show what the protocol actually said. The agent's own `kind` also drives the agent-status label (`read`→reading, `edit`/`delete`/`move`→editing, `execute`→running, …) before any tool-name matching, so an unfamiliar tool name still reads correctly.
+A call that changes a file is never dropped. When the protocol says `edit` but no content is readable, the post-state is read from disk and recorded as `file_write` (`source: os`); when the disk cannot be read either, a `file_change` remains. An empty-content write creates a zero-byte file and is a real write.
 
-No file-mutating call is dropped. When the protocol says `edit` but the call carries no content Absence can read, the post-state is read from disk and recorded as a `file_write` (`source: "os"`); when even disk is unavailable, the call still leaves a `file_change` rather than disappearing. An empty-content write (`content: ""`) is a real write — creating a 0-byte file — not an unclassified call.
+### 3.6 Approvals
 
-The `execute` window also drives process attribution. The projector calls `ProcessWatcher.begin(command, cwd, toolCallId)` when an `execute` tool call appears and `end` at its terminal state. Processes reported during that window are attributed to the command, which produces command-scoped Agent Eggs. The window carries the ACP tool call id as its `ref`, and the `command` event and every `process` event it observed carry that id as `toolCallId`. The feed uses this id to join one command and its own processes into one action row, so a child-count update does not create a RUN row beside the command's row.
+Only `session/request_permission` becomes an `approval` event. The event carries the options the agent offered. The answer is produced wherever the agent really runs — the editor client for a proxied session, the agent's own terminal otherwise — and the resulting events record what was answered. The web client renders the card read-only.
 
-The command's own executor does not become an egg. The shell the runtime spawned to run the command string (`bash -c "…"`, `pwsh -Command "…"`) is the command the `command` event already reports. Registering one shell egg per tool call would turn the Agent Eggs panel into a command log. The shell stays owned so its descendants can be attributed, and it is never registered as a parent egg: its children re-root and are judged on their own. A daemon the command left running still becomes an egg, and the `ls`/`cat` it ran along the way still classify as tools. A shell the agent started deliberately (`bash daemon.sh`, no `-c`) is judged like any other process.
+### 3.7 Command windows
 
-Tool and file events are also assistant-message boundaries: `AcpAdapter` closes the open thought and the open reply before publishing any non-streaming event, so text on either side of a tool call forms two messages, each stamped with its own start.
+An `execute` tool call opens a `ProcessWatcher` command window and the terminal update closes it. Processes reported inside the window are attributed to that command, which produces command-level Agent Eggs. The window carries the tool call id, and both the `command` event and every observed `process` event carry the same `toolCallId`, so the feed merges one command with its own processes into a single row.
 
-OS-watcher facts are tagged where they are created: `process`, `file_change` and the derived `file_write`/`file_edit` carry `source: "os"` and `fidelity: "exact"`; the `unknown` default does not apply. A shell write produces one action: when the disk diff derives a content event from the same change, the raw `file_change` is marked `echo: true` (Activity hides it, the Report does not count it twice). A `file_change kind: "modified"` indicates that the file existed, so the derived write is recorded as a modification.
+The shell that executes a command string (`bash -c "…"`, `pwsh -Command "…"`) is the command itself and does not become an egg; its children are re-rooted and classified on their own shape. A daemon the command leaves behind does become an egg. A shell the agent starts deliberately (`bash daemon.sh`, without `-c`) takes part in classification normally.
 
-## 7. Approvals, `/auth` and `/model`
+## 4. OS-only observation
 
-Approvals:
+A process chosen on the board opens a session with channel `os`. The session samples the process subtree it is bound to: processes, files and resources. It has no conversation content.
 
-- Only `session/request_permission` becomes an `approval` event.
-- `AcpPermissionBridge.request` keeps the options supplied by the agent.
-- `respondPermission` returns the user's selected `optionId` verbatim as the ACP outcome.
-- Selecting a reject option records the tool call id, and the mapped event carries `permissionDenied`.
-- Cancelling a turn calls `permissions.cancelAll()` first, waits one frame so the JSON-RPC response is written, then calls `session.cancelTurn()`.
-- After `session/cancel`, a watchdog waits 10 seconds by default (`ABSENCE_ACP_ABORT_TIMEOUT_MS`) before settling the turn and reporting an `error`.
-- There is no automatic approval policy. The server forwards the user's choice.
+Activity is recorded as runs with `boundarySource: "activity-burst"`; a burst closes after `RUN_BURST_IDLE_MS` (90 s) without a fact. When a transcript later proves to belong to the same pid, the transcript is folded into the same session and the session records both channels.
 
-Authentication:
+## 5. Binding a transcript to a process
 
-- `initialize.authMethods` supplies the options shown for `/auth`.
-- `/auth <methodId>` calls ACP `authenticate` and then reopens the blocked session.
-- Absence does not read tokens, fill credentials or proxy an OAuth flow. It performs only the read-only inspection described in section 4.
+Absence binds a transcript to a pid only on evidence:
 
-Model selection:
+| Evidence | Binding |
+|---|---|
+| The pi command line names the transcript (`--session <file>`) | Exact match on the absolute path |
+| A default `pi` process and a new transcript appear together | Bound only when exactly one new process pairs with exactly one new transcript, within a five-minute window |
+| Anything ambiguous | Not bound |
 
-- The agent's config options (`session/set_config_option`) are the selector. `session/new` and `config_option_update` replace the set Absence holds; the `model` category drives the `/model` command.
-- `/model` is offered in the palette only when the agent advertises a model selector; its choices are the option's values, and choosing one calls `session/set_config_option` rather than sending a prompt.
-- `/model <model>` applies the value and reports what the agent returned. An agent that advertises no selector has no `/model` entry, and a typed `/model …` line is forwarded like any other command so an agent implementing it itself still receives it.
-- Any other `/…` line is sent as a prompt. `SessionStore.forwardCommand(text)` is `this.prompt(text)`. The command panel combines commands advertised through `available_commands_update` with the `/auth` and `/model` actions.
+A reused pid is a different process: identity is the pair (pid, start time).
 
-## 8. Earlier per-product adapters
+## 6. Windows and Docker
 
-Absence previously integrated each product through a dedicated adapter:
+Windows does not capture Docker containers. `DockerMonitor` is disabled, no Docker or WSL daemon is probed and `ABSENCE_DOCKER=1` does not enable it. Docker commands in a transcript remain ordinary command facts.
 
-- The Codex adapter drove the private `codex app-server` protocol and intercepted its shell. The DSH adapter carried its own ACP client. The Pi adapter loaded the Pi SDK in-process and wrapped Pi's bash and PowerShell operations.
-- Each implementation needed its own transport, command normalization and shell handling. A private protocol is outside Absence's control, so every product change required a matching adapter change. The same lifecycle, permission and event-mapping logic was repeated per product, and shell takeover made Absence responsible for semantics that belong to the agent.
-- These adapters were removed in v0.5.0. The ACP path replaces them with profile data and one generic connection. A product that ships an ACP entry requires no Absence code; a product without one needs an adapter package or a custom `agents.json` entry.
+## 7. Development fixtures
 
-## 9. Development aids
+| Fixture | Purpose |
+|---|---|
+| `scripts/mock-agent/agent.mjs` | A scripted ACP agent that needs no model or credentials. Used by `check:acp-proxy` and by the proxy path in checks. |
+| `apps/server/src/agents/MockAdapter.ts` | The only runtime Absence drives; opened through `POST /api/sessions` with `agent: "mock"`. Used by `check:e2e`. |
+| `scripts/checks/fixtures/` | Transcript and protocol fixtures for the offline checks. |
 
-- `npm run probe:acp -- <scenario>` drives the collection pipeline with a scripted fixture agent and prints each `AbsenceEvent`. `ABSENCE_ACP_BIN` points it at a real agent.
-- `npm run check:agent-catalog` checks discovery order, readiness states, the `+` cell and registry behaviour.
-- `scripts/acp-fixture/fake-agent.mjs` is a scripted agent that speaks the real ACP protocol and needs no model or credentials. The `check:acp*` checks and the simulation use it as their target.
+`scripts/mock-agent/run.ts` still starts sessions through the removed ACP profile path and does not run against this build; `npm run absence-sim` is therefore not a usable gate. `npm run check:acp-all` (mapping and proxy) and `npm run check:e2e` cover the agent layer.

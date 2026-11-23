@@ -18,7 +18,9 @@ Absence 不再启动、驱动或应答任何 agent，只做旁观：三条只读
 所有写回路径被拒绝。
 
 - 通道 A 转录尾随：`observe/` 尾随 agent 自己写的会话文件（pi 格式，
-  `ABSENCE_OBSERVE_PI_ROOT` 可覆盖根目录）。
+  `ABSENCE_OBSERVE_PI_ROOT` 可覆盖根目录）。发现只列目标，不创建会话；选中目标
+  （`POST /api/observe/watch` 或 CLI `absence observe`）才回填并开始监控；
+  `ABSENCE_AUTO_ATTACH=1` 恢复按近期活跃度自动挂载。
 - 通道 B ACP 代理：代理会话把 agent spawn 进持久化的观察会话（`acp-proxy`），注入
   `ABSENCE_SESSION_ID` 精确归因，把客户端提示词投影为 run 边界。
 - 通道 C OS 旁观：共享的全机扫描器（`ExternalScanner`）给每个观察会话分发其绑定的
@@ -33,9 +35,6 @@ Absence 不再启动、驱动或应答任何 agent，只做旁观：三条只读
   `ABSENCE_ARCHIVE_SILENCE_MS` 后自动归档。
 - Windows 强制关闭 Docker 容器捕获（不探测 WSL、不能用环境变量重新开启）；非 Windows
   由转录命令窗口归因。
-- 监控是选择而非默认：发现只列目标，`POST /api/observe/watch`（或 CLI
-  `absence observe`）才建会话并记租约；`ABSENCE_AUTO_ATTACH=1` 恢复旧的按活跃度自动
-  挂载。
 - 中途挂载诚实：回填分块流式（单条记录可跨块），首个 run 标 `attach`/`truncatedBefore`
   且不编造提示词，回填期间追加的记录在收尾时补读一次。
 - SQLite schema v7：`transcript_checkpoints` 与事件同事务保存已消费字节偏移和前缀
