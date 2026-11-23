@@ -80,6 +80,10 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
     );
   }
 
+  // A monitor reachable from the network must be able to say who may read
+  // it: loopback needs no token, anything wider does (see ABSENCE_TOKEN).
+  if (config.token !== undefined) installTokenGuard(app, config.token);
+
   await app.register(websocket);
   await app.register(projectRoutes);
   await app.register(sessionRoutes);
@@ -130,6 +134,12 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 
   const port = options.port ?? config.port;
   const host = options.host ?? config.host;
+  if (!isLoopback(host) && config.token === undefined) {
+    throw new Error(
+      `refusing to listen on ${host} without ABSENCE_TOKEN — a network-reachable monitor must be protected. ` +
+        "Set ABSENCE_TOKEN to a secret and open the board with ?token=<secret>.",
+    );
+  }
   try {
     await app.listen({ port, host });
   } catch (error) {
@@ -205,6 +215,33 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
         closeArchive();
       },
     };
+}
+
+/** Loopback addresses need no token; anything wider does. */
+function isLoopback(host: string): boolean {
+  const value = host.trim().toLowerCase();
+  return value === "localhost" || value === "127.0.0.1" || value === "::1" || value === "[::1]" || value === "0:0:0:0:0:0:0:1";
+}
+
+/**
+ * Token enforcement on the observation API and the session sockets.
+ *
+ * Static assets are not guarded: the client reads the token from the URL (or
+ * sessionStorage) and attaches it to every API call and socket, so a wrong
+ * token surfaces as a 401 on the first request instead of a blank page. The
+ * token is accepted as `?token=` or an `x-absence-token` header, compared
+ * verbatim.
+ */
+function installTokenGuard(app: FastifyInstance, token: string): void {
+  app.addHook("onRequest", async (request, reply) => {
+    const url = request.raw.url ?? "";
+    if (!url.startsWith("/api") && !url.startsWith("/ws")) return;
+    const header = request.headers["x-absence-token"];
+    const query = (request.query as { token?: unknown } | undefined)?.token;
+    const provided = typeof header === "string" ? header : typeof query === "string" ? query : undefined;
+    if (provided === token) return;
+    reply.code(401).send({ error: "token required (pass ?token=<ABSENCE_TOKEN> or the x-absence-token header)" });
+  });
 }
 
 /**

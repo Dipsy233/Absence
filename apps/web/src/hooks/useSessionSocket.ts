@@ -7,6 +7,7 @@ import { useStageStore } from "../stores/stageStore";
 import { useRunsStore } from "../stores/runsStore";
 import { useUiStore } from "../stores/uiStore";
 import { useMetricsStore } from "../stores/metricsStore";
+import { authWsUrl } from "../lib/auth";
 
 /** A user message opens a run; agent_end closes it. Both change History. */
 function isRunBoundary(events: AbsenceEvent[]): boolean {
@@ -55,7 +56,7 @@ export function useSessionSocket(sessionId: string | undefined): void {
 
     const connect = () => {
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-      socket = new WebSocket(`${protocol}://${window.location.host}/ws/sessions/${sessionId}`);
+      socket = new WebSocket(authWsUrl(`${protocol}://${window.location.host}/ws/sessions/${sessionId}`));
 
       socket.onopen = () => {
         if (disposed) return;

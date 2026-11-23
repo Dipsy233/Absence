@@ -13,6 +13,13 @@ export type AgentKind = "pi" | "codex" | "dsh" | "mock" | (string & {});
 export interface AbsenceConfig {
   port: number;
   host: string;
+
+  /**
+   * The access token for a server bound beyond loopback (ABSENCE_TOKEN).
+   * A monitor that can be reached from the network must be able to say who
+   * may read it: without a token, a non-loopback bind is refused.
+   */
+  token?: string;
   /** Directory whose subfolders are offered as projects. */
   projectsRoot: string;
   /** Default agent runtime to use when creating sessions. */
@@ -136,6 +143,7 @@ function envFlag(value: string | undefined, fallback: boolean): boolean {
 export const config: AbsenceConfig = {
   port: Number(process.env.PORT ?? 8848),
   host: process.env.HOST ?? "127.0.0.1",
+  token: process.env.ABSENCE_TOKEN?.trim() || undefined,
   projectsRoot: process.env.ABSENCE_PROJECTS_ROOT ?? path.join(os.homedir(), "projects"),
   defaultAgent: envAgent(),
   dshBin: process.env.ABSENCE_DSH_BIN,
