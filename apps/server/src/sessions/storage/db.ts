@@ -689,10 +689,17 @@ function flushPending(): void {
       INSERT INTO transcript_checkpoints (session_id, byte_offset, digest) VALUES (?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET byte_offset = excluded.byte_offset, digest = excluded.digest
     `);
+    const sessionExists = db.prepare("SELECT 1 AS ok FROM sessions WHERE id = ?");
     const committed = new Map<string, number>();
     for (const [id, entry] of batch) {
       if (entry.events.length === 0) {
-        if (entry.transcript) upsertCheckpoint.run(id, entry.transcript.offset, entry.transcript.digest);
+        // A checkpoint can be queued before the archive row exists (a warm
+        // re-attach on a fresh archive). The foreign key would abort the whole
+        // batch, so an orphan checkpoint is dropped instead — the next fact
+        // queues a new one once the row is there.
+        if (entry.transcript && sessionExists.get(id)) {
+          upsertCheckpoint.run(id, entry.transcript.offset, entry.transcript.digest);
+        }
         continue;
       }
       ensureSessionRow(db, entry.cwd, id, entry.events);
@@ -1126,6 +1133,7 @@ export async function deleteArchive(id: string): Promise<boolean> {
       "metric_chunks",
       "egg_metric_summary",
       "host_metric_chunks",
+      "transcript_checkpoints",
     ]) {
       db.prepare(`DELETE FROM ${table} WHERE session_id = ?`).run(id);
     }
