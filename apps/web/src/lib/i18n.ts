@@ -363,6 +363,7 @@ const ZH: Record<string, string> = {
   "Available to watch": "可监控",
   "{n} viewing": "{n} 人查看",
   "backfilling…": "回填中…",
+  "transcript diverged; re-watch to continue": "转录已改写，重新监控以继续",
   "activity burst": "活动突发",
   "observed mid-run": "中途开始观察",
   "began before watching": "始于观察之前",

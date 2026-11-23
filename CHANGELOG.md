@@ -45,6 +45,17 @@ write-back path is refused.
 - Windows Docker capture is force-disabled (no WSL daemon probing, no env
   re-enable); non-Windows container attribution works from transcript command
   windows.
+- Monitoring is chosen, not assumed: discovery only lists targets, and
+  `POST /api/observe/watch` (or `absence observe`) starts a session with a
+  lease. `ABSENCE_AUTO_ATTACH=1` restores the old recency-based auto-attach.
+- Mid-session attachment is honest: backfill streams in chunks (a record may
+  span chunks), the first run is marked `attach`/`truncatedBefore` with no
+  invented prompt, and appends during a backfill are read once at the end.
+- SQLite schema v7: `transcript_checkpoints` stores the consumed byte offset
+  and a SHA-256 of the prefix in the same transaction as the events. A restart
+  resumes only after the prefix verifies, so offline appends are recovered
+  without duplicating history; a rewritten or truncated transcript stops the
+  merge and the board shows `transcriptResumeBlocked`.
 
 ## v0.5.0 — ACP access layer and UI rebuild
 

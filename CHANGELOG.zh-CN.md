@@ -12,6 +12,36 @@ Absence 从 v0.2.0 到 v0.5.0 的版本索引。每条是摘要，完整说明�
 | v0.3.0 | Codex、DSH 与 shell 接管 | [v0.3.0](docs/releases/v0.3.0.zh-CN.md) |
 | v0.2.0 | 个性化头像与 Agent Eggs 过滤 | [v0.2.0](docs/releases/v0.2.0.zh-CN.md) |
 
+## 未发布 —— 旁观化重构（`re` 分支）
+
+Absence 不再启动、驱动或应答任何 agent，只做旁观：三条只读通道喂同一条事件管线，
+所有写回路径被拒绝。
+
+- 通道 A 转录尾随：`observe/` 尾随 agent 自己写的会话文件（pi 格式，
+  `ABSENCE_OBSERVE_PI_ROOT` 可覆盖根目录）。
+- 通道 B ACP 代理：代理会话把 agent spawn 进持久化的观察会话（`acp-proxy`），注入
+  `ABSENCE_SESSION_ID` 精确归因，把客户端提示词投影为 run 边界。
+- 通道 C OS 旁观：共享的全机扫描器（`ExternalScanner`）给每个观察会话分发其绑定的
+  进程子树；默认 pi 只按无歧义的 1:1 新转录/新进程配对绑定。
+- Web 即观测台：列出转录、代理与历史，从不启动任何东西；聊天输入、斜杠面板、审批
+  按钮、`/model` 切换与所有「+ Chat」入口均已移除，审批卡只读。
+- ACP 驱动栈（AcpAdapter / AcpConnection / AcpSession / 权限桥 / 认证 / 配置项 /
+  AgentCatalog / profiles）已删除；`createAdapter` 只解析 mock fixture，其他会话一律
+  旁观，写回路由返回 403。
+- SQLite schema v5：`sessions.channel`/`external_id`（观察身份）与
+  `runs.boundary_source`；重启后 re-attach 复用归档行；无 viewer 的观察会话静默
+  `ABSENCE_ARCHIVE_SILENCE_MS` 后自动归档。
+- Windows 强制关闭 Docker 容器捕获（不探测 WSL、不能用环境变量重新开启）；非 Windows
+  由转录命令窗口归因。
+- 监控是选择而非默认：发现只列目标，`POST /api/observe/watch`（或 CLI
+  `absence observe`）才建会话并记租约；`ABSENCE_AUTO_ATTACH=1` 恢复旧的按活跃度自动
+  挂载。
+- 中途挂载诚实：回填分块流式（单条记录可跨块），首个 run 标 `attach`/`truncatedBefore`
+  且不编造提示词，回填期间追加的记录在收尾时补读一次。
+- SQLite schema v7：`transcript_checkpoints` 与事件同事务保存已消费字节偏移和前缀
+  SHA-256；重启校验前缀一致才从断点续读，停服期间的追加补上且不重复；转录被改写或
+  截断时停止合并，观测台显示 `transcriptResumeBlocked`。
+
 ## v0.5.0 —— ACP 接入层与界面重构
 
 [v0.5.0 发布说明](docs/releases/v0.5.0.zh-CN.md)

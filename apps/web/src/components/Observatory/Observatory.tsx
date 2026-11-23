@@ -230,6 +230,7 @@ export function Observatory() {
                           {row.agentKind} · {channelLabel(row.channel)} · {formatAgo(row.lastActivityAt, now)} ·{" "}
                           {t("{n} events", { n: row.events })}
                           {row.backfilling ? ` · ${t("backfilling…")}` : ""}
+                          {row.transcriptResumeBlocked ? ` · ${t("transcript diverged; re-watch to continue")}` : ""}
                           {row.leased ? ` · ${t("watching")}` : ""}
                           {row.viewers > 0 ? ` · ${t("{n} viewing", { n: row.viewers })}` : ""}
                         </span>

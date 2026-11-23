@@ -93,6 +93,7 @@ export async function observeRoutes(
         viewers: session.viewerCount(),
         leased: session.hasMonitorLease() || leased.has(session.id),
         ...(session.isBackfilling() ? { backfilling: true } : {}),
+        ...(session.isTranscriptResumeBlocked() ? { transcriptResumeBlocked: true } : {}),
       });
     }
     rows.sort((a, b) => b.lastActivityAt - a.lastActivityAt);

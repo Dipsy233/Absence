@@ -109,7 +109,13 @@ const nodeRequire = createRequire(import.meta.url);
 const { DatabaseSync } = nodeRequire("node:sqlite") as typeof import("node:sqlite");
 
 const DB_FILE = "absence.db";
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
+
+export interface TranscriptCheckpoint {
+  offset: number;
+  /** SHA-256 of the raw bytes up to offset, including the final newline. */
+  digest: string;
+}
 const FLUSH_MS = 50;
 
 let database: DatabaseSyncType | undefined;
@@ -117,7 +123,7 @@ let runIndex: RunIndex | undefined;
 let fileIndex: FileIndex | undefined;
 let pending = new Map<
   string,
-  { cwd: string; events: AbsenceEvent[] }
+  { cwd: string; events: AbsenceEvent[]; transcript?: TranscriptCheckpoint }
 >();
 let flushTimer: NodeJS.Timeout | undefined;
 /** Next `seq` per session, cached so a batch does not re-query MAX(seq). */
@@ -166,6 +172,12 @@ function open(): DatabaseSyncType {
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_path, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS transcript_checkpoints (
+      session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+      byte_offset INTEGER NOT NULL,
+      digest TEXT NOT NULL
+    );
 
     CREATE TABLE IF NOT EXISTS events (
       session_id TEXT NOT NULL,
@@ -610,6 +622,19 @@ export function appendEvents(
   scheduleFlush();
 }
 
+export function queueTranscriptCheckpoint(cwd: string, id: string, transcript: TranscriptCheckpoint): void {
+  const entry = pending.get(id);
+  if (entry) entry.transcript = transcript;
+  else pending.set(id, { cwd: toPosix(path.resolve(cwd)), events: [], transcript });
+  scheduleFlush();
+}
+
+export function readTranscriptCheckpoint(id: string): TranscriptCheckpoint | undefined {
+  flushPending();
+  return open().prepare("SELECT byte_offset AS offset, digest FROM transcript_checkpoints WHERE session_id = ?")
+    .get(id) as TranscriptCheckpoint | undefined;
+}
+
 function scheduleFlush(): void {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {
@@ -640,7 +665,6 @@ function flushPending(): void {
   }
   if (pending.size === 0) return;
   const batch = pending;
-  pending = new Map();
 
   let db: DatabaseSyncType;
   try {
@@ -661,8 +685,16 @@ function flushPending(): void {
     );
     const touch = db.prepare("UPDATE sessions SET updated_at = MAX(updated_at, ?) WHERE id = ?");
 
+    const upsertCheckpoint = db.prepare(`
+      INSERT INTO transcript_checkpoints (session_id, byte_offset, digest) VALUES (?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET byte_offset = excluded.byte_offset, digest = excluded.digest
+    `);
     const committed = new Map<string, number>();
     for (const [id, entry] of batch) {
+      if (entry.events.length === 0) {
+        if (entry.transcript) upsertCheckpoint.run(id, entry.transcript.offset, entry.transcript.digest);
+        continue;
+      }
       ensureSessionRow(db, entry.cwd, id, entry.events);
       let seq = nextSeq.get(id);
       if (seq === undefined) {
@@ -688,8 +720,10 @@ function flushPending(): void {
       fileIndex?.ingest(id, entry.events);
       committed.set(id, seq);
       touch.run(entry.events[entry.events.length - 1]!.timestamp, id);
+      if (entry.transcript) upsertCheckpoint.run(id, entry.transcript.offset, entry.transcript.digest);
     }
     db.exec("COMMIT");
+    pending = new Map();
     for (const [id, seq] of committed) nextSeq.set(id, seq);
   } catch (error) {
     try {

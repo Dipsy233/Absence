@@ -233,6 +233,12 @@ async function main(): Promise<void> {
 
     section("restart recovery");
     await stop(server);
+    const offlineAt = Date.now();
+    const offlineEntry = JSON.stringify({
+      type: "message", id: "u2", parentId: "a1", timestamp: new Date(offlineAt).toISOString(),
+      message: { role: "user", content: [{ type: "text", text: "written while offline" }], timestamp: offlineAt },
+    });
+    await fs.appendFile(leasedFile, offlineEntry + NL);
     server = await boot(stateDir, piRoot, sweepEnv);
     const recovered = await (async () => {
       for (let attempt = 0; attempt < 40; attempt++) {
@@ -243,9 +249,27 @@ async function main(): Promise<void> {
       }
       return undefined;
     })();
-    check("the lease re-attaches after a restart, without the transcript moving", recovered !== undefined, JSON.stringify(recovered));
+    check("the lease re-attaches after a restart", recovered !== undefined, JSON.stringify(recovered));
     check("the recovered session is still leased", recovered?.leased === true);
     check("the recovered session reuses the same archive id", recovered?.sessionId === sessionId, `${recovered?.sessionId} vs ${sessionId}`);
+
+    type EventPage = { events: Array<{ type: string; payload: { role?: string; content?: string } }> };
+    const prompts = async () => (await api<EventPage>(server.port, "GET", `/api/sessions/${sessionId}/events`))
+      .body.events.filter((event) => event.type === "message" && event.payload.role === "user")
+      .map((event) => event.payload.content);
+    const recoveredPrompts = await prompts();
+    check("the pre-restart prompt was not duplicated", recoveredPrompts.filter((text) => text === "keep watching me").length === 1);
+    check("the offline prompt was recovered exactly once", recoveredPrompts.filter((text) => text === "written while offline").length === 1);
+
+    await stop(server);
+    const original = await fs.readFile(leasedFile, "utf8");
+    await fs.writeFile(leasedFile, original.replace("keep watching me", "rewritten prompt") + offlineEntry.replace("written while offline", "after rewrite") + NL);
+    server = await boot(stateDir, piRoot, sweepEnv);
+    const rewrittenPrompts = await prompts();
+    check("a changed prefix is not resumed at the saved offset", !rewrittenPrompts.includes("after rewrite") && !rewrittenPrompts.includes("rewritten prompt"));
+    const blocked = (await api<{ sessions: LiveRow[] }>(server.port, "GET", "/api/observe/live")).body.sessions
+      .find((row) => row.sessionId === sessionId);
+    check("the board is told the transcript diverged", blocked?.transcriptResumeBlocked === true, JSON.stringify(blocked));
 
     section("unwatch");
     const unwatched = await api<{ ok: boolean; removed: boolean }>(server.port, "POST", "/api/observe/unwatch", {

@@ -192,6 +192,12 @@ export interface ObserveLiveRow {
   backfilling?: boolean;
   /** 0..1 progress of that backfill. */
   backfillProgress?: number;
+  /**
+   * The transcript was rewritten or truncated under the saved read position,
+   * so the observer stopped rather than merging unrelated facts. Facts after
+   * the divergence are missing until the target is watched again.
+   */
+  transcriptResumeBlocked?: boolean;
 }
 
 export interface ObserveLiveResponse {

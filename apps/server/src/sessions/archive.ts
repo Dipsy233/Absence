@@ -31,6 +31,8 @@ export {
   readFileVersionSummaries,
   readFileVersionContent,
   readEvents,
+  queueTranscriptCheckpoint,
+  readTranscriptCheckpoint,
   readEventsThrough,
   countEventsBefore,
   readProcessEvents,

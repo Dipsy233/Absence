@@ -293,6 +293,21 @@ export class AbsenceSession {
   isBackfilling(): boolean {
     return this.backfilling;
   }
+
+  /**
+   * True when the transcript changed under the saved read position, so the
+   * observer stopped merging instead of guessing. The board must say so: the
+   * facts after that point are missing, not merely late.
+   */
+  private transcriptResumeBlocked = false;
+
+  setTranscriptResumeBlocked(blocked: boolean): void {
+    this.transcriptResumeBlocked = blocked;
+  }
+
+  isTranscriptResumeBlocked(): boolean {
+    return this.transcriptResumeBlocked;
+  }
   /** Set on an observed session: facts arrive, nothing is ever sent back. */
   readonly observe?: ObserveMeta;
   /**

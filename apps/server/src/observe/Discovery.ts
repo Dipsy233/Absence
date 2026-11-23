@@ -1,8 +1,10 @@
+import { createHash, type Hash } from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
 import type { AbsenceEvent } from "@absence/core";
 import type { AbsenceSession, SessionStore } from "../sessions/SessionStore";
+import { queueTranscriptCheckpoint, readTranscriptCheckpoint } from "../sessions/archive";
 import { PiTranscriptParser } from "./parsers/pi";
 import { TRANSCRIPT_SOURCES, sourceRoots, type TranscriptSourceProfile } from "./transcriptSources";
 import { isNarrowScope, type ObserveMeta } from "./types";
@@ -73,6 +75,8 @@ interface FileTail {
   file: string;
   /** Next byte to read — always just past a newline once parsing started. */
   offset: number;
+  prefixHash?: Hash;
+  resumeBlocked?: boolean;
   parser: PiTranscriptParser;
   session?: AbsenceSession;
   lastActivityAt: number;
@@ -363,7 +367,7 @@ export class DiscoveryService {
 
   /** Attached mode: feed new lines to the session's parser and deliver. */
   private async feedAttached(tail: FileTail): Promise<void> {
-    if (tail.feeding || tail.missing) return;
+    if (tail.feeding || tail.missing || tail.resumeBlocked) return;
     if (!tail.session) return;
     tail.feeding = true;
     tail.changedWhileFeeding = false;
@@ -376,6 +380,7 @@ export class DiscoveryService {
       tail.lastActivityAt = Date.now();
       const events = tail.parser.drain();
       if (events.length > 0) this.deliver(tail, events);
+      this.checkpoint(tail);
     } finally {
       tail.feeding = false;
       if (tail.changedWhileFeeding) await this.feedAttached(tail);
@@ -395,7 +400,8 @@ export class DiscoveryService {
    * The attach transition for a session whose history is already in place
    * (archive replay): same fresh read from byte 0 — the parser's tool-call
    * state must be complete for the lines still to come — but the parsed
-   * facts are discarded instead of delivered.
+   * facts up to the verified checkpoint are discarded instead of delivered.
+   * Archives from older versions have no checkpoint: warm silently once.
    */
   private async warmTail(tail: FileTail): Promise<void> {
     await this.rereadTail(tail, false);
@@ -419,25 +425,48 @@ export class DiscoveryService {
     try {
       tail.parser = new PiTranscriptParser();
       tail.offset = 0;
+      tail.resumeBlocked = false;
       const size = (await fsp.stat(tail.file).catch(() => undefined))?.size ?? 0;
       const total = size > MAX_BACKFILL_BYTES ? 0 : size;
+      const saved = deliver ? undefined : readTranscriptCheckpoint(tail.session.id);
+      if (saved && (saved.offset > size || total === 0)) {
+        tail.resumeBlocked = true;
+        return;
+      }
+      let verifyAt = saved?.offset;
+      tail.prefixHash = total > 0 ? createHash("sha256") : undefined;
       for (;;) {
-        const text = await this.readNewLines(tail, BACKFILL_CHUNK_BYTES);
+        const text = await this.readNewLines(tail, BACKFILL_CHUNK_BYTES, false, verifyAt);
         if (text === undefined) break;
         for (const line of text.split("\n")) {
           await tail.parser.feed(line);
         }
         const events = tail.parser.drain();
-        if (deliver && events.length > 0) this.deliver(tail, events);
+        if (deliver) {
+          if (events.length > 0) this.deliver(tail, events);
+          this.checkpoint(tail);
+        }
+        if (verifyAt !== undefined && tail.offset === verifyAt) {
+          deliver = tail.prefixHash?.copy().digest("hex") === saved?.digest;
+          verifyAt = undefined;
+          if (!deliver) break;
+        }
         tail.backfillProgress = total > 0 ? Math.min(1, tail.offset / total) : 0;
         // Yield to the event loop between chunks: the backfill must not block
         // live writes, sockets or the idle sweep.
         await new Promise<void>((resolve) => setImmediate(resolve));
       }
+      if (!saved || deliver) this.checkpoint(tail);
+      else {
+        // A rewritten/truncated prefix must not be merged into this archive.
+        tail.resumeBlocked = true;
+        tail.prefixHash = undefined;
+      }
       tail.lastActivityAt = Date.now();
     } finally {
       tail.feeding = false;
       tail.session.setBackfilling(false);
+      tail.session.setTranscriptResumeBlocked(tail.resumeBlocked === true);
       tail.backfilling = false;
       tail.backfillProgress = undefined;
     }
@@ -449,7 +478,7 @@ export class DiscoveryService {
    * read — a partial trailing line is the writer's mid-flight flush and is
    * replayed next time.
    */
-  private async readNewLines(tail: FileTail, maxBytes?: number, identityOnly = false): Promise<string | undefined> {
+  private async readNewLines(tail: FileTail, maxBytes?: number, identityOnly = false, endOffset = Infinity): Promise<string | undefined> {
     let stat: Awaited<ReturnType<typeof fsp.stat>>;
     try {
       stat = await fsp.stat(tail.file);
@@ -465,7 +494,7 @@ export class DiscoveryService {
     try {
       const handle = await fsp.open(tail.file, "r");
       try {
-        const available = stat.size - tail.offset;
+        const available = Math.min(stat.size, endOffset) - tail.offset;
         const chunks: Buffer[] = [];
         let read = 0;
         while (read < available) {
@@ -477,7 +506,9 @@ export class DiscoveryService {
           if (newline >= 0) {
             chunks.push(chunk.subarray(0, newline + 1));
             tail.offset += read + newline + 1;
-            return Buffer.concat(chunks).toString("utf8");
+            const raw = Buffer.concat(chunks);
+            tail.prefixHash?.update(raw);
+            return raw.toString("utf8");
           }
           // A single JSON record (e.g. a tool result) can span several chunks.
           chunks.push(chunk);
@@ -521,6 +552,15 @@ export class DiscoveryService {
     this.sessionsByExternal.set(key, session);
     tail.session = session;
     return session;
+  }
+
+  private checkpoint(tail: FileTail): void {
+    const session = tail.session;
+    if (!session || session.isDisposed() || !tail.prefixHash || tail.offset === 0) return;
+    queueTranscriptCheckpoint(session.session.projectPath, session.id, {
+      offset: tail.offset,
+      digest: tail.prefixHash.copy().digest("hex"),
+    });
   }
 
   /** Re-stamp events with the Absence session id and push them into the pipeline. */

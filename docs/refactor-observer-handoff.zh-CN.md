@@ -36,7 +36,7 @@ Absence 已从"驾驶位 + 行车记录仪"重构为**纯旁观监控看板**:�
 
 **验证:** typecheck 三包全绿;`check:observe-transcript` **29/29**(pi fixture:发现/回填/工具生命周期/file_write/usage/中途追加/拒绝驱动/幂等);`check:offline` 全量 34 组全绿;真机冒烟:343 条真实 pi 会话列出、0 误自动挂载(pi 未运行)、手动 attach 完整回填(36/14 真实历史事件)。
 
-**已知遗留:** 转录存活期间重启服务器会为同一外部会话产生新归档行(身份幂等只在内存;正解 = Phase 5 schema v5 的 channel/external_id 列 + re-attach,迁移只做一次);超大转录(>200MB)从尾部开始观察(诚实降级)。
+**已知遗留:** 转录存活期间重启服务器会为同一外部会话产生新归档行(身份幂等只在内存;正解 = Phase 5 schema v5 的 channel/external_id 列 + re-attach,迁移只做一次;续采位置见 Phase 6);超大转录(>200MB)从尾部开始观察(诚实降级)。
 
 ## 3. pi 格式速查(解析器依据,全部真机核实)
 
@@ -103,6 +103,14 @@ Absence 已从"驾驶位 + 行车记录仪"重构为**纯旁观监控看板**:�
 - **re-attach**:`createObserved` 先按 (channel, external_id) 查归档——重启后同一外部会话复用原 absence id、回放历史作为开场事实,不再每次重启新增归档行(Phase 1 已知代价已修);check-observe-transcript 31/31 钉住。
 - **自动归档**:`config.archiveSilenceMs`(`ABSENCE_ARCHIVE_SILENCE_MS`,默认 30 分钟,0 关)——分钟级清扫归档"无 viewer + 无新事实"的观察会话(dispose 不删除;归档留在 History,按需 re-attach);mock fixture 与有 viewer 的会话永不触碰;ws 连接 attach/detach viewer。
 - 剩余小项:双语文档已更新(本文件 + architecture 双语);CHANGELOG;gemini/qwen/dsh 转录源未做(接口缝已在,注册即用);"辅助启动"入口未做(可选,Phase 5 后评估)。
+
+### Phase 6:监控目标选择 + 断点续采(已完成)
+
+- 默认不再按近期转录自动挂载:发现只列目标,`POST /api/observe/watch`(或 CLI `absence observe`)才建会话并记租约。`ABSENCE_AUTO_ATTACH=1` 恢复旧行为。检查用 `check-observe-board` 钉住"仅发现不监控"。
+- 回填分块流式交付,不再把整文件读成一个 Buffer;分块边界可跨单条 JSON 记录;并发 attach 复用同一会话;回填期间追加的记录在收尾时补读一次,不丢不重。
+- 中途挂载的 run 边界:`runs.ts` 仅对 transcript 源、且首个 run 才允许无用户消息开 run(`boundarySource: "attach"` + `truncatedBefore`),后续仍以真实用户消息分界;`markAttachSession` 由 `SessionStore` 按 channel 注册(此前漏注册,检查恒失败)。
+- **停服续采**:schema v7 `transcript_checkpoints(session_id, byte_offset, digest)` 与事件同事务写入;重启 re-attach 时校验前缀 SHA-256,一致则只从断点交付(历史不重复、停服期间追加补上);前缀改写/截断时停止合并在观测台标 `transcriptResumeBlocked`,由用户重新监控。`check-observe-watch` 21 断言覆盖。
+- 空闲归档跳过回填中的会话;`isBackfilling` 同时反映在会话与发现行上。
 
 ## 6. 踩坑记录
 
