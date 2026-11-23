@@ -357,6 +357,12 @@ const ZH: Record<string, string> = {
   // ── Observatory (observation board) ────────────────────────────────────
   "The observation board — nothing here starts an agent.":
     "观测台——这里的一切都不会启动智能体。",
+  "Watching now": "正在监控",
+  "Nothing is being watched yet. Start your agent in its own terminal — it appears here on its own.":
+    "还没有在监控任何东西。在你自己的终端里启动智能体——它会自己出现在这里。",
+  "Available to watch": "可监控",
+  "{n} viewing": "{n} 人查看",
+  "{n} found": "发现 {n} 个",
   "Live observation — transcripts": "活跃观测——转录",
   "Session files the agent software writes on its own. Attach one to monitor it, whenever you like.":
     "智能体软件自己写下的会话文件。随时可以挂载一份来监控它。",

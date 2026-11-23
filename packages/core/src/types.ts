@@ -202,6 +202,17 @@ export type SessionSource = {
   runtime: string;
 };
 
+/**
+ * How facts reach Absence for an observed session:
+ *  - `transcript` — a tail following the session file the agent software
+ *    writes on its own (see observe/Discovery.ts);
+ *  - `acp-proxy`  — the byte-level ACP proxy tap, when a real ACP client is
+ *    pointed at Absence (see agents/acp/proxy/);
+ *  - `os`         — OS observation only: a process the user chose to watch,
+ *    with no content channel (no transcript, no proxy).
+ */
+export type ObserveChannel = "transcript" | "acp-proxy" | "os";
+
 /** One `/` command the agent itself advertised over ACP. */
 export interface AgentCommandInfo {
   name: string;

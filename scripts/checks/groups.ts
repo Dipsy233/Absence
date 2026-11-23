@@ -188,6 +188,7 @@ export const GROUPS: CheckGroup[] = [
       "apps/server/src/agents/acp/proxy/**",
     ],
     checks: [
+      { script: "check-observe-board.ts", timeout: 120_000 },
       { script: "check-observe-transcript.ts", timeout: 120_000 },
       { script: "check-observe-proxy.ts", timeout: 120_000 },
     ],

@@ -10,6 +10,7 @@ import type {
   FileVersionInfo,
   MetricsResponse,
   ObserveDiscoveryResponse,
+  ObserveLiveResponse,
   ObserveSessionRow,
   Project,
   ResumeTarget,
@@ -189,6 +190,11 @@ export async function fetchObserveBoard(): Promise<ObserveDiscoveryResponse> {
   return json<ObserveDiscoveryResponse>(await fetch("/api/observe/sessions"));
 }
 
+/** What Absence is watching right now (the board’s “正在监控”). */
+export async function fetchObserveLive(): Promise<ObserveLiveResponse> {
+  return json<ObserveLiveResponse>(await fetch("/api/observe/live"));
+}
+
 /** Attach one transcript (full backfill) and get its row with the session id. */
 export async function attachTranscript(file: string): Promise<ObserveSessionRow> {
   return json<ObserveSessionRow>(
@@ -203,23 +209,6 @@ export async function attachTranscript(file: string): Promise<ObserveSessionRow>
 /** ACP proxy sessions on this host (the board's proxy section). */
 export async function fetchProxySessions(): Promise<AcpProxySessionsResponse> {
   return json<AcpProxySessionsResponse>(await fetch("/api/acp-proxy/sessions"));
-}
-
-/**
- * The auxiliary launcher: open the user's own terminal running the agent —
- * a fresh session in `cwd`, or continuing the transcript of a known session.
- * Absence only spawns the terminal; the conversation stays the user's.
- */
-export async function launchTerminal(
-  target: { cwd?: string; absenceSessionId?: string },
-): Promise<{ ok: true; cwd: string; file?: string; sessionId?: string }> {
-  return json(
-    await fetch("/api/observe/launch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(target),
-    }),
-  );
 }
 
 /* ── Agent Eggs filter profiles (server-side named files) ───────────────── */

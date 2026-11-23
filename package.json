@@ -28,6 +28,7 @@
     "check:agentwatch": "tsx scripts/checks/check-agentwatch.ts",
     "check:ebpf": "tsx scripts/checks/check-ebpf.ts",
     "check:history": "tsx scripts/checks/check-history.ts",
+    "check:observe-board": "tsx scripts/checks/check-observe-board.ts",
     "check:observe-transcript": "tsx scripts/checks/check-observe-transcript.ts",
     "check:observe-proxy": "tsx scripts/checks/check-observe-proxy.ts",
     "check:agentwatch-external": "tsx scripts/checks/check-agentwatch-external.ts",

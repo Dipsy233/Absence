@@ -259,18 +259,6 @@ fs.appendFileSync(
 const changeReady = await waitForAsync(() => reattached.history().some((event) => event.type === "message" && (event.payload as any).content === "turn three"));
 check("an append after a warm re-attach still reaches the session", changeReady, "turn three seen");
 
-// The launcher spec is profile data: a fresh run is the bare command, a
-// resume points the agent at the transcript file itself (the same shape
-// ProcessScanner binds external attribution by).
-const { agentLineOf } = await import("../../apps/server/src/observe/launcher");
-const profile = (await import("../../apps/server/src/observe/transcriptSources")).TRANSCRIPT_SOURCES[0];
-check("a fresh launch runs the bare agent command", agentLineOf(profile) === "pi", agentLineOf(profile));
-check(
-  "a resume launch names the transcript file",
-  agentLineOf(profile, path.join("C:", "x", "s.jsonl")) === `pi --session ${path.join("C:", "x", "s.jsonl")}`,
-  agentLineOf(profile, path.join("C:", "x", "s.jsonl")),
-);
-
 await discovery.stop();
 await sessionStore.remove(sessionId!);
 

@@ -811,6 +811,18 @@ export class AbsenceSession {
     return this.lastActiveAt;
   }
 
+  /**
+   * When the observer began watching. Facts older than this came from a
+   * backfill (the transcript's own history), so the board can say “monitoring
+   * began at …” instead of pretending it saw the whole conversation live.
+   */
+  readonly watchStartedAt: number = Date.now();
+
+  /** Facts recorded so far (the live window's length). */
+  eventCount(): number {
+    return this.events.length;
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true;
     this.releaseAllCommandWatches();

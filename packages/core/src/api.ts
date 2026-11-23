@@ -9,6 +9,8 @@
    beside the client fetch — and stayed equal only by hand.
    ══════════════════════════════════════════════════════════════════════════ */
 
+import type { ObserveChannel } from "./types";
+
 /** The agent runtimes Absence can drive. ACP agents are data profiles, so the type is open. */
 export type RuntimeKind = "pi" | "codex" | "dsh" | "mock" | (string & {});
 
@@ -143,6 +145,97 @@ export interface ObserveSourceRow {
 export interface ObserveDiscoveryResponse {
   sessions: ObserveSessionRow[];
   sources: ObserveSourceRow[];
+}
+
+/**
+ * One live observed session (GET /api/observe/live) — the board's “正在监控”.
+ *
+ * A session exists here exactly when Absence already holds it in memory and is
+ * feeding it facts. The archive's History rows are separate: a row whose facts
+ * went quiet is archived (removed from this list) but stays in History, and
+ * re-attaching its identity brings it back.
+ */
+export interface ObserveLiveRow {
+  sessionId: string;
+  /** Which observation channel feeds it. */
+  channel: ObserveChannel;
+  /** The agent-side identity of the conversation (see `ObserveMeta.externalId`). */
+  externalId: string;
+  agentKind: string;
+  projectPath: string;
+  /** The transcript file being tailed, when the channel has one. */
+  transcriptFile?: string;
+  /** The agent process the session is bound to, when one is bound. */
+  pid?: number;
+  /** When the archive row was first opened. */
+  startedAt: number;
+  /**
+   * When the observer began watching. Facts older than this came from a
+   * backfill (the transcript's own history) or not at all (OS facts have no
+   * history), so the UI can mark the session's honest beginning.
+   */
+  watchStartedAt: number;
+  lastActivityAt: number;
+  /** Facts recorded so far (the live window's length). */
+  events: number;
+  /** Open WebSocket viewers. */
+  viewers: number;
+  /** True while a user-chosen monitor lease holds this session. */
+  leased?: boolean;
+  /** True while the transcript backfill is still running. */
+  backfilling?: boolean;
+}
+
+export interface ObserveLiveResponse {
+  sessions: ObserveLiveRow[];
+}
+
+/** Why a session's monitoring is not running (see `ObserveWatchResponse`). */
+export type ObserveWatchState = "watching" | "exited" | "missing";
+
+/** The answer to POST /api/observe/watch (selecting a target to monitor). */
+export interface ObserveWatchResponse {
+  sessionId: string;
+  /** Where the panel lives, so a CLI can print one line to paste. */
+  url: string;
+  state: ObserveWatchState;
+}
+
+/**
+ * One thing the board may offer to monitor (GET /api/observe/targets).
+ *
+ * Targets are discovered, not created: a list of what is on this machine right
+ * now, cheap to produce (a process-table signature match, a transcript header,
+ * a proxy registration) and creating no session, watcher or sample. Choosing
+ * one is what attaches it.
+ */
+export interface ObserveTargetRow {
+  /** Stable key: `transcript:<file>`, `proc:<pid>@<startedAt>`, `proxy:<id>`. */
+  key: string;
+  kind: "transcript" | "process" | "proxy";
+  agentKind: string;
+  cwd?: string;
+  pid?: number;
+  transcriptFile?: string;
+  externalId?: string;
+  /** Which channels could observe it. */
+  channels: ObserveChannel[];
+  /**
+   * `running` — a live process; `idle` — a transcript nothing is writing right
+   * now; `exited` — the process is gone; `missing` — the file vanished.
+   */
+  liveness: "running" | "idle" | "exited" | "missing";
+  lastActivityAt: number;
+  /** The live session already watching it, when there is one. */
+  sessionId?: string;
+  /** True when choosing it can start monitoring now. */
+  watchable: boolean;
+  /** Why it cannot be monitored, when `watchable` is false. */
+  reason?: string;
+}
+
+export interface ObserveTargetsResponse {
+  targets: ObserveTargetRow[];
 }
 
 /** One ACP proxy session as the observation board lists it. */

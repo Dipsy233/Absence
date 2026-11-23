@@ -12,6 +12,7 @@ import type {
 import type { StageItem } from "../types/stage";
 import { MAX_SESSION_EVENTS } from "@absence/core";
 import * as api from "../lib/api";
+import { pushSessionRoute } from "../lib/route";
 import { isStageEvent, clearsStage, lastStageAction } from "../lib/events";
 import { applyProcessEvent, sortEggs, type Egg } from "../lib/eggs";
 import { eventsBase, markEventsBase, resetEventCaches } from "../lib/history";
@@ -122,6 +123,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ error: undefined });
     const snapshot = await api.fetchSession(sessionId);
     get().hydrate(snapshot);
+    // The panel is a place: the address bar names it (see lib/route.ts).
+    pushSessionRoute(sessionId);
   },
 
   reset: () => {
