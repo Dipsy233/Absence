@@ -129,6 +129,8 @@ export interface ObserveSessionRow {
   events: number;
   /** Lines that were not JSON. */
   malformed: number;
+  /** The watcher reported the file gone; the row stays, nothing is read. */
+  missing?: boolean;
 }
 
 /** The transcript source this host watches. */

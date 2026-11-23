@@ -257,6 +257,20 @@ export class AbsenceSession {
   isDisposed(): boolean {
     return this.disposed;
   }
+
+  /**
+   * True once `start()` finished. The store registers a session *before* it
+   * starts (so discovery can feed it), and starting builds the project tree
+   * and opens watchers — hundreds of milliseconds on a real project. The idle
+   * sweep must not retire a session that is still being born: its last known
+   * fact can be minutes old (a backfill), so a short threshold would delete it
+   * from under its own start.
+   */
+  private ready = false;
+
+  isReady(): boolean {
+    return this.ready;
+  }
   /** Set on an observed session: facts arrive, nothing is ever sent back. */
   readonly observe?: ObserveMeta;
   /**
@@ -409,6 +423,7 @@ export class AbsenceSession {
         await this.watcher.start();
       }
       await this.flushMeta();
+      this.ready = true;
       this.scheduleState();
       return;
     }
@@ -490,6 +505,7 @@ export class AbsenceSession {
     await this.watcher.start();
 
     await this.flushMeta();
+    this.ready = true;
     this.scheduleState();
   }
 
@@ -786,6 +802,22 @@ export class AbsenceSession {
   /** The dashboard's selected egg gets the 2s cadence back. */
   setMetricsHotEgg(eggPid?: number): void {
     this.metricsSampler.setHotEgg(eggPid);
+  }
+
+  /**
+   * True when a monitor lease holds this session (the user chose to watch it).
+   * A leased session outlives the tab and survives a restart; the idle sweep
+   * keeps it far longer than a merely auto-attached transcript.
+   */
+  private leased = false;
+
+  /** A user choice landed (or was withdrawn) — see observe/watch.ts. */
+  setMonitorLease(leased: boolean): void {
+    this.leased = leased;
+  }
+
+  hasMonitorLease(): boolean {
+    return this.leased;
   }
 
   /**
@@ -1808,12 +1840,15 @@ export class SessionStore {
    * check).
    */
   archiveIdle(): void {
-    const threshold = config.archiveSilenceMs;
-    if (threshold <= 0) return;
     const now = Date.now();
     for (const session of [...this.sessions.values()]) {
       if (session.runtimeDriven) continue;
+      if (!session.isReady()) continue;
       if (session.viewerCount() > 0) continue;
+      // A lease is the user's explicit “keep watching it”, so it gets the long
+      // threshold; an auto-attached transcript gets the short one.
+      const threshold = session.hasMonitorLease() ? config.leaseSilenceMs : config.archiveSilenceMs;
+      if (threshold <= 0) continue;
       if (now - session.lastActiveAtMs() < threshold) continue;
       void this.remove(session.id).catch(() => undefined);
     }

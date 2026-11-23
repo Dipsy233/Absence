@@ -1,17 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  AcpProxySessionRow,
-  ObserveLiveRow,
-  ObserveSessionRow,
-  SessionHistoryEntry,
-} from "@absence/core";
+import type { ObserveLiveRow, ObserveTargetRow, SessionHistoryEntry } from "@absence/core";
 import {
-  attachTranscript,
   deleteSessionArchive,
-  fetchObserveBoard,
   fetchObserveLive,
-  fetchProxySessions,
+  fetchObserveTargets,
   fetchSessionHistory,
+  unwatchSession,
+  watchTarget,
 } from "../../lib/api";
 import { useSessionStore } from "../../stores/sessionStore";
 import { resetAllStores } from "../../stores/reset";
@@ -50,6 +45,23 @@ function channelLabel(channel: string): string {
   return channel;
 }
 
+/** What a target row's liveness reads as. */
+function livenessLabel(row: ObserveTargetRow, t: ReturnType<typeof useT>): string {
+  if (row.sessionId !== undefined) return t("watching");
+  switch (row.liveness) {
+    case "running":
+      return t("running");
+    case "idle":
+      return t("idle");
+    case "exited":
+      return t("exited");
+    case "missing":
+      return t("missing");
+    default:
+      return row.liveness;
+  }
+}
+
 /**
  * The observation board — the app's front door.
  *
@@ -64,8 +76,7 @@ export function Observatory() {
   const openSession = useSessionStore((s) => s.openSession);
 
   const [live, setLive] = useState<ObserveLiveRow[]>([]);
-  const [transcripts, setTranscripts] = useState<ObserveSessionRow[]>([]);
-  const [proxies, setProxies] = useState<AcpProxySessionRow[]>([]);
+  const [targets, setTargets] = useState<ObserveTargetRow[]>([]);
   const [history, setHistory] = useState<SessionHistoryEntry[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState<string>();
@@ -74,16 +85,14 @@ export function Observatory() {
   const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
-    const [liveResult, boardResult, proxyResult, historyResult] = await Promise.allSettled([
+    const [liveResult, targetResult, historyResult] = await Promise.allSettled([
       fetchObserveLive(),
-      fetchObserveBoard(),
-      fetchProxySessions(),
+      fetchObserveTargets(),
       fetchSessionHistory(),
     ]);
     if (!mounted.current) return;
     if (liveResult.status === "fulfilled") setLive(liveResult.value.sessions);
-    if (boardResult.status === "fulfilled") setTranscripts(boardResult.value.sessions);
-    if (proxyResult.status === "fulfilled") setProxies(proxyResult.value.sessions);
+    if (targetResult.status === "fulfilled") setTargets(targetResult.value.targets);
     if (historyResult.status === "fulfilled") setHistory(historyResult.value);
     setNow(Date.now());
   }, []);
@@ -126,16 +135,25 @@ export function Observatory() {
       await openSession(sessionId);
     });
 
-  /** Attach a transcript (full backfill) and open its panel. */
-  const attach = (file: string) =>
-    withBusy(`attach-${file}`, async () => {
-      const row = await attachTranscript(file);
-      if (!row.sessionId) {
-        setError(t("The transcript could not be attached (identity unknown)."));
+  /** Choose a target: attach it, record the lease, open its panel. */
+  const watch = (row: ObserveTargetRow) =>
+    withBusy(`watch-${row.key}`, async () => {
+      if (row.sessionId !== undefined) {
+        resetAllStores();
+        await openSession(row.sessionId);
         return;
       }
+      const result = await watchTarget(row.key);
       resetAllStores();
-      await openSession(row.sessionId);
+      await openSession(result.sessionId);
+    });
+
+  /** Stop monitoring: the lease goes, the archive stays. */
+  const unwatch = (sessionId: string) =>
+    withBusy(`unwatch-${sessionId}`, async () => {
+      await unwatchSession(sessionId);
+      setNotice(t("Stopped watching. Its archive stays in History."));
+      await refresh();
     });
 
   /** Open an archived session: the server replays its own record. */
@@ -159,19 +177,8 @@ export function Observatory() {
     });
 
   const liveIds = useMemo(() => new Set(live.map((row) => row.sessionId)), [live]);
-  const liveExternalIds = useMemo(
-    () => new Set(live.filter((row) => row.channel === "transcript").map((row) => row.externalId)),
-    [live],
-  );
-  /** Transcripts not already watched: the board's “可监控”. */
-  const available = useMemo(
-    () => transcripts.filter((row) => !liveIds.has(row.sessionId ?? "") && !liveExternalIds.has(row.externalId)),
-    [transcripts, liveIds, liveExternalIds],
-  );
-  const waitingProxies = useMemo(
-    () => proxies.filter((row) => !row.sessionId || !liveIds.has(row.sessionId)),
-    [proxies, liveIds],
-  );
+  /** Targets not already being watched — the board's “可监控”. */
+  const available = useMemo(() => targets.filter((row) => row.sessionId === undefined), [targets]);
   /** History rows not currently live — the live ones are in the top section. */
   const archived = useMemo(
     () => history.filter((entry) => !entry.absenceSessionId || !liveIds.has(entry.absenceSessionId)),
@@ -211,20 +218,32 @@ export function Observatory() {
               ) : (
                 <div className="picker__list picker__projects">
                   {live.map((row) => (
-                    <button
-                      key={row.sessionId}
-                      type="button"
-                      disabled={busy !== undefined}
-                      onClick={() => void enter(row.sessionId)}
-                      title={row.transcriptFile ?? row.projectPath}
-                    >
-                      <b>{row.projectPath}</b>
-                      <span>
-                        {row.agentKind} · {channelLabel(row.channel)} · {formatAgo(row.lastActivityAt, now)} ·{" "}
-                        {t("{n} events", { n: row.events })}
-                        {row.viewers > 0 ? ` · ${t("{n} viewing", { n: row.viewers })}` : ""}
-                      </span>
-                    </button>
+                    <div key={row.sessionId} className="picker__hrowwrap">
+                      <button
+                        type="button"
+                        disabled={busy !== undefined}
+                        onClick={() => void enter(row.sessionId)}
+                        title={row.transcriptFile ?? row.projectPath}
+                      >
+                        <b>{row.projectPath}</b>
+                        <span>
+                          {row.agentKind} · {channelLabel(row.channel)} · {formatAgo(row.lastActivityAt, now)} ·{" "}
+                          {t("{n} events", { n: row.events })}
+                          {row.leased ? ` · ${t("watching")}` : ""}
+                          {row.viewers > 0 ? ` · ${t("{n} viewing", { n: row.viewers })}` : ""}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="picker__hdel"
+                        aria-label={t("Stop watching")}
+                        title={t("Stop watching")}
+                        disabled={busy !== undefined}
+                        onClick={() => void unwatch(row.sessionId)}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -233,33 +252,31 @@ export function Observatory() {
             <section className="picker__block">
               <div className="picker__hhead">
                 <label className="picker__label">{t("Available to watch")}</label>
-                <span>{t("{n} found", { n: available.length + waitingProxies.length })}</span>
+                <span>{t("{n} found", { n: available.length })}</span>
               </div>
-              {available.length === 0 && waitingProxies.length === 0 ? (
+              {available.length === 0 ? (
                 <p className="picker__note">{t("No transcripts found yet.")}</p>
               ) : (
                 <div className="picker__list picker__projects">
                   {available.map((row) => (
                     <button
-                      key={row.file}
+                      key={row.key}
                       type="button"
-                      disabled={busy !== undefined}
-                      onClick={() => void attach(row.file)}
-                      title={row.file}
+                      disabled={busy !== undefined || !row.watchable}
+                      onClick={() => void watch(row)}
+                      title={row.reason ?? row.transcriptFile ?? row.cwd ?? row.key}
                     >
-                      <b>{row.projectPath ?? row.file}</b>
+                      <b>{row.cwd ?? row.transcriptFile ?? row.key}</b>
                       <span>
-                        {row.agentKind} · transcript · {formatAgo(row.lastActivityAt, now)} ·{" "}
-                        {busy === `attach-${row.file}` ? t("attaching…") : t("Attach")}
-                      </span>
-                    </button>
-                  ))}
-                  {waitingProxies.map((row) => (
-                    <button key={row.id} type="button" disabled title={row.endpoint ? `${row.endpoint.host}:${row.endpoint.port}` : row.cwd}>
-                      <b>{row.cwd}</b>
-                      <span>
-                        {row.label} · {t("ACP proxies")} ·{" "}
-                        {row.status === "waiting" ? t("waiting for a client") : row.status}
+                        {row.agentKind} · {row.channels.map(channelLabel).join("+")} ·{" "}
+                        {livenessLabel(row, t)} · {formatAgo(row.lastActivityAt, now)}
+                        {row.watchable
+                          ? busy === `watch-${row.key}`
+                            ? ` · ${t("attaching…")}`
+                            : ` · ${t("Monitor")}`
+                          : row.reason
+                            ? ` · ${row.reason}`
+                            : ""}
                       </span>
                     </button>
                   ))}

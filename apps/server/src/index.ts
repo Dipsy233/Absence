@@ -16,6 +16,7 @@ import { proxySessions } from "./agents/acp/proxy";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
 import { DiscoveryService } from "./observe/Discovery";
+import { restoreLeases } from "./observe/watch";
 import { closeArchive, expireArchives } from "./sessions/archive";
 import { sessionStore } from "./sessions/SessionStore";
 import { drainMetrics, expireMetrics } from "./sessions/storage/metrics";
@@ -101,6 +102,12 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
     // env for exact attribution) and the tap's facts land in SQLite and on
     // the WS. Without the store, proxies stay transient byte-forwarders.
     proxySessions.useSessionStore(sessionStore);
+    // The leases are the user's choices from before the restart: re-attach
+    // each one now, so a panel that was being watched is still being watched
+    // (and its History row does not need a second click to come back).
+    void restoreLeases({ discovery }).catch((error) => {
+      app.log.warn(`observation: could not restore every watch lease (${error instanceof Error ? error.message : String(error)})`);
+    });
     app.log.info("observation: transcript discovery active (ABSENCE_OBSERVE=0 to disable)");
   }
 
@@ -168,7 +175,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   // The auto-archive sweep: observed sessions whose facts have gone quiet
   // with nobody watching are archived (dispose, not delete). Every minute —
   // the threshold is minutes by nature, the sweep is only a janitor.
-  const archiveIdleTimer = setInterval(() => sessionStore.archiveIdle(), 60_000);
+  const archiveIdleTimer = setInterval(() => sessionStore.archiveIdle(), config.archiveSweepMs);
   archiveIdleTimer.unref?.();
 
   app.log.info(`ABSENCE server listening on ${url} (agent=${config.defaultAgent})`);

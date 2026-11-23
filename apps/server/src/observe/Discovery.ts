@@ -58,6 +58,8 @@ export interface ObserveDiscoveryRow {
   events: number;
   /** Lines that were not JSON. */
   malformed: number;
+  /** The watcher reported the file gone; the row stays, nothing is read. */
+  missing?: boolean;
 }
 
 interface FileTail {
@@ -124,7 +126,7 @@ export class DiscoveryService {
    * row, or undefined when no tail follows the file.
    */
   async attach(file: string): Promise<ObserveDiscoveryRow | undefined> {
-    const tail = this.tails.get(file);
+    const tail = await this.ensureTail(file);
     if (!tail) return undefined;
     tail.missing = false;
     if (!tail.session) await this.attachTransition(tail);
@@ -143,6 +145,40 @@ export class DiscoveryService {
     return TRANSCRIPT_SOURCES.find((profile) => sourceRoots(profile).some((root) => isWithin(root, file)));
   }
 
+  /**
+   * The tail for a file, created on demand.
+   *
+   * The watcher's add event is not the only way in: a board click or a CLI
+   * `absence observe` can name a transcript the watcher has not reached yet
+   * (a fresh boot, a large session directory), and a racing request must not
+   * 404 because of scan order. The file must still live inside a source root
+   * and exist on disk — that is what makes it this host's transcript.
+   */
+  private async ensureTail(file: string): Promise<FileTail | undefined> {
+    const existing = this.tails.get(file);
+    if (existing) return existing;
+    if (!this.isWatched(file)) return undefined;
+    const profile = this.profileFor(file);
+    if (!profile) return undefined;
+    const stat = await fsp.stat(file).catch(() => undefined);
+    if (stat === undefined || !stat.isFile()) return undefined;
+    const tail: FileTail = {
+      source: profile,
+      file,
+      offset: 0,
+      parser: new PiTranscriptParser(),
+      lastActivityAt: stat.mtimeMs > 0 ? stat.mtimeMs : Date.now(),
+      eventCount: 0,
+      feeding: false,
+    };
+    this.tails.set(file, tail);
+    // Identify first: the header is what the board's row needs, and what a
+    // resume launch resolves the transcript by. Everything past the identity
+    // stays unparsed until the transcript attaches.
+    await this.feedForIdentity(tail);
+    return tail;
+  }
+
   private rowFor(tail: FileTail): ObserveDiscoveryRow {
     return {
       externalId: tail.parser.externalId ?? path.basename(tail.file, path.extname(tail.file)),
@@ -154,27 +190,14 @@ export class DiscoveryService {
       lastActivityAt: tail.lastActivityAt,
       events: tail.eventCount,
       malformed: tail.parser.malformed,
+      ...(tail.missing === true ? { missing: true } : {}),
     };
   }
 
   private async onFileFound(file: string): Promise<void> {
-    if (!this.isWatched(file)) return;
-    const profile = this.profileFor(file);
-    if (!profile || this.tails.has(file)) return;
-    const tail: FileTail = {
-      source: profile,
-      file,
-      offset: 0,
-      parser: new PiTranscriptParser(),
-      lastActivityAt: Date.now(),
-      eventCount: 0,
-      feeding: false,
-    };
-    this.tails.set(file, tail);
-    // Identify first: the header is what the observation board's row needs,
-    // and what a resume launch resolves the transcript by. Everything past
-    // the identity stays unparsed until the transcript attaches.
-    await this.feedForIdentity(tail);
+    const created = !this.tails.has(file);
+    const tail = await this.ensureTail(file);
+    if (!tail || !created) return;
     // A file the agent wrote moments ago is live: attach and backfill at once.
     if (!tail.session && (await this.isRecentlyModified(tail.file))) {
       await this.attachTransition(tail);

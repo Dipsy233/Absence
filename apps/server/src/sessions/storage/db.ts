@@ -109,7 +109,7 @@ const nodeRequire = createRequire(import.meta.url);
 const { DatabaseSync } = nodeRequire("node:sqlite") as typeof import("node:sqlite");
 
 const DB_FILE = "absence.db";
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const FLUSH_MS = 50;
 
 let database: DatabaseSyncType | undefined;
@@ -268,6 +268,26 @@ function open(): DatabaseSyncType {
     ) WITHOUT ROWID;
     CREATE INDEX IF NOT EXISTS idx_host_metric_chunks_ts
       ON host_metric_chunks(session_id, start_ts);
+
+    -- v6: monitor leases. A row exists exactly when the user chose a target on
+    -- the observation board (or a CLI watch). It is what survives a restart:
+    -- the server re-attaches these sessions without waiting for the transcript
+    -- to move, and the idle sweep keeps a leased session longer than a merely
+    -- auto-attached one. Stopping a monitor deletes the row; the archive stays.
+    CREATE TABLE IF NOT EXISTS watch_leases (
+      target_key     TEXT PRIMARY KEY,
+      session_id     TEXT NOT NULL,
+      channel        TEXT NOT NULL,
+      external_id    TEXT NOT NULL,
+      file           TEXT,
+      pid            INTEGER,
+      pid_started_at INTEGER,
+      project_path   TEXT,
+      agent_kind     TEXT,
+      created_at     INTEGER NOT NULL,
+      last_seen_at   INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_watch_leases_session ON watch_leases(session_id);
 
     PRAGMA user_version = ${SCHEMA_VERSION};
   `);

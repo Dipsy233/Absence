@@ -12,6 +12,9 @@ import type {
   ObserveDiscoveryResponse,
   ObserveLiveResponse,
   ObserveSessionRow,
+  ObserveTargetsResponse,
+  ObserveTargetRow,
+  ObserveWatchResponse,
   Project,
   ResumeTarget,
   RunSummary,
@@ -193,6 +196,31 @@ export async function fetchObserveBoard(): Promise<ObserveDiscoveryResponse> {
 /** What Absence is watching right now (the board’s “正在监控”). */
 export async function fetchObserveLive(): Promise<ObserveLiveResponse> {
   return json<ObserveLiveResponse>(await fetch("/api/observe/live"));
+}
+
+/** Everything the board may offer to monitor (nothing is created by listing). */
+export async function fetchObserveTargets(): Promise<ObserveTargetsResponse> {
+  return json<ObserveTargetsResponse>(await fetch("/api/observe/targets"));
+}
+
+/** Choose a target to monitor: attach it and record a lease. */
+export async function watchTarget(key: string): Promise<ObserveWatchResponse> {
+  return json<ObserveWatchResponse>(
+    await fetch("/api/observe/watch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+    }),
+  );
+}
+
+/** Stop monitoring a session. The archive stays. */
+export async function unwatchSession(sessionId: string): Promise<void> {
+  await fetch("/api/observe/unwatch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId }),
+  });
 }
 
 /** Attach one transcript (full backfill) and get its row with the session id. */

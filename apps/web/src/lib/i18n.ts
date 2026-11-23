@@ -363,6 +363,11 @@ const ZH: Record<string, string> = {
   "Available to watch": "可监控",
   "{n} viewing": "{n} 人查看",
   "{n} found": "发现 {n} 个",
+  "Monitor": "监控",
+  "watching": "监控中",
+  "missing": "已丢失",
+  "Stop watching": "停止监控",
+  "Stopped watching. Its archive stays in History.": "已停止监控。归档仍保留在历史中。",
   "Live observation — transcripts": "活跃观测——转录",
   "Session files the agent software writes on its own. Attach one to monitor it, whenever you like.":
     "智能体软件自己写下的会话文件。随时可以挂载一份来监控它。",

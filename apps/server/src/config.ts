@@ -75,6 +75,22 @@ export interface AbsenceConfig {
    * a fact. 0 (ABSENCE_ARCHIVE_SILENCE_MS=0) disables the sweep.
    */
   archiveSilenceMs: number;
+
+  /**
+   * How long a *leased* session (the user explicitly chose to watch it) may sit
+   * silent with nobody viewing before its live view is archived. Longer than
+   * `archiveSilenceMs` on purpose: a lease means “keep watching it” even after
+   * the tab closes, and the archive stays readable either way.
+   * Override with ABSENCE_LEASE_SILENCE_MS; 0 keeps a leased session forever.
+   */
+  leaseSilenceMs: number;
+
+  /**
+   * How often the idle sweep runs. The threshold is minutes by nature; the
+   * sweep is only a janitor. Override with ABSENCE_ARCHIVE_SWEEP_MS (the checks
+   * use this to watch the rules fire in seconds).
+   */
+  archiveSweepMs: number;
   /**
    * Watch Docker containers through the daemon's own event stream (see
    * process/DockerMonitor.ts). A container's processes live inside the
@@ -139,6 +155,12 @@ export const config: AbsenceConfig = {
   maxArchivedSessions: Number.isFinite(Number(process.env.ABSENCE_MAX_ARCHIVED_SESSIONS))
     ? Math.max(0, Math.floor(Number(process.env.ABSENCE_MAX_ARCHIVED_SESSIONS)))
     : 0,
+  archiveSweepMs: Number.isFinite(Number(process.env.ABSENCE_ARCHIVE_SWEEP_MS))
+    ? Math.max(250, Math.floor(Number(process.env.ABSENCE_ARCHIVE_SWEEP_MS)))
+    : 60_000,
+  leaseSilenceMs: Number.isFinite(Number(process.env.ABSENCE_LEASE_SILENCE_MS))
+    ? Math.max(0, Math.floor(Number(process.env.ABSENCE_LEASE_SILENCE_MS)))
+    : 2 * 60 * 60_000,
   archiveSilenceMs: Number.isFinite(Number(process.env.ABSENCE_ARCHIVE_SILENCE_MS))
     ? Math.max(0, Math.floor(Number(process.env.ABSENCE_ARCHIVE_SILENCE_MS)))
     : 30 * 60_000,

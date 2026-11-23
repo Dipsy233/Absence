@@ -30,6 +30,7 @@
     "check:history": "tsx scripts/checks/check-history.ts",
     "check:observe-board": "tsx scripts/checks/check-observe-board.ts",
     "check:observe-transcript": "tsx scripts/checks/check-observe-transcript.ts",
+    "check:observe-watch": "tsx scripts/checks/check-observe-watch.ts",
     "check:observe-proxy": "tsx scripts/checks/check-observe-proxy.ts",
     "check:agentwatch-external": "tsx scripts/checks/check-agentwatch-external.ts",
     "check:mcp": "tsx scripts/checks/check-mcp-events.ts",
