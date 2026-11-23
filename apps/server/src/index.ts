@@ -17,6 +17,7 @@ import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
 import { DiscoveryService } from "./observe/Discovery";
 import { restoreLeases } from "./observe/watch";
+import { installOsWatch } from "./observe/watchOs";
 import { closeArchive, expireArchives } from "./sessions/archive";
 import { sessionStore } from "./sessions/SessionStore";
 import { drainMetrics, expireMetrics } from "./sessions/storage/metrics";
@@ -105,6 +106,9 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
     // The leases are the user's choices from before the restart: re-attach
     // each one now, so a panel that was being watched is still being watched
     // (and its History row does not need a second click to come back).
+    // The OS-only channel (`proc:` targets) registers its resolver before any
+    // watch can arrive.
+    installOsWatch();
     void restoreLeases({ discovery }).catch((error) => {
       app.log.warn(`observation: could not restore every watch lease (${error instanceof Error ? error.message : String(error)})`);
     });

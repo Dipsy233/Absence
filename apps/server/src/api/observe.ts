@@ -5,12 +5,11 @@ import type {
   ObserveLiveRow,
   ObserveSessionRow,
   ObserveTargetsResponse,
-  ObserveTargetRow,
   ObserveWatchResponse,
 } from "@absence/core";
 import type { DiscoveryService } from "../observe/Discovery";
 import { TRANSCRIPT_SOURCES, sourceRoots } from "../observe/transcriptSources";
-import { proxyTargets, transcriptTargets } from "../observe/Targets";
+import { buildTargets } from "../observe/Targets";
 import { listLeases } from "../observe/leases";
 import { unwatchSession, watchTarget } from "../observe/watch";
 import { proxySessions } from "../agents/acp/proxy";
@@ -57,22 +56,11 @@ export async function observeRoutes(
         liveByExternal.set(session.observe.externalId, session.id);
       }
     }
-    const targets: ObserveTargetRow[] = [
-      ...transcriptTargets(options.discovery.list(), liveByExternal),
-      ...proxyTargets(proxySessions.list()),
-    ];
-    const priority: Record<ObserveTargetRow["liveness"], number> = {
-      running: 0,
-      idle: 1,
-      exited: 2,
-      missing: 3,
-    };
-    targets.sort(
-      (a, b) =>
-        priority[a.liveness] - priority[b.liveness] ||
-        b.lastActivityAt - a.lastActivityAt ||
-        a.key.localeCompare(b.key),
-    );
+    const targets = await buildTargets({
+      transcriptRows: options.discovery.list(),
+      proxyRows: proxySessions.list(),
+      liveByExternal,
+    });
     return { targets };
   });
 

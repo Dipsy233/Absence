@@ -5,6 +5,7 @@ import {
   isAgentBusy,
   isStreamingEvent,
   MAX_SESSION_EVENTS,
+  RUN_BURST_IDLE_MS,
   type AbsenceEventOf,
   type AbsenceEventPayloadMap,
   type AbsenceEventType,
@@ -21,13 +22,16 @@ import {
   type SessionRuntimeState,
   type SessionSnapshot,
   type SessionSource,
+  type ObserveChannel,
 } from "@absence/core";
 import { config, type AgentKind } from "../config";
 import {
   appendEvents,
+  closeOpenRun,
   closeStaleOpenRun,
   drainArchive,
   findArchivedExternal,
+  markBurstSession,
   readEvents,
   readMeta,
   readProcessEvents,
@@ -251,6 +255,8 @@ export class AbsenceSession {
   private metaTimer?: NodeJS.Timeout;
   private stateTimer?: NodeJS.Timeout;
   private treeTimer?: NodeJS.Timeout;
+  /** Closes the open activity burst after a full quiet window (OS-only). */
+  private burstTimer?: NodeJS.Timeout;
   private disposed = false;
 
   /** True once dispose ran — a session the store removed, not to be fed again. */
@@ -321,8 +327,18 @@ export class AbsenceSession {
       // at the server. Every observed variant attributes by its own evidence.
       drivesRuntime: !this.observe && kind === "mock",
       // Observed sessions share one machine-wide sweep instead of polling the
-      // process table once per session (see ExternalScanner).
+      // process table once per session (see ExternalScanner). A transcript
+      // session binds by evidence; an OS-only one was *given* its pid (see
+      // observe/watchOs.ts).
       externalScanner: this.observe?.transcriptFile ? ExternalScanner.get() : undefined,
+      ...(this.observe?.channel === "os" && this.observe.pid !== undefined
+        ? {
+            externalPid: this.observe.pid,
+            ...(this.observe.pidStartedAt !== undefined
+              ? { externalPidStartedAt: this.observe.pidStartedAt }
+              : {}),
+          }
+        : {}),
     });
     // Say how precise process watching is, so the UI can be honest about it.
     // A proxy session's agent is spawned by Absence itself and carries the
@@ -380,6 +396,12 @@ export class AbsenceSession {
     });
     this.metricsSampler.start();
     this.lastActiveAt = this.session.startedAt;
+    // An OS-only session has no `agent_end` to cut its activity bursts: the
+    // run index segments them on silence, and this timer is what finally closes
+    // the open one when no further fact arrives.
+    if (this.observe?.channel === "os") {
+      markBurstSession(this.id);
+    }
   }
 
   async start(): Promise<void> {
@@ -570,6 +592,24 @@ export class AbsenceSession {
   declareRuntimePid(pid: number | undefined): void {
     if (!this.observe) return;
     this.processWatcher.beginSession(this.id, pid);
+  }
+
+  /**
+   * Add a channel to this session's feeds, keeping one session.
+   *
+   * An OS-only watch can be *upgraded*: when a transcript proves to belong to
+   * the pid the user chose, the same session starts receiving content facts.
+   * Keeping one session (and one archive row) is the point — the user was
+   * already looking at this agent, and switching identity would throw away the
+   * Stage, the files and the run outline they have been reading.
+   */
+  addObservationChannel(channel: ObserveChannel): void {
+    if (!this.observe) return;
+    const channels = this.observe.channels ?? [this.observe.channel];
+    if (!channels.includes(channel)) channels.push(channel);
+    this.observe.channels = channels;
+    this.scheduleMeta();
+    this.scheduleState();
   }
 
   async abort(): Promise<void> {
@@ -862,6 +902,7 @@ export class AbsenceSession {
     if (this.stateTimer) clearTimeout(this.stateTimer);
     if (this.treeTimer) clearTimeout(this.treeTimer);
     if (this.metaTimer) clearTimeout(this.metaTimer);
+    if (this.burstTimer) clearTimeout(this.burstTimer);
     // Absence observes; it does not own. The processes the agent spawned —
     // its commands and any eggs it left behind — are the agent's business:
     // they are reported, watched to their exit, and never terminated here.
@@ -927,6 +968,23 @@ export class AbsenceSession {
     this.bus.emit(stamped);
     this.persist(stamped);
     this.scheduleState();
+    if (this.isBurstSession()) this.scheduleBurstClose();
+  }
+
+  /** True when this session's runs are activity bursts (OS-only watch). */
+  private isBurstSession(): boolean {
+    return this.observe?.channel === "os";
+  }
+
+  /** Close the open burst once the session has been quiet for a full window. */
+  private scheduleBurstClose(): void {
+    if (this.burstTimer) clearTimeout(this.burstTimer);
+    this.burstTimer = setTimeout(() => {
+      this.burstTimer = undefined;
+      if (this.disposed) return;
+      void closeOpenRun(this.id, this.lastActiveAt).catch(() => undefined);
+    }, RUN_BURST_IDLE_MS);
+    this.burstTimer.unref?.();
   }
 
   /** Used for events Absence itself originates (before the bus exists). */

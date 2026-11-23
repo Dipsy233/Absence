@@ -357,3 +357,6 @@ export function parseCommandIntent(command: string): CommandIntent {
 
   return { subjects, hasBackground, hasRedirection };
 }
+
+/** No command text to read: no subjects, no background, no redirection. */
+export const EMPTY_INTENT: CommandIntent = { subjects: [], hasBackground: false, hasRedirection: false };

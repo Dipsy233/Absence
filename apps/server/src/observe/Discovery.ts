@@ -121,6 +121,45 @@ export class DiscoveryService {
   }
 
   /**
+   * The row for a file without attaching it (identity only).
+   *
+   * A board click needs the transcript's externalId and project to record a
+   * lease before deciding *how* to attach it — a plain transcript session, or
+   * an upgrade of an OS-only session already watching the same agent. This
+   * parses the header (via `ensureTail`) and stops there.
+   */
+  async inspect(file: string): Promise<ObserveDiscoveryRow | undefined> {
+    const tail = await this.ensureTail(file);
+    return tail ? this.rowFor(tail) : undefined;
+  }
+
+  /**
+   * Deliver a transcript's facts into an *existing* session (the OS-only upgrade).
+   *
+   * The session already has facts (processes, files); this adds the transcript's
+   * history and then its live tail, without becoming a second session. A
+   * session that already holds this transcript's history (an archive replay)
+   * is warmed instead, so nothing is delivered twice. Returns false when the
+   * file is not a watchable transcript on this host.
+   */
+  async attachInto(file: string, session: AbsenceSession): Promise<boolean> {
+    const tail = await this.ensureTail(file);
+    if (!tail) return false;
+    if (tail.session?.isDisposed()) tail.session = undefined;
+    // Re-key by the transcript's own identity so a later attach() reuses this
+    // session rather than opening a competing one.
+    if (tail.parser.externalId !== undefined) {
+      this.sessionsByExternal.set(`${tail.source.id}:${tail.parser.externalId}`, session);
+    }
+    tail.session = session;
+    tail.missing = false;
+    if (session.replayedFromArchive) await this.warmTail(tail);
+    else await this.backfillTail(tail);
+    await this.feedAttached(tail);
+    return true;
+  }
+
+  /**
    * Explicit attach from the observation board: identify, then put the
    * transcript's history into a session — regardless of recency. Returns the
    * row, or undefined when no tail follows the file.

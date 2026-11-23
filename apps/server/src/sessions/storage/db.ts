@@ -1175,6 +1175,41 @@ export async function closeStaleOpenRun(id: string, endedAt?: number): Promise<v
   }
 }
 
+/**
+ * Close a session's open activity-burst run (see `RunIndex.closeOpen`).
+ *
+ * An OS-only watch has no `agent_end`: the end of a burst is silence, so the
+ * session calls this from its own idle timer. The run is written closed with
+ * the last fact's timestamp as its end.
+ */
+export async function closeOpenRun(id: string, endedAt?: number): Promise<void> {
+  flushPending();
+  try {
+    // `runIndex` is assigned by open(); a burst session may close before any
+    // archive write has opened the DB.
+    open();
+    runIndex?.closeOpen(id, endedAt);
+  } catch (error) {
+    console.error("[absence] sqlite burst close failed:", error);
+  }
+}
+
+/**
+ * Mark a session's runs as activity bursts rather than user turns.
+ *
+ * Called when an OS-only observation opens: there are no messages in that
+ * channel, so the run index segments on silence instead (see
+ * `RunIndex.setBurstMode`).
+ */
+export function markBurstSession(id: string): void {
+  try {
+    open();
+    runIndex?.setBurstMode(id);
+  } catch (error) {
+    console.error("[absence] sqlite burst mode failed:", error);
+  }
+}
+
 /** Run summaries for History, oldest first. */
 /**
  * The archive an observed conversation already has, by its identity.

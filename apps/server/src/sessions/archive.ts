@@ -19,6 +19,8 @@ export {
   appendEvents,
   closeArchive,
   closeStaleOpenRun,
+  closeOpenRun,
+  markBurstSession,
   deleteArchive,
   drainArchive,
   expireArchives,

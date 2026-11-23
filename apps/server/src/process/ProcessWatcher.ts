@@ -1,5 +1,5 @@
 import type { ProcessPayload } from "@absence/core";
-import { parseCommandIntent, type CommandIntent } from "./CommandIntent";
+import { EMPTY_INTENT, parseCommandIntent, type CommandIntent } from "./CommandIntent";
 import { classifyProcess } from "./classify";
 import { isTransparentLauncher } from "./priors";
 import { JobMonitor } from "./JobMonitor";
@@ -202,6 +202,18 @@ export interface ProcessWatcherOptions {
   /** External pi transcript; only explicit command-line session evidence binds a pid. */
   externalTranscript?: string;
   /**
+   * A process root the user chose to watch (the OS-only channel). Absence
+   * follows this pid's subtree by polling the process table: it is not a
+   * descendant of the server, so the Job Object sees nothing of it.
+   */
+  externalPid?: number;
+  /**
+   * The chosen pid's start time, from its process-table row. A pid is reused by
+   * the OS, so a row whose start time differs is a different process and must
+   * not be attributed to this session.
+   */
+  externalPidStartedAt?: number;
+  /**
    * True when this session drives a runtime Absence spawned (the mock
    * fixture). Only then does the server's own pid count as "the agent" for
    * the metrics curve; observed and proxy sessions attribute by their own
@@ -369,9 +381,14 @@ export class ProcessWatcher {
       this.externalScanner = options.externalScanner;
       const transcript = options.externalTranscript;
       this.externalScanner.register(transcript, (root, rows) => this.applyExternalScan(root, rows));
-    } else if (!options.externalTranscript) {
+    } else if (!options.externalTranscript && !this.externalPidMode) {
       this.attachJobObserver();
     }
+  }
+
+  /** The user chose a pid: poll the table around it, kernel events cannot help. */
+  private get externalPidMode(): boolean {
+    return this.options.externalPid !== undefined;
   }
 
   /**
@@ -401,7 +418,6 @@ export class ProcessWatcher {
   private get jobMode(): boolean {
     return this.options.externalTranscript !== undefined || this.jobUnsubscribe !== undefined;
   }
-
   /**
    * Take the session baseline: what is already running before the agent has done
    * anything. Called when the session opens, so the snapshot (half a second) has
@@ -416,6 +432,10 @@ export class ProcessWatcher {
       // With the shared scanner the sweep is already running; without one,
       // this watcher is its own 4 s poll loop (checks, standalone use).
       if (!this.externalScanner) void this.scanExternal();
+      return;
+    }
+    if (this.externalPidMode) {
+      void this.scanExternalPid();
       return;
     }
     if (this.jobMode) return;
@@ -656,6 +676,32 @@ export class ProcessWatcher {
   }
 
   /**
+   * Poll the table around a user-chosen pid (the OS-only channel).
+   *
+   * The chosen process is not a descendant of the server, so kernel events can
+   * never attribute it. The claim is the pid *and* its start time: a table row
+   * with the same pid but a different start is a recycled pid, not this agent.
+   */
+  private async scanExternalPid(): Promise<void> {
+    try {
+      const table = await this.snapshot();
+      if (this.disposed) return;
+      const pid = this.options.externalPid!;
+      const root = table.get(pid);
+      const sameProcess =
+        root !== undefined &&
+        this.options.externalPidStartedAt !== undefined &&
+        Math.abs(root.startedAt - this.options.externalPidStartedAt) <= WINDOW_SLACK_MS;
+      const rows = sameProcess ? [root!, ...attributedTree(table, pid)] : [];
+      this.applyExternalScan(sameProcess ? root : undefined, rows);
+    } catch {
+      // A failed table read is missing evidence, not evidence of process exit.
+    } finally {
+      if (!this.disposed) this.externalTimer = setTimeout(() => void this.scanExternalPid(), TICK_SLOW_MS);
+    }
+  }
+
+  /**
    * One external snapshot, bound and fed. The private poll loop (above) and
    * the shared ExternalScanner both land here, so attribution — exits, the
    * agent pid, the subtree — is identical whichever way the table arrived.
@@ -816,6 +862,14 @@ export class ProcessWatcher {
       process.stderr.write(`[watcher] start pid=${event.pid} ppid=${event.ppid} name=${nameOf(event)} cmd=${(event.commandLine ?? "").slice(0, 80)}\n`);
     }
     const pid = event.pid;
+    // OS-only mode: the chosen process and its subtree are the facts. There
+    // is no command window (no transcript to name a command) and no ancestry
+    // back to the server, so neither the window rule nor the marker rule
+    // applies (see `onOsStart`).
+    if (this.externalPidMode) {
+      this.onOsStart(event);
+      return;
+    }
     if (pid === this.rootPid) return;
     this.rememberPpid(pid, event.ppid);
     // The runtime itself is the tree's root, never an egg. It was marked owned
@@ -984,6 +1038,61 @@ export class ProcessWatcher {
       ...(window.toolCallId ? { toolCallId: window.toolCallId } : {}),
     };
     this.eggs.set(pid, egg);
+    this.emit(egg);
+  }
+
+  /**
+   * One process of a user-chosen pid's subtree.
+   *
+   * `applyExternalScan` only hands over pids that are the chosen root or its
+   * descendants, so acceptance needs no ancestry proof here — the subtree is
+   * the claim. Every member is its own egg: with no command text to credit,
+   * folding a child into a parent would silently hide the work the user asked
+   * to watch. `classifyProcess` still folds short-lived helpers into the tool
+   * bucket the Eggs panel counts rather than lists.
+   */
+  private onOsStart(event: WatchStart): void {
+    const pid = event.pid;
+    if (pid === this.rootPid) return;
+    const name = nameOf(event);
+    if (isConsoleHost(name)) return;
+    const line = event.commandLine ?? event.exePath ?? "";
+    const existing = this.eggs.get(pid);
+    if (existing !== undefined && existing.info.commandLine === line && existing.status === "running") return;
+    this.jobSeen.add(pid);
+    this.jobExec.set(pid, line);
+    this.jobParent.set(pid, pid);
+    const startedAt = event.createdAt ?? this.now();
+    const verdict = classifyProcess({
+      name,
+      commandLine: line,
+      ...(event.exePath !== undefined ? { exePath: event.exePath } : {}),
+      cwd: this.jobCwd,
+      intent: EMPTY_INTENT,
+      // Nothing here was laid by a command, so nothing outlived one; age is
+      // the only lifetime evidence available.
+      survivedCommand: false,
+      ageMs: Math.max(0, this.now() - startedAt),
+      children: 0,
+      ppid: event.ppid,
+    });
+    const egg: Egg = {
+      info: { pid, ppid: event.ppid, name, commandLine: line, startedAt },
+      command: "",
+      startedAt,
+      children: 0,
+      status: "running",
+      kind: verdict.kind,
+      kindReason: verdict.reason,
+      cwd: this.jobCwd,
+      ...(event.exePath !== undefined ? { exePath: event.exePath } : {}),
+      intent: EMPTY_INTENT,
+      reclassifyOnSurvive: verdict.kind === "tool",
+      survivedCommand: false,
+      namedSubject: false,
+    };
+    this.eggs.set(pid, egg);
+    this.markOwned(pid);
     this.emit(egg);
   }
 

@@ -218,6 +218,8 @@ export interface ObserveTargetRow {
   agentKind: string;
   cwd?: string;
   pid?: number;
+  /** The pid's start time, so a reused pid is a different process. */
+  pidStartedAt?: number;
   transcriptFile?: string;
   externalId?: string;
   /** Which channels could observe it. */

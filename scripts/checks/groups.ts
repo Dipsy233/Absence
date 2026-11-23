@@ -190,6 +190,7 @@ export const GROUPS: CheckGroup[] = [
     checks: [
       { script: "check-observe-board.ts", timeout: 120_000 },
       { script: "check-observe-watch.ts", timeout: 180_000 },
+      { script: "check-observe-os.ts", timeout: 180_000 },
       { script: "check-observe-transcript.ts", timeout: 120_000 },
       { script: "check-observe-proxy.ts", timeout: 120_000 },
     ],
