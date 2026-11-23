@@ -51,6 +51,8 @@ interface OpenRun {
   lastAt?: number;
   /** What opened this run: a user message, an activity burst, or an attach. */
   boundarySource: RunBoundarySource;
+  /** True when facts before this run are simply not in the record. */
+  truncatedBefore?: boolean;
 }
 
 interface SessionRuns {
@@ -74,6 +76,14 @@ export class RunIndex {
    * `closeOpen`), which is the honest shape of what Absence actually saw.
    */
   private readonly burstSessions = new Set<string>();
+  /**
+   * Sessions allowed to open a run without a user message.
+   *
+   * Only a transcript observation can legitimately attach mid-run (the file
+   * already holds an assistant turn). A proxy session's projector always
+   * delivers the prompt first, so it must not fabricate a headless run.
+   */
+  private readonly attachSessions = new Set<string>();
   private readonly selectRuns;
   private readonly insertRun;
   private readonly deleteRuns;
@@ -203,6 +213,7 @@ export class RunIndex {
             counts: { ...last.counts },
             touched: new Set<string>(),
             boundarySource: last.boundarySource ?? "user-message",
+            ...(last.truncatedBefore === true ? { truncatedBefore: true } : {}),
           }
         : undefined;
     const closed = open ? all.slice(0, -1) : all;
@@ -249,7 +260,28 @@ export class RunIndex {
       return;
     }
 
-    if (!state.open) return;
+    if (!state.open) {
+      // No user turn opened this run. For a transcript observation that means
+      // the observer attached mid-run (the file's head is an assistant turn);
+      // the facts before the attach are simply not in the record, so the run
+      // is honestly marked `attach` and flagged as truncated. Any other
+      // channel (a proxy, a fixture) must not invent a headless run.
+      if (!this.attachSessions.has(state.sessionId) || state.closed.length > 0 || event.source !== "transcript") return;
+      if (event.type === "agent_end" || event.type === "usage") return;
+      state.open = {
+        index: state.closed.length + 1,
+        prompt: "",
+        startedAt: event.timestamp,
+        fromSeq: seq,
+        toSeq: seq,
+        counts: emptyRunCounts(),
+        touched: new Set<string>(),
+        boundarySource: "attach",
+        truncatedBefore: true,
+      };
+      applyRunCount(state.open.counts, event, state.open.touched);
+      return;
+    }
 
     if (event.type === "agent_end") {
       const reason = String(event.payload.reason);
@@ -269,6 +301,11 @@ export class RunIndex {
   /** Turns activity-burst mode on for a session (see `burstSessions`). */
   setBurstMode(sessionId: string): void {
     this.burstSessions.add(sessionId);
+  }
+
+  /** Allows a session to open a run without a user turn (see `attachSessions`). */
+  setAttachMode(sessionId: string): void {
+    this.attachSessions.add(sessionId);
   }
 
   /**
@@ -356,6 +393,7 @@ export class RunIndex {
       toSeq: Math.max(open.fromSeq, toSeq),
       counts: { ...open.counts },
       boundarySource: open.boundarySource,
+      ...(open.truncatedBefore === true ? { truncatedBefore: true } : {}),
     };
   }
 
@@ -370,6 +408,7 @@ export class RunIndex {
       toSeq: open.toSeq,
       counts: { ...open.counts },
       boundarySource: open.boundarySource,
+      ...(open.truncatedBefore === true ? { truncatedBefore: true } : {}),
     };
   }
 
@@ -435,7 +474,10 @@ function rowToSummary(row: SqlRow): RunSummary | undefined {
     // bias for something that sizes a run before it is loaded.
     eventCount: Math.max(0, toSeq - fromSeq + 1),
     ...(typeof row.boundary_source === "string" && row.boundary_source.length > 0
-      ? { boundarySource: row.boundary_source as RunSummary["boundarySource"] }
+      ? {
+          boundarySource: row.boundary_source as RunSummary["boundarySource"],
+          ...(row.boundary_source === "attach" ? { truncatedBefore: true } : {}),
+        }
       : {}),
   };
 }

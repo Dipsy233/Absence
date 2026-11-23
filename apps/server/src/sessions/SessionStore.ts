@@ -31,6 +31,7 @@ import {
   closeStaleOpenRun,
   drainArchive,
   findArchivedExternal,
+  markAttachSession,
   markBurstSession,
   readEvents,
   readMeta,
@@ -277,6 +278,21 @@ export class AbsenceSession {
   isReady(): boolean {
     return this.ready;
   }
+
+  /**
+   * True while the observation's initial backfill is still streaming in (set
+   * by the discovery feed through `setBackfilling`). The board shows progress
+   * instead of pretending the history is complete.
+   */
+  private backfilling = false;
+
+  setBackfilling(backfilling: boolean): void {
+    this.backfilling = backfilling;
+  }
+
+  isBackfilling(): boolean {
+    return this.backfilling;
+  }
   /** Set on an observed session: facts arrive, nothing is ever sent back. */
   readonly observe?: ObserveMeta;
   /**
@@ -401,6 +417,8 @@ export class AbsenceSession {
     // the open one when no further fact arrives.
     if (this.observe?.channel === "os") {
       markBurstSession(this.id);
+    } else if (this.observe?.channel === "transcript") {
+      markAttachSession(this.id);
     }
   }
 
@@ -1901,7 +1919,7 @@ export class SessionStore {
     const now = Date.now();
     for (const session of [...this.sessions.values()]) {
       if (session.runtimeDriven) continue;
-      if (!session.isReady()) continue;
+      if (!session.isReady() || session.isBackfilling()) continue;
       if (session.viewerCount() > 0) continue;
       // A lease is the user's explicit “keep watching it”, so it gets the long
       // threshold; an auto-attached transcript gets the short one.

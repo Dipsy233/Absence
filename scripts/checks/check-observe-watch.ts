@@ -96,6 +96,7 @@ async function boot(stateDir: string, piRoot: string, env: Record<string, string
       HOST: "127.0.0.1",
       ABSENCE_STATE_DIR: stateDir,
       ABSENCE_OBSERVE_PI_ROOT: piRoot,
+      ABSENCE_AUTO_ATTACH: "1",
       ABSENCE_DOCKER: "0",
       ABSENCE_KEEP_ALIVE: "1",
       ...env,

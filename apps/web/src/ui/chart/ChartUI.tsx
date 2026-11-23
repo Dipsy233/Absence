@@ -392,7 +392,10 @@ export function ChartUI() {
                         </span>
                         <span className="chart-runmenu__time chart-mono">{formatClock(entry.startedAt)}</span>
                       </span>
-                      <span className="chart-runmenu__prompt">{entry.prompt}</span>
+                      <span className="chart-runmenu__prompt">
+                        {entry.prompt || (entry.boundarySource === "activity-burst" ? t("activity burst") : t("observed mid-run"))}
+                        {entry.truncatedBefore ? ` · ${t("began before watching")}` : ""}
+                      </span>
                     </button>
                   </li>
                 ))}

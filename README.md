@@ -8,6 +8,8 @@ AI advances faster than human thought can follow. People fall behind the agent's
 
 Absence is a real-time visual observer for AI agents. It connects to an agent, shows what the agent is doing while it works, and leaves a reviewable record of the run.
 
+> **On the `re` branch:** Windows and headless Linux run the same web service. Run the agent independently, then select it from the observation board or CLI. Some sections below describe the released 0.5.0 workflow; see the [observer operations guide (Chinese)](docs/observer-operations.zh-CN.md) for current commands and mid-session attachment.
+
 ## What it shows
 
 - **The agent at work.** The Stage renders the action in progress: a file read, a diff, a command with its output and exit code, an approval request, an MCP call. The Activity feed keeps the chronological record of the same run.

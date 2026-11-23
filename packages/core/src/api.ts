@@ -131,6 +131,10 @@ export interface ObserveSessionRow {
   malformed: number;
   /** The watcher reported the file gone; the row stays, nothing is read. */
   missing?: boolean;
+  /** True while a whole-file backfill is still streaming in. */
+  backfilling?: boolean;
+  /** 0..1 progress of that backfill. */
+  backfillProgress?: number;
 }
 
 /** The transcript source this host watches. */
@@ -186,6 +190,8 @@ export interface ObserveLiveRow {
   leased?: boolean;
   /** True while the transcript backfill is still running. */
   backfilling?: boolean;
+  /** 0..1 progress of that backfill. */
+  backfillProgress?: number;
 }
 
 export interface ObserveLiveResponse {

@@ -92,6 +92,7 @@ export async function observeRoutes(
         events: session.eventCount(),
         viewers: session.viewerCount(),
         leased: session.hasMonitorLease() || leased.has(session.id),
+        ...(session.isBackfilling() ? { backfilling: true } : {}),
       });
     }
     rows.sort((a, b) => b.lastActivityAt - a.lastActivityAt);

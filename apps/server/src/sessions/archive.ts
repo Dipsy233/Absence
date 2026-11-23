@@ -21,6 +21,7 @@ export {
   closeStaleOpenRun,
   closeOpenRun,
   markBurstSession,
+  markAttachSession,
   deleteArchive,
   drainArchive,
   expireArchives,

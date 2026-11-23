@@ -8,6 +8,8 @@ AI 的发展速度超乎想象，而人类渐渐跟不上 AI 的思路，经常�
 
 Absence 是一个面向 AI agent 的实时可视化观察器。它连接 agent，在 agent 工作时展示它正在做什么，并为这次运行留下可回看、可核对的记录。
 
+> **`re` 分支使用说明：** Windows 和无桌面 Linux 都运行同一个 Web 服务。先在终端独立运行 agent，再从观测台或 CLI 选择目标。下文部分段落描述已发布的 0.5.0 旧交互；当前启动命令及中途挂载规则见[旁观监控指南](docs/observer-operations.zh-CN.md)。
+
 ## 功能
 
 - **看见 agent 正在做什么。** Stage 呈现当前动作：文件读取、diff、带输出与退出码的命令、审批请求、MCP 调用。Activity 流保留同一次 run 的时间顺序记录。

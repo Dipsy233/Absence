@@ -229,6 +229,7 @@ export function Observatory() {
                         <span>
                           {row.agentKind} · {channelLabel(row.channel)} · {formatAgo(row.lastActivityAt, now)} ·{" "}
                           {t("{n} events", { n: row.events })}
+                          {row.backfilling ? ` · ${t("backfilling…")}` : ""}
                           {row.leased ? ` · ${t("watching")}` : ""}
                           {row.viewers > 0 ? ` · ${t("{n} viewing", { n: row.viewers })}` : ""}
                         </span>

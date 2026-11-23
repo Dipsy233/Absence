@@ -1210,6 +1210,22 @@ export function markBurstSession(id: string): void {
   }
 }
 
+/**
+ * Allow a transcript observation to open a run without a user turn.
+ *
+ * The transcript may start mid-conversation (the observer attached late), so
+ * its first facts have no opening prompt. Only the transcript channel opts in;
+ * see `RunIndex.setAttachMode`.
+ */
+export function markAttachSession(id: string): void {
+  try {
+    open();
+    runIndex?.setAttachMode(id);
+  } catch (error) {
+    console.error("[absence] sqlite attach mode failed:", error);
+  }
+}
+
 /** Run summaries for History, oldest first. */
 /**
  * The archive an observed conversation already has, by its identity.

@@ -177,14 +177,16 @@ async function main(): Promise<void> {
     const discoverRow = board.body.sessions.find((row) => row.externalId === EXTERNAL_ID);
     check("discovery found the fixture transcript", discoverRow !== undefined, JSON.stringify(board.body.sessions));
     check("the discovered row names the project from the header", discoverRow !== undefined);
-    // Recency: the fixture is written now, so discovery attaches it on its own.
+    check("discovery alone did not start monitoring", initial.body.sessions.length === 0);
+    const selected = await api(port, "POST", "/api/observe/watch", { key: `transcript:${transcriptFile}` });
+    check("selecting the target starts monitoring", selected.status === 200);
     let attached: LiveRow | undefined;
     for (let attempt = 0; attempt < 40 && attached === undefined; attempt++) {
       await sleep(250);
       const live = await api<{ sessions: LiveRow[] }>(port, "GET", "/api/observe/live");
       attached = live.body.sessions.find((row) => row.externalId === EXTERNAL_ID);
     }
-    check("the active transcript attached automatically", attached !== undefined);
+    check("the selected transcript attached", attached !== undefined);
     if (attached === undefined) throw new Error("fixture transcript never attached");
     check("the live row carries the transcript channel", attached.channel === "transcript");
     check("the live row carries the agent kind and project", attached.agentKind === "pi" && attached.projectPath.replace(/\\/g, "/") === projectDir.replace(/\\/g, "/"), `${attached.agentKind} ${attached.projectPath}`);

@@ -128,7 +128,7 @@ fs.writeFileSync(transcriptFile, turn1.join("\n") + "\n", "utf8");
 
 section("discovery");
 
-let discovery = new DiscoveryService(sessionStore);
+let discovery = new DiscoveryService(sessionStore, true);
 discovery.start();
 
 const found = await waitFor(() => discovery.list().some((row) => row.externalId === EXTERNAL_ID && row.sessionId !== undefined), 8_000);
@@ -230,7 +230,7 @@ check("attach is idempotent per (channel, externalId)", again.id === sessionId);
 // A real restart means a brand-new discovery service: the old one's session
 // map and tail offsets do not survive it.
 discovery.stop();
-discovery = new DiscoveryService(sessionStore);
+discovery = new DiscoveryService(sessionStore, true);
 discovery.start();
 await sessionStore.remove(sessionId!);
 const reattached = await sessionStore.createObserved(project, "pi", { channel: "transcript", externalId: EXTERNAL_ID });

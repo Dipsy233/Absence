@@ -33,6 +33,7 @@
     "check:observe-watch": "tsx scripts/checks/check-observe-watch.ts",
     "check:observe-os": "tsx scripts/checks/check-observe-os.ts",
     "check:cli-observe": "tsx scripts/checks/check-cli-observe.ts",
+    "check:observe-midway": "tsx scripts/checks/check-observe-midway.ts",
     "check:observe-proxy": "tsx scripts/checks/check-observe-proxy.ts",
     "check:agentwatch-external": "tsx scripts/checks/check-agentwatch-external.ts",
     "check:mcp": "tsx scripts/checks/check-mcp-events.ts",

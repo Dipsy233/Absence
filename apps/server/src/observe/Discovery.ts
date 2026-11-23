@@ -23,14 +23,16 @@ import { isNarrowScope, type ObserveMeta } from "./types";
  *   - *attached*  — a session exists: a fresh parser reads the file from byte 0
  *                   (the backfill is the transcript's whole history), and every
  *                   later write feeds the same parser incrementally, byte
- *                   offset past the last newline. Attach happens automatically
- *                   while pi touched the file recently (AUTO_ATTACH_WINDOW_MS),
- *                   or explicitly via `attach()` — the board's click-to-monitor.
+ *                   offset past the last newline. Attach is explicit by default;
+ *                   ABSENCE_AUTO_ATTACH=1 opts in to recent transcript capture.
  *   - *missing*   — the file was deleted; the tail keeps its row, reads nothing.
  */
 
 /** Backfill cap. A transcript larger than this is tailed from its end. */
 const MAX_BACKFILL_BYTES = 200 * 1024 * 1024;
+
+/** How much of a transcript the backfill reads per turn of the event loop. */
+const BACKFILL_CHUNK_BYTES = 1024 * 1024;
 
 /**
  * Only transcripts modified this recently attach automatically — a session pi
@@ -60,6 +62,10 @@ export interface ObserveDiscoveryRow {
   malformed: number;
   /** The watcher reported the file gone; the row stays, nothing is read. */
   missing?: boolean;
+  /** True while a whole-file backfill is still streaming in. */
+  backfilling?: boolean;
+  /** 0..1 progress of that backfill. */
+  backfillProgress?: number;
 }
 
 interface FileTail {
@@ -74,6 +80,13 @@ interface FileTail {
   /** The watcher reported the file gone; the tail keeps its row, reads nothing. */
   missing?: boolean;
   feeding: boolean;
+  identifying?: Promise<void>;
+  attaching?: Promise<void>;
+  changedWhileFeeding?: boolean;
+  /** True while a whole-file backfill is still streaming in (chunked). */
+  backfilling?: boolean;
+  /** 0..1 progress of the backfill, for the board's row. */
+  backfillProgress?: number;
 }
 
 export class DiscoveryService {
@@ -82,7 +95,10 @@ export class DiscoveryService {
   private readonly sessionsByExternal = new Map<string, AbsenceSession>();
   private started = false;
 
-  constructor(private readonly store: SessionStore) {}
+  constructor(
+    private readonly store: SessionStore,
+    private readonly autoAttach = process.env.ABSENCE_AUTO_ATTACH === "1",
+  ) {}
 
   start(): void {
     if (this.started) return;
@@ -130,7 +146,9 @@ export class DiscoveryService {
    */
   async inspect(file: string): Promise<ObserveDiscoveryRow | undefined> {
     const tail = await this.ensureTail(file);
-    return tail ? this.rowFor(tail) : undefined;
+    if (!tail) return undefined;
+    await this.feedForIdentity(tail);
+    return this.rowFor(tail);
   }
 
   /**
@@ -145,7 +163,8 @@ export class DiscoveryService {
   async attachInto(file: string, session: AbsenceSession): Promise<boolean> {
     const tail = await this.ensureTail(file);
     if (!tail) return false;
-    if (tail.session?.isDisposed()) tail.session = undefined;
+    if (tail.attaching) await tail.attaching;
+    if (tail.session === session) return true;
     // Re-key by the transcript's own identity so a later attach() reuses this
     // session rather than opening a competing one.
     if (tail.parser.externalId !== undefined) {
@@ -168,7 +187,8 @@ export class DiscoveryService {
     const tail = await this.ensureTail(file);
     if (!tail) return undefined;
     tail.missing = false;
-    if (!tail.session) await this.attachTransition(tail);
+    if (tail.session?.isDisposed()) tail.session = undefined;
+    if (!tail.session || tail.attaching) await this.attachTransition(tail);
     if (tail.session) await this.feedAttached(tail);
     return this.rowFor(tail);
   }
@@ -201,6 +221,8 @@ export class DiscoveryService {
     if (!profile) return undefined;
     const stat = await fsp.stat(file).catch(() => undefined);
     if (stat === undefined || !stat.isFile()) return undefined;
+    const raced = this.tails.get(file);
+    if (raced) return raced;
     const tail: FileTail = {
       source: profile,
       file,
@@ -211,10 +233,6 @@ export class DiscoveryService {
       feeding: false,
     };
     this.tails.set(file, tail);
-    // Identify first: the header is what the board's row needs, and what a
-    // resume launch resolves the transcript by. Everything past the identity
-    // stays unparsed until the transcript attaches.
-    await this.feedForIdentity(tail);
     return tail;
   }
 
@@ -230,6 +248,10 @@ export class DiscoveryService {
       events: tail.eventCount,
       malformed: tail.parser.malformed,
       ...(tail.missing === true ? { missing: true } : {}),
+      ...(tail.backfilling === true ? { backfilling: true } : {}),
+      ...(tail.backfilling === true && tail.backfillProgress !== undefined
+        ? { backfillProgress: tail.backfillProgress }
+        : {}),
     };
   }
 
@@ -237,8 +259,9 @@ export class DiscoveryService {
     const created = !this.tails.has(file);
     const tail = await this.ensureTail(file);
     if (!tail || !created) return;
+    await this.feedForIdentity(tail);
     // A file the agent wrote moments ago is live: attach and backfill at once.
-    if (!tail.session && (await this.isRecentlyModified(tail.file))) {
+    if (this.autoAttach && !tail.session && (await this.isRecentlyModified(tail.file))) {
       await this.attachTransition(tail);
     }
   }
@@ -252,9 +275,19 @@ export class DiscoveryService {
       if (!tail) return;
     }
     tail.missing = false;
-    if (tail.session) {
+    if (tail.feeding) {
+      tail.changedWhileFeeding = true;
+      return;
+    }
+    if (tail.session?.isDisposed()) tail.session = undefined;
+    if (tail.session && !tail.attaching) {
       // Attached: incremental — the parser's state continues from its offset.
       await this.feedAttached(tail);
+      return;
+    }
+    if (!this.autoAttach) {
+      await this.feedForIdentity(tail); // A partial header may only now be complete.
+      tail.lastActivityAt = Date.now();
       return;
     }
     // The write itself is the recency evidence: attach and backfill now.
@@ -273,11 +306,22 @@ export class DiscoveryService {
    * backfilled for real: the backfill is its history.
    */
   private async attachTransition(tail: FileTail): Promise<void> {
-    await this.feedForIdentity(tail);
-    await this.ensureSession(tail, true);
-    if (!tail.session) return; // identity never arrived; nothing to attach
-    if (tail.session.replayedFromArchive) await this.warmTail(tail);
-    else await this.backfillTail(tail);
+    if (tail.attaching) return tail.attaching;
+    const operation = (async () => {
+      await this.feedForIdentity(tail);
+      if (tail.session) return;
+      const session = await this.ensureSession(tail);
+      if (!session) return;
+      if (session.replayedFromArchive) await this.warmTail(tail);
+      else await this.backfillTail(tail);
+      await this.feedAttached(tail);
+    })();
+    tail.attaching = operation;
+    try {
+      await operation;
+    } finally {
+      tail.attaching = undefined;
+    }
   }
 
   private async onFileGone(file: string): Promise<void> {
@@ -296,20 +340,25 @@ export class DiscoveryService {
    * attaches; identity alone is what the observation board's row needs.
    */
   private async feedForIdentity(tail: FileTail): Promise<void> {
+    if (tail.identifying) return tail.identifying;
     if (tail.feeding || tail.missing) return;
     if (tail.parser.externalId !== undefined && tail.parser.cwd !== undefined) return;
-    tail.feeding = true;
+    tail.identifying = this.readIdentity(tail);
     try {
-      const text = await this.readNewLines(tail);
-      if (text === undefined) return;
-      for (const line of text.split("\n")) {
-        await tail.parser.feed(line);
-        if (tail.parser.externalId !== undefined && tail.parser.cwd !== undefined) break;
-      }
-      tail.lastActivityAt = Date.now();
+      await tail.identifying;
     } finally {
-      tail.feeding = false;
+      tail.identifying = undefined;
     }
+  }
+
+  private async readIdentity(tail: FileTail): Promise<void> {
+    const text = await this.readNewLines(tail, 8192, true);
+    if (text === undefined) return;
+    for (const line of text.split("\n")) {
+      await tail.parser.feed(line);
+      if (tail.parser.externalId !== undefined && tail.parser.cwd !== undefined) break;
+    }
+    tail.lastActivityAt = Date.now();
   }
 
   /** Attached mode: feed new lines to the session's parser and deliver. */
@@ -317,6 +366,7 @@ export class DiscoveryService {
     if (tail.feeding || tail.missing) return;
     if (!tail.session) return;
     tail.feeding = true;
+    tail.changedWhileFeeding = false;
     try {
       const text = await this.readNewLines(tail);
       if (text === undefined) return;
@@ -328,6 +378,7 @@ export class DiscoveryService {
       if (events.length > 0) this.deliver(tail, events);
     } finally {
       tail.feeding = false;
+      if (tail.changedWhileFeeding) await this.feedAttached(tail);
     }
   }
 
@@ -350,23 +401,45 @@ export class DiscoveryService {
     await this.rereadTail(tail, false);
   }
 
-  /** Read the whole file through a fresh parser; deliver only when asked. */
+  /**
+   * The whole-file backfill, read in bounded chunks.
+   *
+   * A transcript can be hundreds of megabytes; reading it in one Buffer would
+   * stall the event loop (and every socket) for the whole parse. Each chunk is
+   * read, parsed and then the loop yields, so the board stays responsive and the
+   * row can show how far the backfill has come. A file past MAX_BACKFILL_BYTES
+   * is still tailed from its end, honestly (see `readNewLines`).
+   */
   private async rereadTail(tail: FileTail, deliver: boolean): Promise<void> {
     if (!tail.session) return;
     tail.feeding = true;
+    tail.session.setBackfilling(true);
+    tail.backfilling = true;
+    tail.backfillProgress = 0;
     try {
       tail.parser = new PiTranscriptParser();
       tail.offset = 0;
-      const text = await this.readNewLines(tail);
-      if (text === undefined) return;
-      for (const line of text.split("\n")) {
-        await tail.parser.feed(line);
+      const size = (await fsp.stat(tail.file).catch(() => undefined))?.size ?? 0;
+      const total = size > MAX_BACKFILL_BYTES ? 0 : size;
+      for (;;) {
+        const text = await this.readNewLines(tail, BACKFILL_CHUNK_BYTES);
+        if (text === undefined) break;
+        for (const line of text.split("\n")) {
+          await tail.parser.feed(line);
+        }
+        const events = tail.parser.drain();
+        if (deliver && events.length > 0) this.deliver(tail, events);
+        tail.backfillProgress = total > 0 ? Math.min(1, tail.offset / total) : 0;
+        // Yield to the event loop between chunks: the backfill must not block
+        // live writes, sockets or the idle sweep.
+        await new Promise<void>((resolve) => setImmediate(resolve));
       }
       tail.lastActivityAt = Date.now();
-      const events = tail.parser.drain();
-      if (deliver && events.length > 0) this.deliver(tail, events);
     } finally {
       tail.feeding = false;
+      tail.session.setBackfilling(false);
+      tail.backfilling = false;
+      tail.backfillProgress = undefined;
     }
   }
 
@@ -376,7 +449,7 @@ export class DiscoveryService {
    * read — a partial trailing line is the writer's mid-flight flush and is
    * replayed next time.
    */
-  private async readNewLines(tail: FileTail): Promise<string | undefined> {
+  private async readNewLines(tail: FileTail, maxBytes?: number, identityOnly = false): Promise<string | undefined> {
     let stat: Awaited<ReturnType<typeof fsp.stat>>;
     try {
       stat = await fsp.stat(tail.file);
@@ -384,7 +457,7 @@ export class DiscoveryService {
       return undefined; // A racing delete: the next change event retries.
     }
     if (stat.size <= tail.offset) return undefined;
-    if (tail.offset === 0 && stat.size > MAX_BACKFILL_BYTES) {
+    if (!identityOnly && tail.offset === 0 && stat.size > MAX_BACKFILL_BYTES) {
       // Too large to backfill: observe from the end, honestly.
       tail.offset = stat.size;
       return undefined;
@@ -392,13 +465,25 @@ export class DiscoveryService {
     try {
       const handle = await fsp.open(tail.file, "r");
       try {
-        const length = stat.size - tail.offset;
-        const buffer = Buffer.alloc(length);
-        await handle.read(buffer, 0, length, tail.offset);
-        const lastNewline = buffer.lastIndexOf(0x0a);
-        if (lastNewline === -1) return undefined;
-        tail.offset += lastNewline + 1;
-          return buffer.subarray(0, lastNewline + 1).toString("utf8");
+        const available = stat.size - tail.offset;
+        const chunks: Buffer[] = [];
+        let read = 0;
+        while (read < available) {
+          const buffer = Buffer.allocUnsafe(Math.min(maxBytes ?? available, available - read));
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, tail.offset + read);
+          if (!bytesRead) break;
+          const chunk = buffer.subarray(0, bytesRead);
+          const newline = chunk.lastIndexOf(0x0a);
+          if (newline >= 0) {
+            chunks.push(chunk.subarray(0, newline + 1));
+            tail.offset += read + newline + 1;
+            return Buffer.concat(chunks).toString("utf8");
+          }
+          // A single JSON record (e.g. a tool result) can span several chunks.
+          chunks.push(chunk);
+          read += bytesRead;
+        }
+        return undefined;
       } finally {
         await handle.close();
       }
@@ -408,8 +493,8 @@ export class DiscoveryService {
   }
 
   /** Create the session on first identity. Idempotent per (channel, externalId). */
-  private async ensureSession(tail: FileTail, force: boolean): Promise<void> {
-    if (tail.session) return;
+  private async ensureSession(tail: FileTail): Promise<AbsenceSession | undefined> {
+    if (tail.session) return tail.session;
     const parser = tail.parser;
     if (parser.externalId === undefined || parser.cwd === undefined) return;
     const key = `${tail.source.id}:${parser.externalId}`;
@@ -417,7 +502,7 @@ export class DiscoveryService {
     if (existing !== undefined) {
       if (!existing.isDisposed()) {
         tail.session = existing;
-        return;
+        return existing;
       }
       // The session was closed from under us (the board's ✕, a teardown):
       // forget it, or this map would feed a dead session forever and the
@@ -435,6 +520,7 @@ export class DiscoveryService {
     const session = await this.store.createObserved(parser.cwd, tail.source.agentKind, observe);
     this.sessionsByExternal.set(key, session);
     tail.session = session;
+    return session;
   }
 
   /** Re-stamp events with the Absence session id and push them into the pipeline. */
