@@ -5,7 +5,6 @@ import {
   fetchObserveLive,
   fetchObserveTargets,
   fetchSessionHistory,
-  unwatchSession,
   watchTarget,
 } from "../../lib/api";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -81,7 +80,6 @@ export function Observatory() {
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
-  const [notice, setNotice] = useState<string>();
   const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
@@ -118,7 +116,6 @@ export function Observatory() {
   const withBusy = async (key: string, action: () => Promise<void>) => {
     setBusy(key);
     setError(undefined);
-    setNotice(undefined);
     try {
       await action();
     } catch (err) {
@@ -146,14 +143,6 @@ export function Observatory() {
       const result = await watchTarget(row.key);
       resetAllStores();
       await openSession(result.sessionId);
-    });
-
-  /** Stop monitoring: the lease goes, the archive stays. */
-  const unwatch = (sessionId: string) =>
-    withBusy(`unwatch-${sessionId}`, async () => {
-      await unwatchSession(sessionId);
-      setNotice(t("Stopped watching. Its archive stays in History."));
-      await refresh();
     });
 
   /** Open an archived session: the server replays its own record. */
@@ -216,7 +205,6 @@ export function Observatory() {
         <div className="picker__body">
           <section className="picker__block picker__side">
             {error ? <div className="picker__error">{error}</div> : null}
-            {notice ? <div className="picker__note">{notice}</div> : null}
             <div className="picker__hhead">
               <label className="picker__label">{t("Running now")}</label>
               <span>{t("{n} running", { n: runningCount })}</span>
@@ -228,37 +216,26 @@ export function Observatory() {
             ) : (
               <div className="picker__list picker__running">
                 {live.map((row) => (
-                  <div key={row.sessionId} className="picker__hrowwrap">
-                    <button
-                      type="button"
-                      disabled={busy !== undefined}
-                      onClick={() => void enter(row.sessionId)}
-                      title={row.transcriptFile ?? row.projectPath}
-                    >
-                      <b>{row.projectPath}</b>
-                      <span>
-                        {row.agentKind} · {channelLabel(row.channel)} · {formatAgo(row.lastActivityAt, now)} ·{" "}
-                        {t("{n} events", { n: row.events })}
-                        {row.backfilling ? ` · ${t("backfilling…")}` : ""}
-                        {row.transcriptResumeBlocked ? ` · ${t("transcript diverged; re-watch to continue")}` : ""}
-                        {row.leased ? ` · ${t("watching")}` : ""}
-                        {row.viewers > 0 ? ` · ${t("{n} viewing", { n: row.viewers })}` : ""}
-                      </span>
-                      {row.firstPrompt ? (
-                        <span className="picker__hprompt">{row.firstPrompt}</span>
-                      ) : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="picker__hdel"
-                      aria-label={t("Stop watching")}
-                      title={t("Stop watching")}
-                      disabled={busy !== undefined}
-                      onClick={() => void unwatch(row.sessionId)}
-                    >
-                      ✕
-                    </button>
-                  </div>
+                  <button
+                    key={row.sessionId}
+                    type="button"
+                    disabled={busy !== undefined}
+                    onClick={() => void enter(row.sessionId)}
+                    title={row.transcriptFile ?? row.projectPath}
+                  >
+                    <b>{row.projectPath}</b>
+                    <span>
+                      {row.agentKind} · {channelLabel(row.channel)} · {formatAgo(row.lastActivityAt, now)} ·{" "}
+                      {t("{n} events", { n: row.events })}
+                      {row.backfilling ? ` · ${t("backfilling…")}` : ""}
+                      {row.transcriptResumeBlocked ? ` · ${t("transcript diverged; re-watch to continue")}` : ""}
+                      {row.leased ? ` · ${t("watching")}` : ""}
+                      {row.viewers > 0 ? ` · ${t("{n} viewing", { n: row.viewers })}` : ""}
+                    </span>
+                    {row.firstPrompt ? (
+                      <span className="picker__hprompt">{row.firstPrompt}</span>
+                    ) : null}
+                  </button>
                 ))}
                 {runningAvailable.map((row) => (
                   <button
