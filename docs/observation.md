@@ -63,6 +63,8 @@ npx tsx apps/server/src/cli.ts observe --pid 12345
 
 `--pid` selects only targets Absence has already matched; it does not monitor an arbitrary process. A pid alone is refused when two targets name it, and `--cwd` is refused when several targets work in that directory.
 
+Selecting a transcript target that a **running pi** is writing binds that process and watches it over the kernel-grade OS channel (a dedicated Job Object on Windows, the machine-wide eBPF stream filtered by ancestry on Linux), folding the transcript's conversation into the same session — the user keeps pi in their own terminal and Absence is neither parent nor proxy. Selecting a transcript whose agent has exited replays its history instead.
+
 `ABSENCE_AUTO_ATTACH=1` restores the earlier behaviour in which a transcript written in the last ten minutes attaches without a selection.
 
 ## Monitor leases
@@ -84,7 +86,7 @@ The observer may attach after the agent has already worked. What it recovers dep
 | Channel | Before attachment | After attachment |
 |---|---|---|
 | `transcript` | Every complete record already in the file is delivered in file order. A real user message remains a real run boundary. When the file begins inside a turn, the first run is marked `boundarySource: "attach"` with `truncatedBefore: true` and an empty prompt; no prompt is invented. | The same parser continues from the byte offset; a record without a terminating newline is read after the writer finishes it. |
-| `os` | Only processes present and attributable at attachment time. Exited short-lived processes, past samples and past conversation are not recoverable. | Process activity and resource samples accumulate; activity is recorded as runs with `boundarySource: "activity-burst"`. |
+| `os` | Only processes present and attributable at attachment time. Exited short-lived processes, past samples and past conversation are not recoverable. | The whole subtree is followed at the kernel level: Windows adopts the chosen process into its own Job Object (`agentwatch --target-pid`), Linux filters the machine-wide eBPF stream by ancestry. Creations and exits arrive as events — no polling. When neither can attach, it degrades to process-table sampling. Activity is recorded as runs with `boundarySource: "activity-burst"`. |
 | `acp-proxy` | Not a way to attach to an existing terminal process. Traffic that did not pass through the proxy is not available. | Only facts carried by the proxied connection are recorded. |
 
 ### Backfill and live tail
@@ -110,5 +112,6 @@ Schema v7 stores a `transcript_checkpoints` row per session: the consumed byte o
 | Transcripts over 200 MiB | No full backfill; observation starts at the current end of the file |
 | OS-only observation | Conversation content and metrics before attachment do not exist |
 | Kernel observer unavailable | Process observation falls back to process-table sampling, which can miss short-lived processes; metrics report precision `sampled` |
+| External agent is not a server descendant | The server's own Job Object cannot see it; Windows instead forms a dedicated Job Object on the chosen pid, Linux reuses the machine-wide eBPF stream. Requires the same user's rights over the target; a non-nestable job or missing rights degrades to sampling (`sampled`). |
 | Windows | Docker container capture is disabled; container events are not recorded |
 | Unmatched transcripts | A transcript and a process are bound only on explicit evidence (`--session` path) or an unambiguous one-to-one pairing; ambiguity leaves them unbound |

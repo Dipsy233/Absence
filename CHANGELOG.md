@@ -31,6 +31,14 @@ write-back path is refused.
 - Channel C — OS observation: a shared machine-wide scanner (`ExternalScanner`)
   dispatches every observed transcript its bound process subtree; default-pi
   runs bind by unambiguous 1:1 new-transcript/new-process pairing only.
+- External process, kernel-grade: selecting a running pi on the board
+  attaches a dedicated kernel observer to that pid — on Windows an
+  `agentwatch --target-pid <pid>` adopts the process into its own Job
+  Object, on Linux the machine-wide eBPF stream is filtered by ancestry —
+  so the agent's subtree is reported as events, not sampled. The user
+  keeps running pi in their own terminal; Absence is neither parent nor
+  proxy (`process/TargetedObserver.ts`). Falls back to the table sweep
+  when no kernel observer can attach.
 - The web app is the Observatory: it lists transcripts, proxies and history
   and never launches anything. The chat input, slash palette, approval
   buttons, `/model` switching and every "+ Chat" affordance are gone; the

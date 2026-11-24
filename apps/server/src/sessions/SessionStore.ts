@@ -370,11 +370,20 @@ export class AbsenceSession {
               : {}),
           }
         : {}),
+      // The precision is re-reported when the OS channel's kernel observer does
+      // (or does not) attach to the chosen external pid. Without this, an OS
+      // watch that got a Job Object would still claim `sampled`.
+      onPrecision: (exact) => {
+        this.session.processPrecision = exact ? "exact" : "sampled";
+        this.scheduleState();
+      },
     });
     // Say how precise process watching is, so the UI can be honest about it.
     // A proxy session's agent is spawned by Absence itself and carries the
     // ABSENCE_SESSION_ID marker, so the kernel observer reports it exactly;
-    // every other session's agent belongs to some other process tree.
+    // an OS-only session may get a dedicated Job Object on its chosen pid
+    // (see ProcessWatcher.attachTargetedObserver) and upgrades itself through
+    // `onPrecision` once that attaches. Everything else is sampled.
     this.session.processPrecision =
       JobMonitor.get().available && (!this.observe || this.observe.channel === "acp-proxy")
         ? "exact"

@@ -179,11 +179,23 @@ export function Observatory() {
   const liveIds = useMemo(() => new Set(live.map((row) => row.sessionId)), [live]);
   /** Targets not already being watched — the board's “可监控”. */
   const available = useMemo(() => targets.filter((row) => row.sessionId === undefined), [targets]);
-  /** History rows not currently live — the live ones are in the top section. */
+  /** Targets whose agent is genuinely running right now — the left column. */
+  const runningAvailable = useMemo(
+    () => available.filter((row) => row.liveness === "running"),
+    [available],
+  );
+  /** Transcripts whose agent has exited/idled — historical, shown on the right. */
+  const historical = useMemo(
+    () => available.filter((row) => row.liveness !== "running"),
+    [available],
+  );
+  /** History rows not currently live — the live ones are in the left section. */
   const archived = useMemo(
     () => history.filter((entry) => !entry.absenceSessionId || !liveIds.has(entry.absenceSessionId)),
     [history, liveIds],
   );
+  const runningCount = live.length + runningAvailable.length;
+  const historyCount = archived.length + historical.length;
 
   return (
     <div className="mon-root picker-root">
@@ -202,102 +214,87 @@ export function Observatory() {
         </header>
 
         <div className="picker__body">
-          <div className="picker__main">
+          <section className="picker__block picker__side">
             {error ? <div className="picker__error">{error}</div> : null}
             {notice ? <div className="picker__note">{notice}</div> : null}
-
-            <section className="picker__block">
-              <div className="picker__hhead">
-                <label className="picker__label">{t("Watching now")}</label>
-                <span>{t("{n} observed", { n: live.length })}</span>
-              </div>
-              {live.length === 0 ? (
-                <p className="picker__note">
-                  {t("Nothing is being watched yet. Start your agent in its own terminal — it appears here on its own.")}
-                </p>
-              ) : (
-                <div className="picker__list picker__projects">
-                  {live.map((row) => (
-                    <div key={row.sessionId} className="picker__hrowwrap">
-                      <button
-                        type="button"
-                        disabled={busy !== undefined}
-                        onClick={() => void enter(row.sessionId)}
-                        title={row.transcriptFile ?? row.projectPath}
-                      >
-                        <b>{row.projectPath}</b>
-                        <span>
-                          {row.agentKind} · {channelLabel(row.channel)} · {formatAgo(row.lastActivityAt, now)} ·{" "}
-                          {t("{n} events", { n: row.events })}
-                          {row.backfilling ? ` · ${t("backfilling…")}` : ""}
-                          {row.transcriptResumeBlocked ? ` · ${t("transcript diverged; re-watch to continue")}` : ""}
-                          {row.leased ? ` · ${t("watching")}` : ""}
-                          {row.viewers > 0 ? ` · ${t("{n} viewing", { n: row.viewers })}` : ""}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="picker__hdel"
-                        aria-label={t("Stop watching")}
-                        title={t("Stop watching")}
-                        disabled={busy !== undefined}
-                        onClick={() => void unwatch(row.sessionId)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="picker__block">
-              <div className="picker__hhead">
-                <label className="picker__label">{t("Available to watch")}</label>
-                <span>{t("{n} found", { n: available.length })}</span>
-              </div>
-              {available.length === 0 ? (
-                <p className="picker__note">{t("No transcripts found yet.")}</p>
-              ) : (
-                <div className="picker__list picker__projects">
-                  {available.map((row) => (
+            <div className="picker__hhead">
+              <label className="picker__label">{t("Running now")}</label>
+              <span>{t("{n} running", { n: runningCount })}</span>
+            </div>
+            {runningCount === 0 ? (
+              <p className="picker__note">
+                {t("No agents running. Start one in your own terminal — it appears here.")}
+              </p>
+            ) : (
+              <div className="picker__list picker__running">
+                {live.map((row) => (
+                  <div key={row.sessionId} className="picker__hrowwrap">
                     <button
-                      key={row.key}
                       type="button"
-                      disabled={busy !== undefined || !row.watchable}
-                      onClick={() => void watch(row)}
-                      title={row.reason ?? row.transcriptFile ?? row.cwd ?? row.key}
+                      disabled={busy !== undefined}
+                      onClick={() => void enter(row.sessionId)}
+                      title={row.transcriptFile ?? row.projectPath}
                     >
-                      <b>{row.cwd ?? row.transcriptFile ?? row.key}</b>
+                      <b>{row.projectPath}</b>
                       <span>
-                        {row.agentKind} · {row.channels.map(channelLabel).join("+")} ·{" "}
-                        {livenessLabel(row, t)} · {formatAgo(row.lastActivityAt, now)}
-                        {row.watchable
-                          ? busy === `watch-${row.key}`
-                            ? ` · ${t("attaching…")}`
-                            : ` · ${t("Monitor")}`
-                          : row.reason
-                            ? ` · ${row.reason}`
-                            : ""}
+                        {row.agentKind} · {channelLabel(row.channel)} · {formatAgo(row.lastActivityAt, now)} ·{" "}
+                        {t("{n} events", { n: row.events })}
+                        {row.backfilling ? ` · ${t("backfilling…")}` : ""}
+                        {row.transcriptResumeBlocked ? ` · ${t("transcript diverged; re-watch to continue")}` : ""}
+                        {row.leased ? ` · ${t("watching")}` : ""}
+                        {row.viewers > 0 ? ` · ${t("{n} viewing", { n: row.viewers })}` : ""}
                       </span>
                     </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
+                    <button
+                      type="button"
+                      className="picker__hdel"
+                      aria-label={t("Stop watching")}
+                      title={t("Stop watching")}
+                      disabled={busy !== undefined}
+                      onClick={() => void unwatch(row.sessionId)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {runningAvailable.map((row) => (
+                  <button
+                    key={row.key}
+                    type="button"
+                    disabled={busy !== undefined || !row.watchable}
+                    onClick={() => void watch(row)}
+                    title={row.reason ?? row.transcriptFile ?? row.cwd ?? row.key}
+                  >
+                    <b>{row.cwd ?? row.transcriptFile ?? row.key}</b>
+                    <span>
+                      {row.agentKind} · {row.channels.map(channelLabel).join("+")} ·{" "}
+                      {livenessLabel(row, t)} · {formatAgo(row.lastActivityAt, now)}
+                      {row.watchable
+                        ? busy === `watch-${row.key}`
+                          ? ` · ${t("attaching…")}`
+                          : ` · ${t("Monitor")}`
+                        : row.reason
+                          ? ` · ${row.reason}`
+                          : ""}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
 
           <section className="picker__block picker__side">
             <div className="picker__hhead">
               <label className="picker__label">{t("History")}</label>
-              <span>{t("{n} sessions", { n: archived.length })}</span>
+              <span>{t("{n} sessions", { n: historyCount })}</span>
             </div>
             <div className="picker__list picker__history">
-              {archived.length === 0 ? (
+              {historyCount === 0 ? (
                 <p className="picker__note">{t("No saved sessions yet — open a project to start one.")}</p>
               ) : (
-                archived.map((entry) => (
-                  <div key={entry.id} className="picker__hrowwrap">
+                <>
+                  {archived.map((entry) => (
+                    <div key={entry.id} className="picker__hrowwrap">
                     <button
                       type="button"
                       disabled={busy !== undefined}
@@ -334,7 +331,40 @@ export function Observatory() {
                       </button>
                     ) : null}
                   </div>
-                ))
+                  ))}
+                  {historical.map((row) => (
+                    <div key={row.key} className="picker__hrowwrap">
+                      <button
+                        type="button"
+                        disabled={busy !== undefined || !row.watchable}
+                        onClick={() => void watch(row)}
+                        title={row.reason ?? row.transcriptFile ?? row.cwd ?? row.key}
+                      >
+                        <span className="picker__hrow">
+                          <b>{row.cwd ?? row.transcriptFile ?? row.key}</b>
+                          <em>{formatWhen(row.lastActivityAt)}</em>
+                        </span>
+                        <span className="picker__hmeta">
+                          <span className="picker__hmetatext">
+                            <i data-runtime={row.agentKind}>{row.agentKind}</i>
+                            {" · "}
+                            {livenessLabel(row, t)} · {formatAgo(row.lastActivityAt, now)}
+                            {row.watchable
+                              ? busy === `watch-${row.key}`
+                                ? ` · ${t("attaching…")}`
+                                : ` · ${t("Monitor")}`
+                              : row.reason
+                                ? ` · ${row.reason}`
+                                : ""}
+                          </span>
+                          <em className="picker__hsid" title={row.key}>
+                            {(row.externalId ?? row.key).slice(-4)}
+                          </em>
+                        </span>
+                      </button>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
           </section>

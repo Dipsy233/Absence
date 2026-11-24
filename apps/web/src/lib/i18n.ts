@@ -358,6 +358,10 @@ const ZH: Record<string, string> = {
   "The observation board — nothing here starts an agent.":
     "观测台——这里的一切都不会启动智能体。",
   "Watching now": "正在监控",
+  "Running now": "正在运行",
+  "{n} running": "{n} 个运行中",
+  "No agents running. Start one in your own terminal — it appears here.":
+    "没有正在运行的智能体。在你自己的终端里启动一个——它会出现在这里。",
   "Nothing is being watched yet. Start your agent in its own terminal — it appears here on its own.":
     "还没有在监控任何东西。在你自己的终端里启动智能体——它会自己出现在这里。",
   "Available to watch": "可监控",

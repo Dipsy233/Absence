@@ -286,6 +286,25 @@ async function main(): Promise<void> {
       ),
       JSON.stringify(upgradedEvents.body.events.map((event) => event.type)),
     );
+
+    section("a live transcript is watched with kernel precision");
+    // Choosing the transcript a running pi writes must bind that process and
+    // use the OS channel — not replay history alone. This is the pure
+    // third-party path: the user keeps pi in their own terminal, and picking
+    // its conversation on the board watches the exact process.
+    const directTranscript = path.join(piRoot, "direct.jsonl");
+    await writeTranscript(directTranscript, "pi-direct", projectDir);
+    const direct = fakePi(["--session", directTranscript]);
+    await sleep(700);
+    const directWatch = await api<{ sessionId: string }>(port, "POST", "/api/observe/watch", {
+      key: `transcript:${directTranscript}`,
+    });
+    check("watching a live transcript opens a session", directWatch.status === 200, JSON.stringify(directWatch.body));
+    live = (await api<{ sessions: LiveRow[] }>(port, "GET", "/api/observe/live")).body.sessions;
+    const directRow = live.find((row) => row.sessionId === directWatch.body.sessionId);
+    check("the live transcript is watched on the os channel", directRow?.channel === "os", JSON.stringify(directRow));
+    check("it binds the running pi pid", directRow?.pid === direct.pid, `${directRow?.pid} vs ${direct.pid}`);
+    check("its transcript facts are folded in", (directRow?.events ?? 0) > 1, `${directRow?.events} events`);
   } finally {
     for (const child of children) child.kill();
     server.kill();

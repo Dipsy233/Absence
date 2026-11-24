@@ -55,6 +55,8 @@ ssh -N -L 8848:127.0.0.1:8848 user@agent-host
 
 发现只列目标，不创建会话、watcher 或采样器。`POST /api/observe/watch` 创建会话并记录监控租约。CLI 执行同一动作：
 
+选中一个**正被运行中 pi 写入**的转录目标时，Absence 会把转录绑定到那个进程并以内核级 OS 通道监控它（Windows 对该 pid 单独建 Job Object，Linux 用机器级 eBPF 按祖先过滤），同时把转录对话折入同一会话——用户照旧在自己终端跑 pi，Absence 既不是父进程也不是代理。选一个已退出的转录目标则回放历史。
+
 ```bash
 npx tsx apps/server/src/cli.ts ls
 npx tsx apps/server/src/cli.ts observe --session /abs/path/session.jsonl
@@ -84,7 +86,7 @@ npx tsx apps/server/src/cli.ts observe --pid 12345
 | 通道 | 挂载前 | 挂载后 |
 |---|---|---|
 | `transcript` | 文件中已有的完整记录按文件顺序交付。真实用户消息仍是真实 run 边界。文件在回合中间开始时，首个 run 标记 `boundarySource: "attach"` 与 `truncatedBefore: true`，prompt 为空，不编造提示词 | 同一解析器从字节偏移继续；没有换行结尾的记录在写入方写完后读取 |
-| `os` | 只有挂载时仍存在且可归因的进程。已退出的短命进程、过去的采样与过去的对话不可恢复 | 累积进程活动与资源采样；活动记为 `boundarySource: "activity-burst"` 的 run |
+| `os` | 只有挂载时仍存在且可归因的进程。已退出的短命进程、过去的采样与过去的对话不可恢复 | 内核级跟随该进程整棵子树：Windows 用独立 Job Object（`agentwatch --target-pid`）接管所选进程，Linux 用机器级 eBPF 流按祖先过滤；创建与退出按事件报告，无轮询。无法接管时退化为进程表采样。活动记为 `boundarySource: "activity-burst"` 的 run |
 | `acp-proxy` | 不能挂载到已有的终端进程。未经代理的流量不可得 | 只记录经代理连接携带的事实 |
 
 ### 回填与实时尾随
@@ -109,6 +111,6 @@ schema v7 为每个会话保存一行 `transcript_checkpoints`：已消费字节
 |---|---|
 | 超过 200 MiB 的转录 | 不做完整回填；从文件当前末尾开始观察 |
 | 仅 OS 观察 | 挂载前的对话内容与指标不存在 |
-| 内核观察器不可用 | 进程观察退化为进程表采样，可能漏掉短命进程；指标精度标为 `sampled` |
+| 外部 agent 不是 server 后代 | 无法被 server 自身的 Job Object 看到；Windows 改为对所选 pid 单独建 Job Object 接管，Linux 复用机器级 eBPF。需对目标进程有同等用户权限；进程已处于不可嵌套的 Job、或权限不足时，退化为进程表采样（精度标为 `sampled`） |
 | Windows | Docker 容器捕获被禁用；不记录容器事件 |
 | 未匹配的转录 | 转录与进程只在明确证据（`--session` 路径）或无歧义的一对一配对下绑定；有歧义时不绑定 |

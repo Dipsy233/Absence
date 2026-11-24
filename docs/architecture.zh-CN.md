@@ -42,7 +42,7 @@ Absence 不驱动任何 agent。用户在自己的终端或编辑器中运行 ag
 | Web 客户端 | React 19、Vite、Tailwind、Zustand;代码视图使用 Monaco |
 | 桌面壳 | Electron 37 与 electron-builder |
 | 文件观察 | `chokidar` |
-| 进程观察 | Windows 通过 `native/agentwatch` 使用 Job Object;Linux 通过 `native/agentwatch-linux` 使用 eBPF;兜底为进程表采样 |
+| 进程观察 | Windows 通过 `native/agentwatch` 使用 Job Object;Linux 通过 `native/agentwatch-linux` 使用 eBPF。所选的外部 agent 由独立 Job Object(`--target-pid`)接管,或由机器级 eBPF 按祖先过滤——纯第三方监控,零代理零拉启;无法接管时兜底为进程表采样 |
 | agent 内容 | pi 会话转录;通过代理的 stdio ACP(JSON-RPC 2.0,NDJSON 分帧) |
 
 | 路径 | 职责 |
@@ -80,7 +80,7 @@ Absence 不驱动任何 agent。用户在自己的终端或编辑器中运行 ag
 
 ### 3.3 进程观察 — `apps/server/src/process`
 
-`ProcessWatcher.ts` 把进程创建与退出转换成 `process` 事件,并归因到命令、egg 与会话。`JobMonitor.ts` 持有进程级的内核观察器:Windows 使用 `JobSidecar`,Linux 使用 `EbpfObserver`。`ExternalScanner.ts` 每四秒做一次全机扫描,把结果分发给所有观察会话。`ProcessScanner.ts` 按可执行文件签名与绝对 `--session` 转录路径匹配 pi 进程。`classify.ts` 判定进程是 primary egg 还是 helper。`DockerMonitor.ts` 与 `DockerEggs.ts` 覆盖非 Windows 主机的容器。`ProcessMetrics.ts` 与 `metricSample.ts` 采样资源使用;`storage/metrics.ts` 负责持久化。
+`ProcessWatcher.ts` 把进程创建与退出转换成 `process` 事件,并归因到命令、egg 与会话。`JobMonitor.ts` 持有进程级的内核观察器:Windows 使用 `JobSidecar`,Linux 使用 `EbpfObserver`。`TargetedObserver.ts` 对用户在观测台选中的外部 pid 建专用内核观察:Windows 起一个 `agentwatch --target-pid <pid>` 将其接管进独立 Job Object,Linux 复用机器级 eBPF 流并按祖先过滤;接管失败时回落到进程表轮询。`ExternalScanner.ts` 每四秒做一次全机扫描,把结果分发给所有观察会话。`ProcessScanner.ts` 按可执行文件签名与绝对 `--session` 转录路径匹配 pi 进程。`classify.ts` 判定进程是 primary egg 还是 helper。`DockerMonitor.ts` 与 `DockerEggs.ts` 覆盖非 Windows 主机的容器。`ProcessMetrics.ts` 与 `metricSample.ts` 采样资源使用;`storage/metrics.ts` 负责持久化。
 
 ### 3.4 文件观察 — `apps/server/src/filesystem`
 

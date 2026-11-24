@@ -66,12 +66,20 @@ export class JobSidecar {
   private restarts = 0;
   private readonly exePath: string;
   private readonly maxRestarts: number;
+  /**
+   * The pid the helper adopts into its Job Object. Defaults to the server's
+   * own pid (the server-wide observer). A per-target observer passes the pid
+   * of an already-running external agent instead, so the kernel reports that
+   * process's subtree — the pure third-party monitoring path.
+   */
+  private readonly targetPid: number;
   /** Debounce: a helper that dies instantly must not be restarted in a loop. */
   private restartTimer?: NodeJS.Timeout;
 
-  constructor(options: { exePath?: string; maxRestarts?: number } = {}) {
+  constructor(options: { exePath?: string; maxRestarts?: number; targetPid?: number } = {}) {
     this.exePath = options.exePath ?? defaultExePath();
     this.maxRestarts = options.maxRestarts ?? 5;
+    this.targetPid = options.targetPid ?? process.pid;
   }
 
   get available(): boolean {
@@ -105,7 +113,7 @@ export class JobSidecar {
       let settled = false;
       // stdin is the sampling channel: "sample" asks the helper for one pass
       // over the handles it already holds (see native/agentwatch/README.md).
-      const child = spawn(this.exePath, ["--target-pid", String(process.pid)], {
+      const child = spawn(this.exePath, ["--target-pid", String(this.targetPid)], {
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
       });

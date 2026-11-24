@@ -3,6 +3,7 @@ import { EMPTY_INTENT, parseCommandIntent, type CommandIntent } from "./CommandI
 import { classifyProcess } from "./classify";
 import { isTransparentLauncher } from "./priors";
 import { JobMonitor } from "./JobMonitor";
+import { TargetedObserver } from "./TargetedObserver";
 import type { MetricsTarget } from "./ProcessMetrics";
 import type { WatchExit, WatchStart } from "./observer";
 import { snapshotProcesses, type ProcessTable, type ProcInfo } from "./ProcessTable";
@@ -214,6 +215,13 @@ export interface ProcessWatcherOptions {
    */
   externalPidStartedAt?: number;
   /**
+   * Called when the precision of process watching changes: true when a kernel
+   * observer is attached to the chosen external pid (exact, event-driven),
+   * false when it fell back to polling the process table. Lets the session
+   * report `processPrecision` honestly.
+   */
+  onPrecision?: (exact: boolean) => void;
+  /**
    * True when this session drives a runtime Absence spawned (the mock
    * fixture). Only then does the server's own pid count as "the agent" for
    * the metrics curve; observed and proxy sessions attribute by their own
@@ -236,6 +244,11 @@ export interface ProcessWatcherOptions {
    * second agent.
    */
   subscribeKernel?: (listener: (event: WatchStart | WatchExit) => void) => () => void;
+  /**
+   * Force the OS-channel targeted observer's backend (checks). Omitted in
+   * production, where TargetedObserver picks by platform; see its `backend`.
+   */
+  targetedBackend?: "job" | "filter";
   now?: () => number;
   /**
    * How many *finished* eggs to keep. Running eggs are always kept, however
@@ -307,6 +320,11 @@ export class ProcessWatcher {
    * stay unused.
    */
   private jobUnsubscribe?: () => void;
+  /** Kernel-grade observer attached to the chosen external pid (OS channel). */
+  private targetedObserver?: TargetedObserver;
+  private targetedUnsubscribers: Array<() => void> = [];
+  /** True while kernel events (not the table sweep) drive the OS-channel tree. */
+  private kernelActive = false;
   /** Commands whose wall-clock window is still open, keyed by `begin` id. */
   private readonly jobOpen = new Map<
     number,
@@ -435,7 +453,7 @@ export class ProcessWatcher {
       return;
     }
     if (this.externalPidMode) {
-      void this.scanExternalPid();
+      void this.attachTargetedObserver();
       return;
     }
     if (this.jobMode) return;
@@ -658,6 +676,16 @@ export class ProcessWatcher {
     this.ownedLive.clear();
     this.jobUnsubscribe?.();
     this.jobUnsubscribe = undefined;
+    this.releaseTargetedObserver();
+    this.kernelActive = false;
+  }
+
+  /**
+   * True while a kernel observer (not the table sweep) drives this session's
+   * process tree. The session reports its precision from this.
+   */
+  usesKernelEvents(): boolean {
+    return this.kernelActive;
   }
 
   /** Snapshot external trees: Windows Job events cover server children only. */
@@ -673,6 +701,69 @@ export class ProcessWatcher {
     } finally {
       if (!this.disposed) this.externalTimer = setTimeout(() => void this.scanExternal(), TICK_SLOW_MS);
     }
+  }
+
+  /**
+   * Attach a kernel observer to the user-chosen pid (the OS-only channel).
+   *
+   * Absence never becomes the agent's parent, so the server-wide Job Object
+   * cannot see it. Windows gives us the same power another way: a dedicated
+   * `agentwatch --target-pid <pid>` adopts that process into its own Job
+   * Object, and the kernel then reports its subtree's creations and exits.
+   * The events are scoped to the chosen tree by construction, so every one is
+   * this session's. Linux reuses the machine-wide eBPF stream and filters it
+   * by ancestry (`TargetedObserver`).
+   *
+   * When the observer cannot attach (no rights, a non-nestable job, no helper)
+   * the watcher falls back to the 4 s table sweep — degraded, never silent.
+   */
+  private async attachTargetedObserver(): Promise<void> {
+    const pid = this.options.externalPid;
+    if (pid === undefined || this.disposed) return;
+    // The chosen process is the agent: its pid is the metrics curve's root and
+    // the ancestry anchor, even though it is never itself an egg.
+    this.agentPid = pid;
+    this.markOwned(pid);
+    const observer = new TargetedObserver({
+      pid,
+      startedAt: this.options.externalPidStartedAt ?? 0,
+      ...(this.options.snapshot ? { snapshot: this.options.snapshot } : {}),
+      ...(this.options.subscribeKernel ? { subscribeKernel: this.options.subscribeKernel } : {}),
+      ...(this.options.targetedBackend ? { backend: this.options.targetedBackend } : {}),
+    });
+    this.targetedObserver = observer;
+    // Subscribe before start(): the seed pass emits starts synchronously.
+    this.targetedUnsubscribers = [
+      observer.on("start", (event) => this.onJobEvent(event)),
+      observer.on("exit", (event) => this.onJobEvent(event)),
+      observer.on("status", (status) => {
+        const exact = status === "watching";
+        this.kernelActive = exact;
+        this.options.onPrecision?.(exact);
+      }),
+    ];
+    try {
+      await observer.start();
+      if (this.disposed) return;
+      this.kernelActive = true;
+      this.options.onPrecision?.(true);
+      // Seeded eggs were already alive when the job was formed, so their exits
+      // are not job events; the cheap liveness probe closes that gap.
+      this.startAliveTick();
+    } catch {
+      // No kernel path for this process: keep the honest table sweep.
+      this.releaseTargetedObserver();
+      this.kernelActive = false;
+      this.options.onPrecision?.(false);
+      if (!this.disposed) void this.scanExternalPid();
+    }
+  }
+
+  private releaseTargetedObserver(): void {
+    for (const off of this.targetedUnsubscribers) off();
+    this.targetedUnsubscribers = [];
+    this.targetedObserver?.dispose();
+    this.targetedObserver = undefined;
   }
 
   /**

@@ -13,6 +13,13 @@ That is not a tuning problem; it is the sampling theorem. On a busy machine a
 `agentwatch` removes the sampling: it asks the Windows kernel to report every
 process creation and exit as it happens.
 
+`--target-pid <pid>` adopts **any** process the user can open, not just the
+server. That is what makes Absence a pure third-party monitor: the user keeps
+running pi in their own terminal, Absence opens that pi by pid and assigns it
+to a fresh Job Object, and the kernel then reports the pi's whole subtree —
+no proxy, no launcher, no change to how the user works. The server-wide
+observer is just the special case `--target-pid <server pid>`.
+
 ## How
 
 A **Job Object** is a kernel container. Every process assigned to a job, and

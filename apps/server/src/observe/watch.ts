@@ -4,6 +4,7 @@ import { deleteLease, deleteLeasesForSession, listLeases, putLease, touchLease, 
 import { proxySessions } from "../agents/acp/proxy";
 import { findPiSession } from "../process/ProcessScanner";
 import { processSnapshot } from "./processSource";
+import { processTargetKey } from "./Targets";
 import { sessionStore } from "../sessions/SessionStore";
 import type { ObserveMeta } from "./types";
 
@@ -42,6 +43,22 @@ function proxyIdOf(key: string): string | undefined {
 /** Where a lease's session is watched, for a CLI to print one line. */
 export function sessionUrl(sessionId: string): string {
   return `/s/${encodeURIComponent(sessionId)}`;
+}
+
+/**
+ * The running process that writes this transcript, if there is one.
+ *
+ * `findPiSession` looks for a unique pi process naming this exact `--session`
+ * path on its command line. When it exists the transcript is live and can be
+ * watched with kernel precision (the OS channel); when it does not (the agent
+ * exited, or the file is an archive), the transcript is history and is
+ * replayed instead.
+ */
+async function boundRunningPid(file: string): Promise<{ pid: number; startedAt: number } | undefined> {
+  const table = await processSnapshot().catch(() => undefined);
+  if (table === undefined) return undefined;
+  const info = findPiSession(table, file);
+  return info === undefined ? undefined : { pid: info.pid, startedAt: info.startedAt };
 }
 
 /**
@@ -101,6 +118,27 @@ export async function watchTarget(key: string, deps: WatchDeps): Promise<WatchRe
     const row = await deps.discovery.inspect(file);
     if (row === undefined) return undefined;
     const now = Date.now();
+
+    // If the transcript's agent is running right now, watch it with kernel
+    // precision: delegate to the OS channel, which binds the pid (a dedicated
+    // Job Object on Windows) and folds this transcript's conversation in. The
+    // user keeps running pi in their own terminal; we simply picked the exact
+    // process behind this file. An exited/archived transcript falls through to
+    // a plain transcript session (history replay).
+    const boundPid = await boundRunningPid(file);
+    if (boundPid !== undefined) {
+      const procKey = processTargetKey(boundPid.pid, boundPid.startedAt);
+      const osResult = await watchProcessTarget(procKey, deps);
+      if (osResult !== undefined) {
+        // Re-file the lease under the transcript key so the board's row and
+        // unwatch-by-key address the same session, and a restart re-attaches
+        // the transcript identity exactly once (not a second, pid-keyed one).
+        deleteLease(procKey);
+        const lease: WatchLease = { ...osResult.lease, targetKey: key };
+        putLease(lease);
+        return { ...osResult, lease };
+      }
+    }
 
     // Upgrade first: if the user was already watching this agent as an OS-only
     // process, fold the transcript into *that* session rather than opening a

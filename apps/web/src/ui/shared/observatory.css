@@ -1,8 +1,20 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   OBSERVATORY extras — the board reuses the original picker layout
-   (picker.css); only its additions live here: the history row wrapper that
-   carries the resume button plus the delete affordance.
+   OBSERVATORY — the board. Two columns: running agents on the left, history
+   on the right. It reuses the picker layout (picker.css); only what the board
+   changes lives here.
    ══════════════════════════════════════════════════════════════════════════ */
+
+/* Exactly two even columns (the picker's 2fr/3fr asymmetry is gone). */
+.picker-root .picker__body {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* The running list fills its column and scrolls on its own. */
+.picker__running {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
 
 .picker__hrowwrap {
   display: flex;
