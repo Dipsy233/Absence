@@ -287,6 +287,33 @@ async function main(): Promise<void> {
       JSON.stringify(upgradedEvents.body.events.map((event) => event.type)),
     );
 
+    section("runs switch from activity bursts to user turns");
+    // A bare process is observed as bursts (silence is the only boundary).
+    // Folding its transcript in must switch the run index to user turns and
+    // rebuild the burst rows away: they were labelled by event type ("usage",
+    // "tool_end") and are not what the agent actually did.
+    let upgradedRuns: RunRow[] = [];
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await sleep(300);
+      upgradedRuns = (await api<RunRow[]>(port, "GET", `/api/sessions/${upgraded.body.sessionId}/runs`)).body;
+      if (upgradedRuns.length > 0 && upgradedRuns.every((run) => run.boundarySource !== "activity-burst")) break;
+    }
+    check(
+      "the upgraded session's runs are user turns",
+      upgradedRuns.length > 0 && upgradedRuns.every((run) => run.boundarySource !== "activity-burst"),
+      JSON.stringify(upgradedRuns),
+    );
+    check(
+      "the transcript's turn is settled",
+      upgradedRuns[0]?.status === "completed",
+      JSON.stringify(upgradedRuns[0]),
+    );
+    check(
+      "the run is named by the prompt, not an event type",
+      (upgradedRuns[0]?.prompt ?? "").includes("hello from the transcript"),
+      JSON.stringify(upgradedRuns[0]?.prompt),
+    );
+
     section("a live transcript is watched with kernel precision");
     // Choosing the transcript a running pi writes must bind that process and
     // use the OS channel — not replay history alone. This is the pure

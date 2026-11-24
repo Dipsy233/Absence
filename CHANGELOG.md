@@ -37,6 +37,12 @@ write-back path is refused.
   its archive read-only instead of 404ing, and an OS-only watch that gains a
   transcript backfills the conversation — its archive's process facts are not
   mistaken for transcript history and warmed away.
+- Runs follow the channel that now feeds the session: folding a transcript
+  into a process watch switches the run index from activity bursts to user
+  turns, rebuilds the rows already written (they were labelled "usage" /
+  "tool_end" by their first event), and stops the burst timer from closing a
+  turn the agent is still writing. Retiring a burst session closes its open
+  run instead of leaving a `running` row nobody will ever finish.
 - External process observation at the kernel level: selecting a running pi
   attaches a dedicated kernel observer to that pid. On Windows an
   `agentwatch --target-pid <pid>` adopts the process into its own Job

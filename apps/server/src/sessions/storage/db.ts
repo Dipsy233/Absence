@@ -1253,6 +1253,28 @@ export function markBurstSession(id: string): void {
 }
 
 /**
+ * Switch an OS-only session's runs to transcript boundaries.
+ *
+ * Watching a bare process first, then folding in the transcript it writes, is
+ * the normal upgrade path. Burst rows written before the fold describe events,
+ * not turns, and their labels are event type names; rebuilding from the stored
+ * events produces the user-turn runs the reader expected all along.
+ */
+export function markTranscriptSession(id: string): void {
+  try {
+    open();
+    // The backfill that triggered the upgrade may still be in the write buffer;
+    // rebuilding before it lands would derive the runs from an incomplete
+    // history and then the flushed events would have no index.
+    flushPending();
+    runIndex?.setTranscriptMode(id);
+    runIndex?.rebuild(id);
+  } catch (error) {
+    console.error("[absence] sqlite transcript run-mode failed:", error);
+  }
+}
+
+/**
  * Allow a transcript observation to open a run without a user turn.
  *
  * The transcript may start mid-conversation (the observer attached late), so

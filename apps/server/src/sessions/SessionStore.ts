@@ -33,6 +33,7 @@ import {
   findArchivedExternal,
   markAttachSession,
   markBurstSession,
+  markTranscriptSession,
   readEvents,
   readMeta,
   readProcessEvents,
@@ -502,6 +503,16 @@ export class AbsenceSession {
         // OS-only watch's process events are not a conversation.
         this.replayedArchive = events.length > 0;
         this.archiveTranscriptFacts = events.some((event) => event.source === "transcript");
+        // A session watched as a bare process first wrote burst rows; after a
+        // transcript was folded in, those rows describe events ("usage",
+        // "tool_end") rather than turns. The archive holds the transcript, so
+        // the turns can be re-derived instead of shown as event names.
+        if (this.archiveTranscriptFacts) {
+          const existing = await readRuns(archiveId);
+          if (existing.some((run) => run.boundarySource === "activity-burst")) {
+            markTranscriptSession(this.id);
+          }
+        }
       }
       // A reopened archive has no observe meta: fall back to the same scope
       // rule observation uses, or opening a home-directory archive would walk
@@ -680,8 +691,20 @@ export class AbsenceSession {
   addObservationChannel(channel: ObserveChannel): void {
     if (!this.observe) return;
     const channels = this.observe.channels ?? [this.observe.channel];
-    if (!channels.includes(channel)) channels.push(channel);
+    const added = !channels.includes(channel);
+    if (added) channels.push(channel);
     this.observe.channels = channels;
+    if (added && channel === "transcript" && this.observe.channel === "os") {
+      // The watch began as a bare process, where silence was the only run
+      // boundary. The transcript brings user turns and `agent_end` back; the
+      // burst rows already written described events ("usage", "tool_end") and
+      // must be rebuilt, or the reader keeps seeing event names as turns.
+      if (this.burstTimer !== undefined) {
+        clearTimeout(this.burstTimer);
+        this.burstTimer = undefined;
+      }
+      markTranscriptSession(this.id);
+    }
     this.scheduleMeta();
     this.scheduleState();
   }
@@ -977,6 +1000,12 @@ export class AbsenceSession {
     if (this.treeTimer) clearTimeout(this.treeTimer);
     if (this.metaTimer) clearTimeout(this.metaTimer);
     if (this.burstTimer) clearTimeout(this.burstTimer);
+    // A burst has no `agent_end`: if the session is retired before the idle
+    // timer fires, its open run would stay `running` in the archive forever.
+    // Retiring the session is the silence that ends the burst.
+    if (this.isBurstSession()) {
+      await closeOpenRun(this.id, this.lastActiveAt).catch(() => undefined);
+    }
     // Absence observes; it does not own. The processes the agent spawned —
     // its commands and any eggs it left behind — are the agent's business:
     // they are reported, watched to their exit, and never terminated here.
@@ -1047,7 +1076,10 @@ export class AbsenceSession {
 
   /** True when this session's runs are activity bursts (OS-only watch). */
   private isBurstSession(): boolean {
-    return this.observe?.channel === "os";
+    if (this.observe?.channel !== "os") return false;
+    // Once a transcript is folded in, runs are user turns again — the burst
+    // timer must not close a turn the agent is still writing.
+    return !(this.observe.channels?.includes("transcript") ?? false);
   }
 
   /** Close the open burst once the session has been quiet for a full window. */

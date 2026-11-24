@@ -75,7 +75,7 @@ Coverage by area:
 | Metrics | `check-metrics`, `check-metrics-persist`, `check-metrics-ranges`, `check-metrics-restart`, `check-observed-lifetime` | Sampling output, ring behaviour, persistence, range selection, survival across a server restart, egg lifetime |
 | Agent layer | `check-mcp-events`, `check-acp-mapping`, `check-acp-proxy` | Tool mapping by kind and shape, MCP events, proxy forwarding, tap projection, diagnostics, proxy CLI exit |
 | Sessions and storage | `check-storage`, `check-session-dwell`, `check-session-close`, `check-lifecycle` | Legacy archive import, event round-trip, buffer drain, archive listing, dwell clock, close and lifecycle |
-| Observation | `check-observe-board`, `check-observe-watch`, `check-observe-os`, `check-cli-observe`, `check-observe-midway`, `check-observe-transcript`, `check-observe-proxy` | Discovery without auto-attach, target selection and leases, restart recovery, transcript checkpoint resume, prefix divergence, OS-only watch and upgrade, mid-session attach, backfill integrity, refusal to drive, CLI bind guard and token handling |
+| Observation | `check-observe-board`, `check-observe-watch`, `check-observe-os`, `check-cli-observe`, `check-observe-midway`, `check-observe-transcript`, `check-observe-proxy` | Discovery without auto-attach, target selection and leases, restart recovery, transcript checkpoint resume, prefix divergence, OS-only watch and upgrade (run boundaries switch to user turns), mid-session attach, backfill integrity, history reopen, refusal to drive, CLI bind guard and token handling |
 | File diff | `check-fsdiff` | The diff engine |
 
 ## 5. Manual platform checks

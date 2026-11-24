@@ -72,15 +72,17 @@ The root workspace contains `packages/*`, `apps/server` and `apps/web`. `apps/de
 | `agents/acp/proxy/**` | Transparent ACP proxy: spawns the agent, forwards bytes unchanged, taps the same traffic for events, injects `ABSENCE_SESSION_ID` for exact process attribution and persists through `SessionStore.createObserved` (channel `acp-proxy`). |
 | `agents/MockAdapter.ts` | Scripted fixture for development and checks — the only runtime Absence still drives. |
 
-`createAdapter` resolves only the mock fixture. Any other kind produces an observed session; a POST carrying `resume` reopens an archive (replay, project tree, watchers) and spawns nothing.
+`createAdapter` resolves only the mock fixture. Any other kind produces an observed session; a POST carrying `resume` reopens an archive (replay, project tree, watchers) and spawns nothing. `GET /api/sessions/:id` uses the same replay path when the id is archived, so a History row or a `/s/<id>` deep link is a place, not a 404.
 
 ### 3.2 Sessions and archive — `apps/server/src/sessions`
 
 `SessionStore.ts` holds live session state: the ordered event list, the current run, the Stage action, chat messages, file state, process watchers and metric samplers. `storage/**` persists it. In-memory state is authoritative for the live view; SQLite is the durable record.
 
+Each session also has a mode in the run index. A transcript or proxy session derives runs from user turns: a user message opens one, `agent_end` closes it, and a transcript that attaches mid-turn opens a `boundarySource: "attach"` run with no invented prompt. An OS-only watch has no user turns to read, so it segments activity bursts on silence instead. Folding a transcript into that watch switches the index back to user turns, clears the burst idle timer, and rebuilds the rows already written — before the switch they are labelled by their first event (`usage`, `tool_end`), not by a prompt.
+
 ### 3.3 Process observation — `apps/server/src/process`
 
-`ProcessWatcher.ts` turns process creation and exit into `process` events and attributes them to commands, eggs and sessions. `JobMonitor.ts` owns the process-wide kernel observer: `JobSidecar` on Windows, `EbpfObserver` on Linux. `TargetedObserver.ts` builds a dedicated kernel observer for the external pid a user picks on the board: on Windows an `agentwatch --target-pid <pid>` adopts it into its own Job Object, on Linux the machine-wide eBPF stream is filtered by ancestry; if it cannot attach, it falls back to the table sweep. `ExternalScanner.ts` performs one machine-wide scan every four seconds and dispatches the result to every observed session. `ProcessScanner.ts` matches pi processes by executable signature and the absolute `--session` transcript path. `classify.ts` decides whether a process is a primary egg or a helper. `DockerMonitor.ts` and `DockerEggs.ts` cover containers on non-Windows hosts. `ProcessMetrics.ts` and `metricSample.ts` sample resource use; `storage/metrics.ts` persists it.
+`ProcessWatcher.ts` turns process creation and exit into `process` events and attributes them to commands, eggs and sessions. `JobMonitor.ts` owns the process-wide kernel observer: `JobSidecar` on Windows, `EbpfObserver` on Linux. `TargetedObserver.ts` builds a dedicated kernel observer for the external pid a user picks on the board: on Windows an `agentwatch --target-pid <pid>` adopts it into its own Job Object, on Linux the machine-wide eBPF stream is filtered by ancestry; if it cannot attach, it falls back to the table sweep. `ExternalScanner.ts` performs one machine-wide scan every four seconds and dispatches the result to every observed session. `ProcessScanner.ts` matches pi processes by executable signature and the absolute `--session` transcript path. A default `pi` (no `--session`) is paired with a transcript only by project `cwd` plus its latest write, so a session resumed inside the process is followed on the new file; the process table carries each cwd from the native observer on Windows and `/proc` on Linux. `classify.ts` decides whether a process is a primary egg or a helper. `DockerMonitor.ts` and `DockerEggs.ts` cover containers on non-Windows hosts. `ProcessMetrics.ts` and `metricSample.ts` sample resource use; `storage/metrics.ts` persists it.
 
 ### 3.4 File observation — `apps/server/src/filesystem`
 
@@ -92,7 +94,7 @@ Metrics are not `AbsenceEvent`s. They are sampled every five seconds on wall-clo
 
 ### 3.6 HTTP and WebSocket — `apps/server/src/api`, `websocket`
 
-HTTP routes cover the project list, observation (`/api/observe/sessions`, `/api/observe/targets`, `/api/observe/live`, `/api/observe/watch`, `/api/observe/unwatch`, `/api/observe/attach`), proxy sessions, session snapshots, paged events, run summaries, file versions, file content and metrics. The write-back routes (`prompt`, `abort`, `approval`, `command`) answer 403 for every session except the mock fixture. `POST /api/sessions` reopens an archive or starts the fixture.
+HTTP routes cover the project list, observation (`/api/observe/sessions`, `/api/observe/targets`, `/api/observe/live`, `/api/observe/watch`, `/api/observe/unwatch`, `/api/observe/attach`), proxy sessions, session snapshots, paged events, run summaries, file versions, file content and metrics. The write-back routes (`prompt`, `abort`, `approval`, `command`) answer 403 for every session except the mock fixture. `POST /api/sessions` reopens an archive or starts the fixture; `GET /api/sessions/:id` reopens an archived id read-only, which is what History and `/s/<id>` deep links use.
 
 The session WebSocket (`/ws/sessions/:id`) sends a `snapshot` first, then batched `event` and `session_state` messages. Event frames are batched at 50 ms or 200 events.
 
@@ -169,7 +171,7 @@ Tables (schema v7):
 | `sessions` | One row per archived session: project, timestamps, runtime (agent kind), model, message count, first prompt, and the observation identity (`channel` + `external_id`) that re-attach resolves. |
 | `transcript_checkpoints` | Per session, the consumed transcript byte offset and the SHA-256 of the consumed prefix. Written in the same transaction as the events; used to resume after a restart. |
 | `events` | Ordered events with `seq`, payload, `source` and `fidelity`. |
-| `runs` | Run index: event range, prompt, start and end, status, counts and `boundary_source`. |
+| `runs` | Run index: event range, prompt, start and end, status, counts and `boundary_source` (`user-message`, `attach`, `activity-burst`). A session that moves from OS-only to transcript observation rebuilds these rows on the user-turn boundaries. |
 | `file_versions` | Complete and partial file versions with source, line range and known-line data. |
 | `metric_chunks` | Per-egg metric chunks packed as binary arrays. |
 | `egg_metric_summary` | Per-egg first and last sample, CPU baseline and final value, RSS integral and sample count. |

@@ -72,15 +72,17 @@ Absence 不驱动任何 agent。用户在自己的终端或编辑器中运行 ag
 | `agents/acp/proxy/**` | 透明 ACP 代理:自己 spawn agent,原样转发字节,旁听同一份流量生成事件,注入 `ABSENCE_SESSION_ID` 获得精确进程归因,并经 `SessionStore.createObserved` 持久化(channel `acp-proxy`)。 |
 | `agents/MockAdapter.ts` | 开发与检查使用的脚本化 fixture——Absence 仍然驱动的唯一运行时。 |
 
-`createAdapter` 只解析 mock fixture。其他任何 kind 都产生观察会话;带 `resume` 的 POST 重开归档(回放、目录树、watcher),不启动任何进程。
+`createAdapter` 只解析 mock fixture。其他任何 kind 都产生观察会话;带 `resume` 的 POST 重开归档(回放、目录树、watcher),不启动任何进程。`GET /api/sessions/:id` 对已归档的 id 走同一条回放路径,因此历史行或 `/s/<id>` 深链是一个位置,而不是 404。
 
 ### 3.2 会话与归档 — `apps/server/src/sessions`
 
 `SessionStore.ts` 持有实时会话状态:有序事件列表、当前 run、Stage 动作、聊天消息、文件状态、进程 watcher 与指标采样器。`storage/**` 负责持久化。内存状态是实时视图的来源;SQLite 是持久记录。
 
+每个会话在 run 索引里还有一个模式。转录或代理会话按用户轮次派生 run:用户消息开启,`agent_end` 关闭;转录在回合中间挂载时,首个 run 标为 `boundarySource: "attach"`,不编造 prompt。仅 OS 观察没有用户轮次可读,改为按静默切分活动爆发。给该会话折入转录后,索引切回用户轮次、清掉 burst 空闲定时器,并重建已写入的行——切换前这些行按首个事件命名(`usage`、`tool_end`),而不是 prompt。
+
 ### 3.3 进程观察 — `apps/server/src/process`
 
-`ProcessWatcher.ts` 把进程创建与退出转换成 `process` 事件,并归因到命令、egg 与会话。`JobMonitor.ts` 持有进程级的内核观察器:Windows 使用 `JobSidecar`,Linux 使用 `EbpfObserver`。`TargetedObserver.ts` 为观测台中选中的外部 pid 建立专用内核观察者:Windows 启动一个 `agentwatch --target-pid <pid>` 将其接管进独立 Job Object,Linux 复用机器级 eBPF 流并按祖先过滤;接管失败时退化为进程表轮询。`ExternalScanner.ts` 每四秒做一次全机扫描,把结果分发给所有观察会话。`ProcessScanner.ts` 按可执行文件签名与绝对 `--session` 转录路径匹配 pi 进程。`classify.ts` 判定进程是 primary egg 还是 helper。`DockerMonitor.ts` 与 `DockerEggs.ts` 覆盖非 Windows 主机的容器。`ProcessMetrics.ts` 与 `metricSample.ts` 采样资源使用;`storage/metrics.ts` 负责持久化。
+`ProcessWatcher.ts` 把进程创建与退出转换成 `process` 事件,并归因到命令、egg 与会话。`JobMonitor.ts` 持有进程级的内核观察器:Windows 使用 `JobSidecar`,Linux 使用 `EbpfObserver`。`TargetedObserver.ts` 为观测台中选中的外部 pid 建立专用内核观察者:Windows 启动一个 `agentwatch --target-pid <pid>` 将其接管进独立 Job Object,Linux 复用机器级 eBPF 流并按祖先过滤;接管失败时退化为进程表轮询。`ExternalScanner.ts` 每四秒做一次全机扫描,把结果分发给所有观察会话。`ProcessScanner.ts` 按可执行文件签名与绝对 `--session` 转录路径匹配 pi 进程。默认 `pi`(无 `--session`)只按项目 `cwd` 加最后写入的转录配对,因此进程内恢复的会话会跟随新文件;进程表在 Windows 由 native 观察器、在 Linux 由 `/proc` 提供 cwd。`classify.ts` 判定进程是 primary egg 还是 helper。`DockerMonitor.ts` 与 `DockerEggs.ts` 覆盖非 Windows 主机的容器。`ProcessMetrics.ts` 与 `metricSample.ts` 采样资源使用;`storage/metrics.ts` 负责持久化。
 
 ### 3.4 文件观察 — `apps/server/src/filesystem`
 
@@ -92,7 +94,7 @@ Absence 不驱动任何 agent。用户在自己的终端或编辑器中运行 ag
 
 ### 3.6 HTTP 与 WebSocket — `apps/server/src/api`、`websocket`
 
-HTTP 路由覆盖项目列表、观察(`/api/observe/sessions`、`/api/observe/targets`、`/api/observe/live`、`/api/observe/watch`、`/api/observe/unwatch`、`/api/observe/attach`)、代理会话、会话快照、分页事件、run 摘要、文件版本、文件内容与指标。写回路由(`prompt`、`abort`、`approval`、`command`)对除 mock fixture 外的所有会话返回 403。`POST /api/sessions` 重开归档或启动 fixture。
+HTTP 路由覆盖项目列表、观察(`/api/observe/sessions`、`/api/observe/targets`、`/api/observe/live`、`/api/observe/watch`、`/api/observe/unwatch`、`/api/observe/attach`)、代理会话、会话快照、分页事件、run 摘要、文件版本、文件内容与指标。写回路由(`prompt`、`abort`、`approval`、`command`)对除 mock fixture 外的所有会话返回 403。`POST /api/sessions` 重开归档或启动 fixture;`GET /api/sessions/:id` 对已归档 id 做只读重开,历史与 `/s/<id>` 深链走这条路径。
 
 会话 WebSocket(`/ws/sessions/:id`)先发送 `snapshot`,随后发送批量 `event` 与 `session_state` 消息。事件帧按 50 ms 或 200 条合批。
 
@@ -169,7 +171,7 @@ SQLite 访问分布在四个模块:
 | `sessions` | 每个归档会话一行:项目、时间戳、runtime(agent kind)、模型、消息数、首条 prompt,以及 re-attach 依赖的观察身份(`channel` + `external_id`)。 |
 | `transcript_checkpoints` | 每个会话已消费的转录字节偏移与已消费前缀的 SHA-256,与事件同事务写入,用于重启后续采。 |
 | `events` | 有序事件,含 `seq`、payload、`source` 与 `fidelity`。 |
-| `runs` | run 索引:事件范围、prompt、开始与结束、状态、计数与 `boundary_source`。 |
+| `runs` | run 索引:事件范围、prompt、开始与结束、状态、计数与 `boundary_source`(`user-message`、`attach`、`activity-burst`)。会话从仅 OS 观察转为转录观察时,这些行会按用户轮次重建。 |
 | `file_versions` | 完整与部分文件版本,含来源、行范围与已知行数据。 |
 | `metric_chunks` | 每个 egg 的指标 chunk,以二进制数组打包。 |
 | `egg_metric_summary` | 每个 egg 的首末样本、CPU 基线与终值、RSS 积分、样本数。 |

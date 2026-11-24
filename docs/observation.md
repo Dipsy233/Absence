@@ -42,7 +42,7 @@ The board has two columns:
 | Column | Content | Action |
 |---|---|---|
 | Running | Running agents: watched sessions and running targets | Click a row to start monitoring and open its panel |
-| History | Archived sessions and exited transcripts | Reopen, or delete an archive |
+| History | Archived sessions and exited transcripts | Open the archive as a read-only replay, or delete it |
 
 Monitoring ends from inside the panel: its `change` button drops the monitor lease and closes the live session, and the target returns to the Running column as watchable. The archive remains.
 
@@ -66,6 +66,8 @@ npx tsx apps/server/src/cli.ts observe --pid 12345
 
 Selecting a transcript target that a **running pi** writes binds that process and observes it over the kernel-grade OS channel (a dedicated Job Object on Windows, the machine-wide eBPF stream filtered by ancestry on Linux), and folds the transcript's conversation into the same session. The user continues to run pi in their own terminal; Absence is neither parent nor proxy. Selecting a transcript whose agent has exited replays its history.
 
+A default `pi` (started with `-c`, or resumed from the in-app picker) names no transcript on its command line. It is bound by two pieces of evidence together: the transcript's project `cwd` must match the process's working directory, and among the files the process has written while it ran, only the most recently written one can be its current session. A long-lived `pi` that resumes another conversation is therefore followed on the file it writes now — never the one it started with. Ambiguity (two processes, or two equally recent files) still binds nothing.
+
 `ABSENCE_AUTO_ATTACH=1` restores the earlier behaviour in which a transcript written in the last ten minutes attaches without a selection.
 
 ## Monitor leases
@@ -87,7 +89,7 @@ The observer may attach after the agent has already worked. What it recovers dep
 | Channel | Before attachment | After attachment |
 |---|---|---|
 | `transcript` | Every complete record already in the file is delivered in file order. A real user message remains a real run boundary. When the file begins inside a turn, the first run is marked `boundarySource: "attach"` with `truncatedBefore: true` and an empty prompt; no prompt is invented. | The same parser continues from the byte offset; a record without a terminating newline is read after the writer finishes it. |
-| `os` | Only processes present and attributable at attachment time. Exited short-lived processes, past samples and past conversation are not recoverable. | The process subtree is followed at the kernel level: Windows adopts the chosen process into its own Job Object (`agentwatch --target-pid`); Linux filters the machine-wide eBPF stream by ancestry. Creations and exits are reported as events, without polling. When neither can attach, observation degrades to process-table sampling. Activity is recorded as runs with `boundarySource: "activity-burst"`. |
+| `os` | Only processes present and attributable at attachment time. Exited short-lived processes, past samples and past conversation are not recoverable. | The process subtree is followed at the kernel level: Windows adopts the chosen process into its own Job Object (`agentwatch --target-pid`); Linux filters the machine-wide eBPF stream by ancestry. Creations and exits are reported as events, without polling. When neither can attach, observation degrades to process-table sampling. With no transcript to read, activity is recorded as runs with `boundarySource: "activity-burst"`; once a transcript is folded into the same session, run boundaries switch back to user turns and the burst rows are rebuilt from the archive. |
 | `acp-proxy` | Not a way to attach to an existing terminal process. Traffic that did not pass through the proxy is not available. | Only facts carried by the proxied connection are recorded. |
 
 ### Backfill and live tail
@@ -115,4 +117,4 @@ Schema v7 stores a `transcript_checkpoints` row per session: the consumed byte o
 | Kernel observer unavailable | Process observation falls back to process-table sampling, which can miss short-lived processes; metrics report precision `sampled` |
 | External agent is not a server descendant | The server's own Job Object cannot see it; Windows instead forms a dedicated Job Object on the chosen pid, Linux reuses the machine-wide eBPF stream. Requires the same user's rights over the target; a non-nestable job or missing rights degrades to sampling (`sampled`). |
 | Windows | Docker container capture is disabled; container events are not recorded |
-| Unmatched transcripts | A transcript and a process are bound only on explicit evidence (`--session` path) or an unambiguous one-to-one pairing; ambiguity leaves them unbound |
+| Unmatched transcripts | A transcript and a process are bound only on explicit evidence (`--session` path) or an unambiguous one-to-one pairing scoped by project `cwd`; the pairing follows the process's latest write, and ambiguity leaves them unbound |

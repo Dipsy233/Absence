@@ -309,6 +309,21 @@ export class RunIndex {
   }
 
   /**
+   * Switch an OS-only session to transcript run boundaries.
+   *
+   * The watch began as a bare process, where silence was the only possible
+   * boundary; once its transcript is folded in, user turns and `agent_end`
+   * are back and they are the truthful shape. The caller rebuilds the rows
+   * (see `markTranscriptSession`), because the burst rows already written
+   * labelled runs by their first event — "usage", "tool_end" — and would
+   * otherwise keep masquerading as turns.
+   */
+  setTranscriptMode(sessionId: string): void {
+    this.burstSessions.delete(sessionId);
+    this.attachSessions.add(sessionId);
+  }
+
+  /**
    * Close a session's open run because nothing more is coming.
    *
    * A burst cannot close itself: the silence *after* the last fact is what

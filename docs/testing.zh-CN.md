@@ -75,7 +75,7 @@ npm run check:process                           # eggs + agent + io，含手动�
 | 指标 | `check-metrics`、`check-metrics-persist`、`check-metrics-ranges`、`check-metrics-restart`、`check-observed-lifetime` | 采样输出、ring 行为、持久化、区间选择、server 重启后的存活、进程蛋寿命 |
 | agent 层 | `check-mcp-events`、`check-acp-mapping`、`check-acp-proxy` | 按 kind 与形状的工具映射、MCP 事件、代理转发、tap 投影、诊断、代理 CLI 退出 |
 | 会话与存储 | `check-storage`、`check-session-dwell`、`check-session-close`、`check-lifecycle` | 旧归档导入、事件往返、缓冲 drain、归档列表、dwell 时钟、关闭与生命周期 |
-| 观察 | `check-observe-board`、`check-observe-watch`、`check-observe-os`、`check-cli-observe`、`check-observe-midway`、`check-observe-transcript`、`check-observe-proxy` | 发现不自动挂载、目标选择与租约、重启恢复、转录 checkpoint 续采、前缀不一致、仅 OS 监控与升级、中途挂载、回填完整性、拒绝驱动、CLI 绑定守卫与令牌处理 |
+| 观察 | `check-observe-board`、`check-observe-watch`、`check-observe-os`、`check-cli-observe`、`check-observe-midway`、`check-observe-transcript`、`check-observe-proxy` | 发现不自动挂载、目标选择与租约、重启恢复、转录 checkpoint 续采、前缀不一致、仅 OS 监控与升级（run 边界切回用户轮次）、中途挂载、回填完整性、历史重开、拒绝驱动、CLI 绑定守卫与令牌处理 |
 | 文件 diff | `check-fsdiff` | diff 引擎 |
 
 ## 5. 手动平台检查

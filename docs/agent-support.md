@@ -10,7 +10,7 @@ Absence never starts an agent outside the proxy channel, never sends a prompt, a
 
 | Channel | Agents | Content | Process attribution |
 |---|---|---|---|
-| `transcript` | Pi | Messages, thinking, tool calls and results, file writes and edits, model changes, usage, turn boundaries | Signature match on the pi executable plus the absolute `--session` path; a default `pi` run binds only on an unambiguous one-to-one pairing with a new transcript |
+| `transcript` | Pi | Messages, thinking, tool calls and results, file writes and edits, model changes, usage, turn boundaries | Signature match on the pi executable plus the absolute `--session` path; a default `pi` run binds by project `cwd` and the transcript it wrote last |
 | `acp-proxy` | Any ACP agent | Everything the protocol carries, including approvals and MCP calls | The proxy spawns the agent, injects `ABSENCE_SESSION_ID`, and the kernel observer reports it exactly |
 | `os` | Any process | Processes, files and resources; no conversation content | The pid and its start time, chosen by the user or proven by the process table |
 
@@ -152,7 +152,7 @@ The shell that executes a command string (`bash -c "…"`, `pwsh -Command "…"`
 
 A process chosen on the board opens a session with channel `os`. The session samples the process subtree it is bound to: processes, files and resources. It has no conversation content.
 
-Activity is recorded as runs with `boundarySource: "activity-burst"`; a burst closes after `RUN_BURST_IDLE_MS` (90 s) without a fact. When a transcript later proves to belong to the same pid, the transcript is folded into the same session and the session records both channels.
+Activity is recorded as runs with `boundarySource: "activity-burst"`; a burst closes after `RUN_BURST_IDLE_MS` (90 s) without a fact, and retiring the session closes an open burst rather than leaving it `running`. When a transcript later proves to belong to the same pid, it is folded into the same session and the session records both channels. The run index then switches from bursts to user turns and rebuilds the rows already written, which were labelled by their first event (`usage`, `tool_end`) instead of a prompt.
 
 ## 5. Binding a transcript to a process
 
@@ -161,8 +161,8 @@ Absence binds a transcript to a pid only on evidence:
 | Evidence | Binding |
 |---|---|
 | The pi command line names the transcript (`--session <file>`) | Exact match on the absolute path |
-| A default `pi` process and a new transcript appear together | Bound only when exactly one new process pairs with exactly one new transcript, within a five-minute window |
-| Anything ambiguous | Not bound |
+| A default `pi` process (no `--session`) | Project `cwd` must match the transcript header's `cwd`, and the process is paired with the file it wrote **last**: a transcript born just after the process started, or any older transcript the process resumed, competes by latest write |
+| Anything ambiguous | Not bound: two processes with the same cwd, two equally recent files, or either side's cwd unknown still bind nothing |
 
 A reused pid is a different process: identity is the pair (pid, start time).
 
