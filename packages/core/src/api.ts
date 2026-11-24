@@ -169,6 +169,8 @@ export interface ObserveLiveRow {
   externalId: string;
   agentKind: string;
   projectPath: string;
+  /** The first user prompt (truncated), for a row subtitle. */
+  firstPrompt?: string;
   /** The transcript file being tailed, when the channel has one. */
   transcriptFile?: string;
   /** The agent process the session is bound to, when one is bound. */
@@ -234,6 +236,8 @@ export interface ObserveTargetRow {
   pidStartedAt?: number;
   transcriptFile?: string;
   externalId?: string;
+  /** The first user prompt (truncated), for a row subtitle (running rows). */
+  firstPrompt?: string;
   /** Which channels could observe it. */
   channels: ObserveChannel[];
   /**

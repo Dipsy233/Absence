@@ -244,6 +244,9 @@ export function Observatory() {
                         {row.leased ? ` · ${t("watching")}` : ""}
                         {row.viewers > 0 ? ` · ${t("{n} viewing", { n: row.viewers })}` : ""}
                       </span>
+                      {row.firstPrompt ? (
+                        <span className="picker__hprompt">{row.firstPrompt}</span>
+                      ) : null}
                     </button>
                     <button
                       type="button"
@@ -277,6 +280,9 @@ export function Observatory() {
                           ? ` · ${row.reason}`
                           : ""}
                     </span>
+                    {row.firstPrompt ? (
+                      <span className="picker__hprompt">{row.firstPrompt}</span>
+                    ) : null}
                   </button>
                 ))}
               </div>

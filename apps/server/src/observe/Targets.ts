@@ -57,6 +57,12 @@ export interface BuildTargetsDeps {
   liveByExternal: ReadonlyMap<string, string>;
   /** The process table; injectable for checks. */
   snapshot?: () => Promise<ProcessTable>;
+  /**
+   * Reads a transcript's first user prompt, for a running row's subtitle. Only
+   * called for running transcript targets (a handful), so the head read stays
+   * cheap; omitted in checks that need no prompt.
+   */
+  firstPromptOf?: (file: string) => Promise<string | undefined>;
 }
 
 /**
@@ -115,34 +121,44 @@ export async function buildTargets(deps: BuildTargetsDeps): Promise<ObserveTarge
   }
 
   const now = Date.now();
-  const targets: ObserveTargetRow[] = deps.transcriptRows.map((row) => {
-    const sessionId = deps.liveByExternal.get(row.externalId);
-    const bound = boundByFile.get(row.file) ?? pairedByFile.get(row.file);
-    const recent = now - row.lastActivityAt <= ACTIVE_WINDOW_MS;
-    const channels: ObserveChannel[] = ["transcript", ...(bound !== undefined ? (["os"] as const) : [])];
-    return {
-      key: transcriptTargetKey(row.file),
-      kind: "transcript" as const,
-      agentKind: row.agentKind,
-      ...(row.projectPath !== undefined ? { cwd: row.projectPath } : {}),
-      ...(bound !== undefined ? { pid: bound.pid, pidStartedAt: bound.startedAt } : {}),
-      transcriptFile: row.file,
-      externalId: row.externalId,
-      channels,
-      liveness:
+  const targets: ObserveTargetRow[] = await Promise.all(
+    deps.transcriptRows.map(async (row) => {
+      const sessionId = deps.liveByExternal.get(row.externalId);
+      const bound = boundByFile.get(row.file) ?? pairedByFile.get(row.file);
+      const recent = now - row.lastActivityAt <= ACTIVE_WINDOW_MS;
+      const channels: ObserveChannel[] = ["transcript", ...(bound !== undefined ? (["os"] as const) : [])];
+      const liveness =
         row.missing === true
           ? ("missing" as const)
           : bound !== undefined
             ? ("running" as const)
             : recent
               ? ("idle" as const)
-              : ("exited" as const),
-      lastActivityAt: row.lastActivityAt,
-      ...(sessionId !== undefined ? { sessionId } : {}),
-      watchable: row.missing !== true,
-      ...(row.missing === true ? { reason: "the transcript file is gone" } : {}),
-    };
-  });
+              : ("exited" as const);
+      // Only running rows go on the board's left column, so only they pay for
+      // reading the transcript's first prompt.
+      const firstPrompt =
+        liveness === "running" && deps.firstPromptOf !== undefined
+          ? await deps.firstPromptOf(row.file).catch(() => undefined)
+          : undefined;
+      return {
+        key: transcriptTargetKey(row.file),
+        kind: "transcript" as const,
+        agentKind: row.agentKind,
+        ...(row.projectPath !== undefined ? { cwd: row.projectPath } : {}),
+        ...(bound !== undefined ? { pid: bound.pid, pidStartedAt: bound.startedAt } : {}),
+        transcriptFile: row.file,
+        externalId: row.externalId,
+        channels,
+        liveness,
+        lastActivityAt: row.lastActivityAt,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        ...(firstPrompt !== undefined ? { firstPrompt } : {}),
+        watchable: row.missing !== true,
+        ...(row.missing === true ? { reason: "the transcript file is gone" } : {}),
+      };
+    }),
+  );
 
   // pi processes with no transcript of their own: a fresh `pi` the user just
   // started. A process already paired to a transcript above is represented by

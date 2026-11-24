@@ -8,6 +8,7 @@ import type {
   ObserveWatchResponse,
 } from "@absence/core";
 import type { DiscoveryService } from "../observe/Discovery";
+import { readFirstUserPrompt } from "../observe/Discovery";
 import { TRANSCRIPT_SOURCES, sourceRoots } from "../observe/transcriptSources";
 import { buildTargets } from "../observe/Targets";
 import { listLeases } from "../observe/leases";
@@ -60,6 +61,7 @@ export async function observeRoutes(
       transcriptRows: options.discovery.list(),
       proxyRows: proxySessions.list(),
       liveByExternal,
+      firstPromptOf: readFirstUserPrompt,
     });
     return { targets };
   });
@@ -84,6 +86,7 @@ export async function observeRoutes(
         externalId: observe.externalId,
         agentKind: session.session.agentRuntime,
         projectPath: session.session.projectPath,
+        ...(session.firstPromptText() !== undefined ? { firstPrompt: session.firstPromptText() } : {}),
         ...(observe.transcriptFile !== undefined ? { transcriptFile: observe.transcriptFile } : {}),
         ...(observe.pid !== undefined ? { pid: observe.pid } : {}),
         startedAt: session.session.startedAt,

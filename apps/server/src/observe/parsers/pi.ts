@@ -63,6 +63,8 @@ export class PiTranscriptParser {
   cwd: string | undefined = undefined;
   /** Lines that were not JSON — counted, never fatal. */
   malformed = 0;
+  /** The first user message's text (truncated), for a board row subtitle. */
+  firstUserPrompt: string | undefined = undefined;
   /** `toolResult` messages with no matching `toolCall` — drift evidence. */
   orphanResults = 0;
 
@@ -138,6 +140,9 @@ export class PiTranscriptParser {
   private userMessage(message: AnyRecord, at: number): void {
     const text = textOf(message.content) ?? joinBlocks(message.content);
     if (text.length === 0) return;
+    if (this.firstUserPrompt === undefined) {
+      this.firstUserPrompt = text.length > 100 ? `${text.slice(0, 97)}…` : text;
+    }
     this.emit("message", { role: "user", content: text }, at, "reported");
     this.turnOpen = true;
     this.agentStartEmitted = false;

@@ -16,6 +16,12 @@
   overflow: auto;
 }
 
+/* A row's first prompt, dimmer than the meta line, matching the history rows. */
+.picker__hprompt {
+  color: var(--mon-t2);
+  font-style: italic;
+}
+
 .picker__hrowwrap {
   display: flex;
   align-items: stretch;

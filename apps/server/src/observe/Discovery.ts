@@ -579,3 +579,50 @@ function isWithin(root: string, file: string): boolean {
   const rel = path.relative(root, file);
   return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
+
+/**
+ * The first user prompt in a transcript, for a board row's subtitle.
+ *
+ * Reads only the head of the file (a running session's opening prompt is near
+ * the top) and stops as soon as it is found. Cached on (mtime, size) so the
+ * board's 4 s refresh does not re-read unchanged files; a growing transcript
+ * re-reads only its small head. Purely cosmetic — failures yield `undefined`.
+ */
+const firstPromptCache = new Map<string, { mtimeMs: number; size: number; prompt?: string }>();
+
+export async function readFirstUserPrompt(file: string, maxBytes = 128 * 1024): Promise<string | undefined> {
+  const stat = await fsp.stat(file).catch(() => undefined);
+  if (stat === undefined || !stat.isFile()) return undefined;
+  const cached = firstPromptCache.get(file);
+  if (cached !== undefined && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+    return cached.prompt;
+  }
+  let prompt: string | undefined;
+  let handle: Awaited<ReturnType<typeof fsp.open>> | undefined;
+  try {
+    handle = await fsp.open(file, "r");
+    const parser = new PiTranscriptParser();
+    let offset = 0;
+    let carry = "";
+    while (offset < maxBytes) {
+      const buffer = Buffer.allocUnsafe(Math.min(16 * 1024, maxBytes - offset));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
+      if (!bytesRead) break;
+      offset += bytesRead;
+      const lines = (carry + buffer.subarray(0, bytesRead).toString("utf8")).split("\n");
+      carry = lines.pop() ?? "";
+      for (const line of lines) {
+        await parser.feed(line);
+        if (parser.firstUserPrompt !== undefined) break;
+      }
+      if (parser.firstUserPrompt !== undefined) break;
+    }
+    prompt = parser.firstUserPrompt;
+  } catch {
+    prompt = undefined;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+  firstPromptCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, prompt });
+  return prompt;
+}

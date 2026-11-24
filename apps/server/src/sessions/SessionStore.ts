@@ -308,6 +308,11 @@ export class AbsenceSession {
   isTranscriptResumeBlocked(): boolean {
     return this.transcriptResumeBlocked;
   }
+
+  /** The first user prompt seen (truncated), for the board's row subtitle. */
+  firstPromptText(): string | undefined {
+    return this.firstPrompt;
+  }
   /** Set on an observed session: facts arrive, nothing is ever sent back. */
   readonly observe?: ObserveMeta;
   /**
