@@ -161,13 +161,13 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/api/sessions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const session = sessionStore.get(id);
-    if (!session) return reply.code(404).send({ error: "session not found" });
     const query = (request.query ?? {}) as { eventLimit?: string };
     const eventLimit = parsePositiveInt(query.eventLimit);
     if (query.eventLimit !== undefined && eventLimit === undefined) {
       return reply.code(400).send({ error: "eventLimit must be a positive integer" });
     }
+    const session = sessionStore.get(id) ?? (await reopenArchive(id).catch(() => undefined));
+    if (!session) return reply.code(404).send({ error: "session not found" });
     return session.snapshot({ eventLimit });
   });
 
@@ -544,6 +544,26 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     if (!deleted) return reply.code(404).send({ error: "archive not found" });
     return { ok: true };
   });
+}
+
+/**
+ * Reopen an archived session as a read-only viewing session.
+ *
+ * A history row (and a `/s/<id>` deep link after a restart) names an archive,
+ * not a live session. Serving 404 for it left the panel empty even though the
+ * archive held the whole conversation; replaying the archive is exactly what
+ * `sessionStore.create` with a resume id does, and it starts no agent. The mock
+ * fixture is the one exception: its "archive" would launch a new fixture, so it
+ * is not replayed as history.
+ */
+async function reopenArchive(id: string) {
+  const meta = await readMeta("", id);
+  if (!meta) return undefined;
+  if (meta.runtime === "mock") return undefined;
+  // A concurrent request may have opened it while the archive row was read.
+  const raced = sessionStore.get(id);
+  if (raced) return raced;
+  return sessionStore.create(meta.projectPath, meta.runtime, { absenceSessionId: id });
 }
 
 /**

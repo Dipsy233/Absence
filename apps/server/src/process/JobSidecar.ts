@@ -224,6 +224,7 @@ export class JobSidecar {
           ppid: numberOrUndefined(parsed.ppid) ?? 0,
           name: typeof parsed.name === "string" ? parsed.name : "?",
           commandLine: typeof parsed.cmd === "string" ? parsed.cmd : undefined,
+          cwd: typeof parsed.cwd === "string" && parsed.cwd.length > 0 ? parsed.cwd : undefined,
           startedAt: numberOrUndefined(parsed.s),
         } satisfies WatchTableRow);
         return { kind: "table_row" };

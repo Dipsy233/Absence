@@ -203,6 +203,11 @@ export interface ProcessWatcherOptions {
   /** External pi transcript; only explicit command-line session evidence binds a pid. */
   externalTranscript?: string;
   /**
+   * The transcript's project (its header cwd). Scope evidence: a default `pi`
+   * in another project must never be paired with this transcript by timing.
+   */
+  externalProject?: string;
+  /**
    * A process root the user chose to watch (the OS-only channel). Absence
    * follows this pid's subtree by polling the process table: it is not a
    * descendant of the server, so the Job Object sees nothing of it.
@@ -398,7 +403,11 @@ export class ProcessWatcher {
       // Shared sweep: register and let the scanner drive; no private loop.
       this.externalScanner = options.externalScanner;
       const transcript = options.externalTranscript;
-      this.externalScanner.register(transcript, (root, rows) => this.applyExternalScan(root, rows));
+      this.externalScanner.register(
+        transcript,
+        (root, rows) => this.applyExternalScan(root, rows),
+        options.externalProject,
+      );
     } else if (!options.externalTranscript && !this.externalPidMode) {
       this.attachJobObserver();
     }

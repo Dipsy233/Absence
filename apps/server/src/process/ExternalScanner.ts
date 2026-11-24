@@ -44,7 +44,9 @@ export class ExternalScanner {
   private readonly sinks = new Map<string, (root: ProcInfo | undefined, rows: ProcInfo[]) => void>();
   /** When each registered transcript first appeared — the pairing's anchor. */
   private readonly fileBirth = new Map<string, number>();
-  /** pid → transcript file, for pairings proven in an earlier tick. */
+  /** The project each transcript belongs to — scope evidence for pairing. */
+  private readonly fileProject = new Map<string, string>();
+  /** pid → transcript file, for pairings proven in the latest sweep. */
   private readonly bindings = new Map<number, string>();
   private timer?: ReturnType<typeof setTimeout>;
   private inFlight?: Promise<void>;
@@ -55,10 +57,15 @@ export class ExternalScanner {
     this.snapshot = options?.snapshot ?? snapshotProcesses;
   }
 
-  register(file: string, sink: (root: ProcInfo | undefined, rows: ProcInfo[]) => void): void {
+  register(
+    file: string,
+    sink: (root: ProcInfo | undefined, rows: ProcInfo[]) => void,
+    projectPath?: string,
+  ): void {
     if (this.disposed) return;
     this.sinks.set(file, sink);
     if (!this.fileBirth.has(file)) this.fileBirth.set(file, this.statBirth(file));
+    if (projectPath !== undefined) this.fileProject.set(file, projectPath);
     // The first scan comes at once: an agent seen this moment should not wait
     // a full cadence for its tree. Later scans keep the steady tick.
     this.timer ??= setTimeout(() => void this.tick(), 250);
@@ -67,6 +74,7 @@ export class ExternalScanner {
   unregister(file: string): void {
     this.sinks.delete(file);
     this.fileBirth.delete(file);
+    this.fileProject.delete(file);
     for (const [pid, bound] of [...this.bindings]) {
       if (bound === file) this.bindings.delete(pid);
     }
@@ -96,6 +104,15 @@ export class ExternalScanner {
       return stat.birthtimeMs > 0 ? stat.birthtimeMs : Date.now();
     } catch {
       return Date.now();
+    }
+  }
+
+  /** The file's last write — the evidence a resume must not be ignored. */
+  private lastWrite(file: string): number | undefined {
+    try {
+      return fs.statSync(file).mtimeMs;
+    } catch {
+      return undefined;
     }
   }
 
@@ -133,21 +150,26 @@ export class ExternalScanner {
       }
     }
 
-    // 2. Fresh 1:1 pairings for default pi runs. Bindings persist while the
-    // process lives; a dead binding frees nothing (the transcript keeps its
-    // history) but stops receiving rows.
-    for (const [pid, file] of [...this.bindings]) {
-      if (!table.has(pid)) this.bindings.delete(pid);
-    }
-    const unbound = entries.filter(([file]) => !explicit.has(file) && !this.boundTo(file));
-    if (unbound.length > 0) {
-      const candidates = defaultPiCandidates(table).filter((info) => !claimed.has(info.pid));
-      const pairs = pairDefaultSessions(
-        unbound.map(([file]) => ({ file, createdAt: this.fileBirth.get(file) ?? Date.now() })),
-        candidates,
-      );
-      for (const [file, pid] of pairs) this.bindings.set(pid, file);
-    }
+    // 2. Pairings for default pi runs, recomputed every sweep. A long-lived
+    // `pi` can resume another session mid-run; the file it writes now is the
+    // one it was last seen writing, not the one it was born beside. Caching
+    // the startup pair kept following a conversation the process had left.
+    const candidates = defaultPiCandidates(table).filter((info) => !claimed.has(info.pid));
+    const pairs = pairDefaultSessions(
+      entries
+        .filter(([file]) => !explicit.has(file))
+        .map(([file]) => ({
+          file,
+          createdAt: this.fileBirth.get(file) ?? Date.now(),
+          lastActivityAt: this.lastWrite(file),
+          ...(this.fileProject.get(file) !== undefined
+            ? { cwd: this.fileProject.get(file) as string }
+            : {}),
+        })),
+      candidates,
+    );
+    this.bindings.clear();
+    for (const [file, pid] of pairs) this.bindings.set(pid, file);
 
     // 3. Deliver each transcript its bound subtree (empty rows when none).
     // One sink failing must not starve the others of their sweep.

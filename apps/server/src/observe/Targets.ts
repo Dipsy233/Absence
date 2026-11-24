@@ -28,6 +28,60 @@ const ACTIVE_WINDOW_MS = 10 * 60_000;
 /** A pid's start time within this of the chosen one is the same process. */
 const PID_START_SLACK_MS = 2_000;
 
+/** The pid a transcript's agent is, when the evidence proves it. */
+export interface TranscriptBinding {
+  pid: number;
+  startedAt: number;
+}
+
+/**
+ * Which transcript each running pi process writes — the board's and the OS
+ * channel's shared evidence.
+ *
+ * Two proofs, strongest first: `--session <file>` names the transcript on the
+ * command line, and a default `pi` (no `--session`) is paired with the file it
+ * wrote (see `pairDefaultSessions` — timing at startup, latest write after a
+ * resume). The pairing is recomputed on every call; a process that resumed
+ * another session mid-run must follow that file, not the one it started with.
+ */
+export function bindTranscriptProcesses(
+  rows: readonly ObserveDiscoveryRow[],
+  table: ProcessTable,
+): { byFile: Map<string, TranscriptBinding>; boundPids: Set<number> } {
+  const byFile = new Map<string, TranscriptBinding>();
+  const boundPids = new Set<number>();
+  for (const row of rows) {
+    const info = findPiSession(table, row.file);
+    if (info) {
+      byFile.set(row.file, { pid: info.pid, startedAt: info.startedAt });
+      boundPids.add(info.pid);
+    }
+  }
+  const candidates = defaultPiCandidates(table).filter((info) => !boundPids.has(info.pid));
+  if (candidates.length === 0) return { byFile, boundPids };
+  const pairable = rows
+    .filter((row) => row.missing !== true && !byFile.has(row.file))
+    .map((row) => {
+      const times = fileTimes(row.file);
+      return {
+        file: row.file,
+        createdAt: times.birth ?? row.lastActivityAt,
+        // The file's own mtime, not the discovery row's: the row is bumped to
+        // "now" while Absence merely reads a header, and pairing on that would
+        // make every old transcript look freshly written at server start.
+        lastActivityAt: times.modified ?? row.lastActivityAt,
+        ...(row.projectPath !== undefined ? { cwd: row.projectPath } : {}),
+      };
+    });
+  for (const [file, pid] of pairDefaultSessions(pairable, candidates)) {
+    const info = table.get(pid);
+    if (!info) continue;
+    byFile.set(file, { pid, startedAt: info.startedAt });
+    boundPids.add(pid);
+  }
+  return { byFile, boundPids };
+}
+
 export function transcriptTargetKey(file: string): string {
   return `transcript:${file}`;
 }
@@ -83,48 +137,22 @@ export async function buildTargets(deps: BuildTargetsDeps): Promise<ObserveTarge
     table = undefined;
   }
 
-  const boundByFile = new Map<string, { pid: number; startedAt: number }>();
-  const boundPids = new Set<number>();
-  if (table) {
-    for (const row of deps.transcriptRows) {
-      const info = findPiSession(table, row.file);
-      if (info) {
-        boundByFile.set(row.file, { pid: info.pid, startedAt: info.startedAt });
-        boundPids.add(info.pid);
-      }
-    }
-  }
+  const now = Date.now();
 
   // A `pi` started without `--session` names no transcript on its command
   // line, so the only honest link between the process and the file it writes
-  // is timing. Pair a running default-`pi` process with the transcript created
-  // just as it started (unambiguous 1:1 only — see `pairDefaultSessions`). A
-  // paired transcript becomes a single *running* target that carries the
-  // conversation, instead of the conversation sitting alone as an `idle`
-  // transcript beside a process-only row that shows no chat.
-  const pairedByFile = new Map<string, { pid: number; startedAt: number }>();
-  const pairedPids = new Set<number>();
-  if (table) {
-    const candidates = defaultPiCandidates(table).filter((info) => !boundPids.has(info.pid));
-    if (candidates.length > 0) {
-      const pairable = deps.transcriptRows
-        .filter((row) => row.missing !== true && !boundByFile.has(row.file))
-        .map((row) => ({ file: row.file, createdAt: fileBirth(row.file, row.lastActivityAt) }));
-      for (const [file, pid] of pairDefaultSessions(pairable, candidates)) {
-        const info = table.get(pid);
-        if (info) {
-          pairedByFile.set(file, { pid, startedAt: info.startedAt });
-          pairedPids.add(pid);
-        }
-      }
-    }
-  }
-
-  const now = Date.now();
+  // is timing plus writes. `bindTranscriptProcesses` picks the file written
+  // latest while the process ran — never a startup pairing the process has
+  // since moved on from. A paired transcript becomes a single *running* target
+  // that carries the conversation, instead of the conversation sitting alone
+  // as an `idle` transcript beside a process-only row that shows no chat.
+  const bound = table ? bindTranscriptProcesses(deps.transcriptRows, table) : undefined;
+  const boundByFile = bound?.byFile ?? new Map<string, TranscriptBinding>();
+  const boundPids = bound?.boundPids ?? new Set<number>();
   const targets: ObserveTargetRow[] = await Promise.all(
     deps.transcriptRows.map(async (row) => {
       const sessionId = deps.liveByExternal.get(row.externalId);
-      const bound = boundByFile.get(row.file) ?? pairedByFile.get(row.file);
+      const bound = boundByFile.get(row.file);
       const recent = now - row.lastActivityAt <= ACTIVE_WINDOW_MS;
       const channels: ObserveChannel[] = ["transcript", ...(bound !== undefined ? (["os"] as const) : [])];
       const liveness =
@@ -166,7 +194,7 @@ export async function buildTargets(deps: BuildTargetsDeps): Promise<ObserveTarge
   // OS-only row, or the same agent would appear twice on the board.
   if (table) {
     for (const info of defaultPiCandidates(table)) {
-      if (boundPids.has(info.pid) || pairedPids.has(info.pid)) continue;
+      if (boundPids.has(info.pid)) continue;
       targets.push({
         key: processTargetKey(info.pid, info.startedAt),
         kind: "process",
@@ -216,18 +244,19 @@ export async function buildTargets(deps: BuildTargetsDeps): Promise<ObserveTarge
 export { pidIdentity };
 
 /**
- * The transcript file's birth time (epoch ms) — the pairing anchor.
- *
- * Falls back to the row's last activity when the filesystem cannot report a
- * birth time, so a platform without it degrades to “roughly when we saw it”
- * rather than crashing the whole target build.
+ * The transcript file's birth and last-write times (epoch ms) — the pairing
+ * anchors. One `stat` serves both; a missing file yields neither, and the
+ * caller falls back to the discovery row's own timestamp.
  */
-function fileBirth(file: string, fallback: number): number {
+function fileTimes(file: string): { birth?: number; modified?: number } {
   try {
     const stat = fs.statSync(file);
-    return stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.mtimeMs || fallback;
+    return {
+      birth: stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.mtimeMs || undefined,
+      modified: stat.mtimeMs || undefined,
+    };
   } catch {
-    return fallback;
+    return {};
   }
 }
 

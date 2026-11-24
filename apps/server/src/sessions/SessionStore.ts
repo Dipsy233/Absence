@@ -56,7 +56,7 @@ import { JobMonitor } from "../process/JobMonitor";
 import { DockerMonitor } from "../process/DockerMonitor";
 import { DockerEggs } from "../process/DockerEggs";
 import { ObserveAdapter } from "../observe/ObserveAdapter";
-import type { ObserveMeta } from "../observe/types";
+import { isNarrowScope, type ObserveMeta } from "../observe/types";
 import { unifiedDiff } from "../util/diff";
 import { newId } from "../util/ids";
 import { toPosix } from "../util/paths";
@@ -238,10 +238,23 @@ export class AbsenceSession {
    * transcript parser silently instead of backfilling the same facts twice.
    */
   private replayedArchive = false;
+  /**
+   * True when that replay actually held transcript facts.
+   *
+   * An OS-only watch writes process events to its archive without ever having
+   * a transcript. A later upgrade of that session must backfill the
+   * conversation, not "warm" it away: any-events was too weak a proof.
+   */
+  private archiveTranscriptFacts = false;
 
   /** The transcript history is already in place (see `replayedArchive`). */
   get replayedFromArchive(): boolean {
     return this.replayedArchive;
+  }
+
+  /** The replay carried facts the transcript produced (see `archiveTranscriptFacts`). */
+  get archiveHasTranscriptFacts(): boolean {
+    return this.archiveTranscriptFacts;
   }
   /** Dwell time accrued before this visit, in ms. */
   private readonly dwellBase: number;
@@ -359,6 +372,9 @@ export class AbsenceSession {
       // exits beyond the cap are retired. See ProcessWatcher.retireOverflow.
       maxFinishedEggs: config.maxEggs,
       externalTranscript: this.observe?.transcriptFile,
+      // The transcript's own project scopes a default `pi` pairing: two agents
+      // running at once are told apart by cwd, not by which started first.
+      ...(this.observe?.transcriptFile !== undefined ? { externalProject: projectPath } : {}),
       // Only the mock fixture is a runtime Absence drives; its curve may root
       // at the server. Every observed variant attributes by its own evidence.
       drivesRuntime: !this.observe && kind === "mock",
@@ -466,6 +482,11 @@ export class AbsenceSession {
         const events = await readEvents(this.session.projectPath, archiveId);
         for (const event of events) this.applyToState(event);
         this.events = events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events;
+        // Reopening is not new activity, but the session's clock belongs to its
+        // last fact, not to when the archive was first created — otherwise a
+        // history row would jump back to its start time after being opened.
+        const lastFact = events[events.length - 1];
+        if (lastFact !== undefined) this.lastActiveAt = Math.max(this.lastActiveAt, lastFact.timestamp);
         // A reopened session is not mid-run: whatever it was doing is over,
         // and the Stage rests on its default page. A run the archive still
         // marks `running` is one whose `agent_end` never arrived — close it as
@@ -476,12 +497,16 @@ export class AbsenceSession {
         // Containers this session laid may still be running. The archive
         // already holds their eggs; re-attach before the snapshot is served.
         await this.dockerEggs?.restore(events);
-        // The transcript's history is already in place from the archive — the
-        // discovery feed must not backfill it a second time (see
-        // `replayedFromArchive`).
+        // The transcript's history is only in place when the archive actually
+        // holds transcript facts (or a checkpoint, checked by the feed). An
+        // OS-only watch's process events are not a conversation.
         this.replayedArchive = events.length > 0;
+        this.archiveTranscriptFacts = events.some((event) => event.source === "transcript");
       }
-      if (this.observe?.watchProject !== false) {
+      // A reopened archive has no observe meta: fall back to the same scope
+      // rule observation uses, or opening a home-directory archive would walk
+      // the whole home into a tree nobody asked for.
+      if (this.observe?.watchProject ?? isNarrowScope(this.session.projectPath)) {
         this.tree = await buildTree(this.session.projectPath);
         this.treeDirty = true;
         this.watcher = new FileWatcher(
@@ -503,6 +528,8 @@ export class AbsenceSession {
       const events = await readEvents(this.session.projectPath, archiveId);
       for (const event of events) this.applyToState(event);
       this.events = events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events;
+      const lastFact = events[events.length - 1];
+      if (lastFact !== undefined) this.lastActiveAt = Math.max(this.lastActiveAt, lastFact.timestamp);
       // A resumed session is not mid-run: the agent is idle again, and the
       // Stage rests on its default page — an archive whose tail lacks
       // `agent_end` (a killed server, a replayed resume) must not pin it on
@@ -1901,6 +1928,13 @@ export class SessionStore {
       : undefined;
     const resume = archived ? { absenceSessionId: archived } : undefined;
     const session = new AbsenceSession(projectPath, kind, resume, { observe });
+    // Re-attaching a conversation that was merely reopened for reading (a
+    // history view) must replace that viewing session, not leak its tree and
+    // file watchers beside the live one under the same archive id.
+    const previous = this.sessions.get(session.id);
+    if (previous !== undefined && previous !== session) {
+      await previous.dispose().catch(() => undefined);
+    }
     this.sessions.set(session.id, session);
     try {
       await session.start();

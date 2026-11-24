@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   attributedTree,
@@ -84,6 +86,23 @@ assert.equal(
   pairDefaultSessions([{ file: "old.jsonl", createdAt: now - 600_000 }], [started(501)]).size,
   0,
 );
+
+// A long-lived default pi may resume an older session mid-run. The file it
+// wrote last is its current one; the file born beside the process is history —
+// this was the stale pairing that put the wrong conversation on the board.
+const bornFile = { file: "born.jsonl", createdAt: now - 30_000, lastActivityAt: now - 600_000 };
+const resumedFile = { file: "resumed.jsonl", createdAt: now - 3_600_000, lastActivityAt: now - 5_000 };
+const resumedPair = pairDefaultSessions([bornFile, resumedFile], [started(501)]);
+assert.equal(resumedPair.get("resumed.jsonl"), 501);
+assert.equal(resumedPair.has("born.jsonl"), false);
+
+// Project scope: two agents running at once are told apart by cwd, never by
+// pairing one project's transcript with the other project's process.
+const projectA = path.join(process.cwd(), "project-a");
+const projectB = path.join(process.cwd(), "project-b");
+const scoped = { ...defaultPi, pid: 503, startedAt: now - 45_000, cwd: projectB + path.sep };
+assert.equal(pairDefaultSessions([{ ...freshFile, cwd: projectA }], [scoped]).size, 0);
+assert.equal(pairDefaultSessions([{ ...freshFile, cwd: projectB }], [scoped]).get("fresh.jsonl"), 503);
 console.log("default-pi pairing checks passed");
 
 // The shared scanner: one snapshot per tick, dispatched to both transcripts.
@@ -120,6 +139,45 @@ try {
   scanner.dispose();
 }
 console.log("shared scanner checks passed");
+
+// A default pi that resumed another session mid-run: the shared scanner must
+// follow the file written last, not the one the process was born beside. This
+// is the case that made the board watch a DrawForth conversation the agent had
+// already left.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "absence-resume-"));
+  const startupFile = path.join(dir, "startup.jsonl");
+  const resumedPath = path.join(dir, "resumed.jsonl");
+  fs.writeFileSync(startupFile, JSON.stringify({ type: "session", id: "startup" }) + String.fromCharCode(10));
+  fs.writeFileSync(resumedPath, JSON.stringify({ type: "session", id: "resumed" }) + String.fromCharCode(10));
+  const old = new Date(Date.now() - 3_600_000);
+  fs.utimesSync(startupFile, old, old);
+  const resumedTable: ProcessTable = new Map([
+    [701, { ...defaultPi, pid: 701, startedAt: Date.now() - 30_000, cwd: dir }],
+  ]);
+  const resumeScanner = new ExternalScanner({ snapshot: async () => resumedTable });
+  const seen = new Map<string, boolean>();
+  for (const name of [startupFile, resumedPath]) {
+    resumeScanner.register(name, (root) => seen.set(name, root?.pid === 701), dir);
+  }
+  try {
+    await (resumeScanner as unknown as { scan(): Promise<void> }).scan();
+    assert.equal(resumeScanner.bindingFor(701), resumedPath, "the last-written file wins");
+    assert.equal(seen.get(startupFile), false, "the abandoned file gets no tree");
+
+    // The agent resumes the other way round: bindings are recomputed, not
+    // frozen from the first sweep.
+    const future = new Date(Date.now() + 60_000);
+    fs.utimesSync(startupFile, future, future);
+    await (resumeScanner as unknown as { scan(): Promise<void> }).scan();
+    assert.equal(resumeScanner.bindingFor(701), startupFile, "the binding follows the new file");
+    assert.equal(seen.get(resumedPath), false, "the previous file loses the tree");
+    console.log("resume rebinding checks passed");
+  } finally {
+    resumeScanner.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // Docker attribution from transcript command windows: an observed session
 // opens the window on a transcript tool_start, and the container the command

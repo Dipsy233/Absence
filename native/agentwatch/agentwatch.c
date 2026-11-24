@@ -660,6 +660,42 @@ static void sample_all(void)
 
 static HANDLE g_sample_event = NULL;
 
+/* Read a remote process's working directory through its PEB. The path is
+ * what scopes a resumed default-`pi` process to its own project. Returns a
+ * heap buffer the caller frees, and sets *len (in wide chars). */
+static WCHAR *read_current_directory(HANDLE h, size_t *len)
+{
+    *len = 0;
+    PROCESS_BASIC_INFORMATION pbi;
+    if (NtQueryInformationProcess(h, ProcessBasicInformation, &pbi, sizeof pbi, NULL) < 0) return NULL;
+
+    BYTE peb[512];
+    SIZE_T got = 0;
+    if (!ReadProcessMemory(h, pbi.PebBaseAddress, peb, sizeof peb, &got) || got < 0x28) return NULL;
+    BYTE *params = *(BYTE **)(peb + 0x20);
+    if (!params) return NULL;
+
+    BYTE pbuf[0x400];
+    if (!ReadProcessMemory(h, params, pbuf, sizeof pbuf, &got) || got < 0x48) return NULL;
+    /* CurrentDirectory is a CURDIR at +0x38: a UNICODE_STRING Dospath
+     * (USHORT Length, USHORT MaximumLength, ULONG pad, PWSTR Buffer) followed
+     * by its directory handle. The path itself lives in the target process. */
+    USHORT bytes = *(USHORT *)(pbuf + 0x38);
+    BYTE *remote = *(BYTE **)(pbuf + 0x38 + 8);
+    if (!remote || bytes == 0) return NULL;
+
+    WCHAR *out = (WCHAR *)malloc((size_t)bytes + sizeof(WCHAR));
+    if (!out) return NULL;
+    SIZE_T read = 0;
+    if (!ReadProcessMemory(h, remote, out, bytes, &read) || read < bytes) {
+        free(out);
+        return NULL;
+    }
+    out[bytes / sizeof(WCHAR)] = 0;
+    *len = bytes / sizeof(WCHAR);
+    return out;
+}
+
 /* ------------------------------------------------------------------ */
 /* table: one full process-table snapshot on demand                     */
 /* ------------------------------------------------------------------ */
@@ -694,7 +730,12 @@ static void emit_table(void)
                 }
                 size_t cmdChars = 0;
                 int truncated = 0;
+                size_t cwdChars = 0;
                 WCHAR *cmd = h ? read_command_line(h, &cmdChars, &truncated) : NULL;
+                /* The working directory is what scopes a default `pi` to its
+                 * own project: two agents running at once cannot be told
+                 * apart by timing, but their projects can. */
+                WCHAR *cwd = h ? read_current_directory(h, &cwdChars) : NULL;
                 if (h) CloseHandle(h);
 
                 /* Worst case six UTF-8 bytes per wide char. */
@@ -706,48 +747,57 @@ static void emit_table(void)
                 size_t cmdCap = cmdChars * 6 + 16;
                 char *cmdEsc = cmdChars ? (char *)malloc(cmdCap) : NULL;
                 size_t cmdLen = cmdEsc ? json_escape_utf8(cmd, cmdChars, cmdEsc, cmdCap) : 0;
+                size_t cwdCap = cwdChars * 6 + 16;
+                char *cwdEsc = cwdChars ? (char *)malloc(cwdCap) : NULL;
+                size_t cwdLen = cwdEsc ? json_escape_utf8(cwd, cwdChars, cwdEsc, cwdCap) : 0;
 
-                size_t cap = 128 + nameLen + cmdLen;
+                size_t cap = 160 + nameLen + cmdLen + cwdLen;
                 char *line = (char *)malloc(cap);
                 if (line) {
                     int n = -1;
                     if (cmdEsc && cmdLen > 0 && haveTimes) {
                         n = snprintf(line, cap,
                             "{\"ev\":\"table_row\",\"pid\":%lu,\"ppid\":%lu,\"s\":%llu,"
-                            "\"name\":\"%s\",\"cmd\":\"%s\"}",
+                            "\"name\":\"%s\",\"cmd\":\"%s\",\"cwd\":\"%s\"}",
                             (unsigned long)pid,
                             (unsigned long)pe.th32ParentProcessID,
                             (unsigned long long)s,
                             nameEsc ? nameEsc : "",
-                            cmdEsc);
+                            cmdEsc,
+                            cwdEsc ? cwdEsc : "");
                     } else if (cmdEsc && cmdLen > 0) {
                         n = snprintf(line, cap,
                             "{\"ev\":\"table_row\",\"pid\":%lu,\"ppid\":%lu,"
-                            "\"name\":\"%s\",\"cmd\":\"%s\"}",
+                            "\"name\":\"%s\",\"cmd\":\"%s\",\"cwd\":\"%s\"}",
                             (unsigned long)pid,
                             (unsigned long)pe.th32ParentProcessID,
                             nameEsc ? nameEsc : "",
-                            cmdEsc);
+                            cmdEsc,
+                            cwdEsc ? cwdEsc : "");
                     } else if (haveTimes) {
                         n = snprintf(line, cap,
-                            "{\"ev\":\"table_row\",\"pid\":%lu,\"ppid\":%lu,\"s\":%llu,\"name\":\"%s\"}",
+                            "{\"ev\":\"table_row\",\"pid\":%lu,\"ppid\":%lu,\"s\":%llu,\"name\":\"%s\",\"cwd\":\"%s\"}",
                             (unsigned long)pid,
                             (unsigned long)pe.th32ParentProcessID,
                             (unsigned long long)s,
-                            nameEsc ? nameEsc : "");
+                            nameEsc ? nameEsc : "",
+                            cwdEsc ? cwdEsc : "");
                     } else {
                         n = snprintf(line, cap,
-                            "{\"ev\":\"table_row\",\"pid\":%lu,\"ppid\":%lu,\"name\":\"%s\"}",
+                            "{\"ev\":\"table_row\",\"pid\":%lu,\"ppid\":%lu,\"name\":\"%s\",\"cwd\":\"%s\"}",
                             (unsigned long)pid,
                             (unsigned long)pe.th32ParentProcessID,
-                            nameEsc ? nameEsc : "");
+                            nameEsc ? nameEsc : "",
+                            cwdEsc ? cwdEsc : "");
                     }
                     if (n > 0 && (size_t)n < cap) emit_json_line(line);
                     free(line);
                 }
+                free(cwdEsc);
                 free(cmdEsc);
                 free(nameEsc);
                 free(cmd);
+                free(cwd);
             } while (Process32NextW(snap, &pe));
         }
         CloseHandle(snap);

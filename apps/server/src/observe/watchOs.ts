@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ObserveWatchResponse, ObserveWatchState } from "@absence/core";
 import { putLease, type WatchLease } from "./leases";
-import { registerProcessWatch, sessionUrl, type WatchDeps, type WatchResult } from "./watch";
+import { registerProcessWatch, sessionUrl, type WatchDeps, type ProcessWatchHint, type WatchResult } from "./watch";
 import { parseProcessKey, sameProcess } from "./Targets";
 import { isNarrowScope, pidIdentity, type ObserveMeta } from "./types";
 import { processSnapshot } from "./processSource";
@@ -43,7 +43,11 @@ function fallbackScope(): { projectPath: string; watchProject: boolean } {
   return { projectPath: os.homedir() || fallback, watchProject: false };
 }
 
-async function watchProcess(key: string, deps: WatchDeps): Promise<WatchResult | undefined> {
+async function watchProcess(
+  key: string,
+  deps: WatchDeps,
+  hint?: ProcessWatchHint,
+): Promise<WatchResult | undefined> {
   const parsed = parseProcessKey(key);
   if (parsed === undefined) return undefined;
   const table = await processSnapshot().catch(() => undefined);
@@ -51,10 +55,13 @@ async function watchProcess(key: string, deps: WatchDeps): Promise<WatchResult |
   const info = table.get(parsed.pid);
   if (!sameProcess(info, parsed.pid, parsed.startedAt) || info === undefined) return undefined;
 
-  // If the process names its transcript, that gives us both the real project
-  // (the transcript header's own `cwd`, not the session-file directory) and its
-  // conversation. Otherwise stay honest: facts only, no invented tree.
-  const transcriptFile = piSessionFile(info);
+  // The transcript is known either from the process's own command line
+  // (`--session <file>`) or from the caller's binding evidence — a default
+  // `pi` writes one too, and the board already proved which one. Either way it
+  // gives us the real project (the transcript header's own `cwd`, not the
+  // session-file directory) and its conversation. Without it, stay honest:
+  // facts only, no invented tree.
+  const transcriptFile = hint?.transcriptFile ?? piSessionFile(info);
   let projectPath: string;
   let watchProject: boolean;
   if (transcriptFile !== undefined) {

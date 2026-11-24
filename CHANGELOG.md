@@ -30,7 +30,13 @@ write-back path is refused.
   client's prompt as the run boundary.
 - Channel C — OS observation: a shared machine-wide scanner (`ExternalScanner`)
   dispatches every observed transcript its bound process subtree; default-pi
-  runs bind by unambiguous 1:1 new-transcript/new-process pairing only.
+  runs bind by unambiguous 1:1 pairing scoped by process cwd, and always to the
+  transcript the process wrote last — a session resumed mid-run (`-c`, the
+  resume picker) is followed on its new file, never the one it started with.
+- History is readable again: a history row (or a `/s/<id>` deep link) reopens
+  its archive read-only instead of 404ing, and an OS-only watch that gains a
+  transcript backfills the conversation — its archive's process facts are not
+  mistaken for transcript history and warmed away.
 - External process observation at the kernel level: selecting a running pi
   attaches a dedicated kernel observer to that pid. On Windows an
   `agentwatch --target-pid <pid>` adopts the process into its own Job

@@ -4,7 +4,7 @@ import { deleteLease, deleteLeasesForSession, listLeases, putLease, touchLease, 
 import { proxySessions } from "../agents/acp/proxy";
 import { findPiSession } from "../process/ProcessScanner";
 import { processSnapshot } from "./processSource";
-import { processTargetKey } from "./Targets";
+import { processTargetKey, bindTranscriptProcesses } from "./Targets";
 import { sessionStore } from "../sessions/SessionStore";
 import type { ObserveMeta } from "./types";
 
@@ -23,6 +23,18 @@ import type { ObserveMeta } from "./types";
 
 export interface WatchDeps {
   discovery: DiscoveryService;
+}
+
+/**
+ * What a caller already knows about the process behind a target.
+ *
+ * A default `pi` (started with `-c` or the resume picker) names no transcript
+ * on its command line, so the OS channel cannot find the conversation on its
+ * own. The board already proved which file this pid writes — pass it along,
+ * or the session opens with no facts at all.
+ */
+export interface ProcessWatchHint {
+  transcriptFile?: string;
 }
 
 export interface WatchResult extends ObserveWatchResponse {
@@ -48,34 +60,53 @@ export function sessionUrl(sessionId: string): string {
 /**
  * The running process that writes this transcript, if there is one.
  *
- * `findPiSession` looks for a unique pi process naming this exact `--session`
- * path on its command line. When it exists the transcript is live and can be
- * watched with kernel precision (the OS channel); when it does not (the agent
- * exited, or the file is an archive), the transcript is history and is
- * replayed instead.
+ * Same evidence the board used to call the row `running`: a unique pi process
+ * naming this exact `--session` path, or a default `pi` paired with the file
+ * it last wrote (`bindTranscriptProcesses`). Recomputing it here is what keeps
+ * the click and the row in agreement — a process that resumed another session
+ * mid-run is followed on the file it writes now, not the one it started with.
+ * When there is no such process (the agent exited, or the file is an archive),
+ * the transcript is history and is replayed instead.
  */
-async function boundRunningPid(file: string): Promise<{ pid: number; startedAt: number } | undefined> {
+async function boundRunningPid(
+  file: string,
+  deps: WatchDeps,
+): Promise<{ pid: number; startedAt: number } | undefined> {
   const table = await processSnapshot().catch(() => undefined);
   if (table === undefined) return undefined;
-  const info = findPiSession(table, file);
-  return info === undefined ? undefined : { pid: info.pid, startedAt: info.startedAt };
+  return bindTranscriptProcesses(deps.discovery.list(), table).byFile.get(file);
 }
 
 /**
  * Attach a lease's session, whatever it takes.
  *
- * Three ways in, strongest first: the tail already knows the file (a live
- * observation), the archive already has the conversation (re-attach by
- * identity), or the session is a proxy's own. Called both when a watch is
- * created and when the leases are restored at boot — the same code, so the two
- * paths cannot drift.
+ * Four ways in, strongest first: an OS lease goes back to the pid the user
+ * chose (finding it, or reopening its archive) and folds the transcript in;
+ * a transcript lease uses the tail, then the archive by identity; a proxy lease
+ * only needs the store. Called both when a watch is created and when the leases
+ * are restored at boot — the same code, so the two paths cannot drift.
  */
 async function attachLease(lease: WatchLease, deps: WatchDeps): Promise<void> {
   if (lease.channel === "acp-proxy") {
     sessionStore.get(lease.sessionId)?.setMonitorLease(true);
     return;
   }
-  if (lease.file !== undefined) {
+  // An OS lease is the pid, not the file: re-attaching through the transcript
+  // first would open a second, transcript-keyed session and leave the chosen
+  // OS one orphaned. Try the process again (which also folds the transcript
+  // into the *same* session); fall through when it has exited.
+  if (lease.channel === "os" && lease.pid !== undefined && lease.pidStartedAt !== undefined) {
+    const procKey = processTargetKey(lease.pid, lease.pidStartedAt);
+    const hint = lease.file !== undefined ? { transcriptFile: lease.file } : undefined;
+    const result = await watchProcessTarget(procKey, deps, hint);
+    if (result !== undefined) {
+      // The lease keeps its own key; the pid-keyed one was only the way in.
+      deleteLease(procKey);
+      putLease({ ...result.lease, targetKey: lease.targetKey });
+      return;
+    }
+  }
+  if (lease.channel === "transcript" && lease.file !== undefined) {
     const row = await deps.discovery.attach(lease.file);
     if (row?.sessionId !== undefined) {
       sessionStore.get(row.sessionId)?.setMonitorLease(true);
@@ -92,7 +123,14 @@ async function attachLease(lease: WatchLease, deps: WatchDeps): Promise<void> {
     ...(lease.file !== undefined ? { transcriptFile: lease.file } : {}),
     ...(lease.pid !== undefined ? { pid: lease.pid } : {}),
     ...(lease.pidStartedAt !== undefined ? { pidStartedAt: lease.pidStartedAt } : {}),
-    ...(lease.channel === "os" ? { channels: ["os"] as ObserveChannel[], watchProject: false } : {}),
+    ...(lease.channel === "os"
+      ? {
+          channels: ["os"] as ObserveChannel[],
+          // A transcript gives the session a real project; only a bare process
+          // has no tree to watch.
+          ...(lease.file === undefined ? { watchProject: false } : {}),
+        }
+      : {}),
   };
   const session = await sessionStore.createObserved(
     lease.projectPath ?? lease.file ?? process.cwd(),
@@ -125,10 +163,10 @@ export async function watchTarget(key: string, deps: WatchDeps): Promise<WatchRe
     // user keeps running pi in their own terminal; we simply picked the exact
     // process behind this file. An exited/archived transcript falls through to
     // a plain transcript session (history replay).
-    const boundPid = await boundRunningPid(file);
+    const boundPid = await boundRunningPid(file, deps);
     if (boundPid !== undefined) {
       const procKey = processTargetKey(boundPid.pid, boundPid.startedAt);
-      const osResult = await watchProcessTarget(procKey, deps);
+      const osResult = await watchProcessTarget(procKey, deps, { transcriptFile: file });
       if (osResult !== undefined) {
         // Re-file the lease under the transcript key so the board's row and
         // unwatch-by-key address the same session, and a restart re-attaches
@@ -260,11 +298,15 @@ async function upgradeIntoOsSession(
 }
 
 /** Placeholder seam, replaced by watchOs.ts's implementation at import time. */
-let watchProcessTarget: (key: string, deps: WatchDeps) => Promise<WatchResult | undefined> = async () => undefined;
+let watchProcessTarget: (
+  key: string,
+  deps: WatchDeps,
+  hint?: ProcessWatchHint,
+) => Promise<WatchResult | undefined> = async () => undefined;
 
 /** The OS-only channel registers its resolver here (see watchOs.ts). */
 export function registerProcessWatch(
-  resolver: (key: string, deps: WatchDeps) => Promise<WatchResult | undefined>,
+  resolver: (key: string, deps: WatchDeps, hint?: ProcessWatchHint) => Promise<WatchResult | undefined>,
 ): void {
   watchProcessTarget = resolver;
 }

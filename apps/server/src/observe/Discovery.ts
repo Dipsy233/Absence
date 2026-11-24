@@ -176,7 +176,7 @@ export class DiscoveryService {
     }
     tail.session = session;
     tail.missing = false;
-    if (session.replayedFromArchive) await this.warmTail(tail);
+    if (this.hasTranscriptHistory(session)) await this.warmTail(tail);
     else await this.backfillTail(tail);
     await this.feedAttached(tail);
     return true;
@@ -316,7 +316,7 @@ export class DiscoveryService {
       if (tail.session) return;
       const session = await this.ensureSession(tail);
       if (!session) return;
-      if (session.replayedFromArchive) await this.warmTail(tail);
+      if (this.hasTranscriptHistory(session)) await this.warmTail(tail);
       else await this.backfillTail(tail);
       await this.feedAttached(tail);
     })();
@@ -331,6 +331,19 @@ export class DiscoveryService {
   private async onFileGone(file: string): Promise<void> {
     const tail = this.tails.get(file);
     if (tail) tail.missing = true;
+  }
+
+  /**
+   * Whether this reopened session already holds *this transcript's* history.
+   *
+   * `replayedFromArchive` alone says the archive had events — an OS-only watch
+   * has process events long before it has a conversation. Warming then threw
+   * the transcript away and the upgraded session stayed empty. A verified
+   * checkpoint, or facts the transcript itself produced, is the real proof.
+   */
+  private hasTranscriptHistory(session: AbsenceSession): boolean {
+    if (!session.replayedFromArchive) return false;
+    return readTranscriptCheckpoint(session.id) !== undefined || session.archiveHasTranscriptFacts;
   }
 
   private async isRecentlyModified(file: string): Promise<boolean> {
@@ -362,7 +375,9 @@ export class DiscoveryService {
       await tail.parser.feed(line);
       if (tail.parser.externalId !== undefined && tail.parser.cwd !== undefined) break;
     }
-    tail.lastActivityAt = Date.now();
+    // Reading a header is not activity: the row's clock stays the file's own
+    // mtime (or the change event that brought the tail here), or a server
+    // boot would make every months-old transcript look like it just ran.
   }
 
   /** Attached mode: feed new lines to the session's parser and deliver. */

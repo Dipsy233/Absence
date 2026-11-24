@@ -66,16 +66,41 @@ export interface PairingCandidateFile {
   file: string;
   /** When the transcript first appeared (birth time, or first sighting). */
   createdAt: number;
+  /**
+   * When the transcript was last written (mtime). This is the live evidence:
+   * a process that resumed another session writes *that* file, and its old
+   * file goes quiet. Omitted when the caller has only the birth time.
+   */
+  lastActivityAt?: number;
+  /** The project the transcript belongs to (its header's `cwd`). */
+  cwd?: string;
+}
+
+/** Compare two absolute paths the way the platform does. */
+function sameScope(a: string, b: string): boolean {
+  const resolve = (value: string) => {
+    const resolved = path.resolve(value);
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  };
+  return resolve(a) === resolve(b);
 }
 
 /**
- * Pair brand-new default-pi processes with brand-new transcripts.
+ * Pair default-pi processes with transcripts.
  *
- * The only honest evidence for a default `pi` run is co-occurrence: the process
- * started just before the transcript was created. Both sides must be unique —
- * two pi processes running at once cannot be told apart by timing, and
- * guessing would put one agent's work on the other's board, so ambiguity binds
- * nothing at all. Returns file → pid for the pairs that qualify.
+ * The first evidence is co-occurrence: the process started just before the
+ * transcript was created. But a default `pi` is long-lived and can resume a
+ * different session mid-run (`-c`, the in-app resume picker), after which it
+ * appends to a file that predates it and the file born at startup goes quiet.
+ * Treating the startup pairing as permanent put the wrong conversation on the
+ * board: the running row showed the old file while the live one sat in
+ * history. So when a file's last write is known, a process is also eligible
+ * for any transcript written while it ran, and among its eligible files only
+ * the most recently written one can be its current session.
+ *
+ * Both sides must still be unique: two pi processes running at once cannot be
+ * told apart by timing, and guessing would put one agent's work on the
+ * other's board, so ambiguity binds nothing at all. Returns file → pid.
  */
 export function pairDefaultSessions(
   files: readonly PairingCandidateFile[],
@@ -84,27 +109,57 @@ export function pairDefaultSessions(
 ): Map<string, number> {
   const clockSlack = options?.clockSlackMs ?? CLOCK_SLACK_MS;
   const window = options?.windowMs ?? DEFAULT_PAIR_WINDOW_MS;
-  const byFile = new Map<string, number[]>();
-  for (const { file, createdAt } of files) {
-    const pids = candidates
-      .filter((info) =>
-        info.startedAt > 0 &&
-        info.startedAt >= createdAt - window &&
-        info.startedAt <= createdAt + clockSlack)
-      .map((info) => info.pid);
-    if (pids.length > 0) byFile.set(file, pids);
+
+  // (file, process) pairs with the strength of the evidence: the transcript's
+  // last write when known, otherwise its birth. A stronger claim is a later
+  // one, because a process writes its current session last.
+  const candidatesByFile = new Map<string, { pid: number; strength: number }[]>();
+  for (const { file, createdAt, lastActivityAt, cwd } of files) {
+    const eligible = candidates.filter((info) => {
+      if (info.startedAt <= 0) return false;
+      // Two agents running at once cannot be told apart by timing, but their
+      // projects can: a process only ever writes its own project's transcript.
+      // When either side's directory is unknown, scope is not evidence.
+      if (cwd !== undefined && info.cwd !== undefined && !sameScope(cwd, info.cwd)) return false;
+      const bornWithProcess =
+        info.startedAt >= createdAt - window && info.startedAt <= createdAt + clockSlack;
+      // The process kept writing a file that existed before it started: the
+      // session was resumed inside this process.
+      const writtenByProcess = lastActivityAt !== undefined && lastActivityAt >= info.startedAt;
+      return bornWithProcess || writtenByProcess;
+    });
+    if (eligible.length > 0) {
+      const strength = lastActivityAt ?? createdAt;
+      candidatesByFile.set(file, eligible.map((info) => ({ pid: info.pid, strength })));
+    }
   }
+
+  // One process writes one session at a time: keep only its latest file.
+  // A tie between equally recent files is ambiguity, not a coin toss.
+  const latestByPid = new Map<number, { file: string; strength: number }[]>();
+  for (const [file, entries] of candidatesByFile) {
+    for (const { pid, strength } of entries) {
+      const list = latestByPid.get(pid) ?? [];
+      list.push({ file, strength });
+      latestByPid.set(pid, list);
+    }
+  }
+  const current = new Map<string, number[]>();
+  for (const [pid, entries] of latestByPid) {
+    const latest = Math.max(...entries.map((entry) => entry.strength));
+    const best = entries.filter((entry) => entry.strength === latest);
+    const winner = best.length === 1 ? best[0] : undefined;
+    if (winner === undefined) continue;
+    const list = current.get(winner.file) ?? [];
+    list.push(pid);
+    current.set(winner.file, list);
+  }
+
   const result = new Map<string, number>();
-  for (const [file, pids] of byFile) {
-    // One transcript, one process — and that process must not be a candidate
-    // of any other transcript, or the pairing is a coin toss.
-    const pid = pids.length === 1 ? pids[0] : undefined;
-    if (pid === undefined) continue;
-    const contested = [...byFile.entries()].some(
-      ([other, otherPids]) => other !== file && otherPids.includes(pid),
-    );
-    if (contested) continue;
-    result.set(file, pid);
+  for (const [file, pids] of current) {
+    // One transcript, one process: a file claimed twice is a coin toss too.
+    const [pid] = pids;
+    if (pids.length === 1 && pid !== undefined) result.set(file, pid);
   }
   return result;
 }
