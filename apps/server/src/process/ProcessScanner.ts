@@ -16,7 +16,13 @@ function isPiEntry(args: string[]): boolean {
   const entry = (args[1] ?? "").replace(/\\/g, "/");
   return executable === "pi" || executable === "pi.exe" ||
     ((executable === "node" || executable === "node.exe") &&
-      /\/@(?:mariozechner|earendil-works)\/pi-coding-agent\/dist\/cli\.js$/i.test(entry));
+      // pi ships its CLI in different places depending on package/build:
+      //   dist/cli.js          (older / unbundled builds)
+      //   dist/bundle/cli.js   (npm `bin: pi`, v1.6+)
+      //   dist/bun/cli.js      (compiled build source)
+      // Allow one optional sub-directory under `dist/` so a layout change in
+      // the agent's own build does not silently blind process detection.
+      /\/@(?:mariozechner|earendil-works)\/pi-coding-agent\/dist\/(?:[^/]+\/)?cli\.js$/i.test(entry));
 }
 
 /** The transcript file named by `--session`, when the entry carries one. */
