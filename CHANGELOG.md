@@ -37,6 +37,10 @@ write-back path is refused.
   its archive read-only instead of 404ing, and an OS-only watch that gains a
   transcript backfills the conversation — its archive's process facts are not
   mistaken for transcript history and warmed away.
+- Timeline lanes carry their own duration again: a transcript assistant record's
+  `durationMs` closes the thought/reply at the generation end, and a
+  `toolResult`'s `durationMs` places its command where it actually ran, so the
+  Shell lane no longer paints over the model's thinking.
 - Runs follow the channel that now feeds the session: folding a transcript
   into a process watch switches the run index from activity bursts to user
   turns, rebuilds the rows already written (they were labelled "usage" /

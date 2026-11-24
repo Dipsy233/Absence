@@ -139,7 +139,7 @@ The run selector lists the session's runs and switches the whole face to one of 
 
 The Stage renders one view per event kind: file, diff, terminal, thought, speech, process, error and approval. The approval card is read-only and states that the request was answered elsewhere.
 
-Below the Stage is the timeline: three tracks (Model, Tools, Shell) over the run's duration. Clicking a node seeks; playback advances on an 80 ms tick at 0.25× to 10×.
+Below the Stage is the timeline: three tracks (Model, Tools, Shell) over the run's duration. Clicking a node seeks; playback advances on an 80 ms tick at 0.25× to 10×. A mark's width is its own duration — a thought ends at the generation end its transcript reported, a command at its tool's reported duration — so the Shell track goes quiet while the model thinks.
 
 **Right column** (`MonitorRight.tsx`) contains:
 

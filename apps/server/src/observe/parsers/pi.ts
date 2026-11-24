@@ -153,6 +153,13 @@ export class PiTranscriptParser {
   private async assistantMessage(message: AnyRecord, at: number): Promise<void> {
     if (typeof message.model === "string" && message.model.length > 0) this.model = message.model;
     this.collectUsage(message.usage);
+    // A transcript stamps an assistant record when generation *started* and
+    // reports how long it took. Thinking, the reply and the tool call all sit
+    // in that one record, so without the duration they would share the start
+    // and the shell would be drawn running while the model was still thinking.
+    const reported = numberAt(message, "durationMs");
+    const generationEnd =
+      reported !== undefined && reported >= 0 ? at + reported : undefined;
 
     if (this.turnOpen && !this.agentStartEmitted) {
       this.emit("agent_start", { model: this.model ?? "" }, at, "inferred");
@@ -170,14 +177,28 @@ export class PiTranscriptParser {
         case "thinking": {
           const content = textOf(block.thinking);
           if (content !== undefined && content.trim().length > 0) {
-            this.emit("thinking", { content }, at, "reported");
+            this.emit(
+              "thinking",
+              { content, ...(generationEnd !== undefined ? { endedAt: generationEnd } : {}) },
+              at,
+              "reported",
+            );
           }
           break;
         }
         case "text": {
           const text = textOf(block.text);
           if (text !== undefined && text.trim().length > 0) {
-            this.emit("message", { role: "assistant", content: text }, at, "reported");
+            this.emit(
+              "message",
+              {
+                role: "assistant",
+                content: text,
+                ...(generationEnd !== undefined ? { endedAt: generationEnd } : {}),
+              },
+              at,
+              "reported",
+            );
           }
           break;
         }
@@ -185,11 +206,13 @@ export class PiTranscriptParser {
           const toolCallId = textOf(block.id);
           if (toolCallId === undefined) break;
           const name = textOf(block.name) ?? "tool";
-          this.pending.set(toolCallId, { toolCallId, name, rawInput: block.arguments, at });
+          // The tool cannot run before generation ends; start it there.
+          const startedAt = generationEnd ?? at;
+          this.pending.set(toolCallId, { toolCallId, name, rawInput: block.arguments, at: startedAt });
           this.emit(
             "tool_start",
             { toolCallId, toolName: name, args: block.arguments ?? null },
-            at,
+            startedAt,
             "reported",
           );
           break;
@@ -202,7 +225,8 @@ export class PiTranscriptParser {
 
     const reason = TURN_END_REASONS[textOf(message.stopReason) ?? ""];
     if (reason !== undefined) {
-      this.closeTurn(reason, at);
+      // The turn ends when this record finished generating, not when it began.
+      this.closeTurn(reason, generationEnd ?? at);
     }
   }
 
@@ -220,7 +244,16 @@ export class PiTranscriptParser {
     const isError = message.isError === true;
     const resultText = joinBlocks(message.content);
 
-    this.emit("tool_end", { toolCallId, toolName, isError }, at, "reported");
+    // The transcript reports the tool's own run time. `tool_start` was stamped
+    // when the assistant message was created, which is before the tool ran;
+    // carrying the duration lets the report place the command truthfully.
+    const durationMs = numberAt(message, "durationMs");
+    this.emit(
+      "tool_end",
+      { toolCallId, toolName, isError, ...(durationMs !== undefined ? { durationMs } : {}) },
+      at,
+      "reported",
+    );
 
     const input = isRecord(pending.rawInput) ? pending.rawInput : {};
 

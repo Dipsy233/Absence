@@ -62,7 +62,7 @@ The root workspace contains `packages/*`, `apps/server` and `apps/web`. `apps/de
 | Module | Responsibility |
 |---|---|
 | `observe/transcriptSources.ts` | Source profiles. One entry (`pi`): watch roots, the agent kind recorded on sessions, and the environment overrides for its session directory. |
-| `observe/parsers/pi.ts` | pi transcript records to `AbsenceEvent`, tagged `source: "transcript"`. |
+| `observe/parsers/pi.ts` | pi transcript records to `AbsenceEvent`, tagged `source: "transcript"`. The transcript's clocks are carried through: an assistant record is stamped when generation started and its `durationMs` ends the thought/reply there, while a `toolResult`'s `durationMs` places the tool at the moment it actually ran. |
 | `observe/Discovery.ts` | Tails the source roots. Three states per file: unknown (header parsed only), attached (session exists, backfill then incremental tail) and missing (file gone, row kept). |
 | `observe/Targets.ts` | Builds the board's target list from transcripts, the process table and the proxy registry. Building the list creates nothing. |
 | `observe/watch.ts`, `observe/watchOs.ts` | Resolve a target key to a channel, attach the session and record a monitor lease. Also fold a transcript into an existing OS-only session when the process table proves they are the same agent. |
@@ -226,7 +226,7 @@ Replay rebuilds state from run events and periodic snapshots.
 - File reconstruction: `file_write` replaces the file; `file_edit` applies `after`; `file_read` supplies initial content only when the path is still unknown; `file_change deleted` removes the path.
 - `seek` selects the nearest snapshot at or before the target time, then applies the remaining events up to it.
 - Playback advances on an 80 ms tick. Speeds are `0.25 / 0.5 / 1 / 2 / 5 / 10`. Playback pauses at the end of the run.
-- The Monitor Stage timeline has three tracks — Model (thinking and speaking), Tools (tool calls, including MCP) and Shell (command execution); clicking seeks. Rounds story cards and Monitor feed rows also seek when clicked.
+- The Monitor Stage timeline has three tracks — Model (thinking and speaking), Tools (tool calls, including MCP) and Shell (command execution); clicking seeks. Rounds story cards and Monitor feed rows also seek when clicked. A mark is as long as its own activity: a thought ends at the generation end the transcript reported, a command at its reported tool duration, so the Shell lane stays quiet while the model thinks.
 
 Replay scope:
 

@@ -336,6 +336,16 @@ export function buildRunFacts(
         const start = openTools.get(id);
         if (!start || !SHELL_TOOLS.has(event.payload.toolName)) break;
         openTools.delete(id);
+        // A transcript stamps `tool_start` when the assistant message was
+        // created, which is before the tool ran; the result reports how long
+        // the tool itself took. Prefer that real duration so a command is
+        // placed where it executed, not across the model's generation time.
+        const reportedDuration = event.payload.durationMs;
+        const durationMs =
+          typeof reportedDuration === "number" && Number.isFinite(reportedDuration) && reportedDuration >= 0
+            ? reportedDuration
+            : event.timestamp - start.at;
+        const startedAt = durationMs >= 0 ? event.timestamp - durationMs : start.at;
         if (event.payload.isError) {
           // A tool-level failure emits NO `command` event (PiAdapter returns
           // early), so this is the only place a failed shell command is visible.
@@ -344,9 +354,9 @@ export function buildRunFacts(
             toolCallId: id,
             toolName: start.toolName,
             command: start.command,
-            startedAt: start.at,
+            startedAt,
             endedAt: event.timestamp,
-            durationMs: event.timestamp - start.at,
+            durationMs,
             status: "failed",
             evidence: [start.eventId, event.id],
             sliceIndex: i,
@@ -359,9 +369,9 @@ export function buildRunFacts(
             toolCallId: id,
             toolName: start.toolName,
             command: start.command,
-            startedAt: start.at,
+            startedAt,
             endedAt: event.timestamp,
-            durationMs: event.timestamp - start.at,
+            durationMs,
             status: "unknown",
             evidence: [start.eventId, event.id],
             sliceIndex: i,
@@ -907,7 +917,10 @@ function buildTimeline(
         };
         if (command.endedAt !== undefined) {
           const end = Math.max(0, command.endedAt - run.startedAt);
-          if (end > node.offsetMs) node.endOffsetMs = end;
+          // `>=` matters for a reported duration of 0: the command still has a
+          // known end, so it must not fall back to fill-to-next and paint the
+          // shell lane across the thinking that follows it.
+          if (end >= node.offsetMs) node.endOffsetMs = end;
         }
         nodes.push(node);
         break;

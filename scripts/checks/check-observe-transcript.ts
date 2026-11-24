@@ -83,6 +83,10 @@ const assistantMessage = (blocks: unknown[], stopReason: string, usage: Record<s
       usage: { input: usage.input, output: usage.output, cacheRead: 0, cacheWrite: 0, reasoning: 0, totalTokens: usage.input + usage.output },
       stopReason,
       timestamp: messageStamp(),
+      // pi records generation time on the assistant record; the transcript
+      // fixtures must carry it or the timeline cannot tell thinking from the
+      // tool's own execution.
+      durationMs: 2_000,
     },
   });
 
@@ -165,6 +169,32 @@ check("the thinking block is a fact", hasEvent("thinking", (payload) => payload.
 check("the assistant reply arrived before the tool call", inOrder(["message", "tool_start"]) && hasEvent("message", (payload) => payload.role === "assistant" && payload.content === "Creating it now."));
 check("the write tool opened", hasEvent("tool_start", (payload) => payload.toolName === "write" && payload.toolCallId === "tc_1"));
 check("the write tool closed", hasEvent("tool_end", (payload) => payload.toolName === "write" && payload.isError === false));
+check(
+  "a tool result carries the tool's own duration",
+  hasEvent("tool_end", (payload) => payload.toolCallId === "tc_1" && payload.durationMs === 12),
+);
+{
+  const think = session.history().find((event) => event.type === "thinking");
+  const start = session.history().find(
+    (event) => event.type === "tool_start" && (event.payload as any).toolCallId === "tc_1",
+  );
+  const reply = session.history().find(
+    (event) =>
+      event.type === "message" &&
+      (event.payload as any).role === "assistant" &&
+      (event.payload as any).content === "Creating it now.",
+  );
+  check(
+    "a streamed thought records where its generation ended",
+    (think?.payload as any)?.endedAt === think?.timestamp + 2_000,
+    `endedAt=${(think?.payload as any)?.endedAt} at=${think?.timestamp}`,
+  );
+  check(
+    "the tool starts after generation, not at the record's start",
+    start?.timestamp === (reply?.timestamp ?? -1) + 2_000,
+    `start=${start?.timestamp} message=${reply?.timestamp}`,
+  );
+}
 check("the write tool became a file_write with the content", hasEvent("file_write", (payload) => payload.path === path.join(project, "a.txt") && payload.content === "hello\nworld\n"));
 check("the stated turn boundary closed with agent_end", hasEvent("agent_end", (payload) => payload.reason === "completed"));
 check("the model arrived as a fact", session.session.model === "test-model");

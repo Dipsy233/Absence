@@ -139,7 +139,7 @@ run 选择器列出会话的全部 run，切换时整个 face 一起切换。
 
 Stage 按事件类型渲染一种视图：file、diff、terminal、thought、speech、process、error 与 approval。审批卡片只读，并说明该请求已在别处应答。
 
-Stage 下方是时间线：Model、Tools、Shell 三条轨道，覆盖 run 的时长。点击节点即 seek；回放以 80 ms tick、0.25× 至 10× 推进。
+Stage 下方是时间线：Model、Tools、Shell 三条轨道，覆盖 run 的时长。点击节点即 seek；回放以 80 ms tick、0.25× 至 10× 推进。每段的宽度就是它自己的活动时长——思考结束于转录上报的生成结束，命令结束于工具上报的执行时长——模型思考时 Shell 轨道保持安静。
 
 **右列**（`MonitorRight.tsx`）包含：
 

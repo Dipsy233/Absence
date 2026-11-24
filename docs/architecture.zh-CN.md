@@ -62,7 +62,7 @@ Absence 不驱动任何 agent。用户在自己的终端或编辑器中运行 ag
 | 模块 | 职责 |
 |---|---|
 | `observe/transcriptSources.ts` | 转录源 profile。当前只有一条(`pi`):watch 根目录、记录在会话上的 agent kind,以及会话目录的环境变量覆盖。 |
-| `observe/parsers/pi.ts` | pi 转录记录 → `AbsenceEvent`,标记 `source: "transcript"`。 |
+| `observe/parsers/pi.ts` | pi 转录记录 → `AbsenceEvent`,标记 `source: "transcript"`。转录自己的时钟被如实带出:assistant 记录的时间戳是生成开始,它的 `durationMs` 在那里结束思考/回复;`toolResult` 的 `durationMs` 则把工具放回真正执行的时刻。 |
 | `observe/Discovery.ts` | 尾随源根目录。每个文件三态:unknown(只解析 header)、attached(会话存在,回填后增量尾随)、missing(文件消失,行保留)。 |
 | `observe/Targets.ts` | 由转录、进程表与代理注册表构建观测台的目标列表。构建列表不创建会话、watcher 或采样器。 |
 | `observe/watch.ts`、`observe/watchOs.ts` | 把目标键解析为通道,挂载会话并记录监控租约;进程表证明同一 agent 时,把转录折入已有的仅 OS 会话。 |
@@ -226,7 +226,7 @@ Absence Report 完全由 Web 端的 `apps/web/src/lib/report.ts` 计算,输入�
 - 文件重建:`file_write` 覆盖文件;`file_edit` 应用 `after`;`file_read` 只在路径仍未知时作为初始内容;`file_change deleted` 删除路径。
 - `seek` 选择时间戳不晚于目标时间的最近快照,再应用余下事件到目标时间。
 - 播放按 80 ms tick 推进。速度选项为 `0.25 / 0.5 / 1 / 2 / 5 / 10`。到 run 末尾自动暂停。
-- Monitor Stage 底部时间线有 Model(模型的思考与发言)、Tools(工具调用,含 MCP)、Shell(命令执行)三条独立轨道,点击即 seek。Rounds 的故事卡片与 Monitor 的 feed 行点击时同样 seek。
+- Monitor Stage 底部时间线有 Model(模型的思考与发言)、Tools(工具调用,含 MCP)、Shell(命令执行)三条独立轨道,点击即 seek。Rounds 的故事卡片与 Monitor 的 feed 行点击时同样 seek。 每段的宽度就是它自己的活动时长:思考结束于转录上报的生成结束,命令结束于工具上报的执行时长,因此模型思考时 Shell 轨道保持安静。
 
 回放范围:
 
