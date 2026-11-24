@@ -25,12 +25,12 @@ Absence 不再启动、驱动或应答任何 agent，只做旁观：三条只读
   `ABSENCE_SESSION_ID` 精确归因，把客户端提示词投影为 run 边界。
 - 通道 C OS 旁观：共享的全机扫描器（`ExternalScanner`）给每个观察会话分发其绑定的
   进程子树；默认 pi 只按无歧义的 1:1 新转录/新进程配对绑定。
-- 外部进程的内核级监控：在观测台选中一个运行中的 pi，就对该 pid 挂一个专用内核
-  观察者——Windows 用 `agentwatch --target-pid <pid>` 把该进程接管进独立 Job
-  Object，Linux 用机器级 eBPF 流按祖先过滤——子树按事件报告而非轮询。用户照旧
-  在自己终端里跑 pi，Absence 既不是父进程也不是代理
-  （`process/TargetedObserver.ts`）。无法接管内核观察者时回落到进程表扫描。
-- Web 即观测台：列出转录、代理与历史，从不启动任何东西；聊天输入、斜杠面板、审批
+- 外部进程的内核级观察：在观测台选中一个运行中的 pi，则对该 pid 建立专用内核
+  观察者。Windows 用 `agentwatch --target-pid <pid>` 把该进程接管进独立 Job
+  Object；Linux 用机器级 eBPF 流按祖先过滤。进程子树按事件报告，不做轮询。用户
+  继续在自己终端运行 pi；Absence 不是父进程，也不是代理
+  （`process/TargetedObserver.ts`）。无法接管内核观察者时退化为进程表扫描。
+- Web 即观测台：列出转录、代理与历史，不启动任何 agent；聊天输入、斜杠面板、审批
   按钮、`/model` 切换与所有「+ Chat」入口均已移除，审批卡只读。
 - ACP 驱动栈（AcpAdapter / AcpConnection / AcpSession / 权限桥 / 认证 / 配置项 /
   AgentCatalog / profiles）已删除；`createAdapter` 只解析 mock fixture，其他会话一律

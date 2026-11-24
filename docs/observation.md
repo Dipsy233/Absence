@@ -37,13 +37,14 @@ ssh -N -L 8848:127.0.0.1:8848 user@agent-host
 
 ## Choosing a target
 
-The board has three sections:
+The board has two columns:
 
-| Section | Content | Action |
+| Column | Content | Action |
 |---|---|---|
-| Watching now | Sessions the server currently holds in memory | Open the panel |
-| Available to watch | Discovered targets with no live session | Start monitoring |
-| History | Archived sessions | Reopen the record |
+| Running | Running agents: watched sessions and running targets | Click a row to start monitoring and open its panel |
+| History | Archived sessions and exited transcripts | Reopen, or delete an archive |
+
+Monitoring ends from inside the panel: its `change` button drops the monitor lease and closes the live session, and the target returns to the Running column as watchable. The archive remains.
 
 A target key is stable across restarts:
 
@@ -63,7 +64,7 @@ npx tsx apps/server/src/cli.ts observe --pid 12345
 
 `--pid` selects only targets Absence has already matched; it does not monitor an arbitrary process. A pid alone is refused when two targets name it, and `--cwd` is refused when several targets work in that directory.
 
-Selecting a transcript target that a **running pi** is writing binds that process and watches it over the kernel-grade OS channel (a dedicated Job Object on Windows, the machine-wide eBPF stream filtered by ancestry on Linux), folding the transcript's conversation into the same session — the user keeps pi in their own terminal and Absence is neither parent nor proxy. Selecting a transcript whose agent has exited replays its history instead.
+Selecting a transcript target that a **running pi** writes binds that process and observes it over the kernel-grade OS channel (a dedicated Job Object on Windows, the machine-wide eBPF stream filtered by ancestry on Linux), and folds the transcript's conversation into the same session. The user continues to run pi in their own terminal; Absence is neither parent nor proxy. Selecting a transcript whose agent has exited replays its history.
 
 `ABSENCE_AUTO_ATTACH=1` restores the earlier behaviour in which a transcript written in the last ten minutes attaches without a selection.
 
@@ -86,7 +87,7 @@ The observer may attach after the agent has already worked. What it recovers dep
 | Channel | Before attachment | After attachment |
 |---|---|---|
 | `transcript` | Every complete record already in the file is delivered in file order. A real user message remains a real run boundary. When the file begins inside a turn, the first run is marked `boundarySource: "attach"` with `truncatedBefore: true` and an empty prompt; no prompt is invented. | The same parser continues from the byte offset; a record without a terminating newline is read after the writer finishes it. |
-| `os` | Only processes present and attributable at attachment time. Exited short-lived processes, past samples and past conversation are not recoverable. | The whole subtree is followed at the kernel level: Windows adopts the chosen process into its own Job Object (`agentwatch --target-pid`), Linux filters the machine-wide eBPF stream by ancestry. Creations and exits arrive as events — no polling. When neither can attach, it degrades to process-table sampling. Activity is recorded as runs with `boundarySource: "activity-burst"`. |
+| `os` | Only processes present and attributable at attachment time. Exited short-lived processes, past samples and past conversation are not recoverable. | The process subtree is followed at the kernel level: Windows adopts the chosen process into its own Job Object (`agentwatch --target-pid`); Linux filters the machine-wide eBPF stream by ancestry. Creations and exits are reported as events, without polling. When neither can attach, observation degrades to process-table sampling. Activity is recorded as runs with `boundarySource: "activity-burst"`. |
 | `acp-proxy` | Not a way to attach to an existing terminal process. Traffic that did not pass through the proxy is not available. | Only facts carried by the proxied connection are recorded. |
 
 ### Backfill and live tail

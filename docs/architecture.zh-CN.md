@@ -42,7 +42,7 @@ Absence 不驱动任何 agent。用户在自己的终端或编辑器中运行 ag
 | Web 客户端 | React 19、Vite、Tailwind、Zustand;代码视图使用 Monaco |
 | 桌面壳 | Electron 37 与 electron-builder |
 | 文件观察 | `chokidar` |
-| 进程观察 | Windows 通过 `native/agentwatch` 使用 Job Object;Linux 通过 `native/agentwatch-linux` 使用 eBPF。所选的外部 agent 由独立 Job Object(`--target-pid`)接管,或由机器级 eBPF 按祖先过滤——纯第三方监控,零代理零拉启;无法接管时兜底为进程表采样 |
+| 进程观察 | Windows 通过 `native/agentwatch` 使用 Job Object;Linux 通过 `native/agentwatch-linux` 使用 eBPF。所选的外部 agent 由独立 Job Object(`--target-pid`)接管,或由机器级 eBPF 按祖先过滤;不经过代理,也不启动 agent。无法接管时退化为进程表采样 |
 | agent 内容 | pi 会话转录;通过代理的 stdio ACP(JSON-RPC 2.0,NDJSON 分帧) |
 
 | 路径 | 职责 |
@@ -64,7 +64,7 @@ Absence 不驱动任何 agent。用户在自己的终端或编辑器中运行 ag
 | `observe/transcriptSources.ts` | 转录源 profile。当前只有一条(`pi`):watch 根目录、记录在会话上的 agent kind,以及会话目录的环境变量覆盖。 |
 | `observe/parsers/pi.ts` | pi 转录记录 → `AbsenceEvent`,标记 `source: "transcript"`。 |
 | `observe/Discovery.ts` | 尾随源根目录。每个文件三态:unknown(只解析 header)、attached(会话存在,回填后增量尾随)、missing(文件消失,行保留)。 |
-| `observe/Targets.ts` | 由转录、进程表与代理注册表构建观测台的目标列表。构建列表不创建任何东西。 |
+| `observe/Targets.ts` | 由转录、进程表与代理注册表构建观测台的目标列表。构建列表不创建会话、watcher 或采样器。 |
 | `observe/watch.ts`、`observe/watchOs.ts` | 把目标键解析为通道,挂载会话并记录监控租约;进程表证明同一 agent 时,把转录折入已有的仅 OS 会话。 |
 | `observe/leases.ts` | 租约持久化与恢复。 |
 | `observe/ObserveAdapter.ts` | 所有非驱动会话使用的 no-op 适配器;`prompt()` 抛错,`abort()` 空操作。 |
@@ -72,7 +72,7 @@ Absence 不驱动任何 agent。用户在自己的终端或编辑器中运行 ag
 | `agents/acp/proxy/**` | 透明 ACP 代理:自己 spawn agent,原样转发字节,旁听同一份流量生成事件,注入 `ABSENCE_SESSION_ID` 获得精确进程归因,并经 `SessionStore.createObserved` 持久化(channel `acp-proxy`)。 |
 | `agents/MockAdapter.ts` | 开发与检查使用的脚本化 fixture——Absence 仍然驱动的唯一运行时。 |
 
-`createAdapter` 只解析 mock fixture。其他任何 kind 都产生观察会话;带 `resume` 的 POST 重开归档(回放、目录树、watcher),不 spawn 任何东西。
+`createAdapter` 只解析 mock fixture。其他任何 kind 都产生观察会话;带 `resume` 的 POST 重开归档(回放、目录树、watcher),不启动任何进程。
 
 ### 3.2 会话与归档 — `apps/server/src/sessions`
 
@@ -80,7 +80,7 @@ Absence 不驱动任何 agent。用户在自己的终端或编辑器中运行 ag
 
 ### 3.3 进程观察 — `apps/server/src/process`
 
-`ProcessWatcher.ts` 把进程创建与退出转换成 `process` 事件,并归因到命令、egg 与会话。`JobMonitor.ts` 持有进程级的内核观察器:Windows 使用 `JobSidecar`,Linux 使用 `EbpfObserver`。`TargetedObserver.ts` 对用户在观测台选中的外部 pid 建专用内核观察:Windows 起一个 `agentwatch --target-pid <pid>` 将其接管进独立 Job Object,Linux 复用机器级 eBPF 流并按祖先过滤;接管失败时回落到进程表轮询。`ExternalScanner.ts` 每四秒做一次全机扫描,把结果分发给所有观察会话。`ProcessScanner.ts` 按可执行文件签名与绝对 `--session` 转录路径匹配 pi 进程。`classify.ts` 判定进程是 primary egg 还是 helper。`DockerMonitor.ts` 与 `DockerEggs.ts` 覆盖非 Windows 主机的容器。`ProcessMetrics.ts` 与 `metricSample.ts` 采样资源使用;`storage/metrics.ts` 负责持久化。
+`ProcessWatcher.ts` 把进程创建与退出转换成 `process` 事件,并归因到命令、egg 与会话。`JobMonitor.ts` 持有进程级的内核观察器:Windows 使用 `JobSidecar`,Linux 使用 `EbpfObserver`。`TargetedObserver.ts` 为观测台中选中的外部 pid 建立专用内核观察者:Windows 启动一个 `agentwatch --target-pid <pid>` 将其接管进独立 Job Object,Linux 复用机器级 eBPF 流并按祖先过滤;接管失败时退化为进程表轮询。`ExternalScanner.ts` 每四秒做一次全机扫描,把结果分发给所有观察会话。`ProcessScanner.ts` 按可执行文件签名与绝对 `--session` 转录路径匹配 pi 进程。`classify.ts` 判定进程是 primary egg 还是 helper。`DockerMonitor.ts` 与 `DockerEggs.ts` 覆盖非 Windows 主机的容器。`ProcessMetrics.ts` 与 `metricSample.ts` 采样资源使用;`storage/metrics.ts` 负责持久化。
 
 ### 3.4 文件观察 — `apps/server/src/filesystem`
 

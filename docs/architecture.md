@@ -42,7 +42,7 @@ The root workspace contains `packages/*`, `apps/server` and `apps/web`. `apps/de
 | Web client | React 19, Vite, Tailwind, Zustand; Monaco for code views |
 | Desktop shell | Electron 37 and electron-builder |
 | File observation | `chokidar` |
-| Process observation | Windows: Job Object through `native/agentwatch`; Linux: eBPF through `native/agentwatch-linux`. A chosen external agent is adopted into its own Job Object (`--target-pid`) or filtered out of the machine-wide eBPF stream by ancestry — pure third-party monitoring, no proxy, no launch; fallback: process-table sampling |
+| Process observation | Windows: Job Object through `native/agentwatch`; Linux: eBPF through `native/agentwatch-linux`. A chosen external agent is adopted into its own Job Object (`--target-pid`) or filtered out of the machine-wide eBPF stream by ancestry; no proxy is involved and no agent is started. Fallback: process-table sampling |
 | Agent content | pi session transcripts; ACP over stdio (JSON-RPC 2.0, NDJSON framing) through the proxy |
 
 | Path | Responsibility |

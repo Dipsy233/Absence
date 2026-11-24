@@ -15,15 +15,14 @@ This document describes the web interface in `apps/web`: the observation board, 
 
 The address bar carries the panel path `/s/<sessionId>`. Opening the app on that URL restores the panel; browser back and forward move between the board and panels without a reload. A stale link whose archive no longer exists fails silently and leaves the board in place.
 
-The board polls every four seconds while visible. It contains three sections:
+The board polls every four seconds while visible. It has two columns:
 
-| Section | Content | Action |
+| Column | Content | Action |
 |---|---|---|
-| Watching now | Live observed sessions with channel, last activity, fact count and lease state | Open the panel |
-| Available to watch | Discovered targets with liveness and channel list | Start monitoring |
-| History | Archived sessions with runtime, message count and first prompt | Reopen or delete |
+| Running | Running agents: watched sessions and running targets, with channel, last activity, fact count and first prompt | Click a row to start monitoring and open its panel |
+| History | Archived sessions and exited transcripts, with runtime, message count and first prompt | Reopen, or delete an archive |
 
-Each row in Watching now shows `backfilling…` while a backfill runs and `transcript diverged; re-watch to continue` when the stored checkpoint no longer matches the transcript. The ✕ on a row drops the monitor lease; the archive remains.
+A running row shows `backfilling…` while a backfill runs and `transcript diverged; re-watch to continue` when the stored checkpoint no longer matches the transcript. There is no per-row stop control: monitoring ends from the panel, whose `change` button drops the lease and closes the live session; the target then returns to the Running column as watchable and the archive remains.
 
 ## 2. Faces and the switcher
 
@@ -53,7 +52,7 @@ The source records a Chinese term for each face (查房陪诊, 机器监护, 病
 | Context meter | Used and total context tokens with a bar |
 | Connection chip | `online` or `offline` |
 | Settings | Opens the settings dialog |
-| `change` | Returns to the observation board |
+| `change` | Drops the monitor lease, closes the live session and returns to the board |
 | Window controls | Desktop shell only |
 
 The bar carries no run content. The run belongs to the face.
