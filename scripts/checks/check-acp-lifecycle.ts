@@ -656,7 +656,10 @@ async function main(): Promise<void> {
       wrapperPath,
       [
         "import { spawn } from 'node:child_process';",
-        "const child = spawn('ping', ['-n', '30', '127.0.0.1'], { stdio: 'ignore', windowsHide: true });",
+        // A node process is long-lived on every platform; `ping -n` is a
+        // Windows count flag and exits at once on Linux, which made this case
+        // fail on the ubuntu runner instead of testing the contract.
+        "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', windowsHide: true });",
         "console.log(child.pid);",
         "setInterval(() => {}, 1000);",
         "",
@@ -667,8 +670,9 @@ async function main(): Promise<void> {
       stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
     });
+    let childPid: number | undefined;
     try {
-      const childPid = await new Promise<number>((resolve, reject) => {
+      childPid = await new Promise<number>((resolve, reject) => {
         let text = "";
         wrapper.stdout?.on("data", (chunk) => {
           text += String(chunk);
@@ -689,14 +693,23 @@ async function main(): Promise<void> {
       watcher.end(commandId);
       watcher.stop();
 
-      const stillAlive = (await snapshotProcesses()).has(childPid);
-      check("the watched command process survives the session's close", stillAlive, `pid ${childPid}`);
+      const alivePid = childPid;
+      const stillAlive = (await snapshotProcesses()).has(alivePid);
+      check("the watched command process survives the session's close", stillAlive, `pid ${alivePid}`);
     } finally {
       // The check's own cleanup — the harness reaps what it spawned.
       if (process.platform === "win32" && wrapper.pid !== undefined) {
         spawn("taskkill", ["/PID", String(wrapper.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
       } else {
         wrapper.kill();
+        // POSIX has no tree kill: the wrapper's own child would outlive the run.
+        if (childPid !== undefined) {
+          try {
+            process.kill(childPid, "SIGKILL");
+          } catch {
+            // Already gone; nothing to clean up.
+          }
+        }
       }
       await fs.rm(dir, { recursive: true, force: true });
     }
