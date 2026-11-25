@@ -70,11 +70,24 @@ function attachLinuxCwd(table: ProcessTable): void {
   for (const info of table.values()) {
     try {
       const cwd = fs.readlinkSync(`/proc/${info.pid}/cwd`);
-      if (cwd.length > 0) info.cwd = cwd;
+      if (cwd.length > 0) info.cwd = trimDir(cwd);
     } catch {
       // Exited, or not ours to look at: missing evidence, not a failure.
     }
   }
+}
+
+/**
+ * A working directory without its trailing separator.
+ *
+ * Windows reports `CurrentDirectory` as `E:\dir\`; the board, the project
+ * scope and the tree all name the same place as `E:\dir`, and a row that
+ * differs from every other row by one backslash looks like a different project.
+ */
+export function trimDir(value: string): string {
+  const trimmed = value.replace(/[\\/]+$/, "");
+  // A drive root (`E:\`, `/`) keeps its separator: it is the path.
+  return trimmed.length === 0 ? value : trimmed;
 }
 
 /** The helper's rows, in the shape the watcher's adoption logic reads. */
@@ -87,7 +100,7 @@ function tableFromRows(rows: WatchTableRow[]): ProcessTable {
       ppid: Number.isInteger(row.ppid) ? row.ppid : 0,
       name: row.name || "?",
       commandLine: row.commandLine ?? "",
-      ...(row.cwd !== undefined ? { cwd: row.cwd } : {}),
+      ...(row.cwd !== undefined ? { cwd: trimDir(row.cwd) } : {}),
       startedAt: row.startedAt ?? 0,
     });
   }

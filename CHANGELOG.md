@@ -37,6 +37,14 @@ write-back path is refused.
   its archive read-only instead of 404ing, and an OS-only watch that gains a
   transcript backfills the conversation — its archive's process facts are not
   mistaken for transcript history and warmed away.
+- A pi process names its conversation three ways and all three are resolved:
+  `--session <absolute path>`, `--session <id>` (matched through the
+  transcript header), and a bare `pi` (project cwd plus latest write). Windows
+  extended-length paths (`\?\C:\…`) are stripped before comparing, so a
+  long resumed session is no longer invisible. A pi the command line cannot
+  prove is still listed as an OS-only target instead of vanishing — with its
+  working directory as the row title and the pid as its own field, rather than
+  the `proc:<pid>@<start>` key.
 - One `edit` tool call is one `file_edit` fact: pi sends a list of
   replacements for a single file, and emitting one event per replacement put
   five identically stamped rows in the feed whose timeline marks overlapped —

@@ -2,9 +2,9 @@ import fs from "node:fs";
 import { snapshotProcesses, type ProcInfo, type ProcessTable } from "./ProcessTable";
 import {
   attributedTree,
-  defaultPiCandidates,
   findPiSession,
   pairDefaultSessions,
+  unboundPiCandidates,
 } from "./ProcessScanner";
 
 /**
@@ -150,11 +150,13 @@ export class ExternalScanner {
       }
     }
 
-    // 2. Pairings for default pi runs, recomputed every sweep. A long-lived
+    // 2. Pairings for unbound pi runs, recomputed every sweep. A long-lived
     // `pi` can resume another session mid-run; the file it writes now is the
     // one it was last seen writing, not the one it was born beside. Caching
     // the startup pair kept following a conversation the process had left.
-    const candidates = defaultPiCandidates(table).filter((info) => !claimed.has(info.pid));
+    // An id-resumed `pi` (`--session <id>`) is included here: it names no file,
+    // so its own transcript is found by cwd and latest write.
+    const candidates = unboundPiCandidates(table).filter((info) => !claimed.has(info.pid));
     const pairs = pairDefaultSessions(
       entries
         .filter(([file]) => !explicit.has(file))

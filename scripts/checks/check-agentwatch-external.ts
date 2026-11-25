@@ -8,6 +8,8 @@ import {
   findPiSession,
   pairDefaultSessions,
   piSessionFile,
+  piSessionRef,
+  unboundPiCandidates,
 } from "../../apps/server/src/process/ProcessScanner";
 import { ExternalScanner } from "../../apps/server/src/process/ExternalScanner";
 import { ProcessWatcher } from "../../apps/server/src/process/ProcessWatcher";
@@ -33,6 +35,34 @@ assert.equal(piSessionFile(agent), file);
 assert.equal(piSessionFile(row(102, 1, `bash -c 'pi --session "${file}"'`)), undefined);
 assert.equal(piSessionFile(row(102, 1, "node unrelated.js --session /tmp/foo")), undefined);
 assert.equal(piSessionFile(row(102, 1, "pi --session relative.jsonl")), undefined);
+
+// `--session` may name a *session id* instead of a file: pi resumes by
+// identifier and writes the matching transcript itself, so the argument is not
+// a path and must not be treated as one — but the process is still observable.
+const byId = row(103, 1, "node /opt/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --session 01a21081-c0ea-70c5-8424-f3cc7f6ee5cc");
+assert.deepEqual(piSessionRef(byId), { raw: "01a21081-c0ea-70c5-8424-f3cc7f6ee5cc", id: "01a21081-c0ea-70c5-8424-f3cc7f6ee5cc" });
+assert.equal(piSessionFile(byId), undefined, "an id is not a transcript path");
+assert.deepEqual(defaultPiCandidates(new Map([[103, byId]])), [], "it names a session, so it is not a bare default pi");
+assert.deepEqual(
+  unboundPiCandidates(new Map([[103, byId]])).map((info) => info.pid),
+  [103],
+  "an id-resumed pi still has to appear on the board",
+);
+assert.equal(piSessionRef(row(104, 1, "pi --session=01a21081-c0ea-70c5-8424-f3cc7f6ee5cc"))?.id, "01a21081-c0ea-70c5-8424-f3cc7f6ee5cc");
+
+// Windows extended-length paths: pi prefixes the resumed file with `\\?\`,
+// which must strip to the same path the watcher reports, or the process can
+// never be matched to the transcript it is writing.
+if (process.platform === "win32") {
+  const bs = String.fromCharCode(92);
+  const device = `${bs}${bs}?${bs}`;
+  const plain = path.resolve("session-with-prefix.jsonl");
+  const prefixed = `${device}${plain}`;
+  const extended = row(105, 1, `node /opt/@earendil-works/pi-coding-agent/dist/cli.js --session "${prefixed}"`);
+  assert.equal(piSessionFile(extended), plain, `prefixed=${prefixed}`);
+  const uncArgument = `${device}UNC${bs}srv${bs}share${bs}s.jsonl`;
+  assert.equal(piSessionRef(row(106, 1, `pi --session "${uncArgument}"`))?.file, `${bs}${bs}srv${bs}share${bs}s.jsonl`);
+}
 let table: ProcessTable = new Map([[101, agent], [201, row(201, 101, "node server.js")], [301, row(301, 201, "node worker.js")], [401, row(401, 1, "node foreign.js")]]);
 assert.equal(findPiSession(table, file)?.pid, 101);
 assert.deepEqual(attributedTree(table, 101).map((info) => info.pid), [201, 301]);

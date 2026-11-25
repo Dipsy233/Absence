@@ -31,25 +31,83 @@ function piSessionArg(args: string[]): string | undefined {
   return index >= 0 ? args[index + 1] : args.find((arg) => arg.startsWith("--session="))?.slice(10);
 }
 
-/** A pi process that names its transcript on the command line. */
-export function piSessionFile(info: ProcInfo): string | undefined {
+/**
+ * What `--session` named, when the command line carries one.
+ *
+ *   - a *path*: the transcript to resume (`pi --session <file>`), so the
+ *     process is bound to it outright;
+ *   - an *id*: the session to resume by identifier (`pi --session <id>`), which
+ *     names no file — the transcript it writes carries that id in its header,
+ *     and the board resolves it from there.
+ */
+export interface PiSessionRef {
+  /** The argument verbatim. */
+  raw: string;
+  /** The transcript file, when the argument was a path. */
+  file?: string;
+  /** The session id, when the argument was an identifier rather than a path. */
+  id?: string;
+}
+
+export function piSessionRef(info: ProcInfo): PiSessionRef | undefined {
   const args = tokenize(info.commandLine);
   if (!isPiEntry(args)) return undefined;
-  const file = piSessionArg(args);
-  // Relative paths need the process cwd, which the portable table cannot prove.
-  return file && path.isAbsolute(file) ? file : undefined;
+  const raw = piSessionArg(args);
+  if (raw === undefined) return undefined;
+  const value = raw.trim();
+  if (value.length === 0) return undefined;
+  const file = stripDevicePrefix(value);
+  // A path is absolute; anything else is a session identifier. A relative path
+  // cannot be resolved without the process cwd, so it is not evidence either.
+  return path.isAbsolute(file) ? { raw, file } : { raw, id: value };
+}
+
+/**
+ * Windows lets a caller name a path with an extended-length prefix
+ * (`\\?\C:\…`, `\\.\C:\…`, `\\?\UNC\server\share`). pi uses it when it
+ * resumes a long session file, and `path.resolve` would treat the prefixed
+ * string as relative and glue the cwd's drive onto it — so the process would
+ * never match the file the watcher reports. The prefix is transport detail;
+ * the path is what follows it.
+ */
+function stripDevicePrefix(value: string): string {
+  if (process.platform !== "win32") return value;
+  if (/^\\\\\?\\UNC\\/i.test(value)) return `\\\\${value.slice(8)}`;
+  if (value.startsWith("\\\\?\\") || value.startsWith("\\\\.\\")) return value.slice(4);
+  return value;
+}
+
+/** A pi process that names its transcript on the command line. */
+export function piSessionFile(info: ProcInfo): string | undefined {
+  return piSessionRef(info)?.file;
 }
 
 /**
  * A pi process that names no transcript: the default `pi` a user just typed.
  * It will write a brand-new session file, but nothing on the command line says
- * which one — the pairing is timing evidence only (see `pairDefaultSessions`)
- * and binds only when exactly one new process meets exactly one new transcript.
+ * which one — the pairing is timing evidence only (see `pairDefaultSessions`).
  */
 export function defaultPiCandidates(table: ProcessTable): ProcInfo[] {
   return [...table.values()].filter((info) => {
     const args = tokenize(info.commandLine);
     return isPiEntry(args) && piSessionArg(args) === undefined;
+  });
+}
+
+/**
+ * Every pi process whose transcript is not provable from its command line.
+ *
+ * That is a default `pi` (no `--session` at all) *and* a `pi` resumed by id
+ * (`--session <id>`): both write a session file the command line does not name,
+ * so both are listed on the board and both are eligible for binding — by the
+ * id in the transcript header, or by project `cwd` and latest write. Using the
+ * narrower "no `--session`" set hid an id-resumed agent from the board
+ * entirely, which reads as "only one of my three pi processes was found".
+ */
+export function unboundPiCandidates(table: ProcessTable): ProcInfo[] {
+  return [...table.values()].filter((info) => {
+    const args = tokenize(info.commandLine);
+    return isPiEntry(args) && piSessionRef(info)?.file === undefined;
   });
 }
 

@@ -36,6 +36,26 @@ function formatAgo(timestamp: number, now: number): string {
   return `${Math.round(hours / 24)}d`;
 }
 
+/**
+ * What identifies a target row to a person.
+ *
+ * The project path, never the target key: `proc:35432@1795573616681` names
+ * nothing anyone can recognise, while the directory the agent is working in
+ * does. A process whose working directory the OS would not report falls back to
+ * its pid rather than to the key.
+ */
+function targetTitle(row: ObserveTargetRow): string {
+  if (row.cwd !== undefined) return row.cwd;
+  if (row.transcriptFile !== undefined) return row.transcriptFile;
+  if (row.pid !== undefined) return `pid ${row.pid}`;
+  return row.key;
+}
+
+/** The pid as its own field, so the path stays the title. */
+function pidLabel(row: ObserveTargetRow): string | undefined {
+  return row.pid !== undefined ? `pid ${row.pid}` : undefined;
+}
+
 /** The channel badges a row shows: what Absence can see, not what it hopes to. */
 function channelLabel(channel: string): string {
   if (channel === "transcript") return "transcript";
@@ -225,7 +245,9 @@ export function Observatory() {
                   >
                     <b>{row.projectPath}</b>
                     <span>
-                      {row.agentKind} · {channelLabel(row.channel)} · {formatAgo(row.lastActivityAt, now)} ·{" "}
+                      {row.agentKind}
+                      {row.pid !== undefined ? ` · pid ${row.pid}` : ""} · {channelLabel(row.channel)} ·{" "}
+                      {formatAgo(row.lastActivityAt, now)} ·{" "}
                       {t("{n} events", { n: row.events })}
                       {row.backfilling ? ` · ${t("backfilling…")}` : ""}
                       {row.transcriptResumeBlocked ? ` · ${t("transcript diverged; re-watch to continue")}` : ""}
@@ -243,12 +265,14 @@ export function Observatory() {
                     type="button"
                     disabled={busy !== undefined || !row.watchable}
                     onClick={() => void watch(row)}
-                    title={row.reason ?? row.transcriptFile ?? row.cwd ?? row.key}
+                    title={row.reason ?? row.transcriptFile ?? targetTitle(row)}
                   >
-                    <b>{row.cwd ?? row.transcriptFile ?? row.key}</b>
+                    <b>{targetTitle(row)}</b>
                     <span>
-                      {row.agentKind} · {row.channels.map(channelLabel).join("+")} ·{" "}
-                      {livenessLabel(row, t)} · {formatAgo(row.lastActivityAt, now)}
+                      {row.agentKind}
+                      {pidLabel(row) !== undefined ? ` · ${pidLabel(row)}` : ""} ·{" "}
+                      {row.channels.map(channelLabel).join("+")} · {livenessLabel(row, t)} ·{" "}
+                      {formatAgo(row.lastActivityAt, now)}
                       {row.watchable
                         ? busy === `watch-${row.key}`
                           ? ` · ${t("attaching…")}`
@@ -321,15 +345,16 @@ export function Observatory() {
                         type="button"
                         disabled={busy !== undefined || !row.watchable}
                         onClick={() => void watch(row)}
-                        title={row.reason ?? row.transcriptFile ?? row.cwd ?? row.key}
+                        title={row.reason ?? row.transcriptFile ?? targetTitle(row)}
                       >
                         <span className="picker__hrow">
-                          <b>{row.cwd ?? row.transcriptFile ?? row.key}</b>
+                          <b>{targetTitle(row)}</b>
                           <em>{formatWhen(row.lastActivityAt)}</em>
                         </span>
                         <span className="picker__hmeta">
                           <span className="picker__hmetatext">
                             <i data-runtime={row.agentKind}>{row.agentKind}</i>
+                            {pidLabel(row) !== undefined ? ` · ${pidLabel(row)}` : ""}
                             {" · "}
                             {livenessLabel(row, t)} · {formatAgo(row.lastActivityAt, now)}
                             {row.watchable

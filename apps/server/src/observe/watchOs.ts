@@ -69,6 +69,13 @@ async function watchProcess(
     const cwd = row?.projectPath ?? path.dirname(transcriptFile);
     projectPath = cwd;
     watchProject = isNarrowScope(cwd);
+  } else if (info.cwd !== undefined && info.cwd.length > 0) {
+    // The process names no transcript, but the OS does know where it is
+    // running. That directory is the honest scope: a board row and a panel that
+    // say “E:\0down\DrawForth” are recognisable, while the home-directory
+    // fallback named no project at all.
+    projectPath = info.cwd;
+    watchProject = isNarrowScope(info.cwd);
   } else {
     ({ projectPath, watchProject } = fallbackScope());
   }

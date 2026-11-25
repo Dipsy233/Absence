@@ -86,7 +86,9 @@ export function formatTarget(row: ObserveTargetRow): string {
   const pid = row.pid !== undefined ? ` pid=${row.pid}` : "";
   const watched = row.sessionId !== undefined ? " (watching)" : "";
   const reason = !row.watchable && row.reason ? ` — ${row.reason}` : "";
-  return `${row.liveness.padEnd(7)} ${row.agentKind.padEnd(6)} ${channels.padEnd(16)} ${row.key}${pid} ${where}${watched}${reason}`.trimEnd();
+  // The path comes first because that is what a person recognises; the key
+  // stays last so it can be copied into `absence observe --key`.
+  return `${row.liveness.padEnd(7)} ${row.agentKind.padEnd(6)} ${channels.padEnd(16)} ${where}${pid} ${row.key}${watched}${reason}`.trimEnd();
 }
 
 /**

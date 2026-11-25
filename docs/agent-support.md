@@ -179,9 +179,12 @@ Absence binds a transcript to a pid only on evidence:
 
 | Evidence | Binding |
 |---|---|
-| The pi command line names the transcript (`--session <file>`) | Exact match on the absolute path |
-| A default `pi` process (no `--session`) | Project `cwd` must match the transcript header's `cwd`, and the process is paired with the file it wrote **last**: a transcript born just after the process started, or any older transcript the process resumed, competes by latest write |
+| The command line names the transcript (`--session <absolute path>`) | Exact match on the path. A Windows extended-length path is stripped to the same path the watcher reports before comparing |
+| The command line names the session (`--session <id>`) | The transcript whose header carries that id; the process writes the file itself, so no path appears on the command line |
+| A default `pi` (no `--session`) | Project `cwd` must match the transcript header's `cwd`, and the process is paired with the file it wrote **last**: a transcript born just after the process started, or any older transcript the process resumed, competes by latest write |
 | Anything ambiguous | Not bound: two processes with the same cwd, two equally recent files, or either side's cwd unknown still bind nothing |
+
+A pi process whose transcript cannot be proven from its command line is still listed -- as an OS-only target showing its working directory and pid -- instead of disappearing from the board. The narrower "no `--session` at all" rule used to hide an id-resumed agent entirely.
 
 A reused pid is a different process: identity is the pair (pid, start time).
 

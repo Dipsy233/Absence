@@ -2,7 +2,7 @@ import fs from "node:fs";
 import type { ObserveChannel, ObserveTargetRow } from "@absence/core";
 import type { ObserveDiscoveryRow } from "./Discovery";
 import type { ProxySessionInfo } from "../agents/acp/proxy";
-import { defaultPiCandidates, findPiSession, pairDefaultSessions } from "../process/ProcessScanner";
+import { findPiSession, pairDefaultSessions, piSessionRef, unboundPiCandidates } from "../process/ProcessScanner";
 import { type ProcessTable } from "../process/ProcessTable";
 import { processSnapshot } from "./processSource";
 import { pidIdentity } from "./types";
@@ -38,11 +38,12 @@ export interface TranscriptBinding {
  * Which transcript each running pi process writes — the board's and the OS
  * channel's shared evidence.
  *
- * Two proofs, strongest first: `--session <file>` names the transcript on the
- * command line, and a default `pi` (no `--session`) is paired with the file it
- * wrote (see `pairDefaultSessions` — timing at startup, latest write after a
- * resume). The pairing is recomputed on every call; a process that resumed
- * another session mid-run must follow that file, not the one it started with.
+ * Three proofs, strongest first: `--session <file>` names the transcript on the
+ * command line; `--session <id>` names the session, whose transcript carries
+ * that id in its header; a bare `pi` is paired with the file it wrote (see
+ * `pairDefaultSessions` — timing at startup, latest write after a resume). The
+ * result is recomputed on every call; a process that resumed another session
+ * mid-run must follow that file, not the one it started with.
  */
 export function bindTranscriptProcesses(
   rows: readonly ObserveDiscoveryRow[],
@@ -50,6 +51,7 @@ export function bindTranscriptProcesses(
 ): { byFile: Map<string, TranscriptBinding>; boundPids: Set<number> } {
   const byFile = new Map<string, TranscriptBinding>();
   const boundPids = new Set<number>();
+  // 1. The command line names the transcript file outright.
   for (const row of rows) {
     const info = findPiSession(table, row.file);
     if (info) {
@@ -57,8 +59,25 @@ export function bindTranscriptProcesses(
       boundPids.add(info.pid);
     }
   }
-  const candidates = defaultPiCandidates(table).filter((info) => !boundPids.has(info.pid));
-  if (candidates.length === 0) return { byFile, boundPids };
+
+  // 2. `--session <id>`: a resume by identifier. The transcript's header
+  // carries that id, so the row with the same externalId is this process's
+  // file — no timing guess needed.
+  const candidates = unboundPiCandidates(table).filter((info) => !boundPids.has(info.pid));
+  for (const info of candidates) {
+    const id = piSessionRef(info)?.id;
+    if (id === undefined) continue;
+    const row = rows.find(
+      (candidate) => candidate.missing !== true && !byFile.has(candidate.file) && candidate.externalId === id,
+    );
+    if (!row) continue;
+    byFile.set(row.file, { pid: info.pid, startedAt: info.startedAt });
+    boundPids.add(info.pid);
+  }
+
+  // 3. Timing plus writes, for the processes still unbound.
+  const pairableProcesses = candidates.filter((info) => !boundPids.has(info.pid));
+  if (pairableProcesses.length === 0) return { byFile, boundPids };
   const pairable = rows
     .filter((row) => row.missing !== true && !byFile.has(row.file))
     .map((row) => {
@@ -73,7 +92,7 @@ export function bindTranscriptProcesses(
         ...(row.projectPath !== undefined ? { cwd: row.projectPath } : {}),
       };
     });
-  for (const [file, pid] of pairDefaultSessions(pairable, candidates)) {
+  for (const [file, pid] of pairDefaultSessions(pairable, pairableProcesses)) {
     const info = table.get(pid);
     if (!info) continue;
     byFile.set(file, { pid, startedAt: info.startedAt });
@@ -188,17 +207,21 @@ export async function buildTargets(deps: BuildTargetsDeps): Promise<ObserveTarge
     }),
   );
 
-  // pi processes with no transcript of their own: a fresh `pi` the user just
-  // started. A process already paired to a transcript above is represented by
-  // that running transcript target — it is not listed a second time as an
-  // OS-only row, or the same agent would appear twice on the board.
+  // pi processes whose transcript is not named on the command line: a fresh
+  // `pi` the user just started, or one resumed by session id. A process already
+  // paired to a transcript above is represented by that running transcript
+  // target — it is not listed a second time as an OS-only row, or the same
+  // agent would appear twice on the board.
   if (table) {
-    for (const info of defaultPiCandidates(table)) {
+    for (const info of unboundPiCandidates(table)) {
       if (boundPids.has(info.pid)) continue;
       targets.push({
         key: processTargetKey(info.pid, info.startedAt),
         kind: "process",
         agentKind: "pi",
+        // The working directory is how a person tells two `pi` windows apart;
+        // a bare `proc:<pid>@<start>` names nothing they can recognise.
+        ...(info.cwd !== undefined && info.cwd.length > 0 ? { cwd: info.cwd } : {}),
         pid: info.pid,
         pidStartedAt: info.startedAt,
         channels: ["os"],

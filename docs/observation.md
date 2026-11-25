@@ -66,7 +66,17 @@ npx tsx apps/server/src/cli.ts observe --pid 12345
 
 Selecting a transcript target that a **running pi** writes binds that process and observes it over the kernel-grade OS channel (a dedicated Job Object on Windows, the machine-wide eBPF stream filtered by ancestry on Linux), and folds the transcript's conversation into the same session. The user continues to run pi in their own terminal; Absence is neither parent nor proxy. Selecting a transcript whose agent has exited replays its history.
 
-A default `pi` (started with `-c`, or resumed from the in-app picker) names no transcript on its command line. It is bound by two pieces of evidence together: the transcript's project `cwd` must match the process's working directory, and among the files the process has written while it ran, only the most recently written one can be its current session. A long-lived `pi` that resumes another conversation is therefore followed on the file it writes now — never the one it started with. Ambiguity (two processes, or two equally recent files) still binds nothing.
+A `pi` process names its conversation in one of three ways, and Absence resolves them in that order:
+
+| Command line | Binding |
+|---|---|
+| `--session <absolute path>` | That exact transcript file. On Windows the extended-length form `\?\C:\…` pi uses for long paths is stripped before comparing. |
+| `--session <id>` | The transcript whose header carries that id — the process writes it itself, so the command line names no file. |
+| No `--session` (a default `pi`, or `-c` resumed from the picker) | Project `cwd` plus the file the process wrote **last**: among the files it has written while it ran, only the most recent can be its current session. |
+
+A long-lived `pi` that resumes another conversation is therefore followed on the file it writes now — never the one it started with. Ambiguity (two processes, two equally recent files, or either side's working directory unknown) still binds nothing, and a process that has not written anything yet stays a process row.
+
+A process row is identified by its working directory, with the pid beside it: `proc:<pid>@<startedAtMs>` is what the board *uses*, not what it shows.
 
 `ABSENCE_AUTO_ATTACH=1` restores the earlier behaviour in which a transcript written in the last ten minutes attaches without a selection.
 
