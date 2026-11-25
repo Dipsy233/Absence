@@ -23,79 +23,37 @@ Absence no longer starts, drives or answers for any agent. It is a pure
 observer: three read-only channels feed one event pipeline, and every
 write-back path is refused.
 
-- Channel A — transcript tails: `observe/` tails the session files agent
-  software writes on its own (pi format; `ABSENCE_OBSERVE_PI_ROOT` override).
-  Discovery lists targets without opening a session; selecting one
-  (`POST /api/observe/watch`, or `absence observe`) attaches it with full
-  backfill. `ABSENCE_AUTO_ATTACH=1` restores recency-based auto-attach.
-- Channel B — the ACP proxy: a proxy session spawns its agent into a
-  persisted observed session (channel `acp-proxy`), injects
-  `ABSENCE_SESSION_ID` for exact kernel attribution, and projects the
-  client's prompt as the run boundary.
-- Channel C — OS observation: a shared machine-wide scanner (`ExternalScanner`)
-  dispatches every observed transcript its bound process subtree; default-pi
-  runs bind by unambiguous 1:1 pairing scoped by process cwd, and always to the
-  transcript the process wrote last — a session resumed mid-run (`-c`, the
-  resume picker) is followed on its new file, never the one it started with.
-- History is readable again: a history row (or a `/s/<id>` deep link) reopens
-  its archive read-only instead of 404ing, and an OS-only watch that gains a
-  transcript backfills the conversation — its archive's process facts are not
-  mistaken for transcript history and warmed away.
-- A pi process names its conversation three ways and all three are resolved:
-  `--session <absolute path>`, `--session <id>` (matched through the
-  transcript header), and a bare `pi` (project cwd plus latest write). Windows
-  extended-length paths (`\?\C:\…`) are stripped before comparing, so a
-  long resumed session is no longer invisible. A pi the command line cannot
-  prove is still listed as an OS-only target instead of vanishing — with its
-  working directory as the row title and the pid as its own field, rather than
-  the `proc:<pid>@<start>` key.
-- One `edit` tool call is one `file_edit` fact: pi sends a list of
-  replacements for a single file, and emitting one event per replacement put
-  five identically stamped rows in the feed whose timeline marks overlapped —
-  only the last was reachable. A recent call is reconstructed into the whole
-  file before/after from disk (one event, `fullContent: true`); an older one
-  stays one event with the reported snippets and their combined diff.
-- Timeline lanes carry their own duration again: a transcript assistant record's
-  `durationMs` closes the thought/reply at the generation end, and a
-  `toolResult`'s `durationMs` places its command where it actually ran, so the
-  Shell lane no longer paints over the model's thinking.
-- Runs follow the channel that now feeds the session: folding a transcript
-  into a process watch switches the run index from activity bursts to user
-  turns, rebuilds the rows already written (they were labelled "usage" /
-  "tool_end" by their first event), and stops the burst timer from closing a
-  turn the agent is still writing. Retiring a burst session closes its open
-  run instead of leaving a `running` row nobody will ever finish.
-- External process observation at the kernel level: selecting a running pi
-  attaches a dedicated kernel observer to that pid. On Windows an
-  `agentwatch --target-pid <pid>` adopts the process into its own Job
-  Object; on Linux the machine-wide eBPF stream is filtered by ancestry.
-  The process subtree is reported as events rather than sampled. The user
-  continues to run pi in their own terminal; Absence is neither parent nor
-  proxy (`process/TargetedObserver.ts`). Falls back to the table sweep
-  when no kernel observer can attach.
-- The web app is the Observatory: it lists transcripts, proxies and history
-  and never launches an agent. The chat input, slash palette, approval
-  buttons, `/model` switching and every "+ Chat" affordance are gone; the
-  approval card is read-only.
-- The ACP drive stack (AcpAdapter / AcpConnection / AcpSession / permission
-  bridge / auth / config options / AgentCatalog / profiles) was removed.
-  `createAdapter` resolves only the mock fixture; every other session is
-  observed and answers 403 on the write-back routes.
-- SQLite schema v5: `sessions.channel`/`external_id` (the observation
-  identity), `runs.boundary_source`. Re-attach after a restart reuses the
-  archive row instead of duplicating it; observed sessions archive
-  automatically after `ABSENCE_ARCHIVE_SILENCE_MS` of silence with no viewer.
-- Windows Docker capture is force-disabled (no WSL daemon probing, no env
-  re-enable); non-Windows container attribution works from transcript command
-  windows.
-- Mid-session attachment is honest: backfill streams in chunks (a record may
-  span chunks), the first run is marked `attach`/`truncatedBefore` with no
-  invented prompt, and appends during a backfill are read once at the end.
-- SQLite schema v7: `transcript_checkpoints` stores the consumed byte offset
-  and a SHA-256 of the prefix in the same transaction as the events. A restart
-  resumes only after the prefix verifies, so offline appends are recovered
-  without duplicating history; a rewritten or truncated transcript stops the
-  merge and the board shows `transcriptResumeBlocked`.
+- Channel `transcript` tails the session files pi writes on its own; channel
+  `acp-proxy` forks its agent into a persisted observed session and taps the
+  protocol; channel `os` reports the process subtree, files, resources and
+  containers of a process the user already started. Discovery lists targets
+  without opening a session; choosing one attaches it.
+- The ACP drive stack, the agent picker, the chat, the slash palette, approval
+  buttons and `/model` were removed. `createAdapter` resolves only the mock
+  fixture, and every other session answers 403 on the write-back routes.
+- The board is the front door: two columns (running targets, history), a click
+  to monitor that becomes a click to stop, and a running row that shows its
+  first prompt like a history row. A launcher no longer exists.
+- History reopens an archive read-only instead of returning 404, an OS-only
+  watch that gains a transcript backfills the conversation into the same
+  session, and a pi process is identified by `--session <path>`,
+  `--session <id>` or a bare `pi` (project cwd plus latest write) — always
+  following the file it wrote last.
+- Kernel observation binds one pid: `agentwatch --target-pid` adopts it into
+  its own Job Object on Windows, the machine-wide eBPF stream is filtered by
+  ancestry on Linux, and the table sweep remains the fallback.
+- One `edit` tool call is one `file_edit` fact; a transcript record's
+  `durationMs` closes a thought or places a command where it ran; runs follow
+  the channel feeding the session, switching from activity bursts to user
+  turns when a transcript folds in.
+- SQLite schema v5 adds the observation identity (`channel`, `external_id`)
+  and `runs.boundary_source`, so re-attach reuses an archive row and an
+  observed session archives after `ABSENCE_ARCHIVE_SILENCE_MS` of silence.
+  Schema v7 adds `transcript_checkpoints`, so a restart resumes tailing only
+  after the prefix's SHA-256 verifies.
+- `absence` is a headless entry point: `serve`, `ls`, `observe`, `open`,
+  `unwatch` and `proxy`.
+- Windows Docker capture is force-disabled; no environment variable enables it.
 
 ## v0.5.5 — Idle cost, report endpoint and the observing contract
 

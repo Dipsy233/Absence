@@ -21,55 +21,28 @@ Absence 从 v0.2.0 到 v0.6.0 的版本索引。每条是摘要，完整说明�
 Absence 不再启动、驱动或应答任何 agent，只做旁观：三条只读通道喂同一条事件管线，
 所有写回路径被拒绝。
 
-- 通道 A 转录尾随：`observe/` 尾随 agent 自己写的会话文件（pi 格式，
-  `ABSENCE_OBSERVE_PI_ROOT` 可覆盖根目录）。发现只列目标，不创建会话；选中目标
-  （`POST /api/observe/watch` 或 CLI `absence observe`）才回填并开始监控；
-  `ABSENCE_AUTO_ATTACH=1` 恢复按近期活跃度自动挂载。
-- 通道 B ACP 代理：代理会话把 agent spawn 进持久化的观察会话（`acp-proxy`），注入
-  `ABSENCE_SESSION_ID` 精确归因，把客户端提示词投影为 run 边界。
-- 通道 C OS 旁观：共享的全机扫描器（`ExternalScanner`）给每个观察会话分发其绑定的
-  进程子树；默认 pi 只按无歧义的 1:1 配对绑定，并以进程工作目录限定项目范围；
-  绑定始终跟随进程最后写入的转录——运行中切换过会话（`-c`、会话选择器）的
-  进程不会再被错配回它启动时的那个文件。
-- 历史重新可读：历史行或 `/s/<id>` 深链会以只读方式重开归档，不再 404；
-  OS-only 观察升级出转录时会把对话回填进去，归档里的进程事实不会被误当成
-  转录历史而被“预热”掉。
-- pi 进程用三种方式指认会话，三种都被解析：`--session <绝对路径>`、
-  `--session <id>`（经转录 header 匹配）与裸 `pi`（项目 cwd 加最后写入）。
-  Windows 扩展长度路径（`\?\C:\…`）在比较前剥掉，长会话恢复不再隐形。
-  命令行无法证明的 pi 仍会作为仅 OS 目标列出而不是消失——用工作目录作为行标题、
-  pid 作为独立一栏，而不是 `proc:<pid>@<启动>` 这个键。
-- 一次 `edit` 调用只算一条 `file_edit` 事实：pi 为同一个文件发来的是一组替换，
-  逐条产出会让 feed 出现五行时间戳完全相同的记录、时间线标记互相重叠——只有最后
-  一条点得到。新近的调用会从磁盘还原整文件前后状态（一条事件、`fullContent:
-  true`）；较早的记录仍是一条事件，携带上报片段与合并 diff。
-- 时间线泳道重新带上各自的时长：转录 assistant 记录的 `durationMs` 在生成结束时
-  关闭思考/回复，`toolResult` 的 `durationMs` 把命令放回真正执行的时刻，Shell
-  泳道不再盖住模型的思考时间。
-- run 边界跟随当前通道：给进程观察折入转录后，run 索引从“活动爆发”切回用户
-  轮次，并重建已写入的行（它们此前按首个事件命名成 “usage” / “tool_end”）；
-  同时停掉 burst 定时器，避免把 agent 仍在写的轮次提前关掉；burst 会话被回收时
-  关闭其未完成 run，不再留下永远 `running` 的行。
-- 外部进程的内核级观察：在观测台选中一个运行中的 pi，则对该 pid 建立专用内核
-  观察者。Windows 用 `agentwatch --target-pid <pid>` 把该进程接管进独立 Job
-  Object；Linux 用机器级 eBPF 流按祖先过滤。进程子树按事件报告，不做轮询。用户
-  继续在自己终端运行 pi；Absence 不是父进程，也不是代理
-  （`process/TargetedObserver.ts`）。无法接管内核观察者时退化为进程表扫描。
-- Web 即观测台：列出转录、代理与历史，不启动任何 agent；聊天输入、斜杠面板、审批
-  按钮、`/model` 切换与所有「+ Chat」入口均已移除，审批卡只读。
-- ACP 驱动栈（AcpAdapter / AcpConnection / AcpSession / 权限桥 / 认证 / 配置项 /
-  AgentCatalog / profiles）已删除；`createAdapter` 只解析 mock fixture，其他会话一律
-  旁观，写回路由返回 403。
-- SQLite schema v5：`sessions.channel`/`external_id`（观察身份）与
-  `runs.boundary_source`；重启后 re-attach 复用归档行；无 viewer 的观察会话静默
-  `ABSENCE_ARCHIVE_SILENCE_MS` 后自动归档。
-- Windows 强制关闭 Docker 容器捕获（不探测 WSL、不能用环境变量重新开启）；非 Windows
-  由转录命令窗口归因。
-- 中途挂载诚实：回填分块流式（单条记录可跨块），首个 run 标 `attach`/`truncatedBefore`
-  且不编造提示词，回填期间追加的记录在收尾时补读一次。
-- SQLite schema v7：`transcript_checkpoints` 与事件同事务保存已消费字节偏移和前缀
-  SHA-256；重启校验前缀一致才从断点续读，停服期间的追加补上且不重复；转录被改写或
-  截断时停止合并，观测台显示 `transcriptResumeBlocked`。
+- 通道 `transcript` 尾随 pi 自己写的会话文件；通道 `acp-proxy` 把 agent spawn 进
+  持久化的观察会话并旁听协议；通道 `os` 上报用户已启动进程的子树、文件、资源与
+  容器。发现只列目标，不打开会话；选中目标才接入。
+- ACP 驱动栈、agent 选择器、聊天、斜杠面板、审批按钮与 `/model` 已删除。
+  `createAdapter` 只解析 mock 夹具，其他会话在写回路由上返回 403。
+- 观测台就是正门：两栏（运行中的目标、历史），点击开始监控、再点一次即停止，
+  运行中的行与历史行一样显示首个提示词。启动器不再存在。
+- 历史以只读方式重开归档，不再 404；OS-only 观察升级出转录时把对话回填进同一个
+  会话；pi 进程按 `--session <路径>`、`--session <id>` 或裸 `pi`（项目工作目录加
+  最近写入）识别，且始终跟随它最后写入的文件。
+- 内核观察绑定单个 pid：Windows 上 `agentwatch --target-pid` 把它收进自己的
+  Job Object，Linux 上按祖先关系过滤全机 eBPF 流，进程表扫描作为回退。
+- 一次 `edit` 工具调用只算一条 `file_edit` 事实；转录记录的 `durationMs` 在生成
+  结束时关闭思考、或把命令放回它真正执行的时刻；run 边界跟随当前通道，折入转录时
+  从活动爆发切回用户回合。
+- SQLite schema v5 新增观察身份（`channel`、`external_id`）与
+  `runs.boundary_source`，重新接入复用归档行，观察会话在
+  `ABSENCE_ARCHIVE_SILENCE_MS` 无活动后自动归档。schema v7 新增
+  `transcript_checkpoints`，重启后只有前缀 SHA-256 校验通过才继续尾随。
+- `absence` 是无界面入口：`serve`、`ls`、`observe`、`open`、`unwatch` 与
+  `proxy`。
+- Windows 的 Docker 采集被强制关闭，没有任何环境变量可以打开。
 
 ## v0.5.5 —— 空闲开销、报告接口与旁观契约
 
