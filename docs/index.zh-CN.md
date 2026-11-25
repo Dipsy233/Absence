@@ -29,3 +29,4 @@
 | [releases/v0.3.0.zh-CN.md](releases/v0.3.0.zh-CN.md) | 简体中文 · [English](releases/v0.3.0.md) | v0.3.0 发布说明 | 用户、维护者 |
 | [releases/v0.4.0.zh-CN.md](releases/v0.4.0.zh-CN.md) | 简体中文 · [English](releases/v0.4.0.md) | v0.4.0 发布说明 | 用户、维护者 |
 | [releases/v0.5.0.zh-CN.md](releases/v0.5.0.zh-CN.md) | 简体中文 · [English](releases/v0.5.0.md) | v0.5.0 发布说明 | 用户、维护者 |
+| [releases/v0.5.5.zh-CN.md](releases/v0.5.5.zh-CN.md) | 简体中文 · [English](releases/v0.5.5.md) | v0.5.5 发布说明 | 用户、维护者 |

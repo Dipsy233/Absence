@@ -2,15 +2,34 @@
 
 [English](CHANGELOG.md) | [简体中文](CHANGELOG.zh-CN.md)
 
-Absence 从 v0.2.0 到 v0.5.0 的版本索引。每条是摘要，完整说明在 `docs/releases/`
+Absence 从 v0.2.0 到 v0.5.5 的版本索引。每条是摘要，完整说明在 `docs/releases/`
 下。发布流程见 [releasing.md](docs/releasing.md)。
 
 | 版本 | 主题 | 说明 |
 | --- | --- | --- |
+| v0.5.5 | 空闲开销、报告接口与旁观契约 | [v0.5.5](docs/releases/v0.5.5.zh-CN.md) |
 | v0.5.0 | ACP 接入层与界面重构 | [v0.5.0](docs/releases/v0.5.0.zh-CN.md) |
 | v0.4.0 | 持久化、指标与验证 | [v0.4.0](docs/releases/v0.4.0.zh-CN.md) |
 | v0.3.0 | Codex、DSH 与 shell 接管 | [v0.3.0](docs/releases/v0.3.0.zh-CN.md) |
 | v0.2.0 | 个性化头像与 Agent Eggs 过滤 | [v0.2.0](docs/releases/v0.2.0.zh-CN.md) |
+
+## v0.5.5 —— 空闲开销、报告接口与旁观契约
+
+[v0.5.5 说明](docs/releases/v0.5.5.zh-CN.md)
+
+- 存活探测不再遍历进程表，进程表快照改由原生助手读取，不再走 PowerShell/CIM
+  （386 行 17 ms，相对 1.19 秒 CPU）。Monaco 改为懒加载分块，主包从约 3.9 MB 降到
+  约 750 KB，历史刷新只读归档尾部。
+- Absence Report 引擎移入 `@absence/core`，`GET /api/sessions/:id/report[?run=<n>]`
+  无需浏览器即可拿到同一份报告。空闲 run 不再每秒重算两次。
+- `/model` 回归为端口动作，走 agent 的 `model` 配置项
+  （`session/set_config_option`）；手输 `/model …` 仍按原文转发。
+- 进程回收器已删除：Absence 只旁观，从不杀进程。关闭会话不再终止它驱动的命令
+  子树。
+- 桌面壳绑定稳定端口（记录值，其次 8848/8849/8850），`localStorage` 设置因此能
+  持久化；全新安装以 glass/dark 启动。
+- agent 可执行文件不再 spawn `where`；0 字节写入被捕捉；shell 创建的文件读作
+  CREATE；选择器卡片、会话 id 与路径匹配已修复；回放后各面板跟随最新 run。
 
 ## v0.5.0 —— ACP 接入层与界面重构
 

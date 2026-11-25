@@ -69,8 +69,8 @@ Windows 的 `start-absence.bat` 与 Linux 的 `start-absence.sh` 执行同样的
 
 ### 从安装包运行
 
-Windows：运行安装程序 `Absence.Setup-0.5.0.exe`，或解压 `Absence-0.5.0.zip`。
-Linux：运行 `Absence-0.5.0.AppImage`，或解压 `Absence-0.5.0.tar.gz` 后以
+Windows：运行安装程序 `Absence.Setup-0.5.5.exe`，或解压 `Absence-0.5.5.zip`。
+Linux：运行 `Absence-0.5.5.AppImage`，或解压 `Absence-0.5.5.tar.gz` 后以
 `bash resources/start-server.sh daemon` 启动无界面服务端。
 
 服务端监听 `127.0.0.1:8848`，自身没有认证。请在同一主机上运行，或放在带认证的

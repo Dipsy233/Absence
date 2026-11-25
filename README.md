@@ -74,9 +74,9 @@ missing or older than its sources, start the server and open the browser.
 
 ### From a release package
 
-Windows: run the installer `Absence.Setup-0.5.0.exe`, or unpack
-`Absence-0.5.0.zip`. Linux: run `Absence-0.5.0.AppImage`, or unpack
-`Absence-0.5.0.tar.gz` and start the headless server with
+Windows: run the installer `Absence.Setup-0.5.5.exe`, or unpack
+`Absence-0.5.5.zip`. Linux: run `Absence-0.5.5.AppImage`, or unpack
+`Absence-0.5.5.tar.gz` and start the headless server with
 `bash resources/start-server.sh daemon`.
 
 The server listens on `127.0.0.1:8848` and has no authentication of its own.

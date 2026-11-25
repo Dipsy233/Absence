@@ -31,3 +31,4 @@ the project at that release; changes made later are not reflected in it.
 | [releases/v0.3.0.md](releases/v0.3.0.md) | English · [简体中文](releases/v0.3.0.zh-CN.md) | Release notes for v0.3.0 | Users, maintainers |
 | [releases/v0.4.0.md](releases/v0.4.0.md) | English · [简体中文](releases/v0.4.0.zh-CN.md) | Release notes for v0.4.0 | Users, maintainers |
 | [releases/v0.5.0.md](releases/v0.5.0.md) | English · [简体中文](releases/v0.5.0.zh-CN.md) | Release notes for v0.5.0 | Users, maintainers |
+| [releases/v0.5.5.md](releases/v0.5.5.md) | English · [简体中文](releases/v0.5.5.zh-CN.md) | Release notes for v0.5.5 | Users, maintainers |

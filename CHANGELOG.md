@@ -2,16 +2,39 @@
 
 [English](CHANGELOG.md) | [简体中文](CHANGELOG.zh-CN.md)
 
-Absence releases from v0.2.0 through v0.5.0. Each entry is a summary; the full
+Absence releases from v0.2.0 through v0.5.5. Each entry is a summary; the full
 notes are under `docs/releases/`. The release process is described in
 [releasing.md](docs/releasing.md).
 
 | Version | Focus | Notes |
 | --- | --- | --- |
+| v0.5.5 | Idle cost, report endpoint and the observing contract | [v0.5.5](docs/releases/v0.5.5.md) |
 | v0.5.0 | ACP access layer and UI rebuild | [v0.5.0](docs/releases/v0.5.0.md) |
 | v0.4.0 | Persistence, metrics and verification | [v0.4.0](docs/releases/v0.4.0.md) |
 | v0.3.0 | Codex, DSH and shell takeover | [v0.3.0](docs/releases/v0.3.0.md) |
 | v0.2.0 | Personal avatars and Agent Eggs filters | [v0.2.0](docs/releases/v0.2.0.md) |
+
+## v0.5.5 — Idle cost, report endpoint and the observing contract
+
+[v0.5.5 notes](docs/releases/v0.5.5.md)
+
+- Liveness probing stops walking the process table, and the table snapshot is
+  read by the native helper instead of PowerShell/CIM (17 ms for 386 rows
+  against 1.19 s of CPU). Monaco loads as a lazy chunk, the main bundle drops
+  from ~3.9 MB to ~750 KB, and history refresh reads only the archive tail.
+- The Absence Report engine moved to `@absence/core`, and
+  `GET /api/sessions/:id/report[?run=<n>]` returns the same report without a
+  browser. An idle run is no longer reduced twice a second.
+- `/model` returns as a port action over the agent's `model` config option
+  (`session/set_config_option`); a typed `/model …` line is still forwarded.
+- The process reaper was removed: Absence observes, it never kills. Closing a
+  session no longer terminates the command subtree it drove.
+- The desktop shell binds a stable port (remembered, then 8848/8849/8850), so
+  `localStorage`-scoped settings persist; a fresh install starts glass/dark.
+- Agent executables resolve without spawning `where`; empty-file writes are
+  captured; a shell-created file reads as CREATE; the picker card, its session
+  id and its path matching are fixed; panels follow the newest run after a
+  replay.
 
 ## v0.5.0 — ACP access layer and UI rebuild
 
