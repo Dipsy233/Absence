@@ -22,8 +22,6 @@ import {
   readRuns,
 } from "../sessions/archive";
 import { sessionStore, RuntimeUnavailableError } from "../sessions/SessionStore";
-import { hasAdapter } from "../agents/registry";
-import { getProfile } from "../agents/acp/AgentCatalog";
 import { toPosix } from "../util/paths";
 
 async function isDirectory(candidate: string): Promise<boolean> {
@@ -37,11 +35,11 @@ async function isDirectory(candidate: string): Promise<boolean> {
 
 function resolveAgent(value: string | undefined): AgentKind {
   const kind = value?.trim();
-  // An ACP profile is a runtime kind too: accept any id the registry can
-  // build, or any profile the catalog knows (including ~/.absence/agents.json),
-  // instead of hard-coding the built-ins here (that was coupling).
-  if (kind && (hasAdapter(kind) || getProfile(kind) !== undefined)) return kind;
-  return config.defaultAgent;
+  // Only the mock fixture is drivable, but the kind string is recorded on the
+  // session either way — an archive re-open of a pi session still says "pi"
+  // in history. An unknown kind cannot start a runtime (there is no runtime
+  // to start); the session just replays its archive.
+  return kind && kind.length > 0 ? kind : config.defaultAgent;
 }
 
 /** A query-string positive integer, or undefined when absent/invalid. */
@@ -135,12 +133,22 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     }
     const resumeId = body?.resume?.absenceSessionId?.trim();
     const resume = resumeId ? { absenceSessionId: resumeId } : undefined;
+    const agent = resolveAgent(body?.agent);
+    // Absence does not launch agents: without a resume target the only
+    // session a POST may open is the mock fixture (development and checks).
+    // Every real agent is observed, never started.
+    if (!resume && agent !== "mock") {
+      return reply.code(400).send({
+        error:
+          "Absence does not start agents — observe one instead (POST /api/observe/attach). " +
+          'Only the "mock" fixture may be launched, for development and checks.',
+      });
+    }
     const session = await (async () => {
       try {
-        return await sessionStore.create(resolved, resolveAgent(body?.agent), resume);
+        return await sessionStore.create(resolved, agent, resume);
       } catch (error) {
-        // The runtime would not start (not installed / bad path / no
-        // credentials). Surface it to the picker instead of a bare 500.
+        // The fixture would not start. Surface it instead of a bare 500.
         if (error instanceof RuntimeUnavailableError) {
           return reply.code(503).send({ error: error.message, runtime: error.runtime });
         }
@@ -153,13 +161,13 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/api/sessions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const session = sessionStore.get(id);
-    if (!session) return reply.code(404).send({ error: "session not found" });
     const query = (request.query ?? {}) as { eventLimit?: string };
     const eventLimit = parsePositiveInt(query.eventLimit);
     if (query.eventLimit !== undefined && eventLimit === undefined) {
       return reply.code(400).send({ error: "eventLimit must be a positive integer" });
     }
+    const session = sessionStore.get(id) ?? (await reopenArchive(id).catch(() => undefined));
+    if (!session) return reply.code(404).send({ error: "session not found" });
     return session.snapshot({ eventLimit });
   });
 
@@ -413,10 +421,21 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
   // Fastify's default bodyLimit is 1 MiB. A pasted stack trace or a long
   // file excerpt is a legitimate prompt, so this one route accepts 8 MiB;
   // everything else keeps the default.
+  /**
+   * The write-back routes survive for exactly one caller: the mock fixture's
+   * own development checks (scripts/mock-agent). Every real session —
+   * observed transcripts, proxy sessions, reopened archives — answers 403
+   * here, and could do nothing anyway: no adapter that talks to a real agent
+   * exists any more. Removing these routes outright waits on rewriting the
+   * fixture checks to the observation flow.
+   */
   app.post("/api/sessions/:id/prompt", { bodyLimit: 8 * 1024 * 1024 }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const session = sessionStore.get(id);
     if (!session) return reply.code(404).send({ error: "session not found" });
+    if (!session.runtimeDriven) {
+      return reply.code(403).send({ error: "observed sessions are not drivable — Absence only watches" });
+    }
     const body = request.body as { prompt?: string } | undefined;
     const prompt = body?.prompt;
     if (!prompt || !prompt.trim()) {
@@ -430,18 +449,20 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const session = sessionStore.get(id);
     if (!session) return reply.code(404).send({ error: "session not found" });
+    if (!session.runtimeDriven) {
+      return reply.code(403).send({ error: "observed sessions are not drivable — Absence only watches" });
+    }
     await session.abort();
     return { ok: true };
   });
 
-  /**
-   * Answer an approval prompt the agent raised (the `approval` event). `value`
-   * is one of that event's option values; it unblocks the runtime request.
-   */
   app.post("/api/sessions/:id/approval", async (request, reply) => {
     const { id } = request.params as { id: string };
     const session = sessionStore.get(id);
     if (!session) return reply.code(404).send({ error: "session not found" });
+    if (!session.runtimeDriven) {
+      return reply.code(403).send({ error: "observed sessions are not drivable — Absence only watches" });
+    }
     const body = request.body as { id?: string; value?: string } | undefined;
     const approvalId = body?.id?.trim();
     const value = body?.value?.trim();
@@ -452,17 +473,13 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  /**
-   * Forward a `/…` line (`/skill:<name>`, `/mcp`, …). The agent owns their
-   * meaning; Absence only forwards the text as a prompt. `/auth` and `/model`
-   * are the ACP-native actions Absence performs (both are port calls, not
-   * prompts). The result streams back over the WebSocket as normal run events;
-   * this call only reports that it ran.
-   */
   app.post("/api/sessions/:id/command", async (request, reply) => {
     const { id } = request.params as { id: string };
     const session = sessionStore.get(id);
     if (!session) return reply.code(404).send({ error: "session not found" });
+    if (!session.runtimeDriven) {
+      return reply.code(403).send({ error: "observed sessions are not drivable — Absence only watches" });
+    }
     const body = request.body as { text?: string; name?: string; args?: string } | undefined;
     const text = body?.text?.trim();
     if (text) {
@@ -527,6 +544,26 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     if (!deleted) return reply.code(404).send({ error: "archive not found" });
     return { ok: true };
   });
+}
+
+/**
+ * Reopen an archived session as a read-only viewing session.
+ *
+ * A history row (and a `/s/<id>` deep link after a restart) names an archive,
+ * not a live session. Serving 404 for it left the panel empty even though the
+ * archive held the whole conversation; replaying the archive is exactly what
+ * `sessionStore.create` with a resume id does, and it starts no agent. The mock
+ * fixture is the one exception: its "archive" would launch a new fixture, so it
+ * is not replayed as history.
+ */
+async function reopenArchive(id: string) {
+  const meta = await readMeta("", id);
+  if (!meta) return undefined;
+  if (meta.runtime === "mock") return undefined;
+  // A concurrent request may have opened it while the archive row was read.
+  const raced = sessionStore.get(id);
+  if (raced) return raced;
+  return sessionStore.create(meta.projectPath, meta.runtime, { absenceSessionId: id });
 }
 
 /**

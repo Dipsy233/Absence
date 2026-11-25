@@ -354,6 +354,59 @@ const ZH: Record<string, string> = {
   "save paths": "保存路径",
   recent: "最近",
 
+  // ── Observatory (observation board) ────────────────────────────────────
+  "The observation board — nothing here starts an agent.":
+    "观测台——这里的一切都不会启动智能体。",
+  "Watching now": "正在监控",
+  "Running now": "正在运行",
+  "{n} running": "{n} 个运行中",
+  "No agents running. Start one in your own terminal — it appears here.":
+    "没有正在运行的智能体。在你自己的终端里启动一个——它会出现在这里。",
+  "Nothing is being watched yet. Start your agent in its own terminal — it appears here on its own.":
+    "还没有在监控任何东西。在你自己的终端里启动智能体——它会自己出现在这里。",
+  "Available to watch": "可监控",
+  "{n} viewing": "{n} 人查看",
+  "backfilling…": "回填中…",
+  "transcript diverged; re-watch to continue": "转录已改写，重新监控以继续",
+  "activity burst": "活动突发",
+  "observed mid-run": "中途开始观察",
+  "began before watching": "始于观察之前",
+  "{n} found": "发现 {n} 个",
+  "Monitor": "监控",
+  "watching": "监控中",
+  "missing": "已丢失",
+  "Stop watching": "停止监控",
+  "Stopped watching. Its archive stays in History.": "已停止监控。归档仍保留在历史中。",
+  "Live observation — transcripts": "活跃观测——转录",
+  "Session files the agent software writes on its own. Attach one to monitor it, whenever you like.":
+    "智能体软件自己写下的会话文件。随时可以挂载一份来监控它。",
+  "No transcripts found yet.": "还没有发现转录。",
+  "{time} active": "{time} 前活跃",
+  "attaching…": "挂载中…",
+  Attach: "挂载",
+  "ACP proxies": "ACP 代理",
+  "Agents an editor ACP client reaches through Absence's proxy — byte-level facts, exact processes.":
+    "编辑器 ACP 客户端经由 Absence 代理接入的智能体——字节级事实、精确的进程。",
+  "No proxy sessions on this host.": "本机没有代理会话。",
+  "closed {time}": "{time} 关闭",
+  "waiting for a client": "等待客户端接入",
+  "Everything Absence has already recorded.": "Absence 已经记录下来的一切。",
+  "This archive predates Absence's own session ids and cannot be reopened.":
+    "该归档早于 Absence 自己的会话 id,无法重新打开。",
+  "The transcript could not be attached (identity unknown).":
+    "转录无法挂载(身份未知)。",
+  "observed — answered elsewhere": "旁观——应答发生在别处",
+  "{n} msgs": "{n} 条消息",
+  "Delete archive": "删除归档",
+  "Delete the archive of {path}? This cannot be undone.":
+    "删除 {path} 的归档?此操作不可撤销。",
+  "pi is running in a new terminal — Absence is watching.":
+    "已在新终端启动 pi —— Absence 正在旁观。",
+  "pi is continuing that conversation in a new terminal — Absence is watching.":
+    "已在新终端继续这场对话 —— Absence 正在旁观。",
+  "Absence only watches — the choice belongs to the agent's own client.":
+    "Absence 只旁观——选择权属于智能体自己的客户端。",
+
   // ── Report ─────────────────────────────────────────────────────────────
   "ABSENCE REPORT": "发呆报告",
   "Collapse the Absence Report": "收起发呆报告",

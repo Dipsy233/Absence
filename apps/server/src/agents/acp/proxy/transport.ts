@@ -77,6 +77,37 @@ export function createStreamTransport(options: StreamTransportOptions): AcpProxy
   let exited = false;
   let readline: Interface | undefined;
 
+  /**
+   * Lines that arrived before any consumer attached.
+   *
+   * The proxy binds its listeners right after the transports exist, but an
+   * attach that awaits something (a spawn, the observed session being created)
+   * opens a window in which the client's first line — usually `initialize` —
+   * would be emitted to nobody. A proxy that drops `initialize` is a
+   * conversation that never starts, so early lines queue here and replay
+   * through the same pipeline the moment a consumer subscribes.
+   */
+  const pending: string[] = [];
+  let hasConsumer = false;
+  const consume = (): void => {
+    if (hasConsumer) return;
+    hasConsumer = true;
+    // The replay waits for the current registration turn to finish: a proxy
+    // binds its forward and its tap listeners in one synchronous pass, and a
+    // line replayed mid-pass would meet half the pipeline unregistered.
+    queueMicrotask(() => {
+      const queued = pending.splice(0);
+      for (const line of queued) emitLine(line);
+    });
+  };
+  const emitLine = (line: string): void => {
+    // Raw first: forwarding must never depend on the parse succeeding.
+    lineListeners.emit(line);
+    const message = parseJsonRpcMessage(line);
+    if (message) messageListeners.emit(message);
+    else malformedListeners.emit(line);
+  };
+
   const emitExit = (code: number | null): void => {
     if (exited) return;
     exited = true;
@@ -104,11 +135,11 @@ export function createStreamTransport(options: StreamTransportOptions): AcpProxy
   readline = createInterface({ input, terminal: false });
   readline.on("line", (line) => {
     if (closed) return;
-    // Raw first: forwarding must never depend on the parse succeeding.
-    lineListeners.emit(line);
-    const message = parseJsonRpcMessage(line);
-    if (message) messageListeners.emit(message);
-    else malformedListeners.emit(line);
+    if (!hasConsumer) {
+      pending.push(line);
+      return;
+    }
+    emitLine(line);
   });
   readline.on("close", () => {
     if (closed) return;
@@ -121,9 +152,18 @@ export function createStreamTransport(options: StreamTransportOptions): AcpProxy
 
   return {
     pid: options.pid,
-    onLine: lineListeners.add,
-    onMessage: messageListeners.add,
-    onMalformedLine: malformedListeners.add,
+    onLine: (listener) => {
+      consume();
+      return lineListeners.add(listener);
+    },
+    onMessage: (listener) => {
+      consume();
+      return messageListeners.add(listener);
+    },
+    onMalformedLine: (listener) => {
+      consume();
+      return malformedListeners.add(listener);
+    },
     onStderr: stderrListeners.add,
     onError: errorListeners.add,
     onExit: exitListeners.add,

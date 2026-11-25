@@ -451,6 +451,36 @@ function runOf(events: AbsenceEvent[], fromIndex: number, status: HistoryRun["st
     layout.marks.map((m) => `${m.node.action}:${(m.left + m.width).toFixed(1)}`).join(" "),
   );
 
+  // I. A transcript stamps `tool_start` when the assistant message was
+  // created, before the model's generation finished and the tool ran. The
+  // result's own `durationMs` is what places the command: a 12 s command that
+  // reported at +90 must start at +78, not at the +20 generation stamp, or the
+  // shell lane paints over the thought that produced it.
+  {
+    const events = [
+      stamp(ev("agent_start", { model: "mock/agent" })), // @+10
+      stamp(ev("thinking", { content: "plan the command", streaming: false })), // @+20
+      bashStart("b1", "npm test"), // @+30 — generation start, not execution
+      stamp(ev("tool_end", { toolCallId: "b1", toolName: "bash", isError: false, durationMs: 50 })), // @+40, ran 40..? 
+    ];
+    // The result is stamped @50 after another tick: override both clocks so the
+    // arithmetic is explicit (result at +90, ran for 50 → started at +40).
+    events[3]!.timestamp = events[0]!.timestamp + 90;
+    (events[3]!.payload as { durationMs?: number }).durationMs = 50;
+    const facts = buildRunFacts(events, runOf(events, 0));
+    const node = facts.timeline.find((n) => n.kind === "run");
+    check(
+      "a reported tool duration places the command where it ran",
+      node?.offsetMs === 40 && node?.endOffsetMs === 90,
+      `run=${node?.offsetMs}..${node?.endOffsetMs}`,
+    );
+    check(
+      "the command fact carries the reported duration",
+      facts.commandFacts[0]?.durationMs === 50,
+      `durationMs=${facts.commandFacts[0]?.durationMs}`,
+    );
+  }
+
   // Archives written before `endedAt` existed keep a bounded fallback.
   const legacy = [stamp(ev("thinking", { content: "Old archive", streaming: false }))];
   const legacyFacts = buildRunFacts(legacy, runOf(legacy, 0, "running"));

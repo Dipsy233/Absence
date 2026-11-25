@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { eventContext } from "../../lib/context";
-import { useChatStore } from "../../stores/chatStore";
 import { useT } from "../../lib/i18n";
 import type { AbsenceEvent } from "@absence/core";
 
@@ -46,7 +44,6 @@ export function TerminalStage({
   event,
 }: TerminalStageProps) {
   const t = useT();
-  const addContext = useChatStore((s) => s.addContext);
   const [showStructured, setShowStructured] = useState(false);
   const output = [stdout, stderr].filter((part) => part.length > 0).join(String.fromCharCode(10));
   // A call the adapter only announced: in flight, with nothing back yet.
@@ -112,16 +109,6 @@ export function TerminalStage({
           </span>
           <CopyButton label={t("copy cmd")} text={command} title={t("Copy the command")} />
           <CopyButton label={t("copy out")} text={output} title={t("Copy the output")} disabled={output.length === 0} />
-          {event ? (
-            <button
-              type="button"
-              onClick={() => addContext(eventContext(event))}
-              className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-              title={t("Add this command to Chat")}
-            >
-              {t("+ Chat")}
-            </button>
-          ) : null}
         </span>
       </div>
       {mcp?.note ? (

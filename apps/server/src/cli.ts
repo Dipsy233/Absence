@@ -5,11 +5,24 @@
  *   absence serve                 start it explicitly
  *   absence proxy -- <cmd> …      sit between an ACP client and an agent
  */
+import { spawn } from "node:child_process";
 import { fstatSync } from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseProxyArgs, type ProxyArgs } from "./cliArgs";
 import { startServer, type RunningServer } from "./index";
 import { proxySessions, createProcessTransport } from "./agents/acp/proxy";
 import { JobMonitor } from "./process/JobMonitor";
+import {
+  formatTarget,
+  listTargets,
+  panelUrl,
+  resolveClient,
+  selectTarget,
+  unwatchSession,
+  watchTarget,
+  type ClientOptions,
+} from "./cliClient";
 
 export { parseProxyArgs, type ProxyArgs };
 
@@ -17,13 +30,23 @@ const NL = String.fromCharCode(10);
 
 const USAGE = [
   "usage:",
-  "  absence                       start the server",
-  "  absence serve                 start the server",
+  "  absence serve [--port N] [--host H] [--open]",
+  "                                start the observation server (the product)",
+  "  absence ls [--json] [--server URL] [--token T]",
+  "                                list what this host can monitor right now",
+  "  absence observe (--pid P | --session FILE | --cwd DIR | --latest)",
+  "                                choose a target and print its panel URL",
+  "  absence open <sessionId>      print the panel URL for a session",
+  "  absence unwatch <sessionId>   stop monitoring a session (archive stays)",
   "  absence proxy [--project DIR] [--label NAME] -- <command> …",
   "                                forward an ACP client to an agent (tap only)",
   "",
-  "  --project DIR   the directory the agent works in (default: cwd)",
-  "  --label NAME    what to call the proxied agent",
+  "  --port / --host   where serve listens (default 127.0.0.1:8848)",
+  "  --open            open the board in the default browser after listening",
+  "  --server URL      the running server for ls/observe/open (ABSENCE_URL)",
+  "  --token T         the access token when the server is not loopback",
+  "  --project DIR     the directory the proxied agent works in (default: cwd)",
+  "  --label NAME      what to call the proxied agent",
 ].join(NL);
 
 /**
@@ -112,10 +135,15 @@ function keepStdoutForProtocol(): () => void {
  * (orphan detection), or a fatal error. Everything here is CLI-only — the
  * desktop shell runs the server in-process and owns this lifecycle itself.
  */
-async function serveUntilStopped(): Promise<void> {
+async function serveUntilStopped(options: ServeOptions = {}): Promise<void> {
   exitWhenOrphaned();
   logProcessErrors();
-  const server = await startServer();
+  const server = await startServer({
+    ...(options.port !== undefined ? { port: options.port } : {}),
+    ...(options.host !== undefined ? { host: options.host } : {}),
+  });
+  process.stderr.write(`ABSENCE server: board at ${server.url}${NL}`);
+  if (options.open === true) openInBrowser(server.url);
 
   // Ctrl+C closes cleanly: WebSocket clients see the socket close instead of a
   // dead TCP connection, and the port is free the moment the process exits.
@@ -231,10 +259,166 @@ function logProcessErrors(): void {
   });
 }
 
+export interface ServeOptions {
+  port?: number;
+  host?: string;
+  open?: boolean;
+}
+
+/** Open a URL in the platform's browser (best effort: a failure is a warning). */
+function openInBrowser(url: string): void {
+  const [file, args] =
+    process.platform === "win32"
+      ? ["cmd.exe", ["/c", "start", "", url]]
+      : process.platform === "darwin"
+        ? ["open", [url]]
+        : ["xdg-open", [url]];
+  try {
+    const child = spawn(file as string, args as string[], { detached: true, stdio: "ignore", windowsHide: true });
+    child.once("error", () => {
+      process.stderr.write(`ABSENCE: could not open a browser — visit ${url}${NL}`);
+    });
+    child.unref();
+  } catch {
+    process.stderr.write(`ABSENCE: could not open a browser — visit ${url}${NL}`);
+  }
+}
+
+/** Parse a `--flag value` / `--flag=value` style argument list. */
+function flagValue(argv: string[], name: string): string | undefined {
+  const prefix = `--${name}=`;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg === `--${name}`) return argv[i + 1];
+    if (arg.startsWith(prefix)) return arg.slice(prefix.length);
+  }
+  return undefined;
+}
+
+function hasFlag(argv: string[], name: string): boolean {
+  return argv.includes(`--${name}`);
+}
+
+/** The positional argument that is not a flag value. */
+function positionals(argv: string[]): string[] {
+  const out: string[] = [];
+  const withValue = new Set(["port", "host", "server", "token", "pid", "session", "cwd", "project", "label"]);
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg.startsWith("--")) {
+      const name = arg.slice(2).split("=")[0]!;
+      if (!arg.includes("=") && withValue.has(name)) i += 1;
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
+}
+
+/** The client options from the flags every client command shares. */
+function clientFrom(argv: string[]): ClientOptions {
+  return resolveClient({
+    ...(flagValue(argv, "server") !== undefined ? { server: flagValue(argv, "server") } : {}),
+    ...(flagValue(argv, "token") !== undefined ? { token: flagValue(argv, "token") } : {}),
+  });
+}
+
+function positiveInt(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n > 0 ? n : undefined;
+}
+
+async function lsCommand(argv: string[]): Promise<void> {
+  const client = clientFrom(argv);
+  const targets = await listTargets(client);
+  if (hasFlag(argv, "json")) {
+    process.stdout.write(JSON.stringify(targets, null, 2) + NL);
+    return;
+  }
+  if (targets.length === 0) {
+    process.stdout.write("no targets — is an agent running on that host?" + NL);
+    return;
+  }
+  for (const row of targets) process.stdout.write(formatTarget(row) + NL);
+}
+
+async function observeCommand(argv: string[]): Promise<void> {
+  const client = clientFrom(argv);
+  const pid = positiveInt(flagValue(argv, "pid"));
+  if (flagValue(argv, "pid") !== undefined && pid === undefined) throw new Error("--pid needs a positive integer");
+  const file = flagValue(argv, "session") ?? flagValue(argv, "file");
+  const cwd = flagValue(argv, "cwd");
+  const latest = hasFlag(argv, "latest");
+  if (pid === undefined && file === undefined && cwd === undefined && !latest) {
+    throw new Error("choose a target: --pid, --session, --cwd or --latest");
+  }
+  const rows = await listTargets(client);
+  const target = selectTarget(rows, {
+    ...(pid !== undefined ? { pid } : {}),
+    ...(file !== undefined ? { file: path.resolve(file) } : {}),
+    ...(cwd !== undefined ? { cwd } : {}),
+    ...(latest ? { latest: true } : {}),
+  });
+  const watched = await watchTarget(client, target.key);
+  process.stdout.write(panelUrl(client, watched.sessionId) + NL);
+}
+
+async function openCommand(argv: string[]): Promise<void> {
+  const client = clientFrom(argv);
+  const [sessionId] = positionals(argv);
+  if (!sessionId) throw new Error("absence open <sessionId>");
+  process.stdout.write(panelUrl(client, sessionId) + NL);
+}
+
+async function unwatchCommand(argv: string[]): Promise<void> {
+  const client = clientFrom(argv);
+  const [sessionId] = positionals(argv);
+  if (!sessionId) throw new Error("absence unwatch <sessionId>");
+  await unwatchSession(client, sessionId);
+  process.stdout.write(`stopped monitoring ${sessionId} (archive kept)${NL}`);
+}
+
+async function command(fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (error) {
+    process.stderr.write(`${messageOf(error)}${NL}`);
+    process.exitCode = 1;
+  }
+}
+
 export async function runCli(argv: string[]): Promise<void> {
   const [first, ...rest] = argv;
   if (first === "serve" || first === undefined) {
-    await serveUntilStopped();
+    const port = flagValue(rest, "port");
+    const parsedPort = port === undefined ? undefined : positiveInt(port);
+    if (port !== undefined && parsedPort === undefined) {
+      process.stderr.write(`--port needs a positive integer${NL}`);
+      process.exitCode = 2;
+      return;
+    }
+    await serveUntilStopped({
+      ...(parsedPort !== undefined ? { port: parsedPort } : {}),
+      ...(flagValue(rest, "host") !== undefined ? { host: flagValue(rest, "host")! } : {}),
+      ...(hasFlag(rest, "open") ? { open: true } : {}),
+    });
+    return;
+  }
+  if (first === "ls") {
+    await command(() => lsCommand(rest));
+    return;
+  }
+  if (first === "observe" || first === "watch") {
+    await command(() => observeCommand(rest));
+    return;
+  }
+  if (first === "open") {
+    await command(() => openCommand(rest));
+    return;
+  }
+  if (first === "unwatch") {
+    await command(() => unwatchCommand(rest));
     return;
   }
   if (first === "proxy") {
@@ -263,4 +447,15 @@ export async function runCli(argv: string[]): Promise<void> {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+// `tsx apps/server/src/cli.ts …` is a documented entry point: run the CLI when
+// this module is the process entry, and stay importable otherwise (index.ts
+// and the desktop shell import `startServer` without binding a port twice).
+const entry = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+if (entry === import.meta.url) {
+  runCli(process.argv.slice(2)).catch((error) => {
+    process.stderr.write(`${messageOf(error)}${NL}`);
+    process.exit(1);
+  });
 }

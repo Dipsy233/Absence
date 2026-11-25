@@ -70,7 +70,7 @@ async function main(): Promise<void> {
   const boot = async (listenPort: number) => {
     const child = spawn(process.execPath, [tsxCli, "apps/server/src/index.ts"], {
       cwd: REPO_ROOT,
-      env: { ...process.env, PORT: String(listenPort), ABSENCE_STATE_DIR: stateDir, HOST: "127.0.0.1" },
+      env: { ...process.env, PORT: String(listenPort), ABSENCE_STATE_DIR: stateDir, HOST: "127.0.0.1", ABSENCE_OBSERVE: "0" },
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
     });
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
     let up = false;
     for (let attempt = 0; attempt < 90 && !up; attempt++) {
       await sleep(500);
-      up = await fetch(`http://127.0.0.1:${listenPort}/api/runtimes`)
+      up = await fetch(`http://127.0.0.1:${listenPort}/api/sessions/history`)
         .then((r) => r.ok)
         .catch(() => false);
     }

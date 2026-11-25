@@ -95,6 +95,8 @@ export interface WatchTableRow {
   ppid: number;
   name: string;
   commandLine?: string;
+  /** The process's working directory, when the platform's observer can read it. */
+  cwd?: string;
   /** Unix ms the OS says the process started. */
   startedAt?: number;
 }

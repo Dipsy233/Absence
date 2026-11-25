@@ -2,9 +2,10 @@ import { useEffect } from "react";
 import { useSessionSocket } from "../hooks/useSessionSocket";
 import { useSounds } from "../hooks/useSounds";
 import { useSessionStore } from "../stores/sessionStore";
+import { resetAllStores } from "../stores/reset";
 import { useViewModeStore } from "../stores/viewModeStore";
 import { ContextMenu } from "../components/common/ContextMenu";
-import { ProjectPicker } from "../components/ProjectPicker/ProjectPicker";
+import { Observatory } from "../components/Observatory/Observatory";
 import { MonitorUI } from "../ui/monitor/MonitorUI";
 import { RoundsUI } from "../ui/rounds/RoundsUI";
 import { ChartUI } from "../ui/chart/ChartUI";
@@ -15,6 +16,7 @@ import { InkBoil } from "../ui/shared/InkBoil";
 import { defaultScheme, UI_STYLES } from "../lib/uistyle";
 import { applyMonacoTheme, DESK_PALETTE } from "../lib/monaco";
 import { useUiStyleStore } from "../stores/uistyleStore";
+import { clearSessionRoute, sessionIdFromPath } from "../lib/route";
 
 /**
  * The desktop shell opens Drip as a second window: it loads this same app with
@@ -45,6 +47,41 @@ export default function App() {
   const desktop = Boolean(window.absenceDesktop);
 
   useSessionSocket(DRIP_WINDOW ? DRIP_SESSION : session?.id);
+
+  // The address bar names the panel (`/s/<id>`). Opening the app on such a URL
+  // restores that panel; the back/forward buttons move between the board and
+  // the panels without a reload. A stale link (the archive was deleted) fails
+  // quietly and leaves the board up.
+  useEffect(() => {
+    if (DRIP_WINDOW) return;
+    const id = sessionIdFromPath();
+    if (id === undefined) return;
+    if (useSessionStore.getState().session?.id === id) return;
+    void useSessionStore
+      .getState()
+      .openSession(id)
+      .catch(() => clearSessionRoute());
+  }, []);
+
+  useEffect(() => {
+    if (DRIP_WINDOW) return;
+    const onPop = () => {
+      const id = sessionIdFromPath();
+      const current = useSessionStore.getState().session?.id;
+      if (id === undefined) {
+        if (current !== undefined) resetAllStores();
+        return;
+      }
+      if (id === current) return;
+      void useSessionStore
+        .getState()
+        .openSession(id)
+        .catch(() => clearSessionRoute());
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   // The floating window has its own session and its own chimes; muting the face
   // underneath keeps every event from ringing twice while Drip is up.
   useSounds(!(desktop && drip));
@@ -114,7 +151,7 @@ export default function App() {
   if (!session) {
     return (
       <>
-        <ProjectPicker />
+        <Observatory />
         <ContextMenu />
       </>
     );

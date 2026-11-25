@@ -35,7 +35,7 @@ const SERVER_DIR = fileURLToPath(new URL("../../apps/server", import.meta.url));
 const SERVER = [process.execPath, "--import", "tsx", "src/index.ts", "serve"] as const;
 const SPAWN_OPTS = {
   cwd: SERVER_DIR,
-  env: { ...process.env, PORT: String(PORT), ABSENCE_ORPHAN_TICK_MS: "1000" },
+  env: { ...process.env, PORT: String(PORT), ABSENCE_ORPHAN_TICK_MS: "1000", ABSENCE_OBSERVE: "0" },
   stdio: ["pipe", "pipe", "pipe"],
 } as const;
 
@@ -46,7 +46,7 @@ async function waitListening(child: ChildProcess, timeoutMs = 20000): Promise<bo
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${PORT}/api/runtimes`, {
+      const response = await fetch(`http://127.0.0.1:${PORT}/api/sessions/history`, {
         signal: AbortSignal.timeout(1000),
       });
       await response.body?.cancel();
@@ -114,7 +114,7 @@ section("dead parent pid is noticed by the watchdog");
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       try {
-        const probe = await fetch(`http://127.0.0.1:${PORT}/api/runtimes`, { signal: AbortSignal.timeout(1000) });
+        const probe = await fetch(`http://127.0.0.1:${PORT}/api/sessions/history`, { signal: AbortSignal.timeout(1000) });
         await probe.body?.cancel();
       } catch {
         freed = true;

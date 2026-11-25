@@ -135,7 +135,7 @@ async function bootServer(): Promise<{ child: ChildProcess; dir: string }> {
     [path.join(REPO_ROOT, "node_modules", "tsx", "dist", "cli.mjs"), "apps/server/src/index.ts"],
     {
       cwd: REPO_ROOT,
-      env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", ABSENCE_STATE_DIR: path.join(dir, "state") },
+      env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", ABSENCE_STATE_DIR: path.join(dir, "state"), ABSENCE_OBSERVE: "0" },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     },

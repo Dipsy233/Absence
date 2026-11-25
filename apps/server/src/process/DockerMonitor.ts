@@ -136,7 +136,7 @@ export class DockerMonitor {
   start(): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("docker monitor disposed"));
     if (!config.dockerEnabled) {
-      this.setStatus("unavailable", "disabled (ABSENCE_DOCKER=0)");
+      this.setStatus("unavailable", process.platform === "win32" ? "unsupported on Windows" : "disabled (ABSENCE_DOCKER=0)");
       return Promise.reject(new Error("docker watching disabled"));
     }
     this.startPromise ??= this.startOnce().catch((error: unknown) => {
@@ -236,10 +236,10 @@ export class DockerMonitor {
   /**
    * The docker CLI to drive, in spawn form. `ABSENCE_DOCKER_BIN` wins (it may
    * be a bare binary or a prefix such as `wsl docker`, split on whitespace);
-   * otherwise a `docker` on PATH; on Windows finally a WSL distro's docker,
-   * which is how Docker lives on a machine without Docker Desktop.
+   * otherwise `docker` on PATH. Windows container capture is unsupported.
    */
   private async command_(): Promise<DockerCommand> {
+    if (process.platform === "win32") throw new Error("docker watching unsupported on Windows");
     if (this.command) return this.command;
     const override = config.dockerBin?.trim();
     if (override) {
@@ -252,12 +252,7 @@ export class DockerMonitor {
       this.command = { file: "docker", args: [] };
       return this.command;
     } catch {
-      if (process.platform !== "win32") throw new Error("no docker CLI on PATH");
-      // A WSL distro's daemon: the CLI is `wsl docker`. The probe answers only
-      // when the daemon is actually up, so a stopped distro reads as absent.
-      await run("wsl", ["docker", "version", "--format", "ok"], { timeout: 30_000 });
-      this.command = { file: "wsl", args: ["docker"] };
-      return this.command;
+      throw new Error("no docker CLI on PATH");
     }
   }
 

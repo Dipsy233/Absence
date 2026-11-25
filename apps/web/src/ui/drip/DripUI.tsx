@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMonitorData } from "../../hooks/useMonitorData";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useViewModeStore } from "../../stores/viewModeStore";
@@ -76,8 +76,6 @@ export function DripUI({
 }: DripProps = {}) {
   const t = useT();
   const data = useMonitorData();
-  const sendPrompt = useSessionStore((s) => s.sendPrompt);
-  const abort = useSessionStore((s) => s.abort);
   const runtime = useSessionStore((s) => s.session?.agentRuntime);
   const agentStatus = useSessionStore((s) => s.agent.status);
   const exitDrip = useViewModeStore((s) => s.exitDrip);
@@ -114,8 +112,6 @@ export function DripUI({
   }, [open]);
 
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
   /**
    * The card's height at the moment it opened, fixed for the PiP window.
    *
@@ -190,20 +186,6 @@ export function DripUI({
 
   /** Newest first: the card is a glance, not a log. */
   const recent = data.rows.slice(-8).reverse();
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text || sending) return;
-    setSending(true);
-    try {
-      await sendPrompt(text);
-      setDraft("");
-      setOpen(true);
-    } finally {
-      setSending(false);
-    }
-  };
 
   return (
     <div
@@ -293,30 +275,6 @@ export function DripUI({
                 <p className="drip-empty">{t("No reply yet.")}</p>
               )}
             </div>
-
-            <form className="drip-form" onSubmit={submit}>
-              <input
-                className="drip-form__input"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder={t("Send a task…")}
-                aria-label={t("Send a task…")}
-              />
-              {running ? (
-                <button
-                  type="button"
-                  className="drip-form__send drip-form__stop"
-                  onClick={() => void abort()}
-                  aria-label={t("Stop")}
-                >
-                  ■ {t("Stop")}
-                </button>
-              ) : (
-                <button type="submit" className="drip-form__send" disabled={!draft.trim() || sending}>
-                  {t("Send")}
-                </button>
-              )}
-            </form>
           </div>
         ) : null}
       </div>

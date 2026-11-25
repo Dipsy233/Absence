@@ -365,7 +365,7 @@ async function bootServer(scenarios: Scenario[], options: Options): Promise<Serv
   for (let attempt = 0; attempt < 80 && !ready; attempt++) {
     if (exited) break;
     await sleep(250);
-    ready = await fetch(`http://127.0.0.1:${port}/api/runtimes`)
+    ready = await fetch(`http://127.0.0.1:${port}/api/sessions/history`)
       .then((response) => response.ok)
       .catch(() => false);
   }

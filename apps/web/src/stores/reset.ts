@@ -6,7 +6,7 @@ import { useSessionStore } from "./sessionStore";
 import { useStageStore } from "./stageStore";
 import { useUiStore } from "./uiStore";
 import { useMetricsStore } from "./metricsStore";
-import * as api from "../lib/api";
+import { clearSessionRoute } from "../lib/route";
 
 /**
  * Drop every store's state — used when closing or switching sessions.
@@ -27,22 +27,20 @@ export function resetAllStores(): void {
 }
 
 /**
- * Leave the current session and go back to the picker.
+ * Leave the current session and go back to the board.
  *
- * "Change project" is a leave, not a hide: the server owns the metrics sampler
- * and the process watcher, so the session has to be closed there too or it
- * keeps sampling a tree nobody is watching. The close is awaited before the
- * stores reset so the last frames are flushed, but a failure never blocks the
- * user from leaving — the UI is the authority on what they are watching.
+ * This is a *detach*, not a teardown: Absence observes, so the monitoring keeps
+ * running on the server — the session lives until its monitor lease ends or
+ * the silence sweep archives it, and the archive stays readable. Closing the
+ * live session here (the old `POST /close`) would stop the watchers and the
+ * sampling cadence just because nobody has a tab open, which is exactly what a
+ * monitor is not.
+ *
+ * The observation's lifetime is the server's decision (see
+ * `SessionStore.archiveIdle` and the monitor leases); the UI is only the
+ * window onto it.
  */
 export async function leaveSession(): Promise<void> {
-  const id = useSessionStore.getState().session?.id;
-  if (id) {
-    try {
-      await api.closeSession(id);
-    } catch (error) {
-      console.error("[absence] close session failed:", error);
-    }
-  }
   resetAllStores();
+  clearSessionRoute();
 }

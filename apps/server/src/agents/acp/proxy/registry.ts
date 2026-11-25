@@ -10,8 +10,10 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
 import path from "node:path";
-import type { MonitorBus } from "@absence/core";
+import type { AbsenceEvent, MonitorBus, MonitorEvent } from "@absence/core";
 import { createMonitorBus } from "../../../monitor/MonitorBus";
+import { isNarrowScope } from "../../../observe/types";
+import type { AbsenceSession, SessionStore } from "../../../sessions/SessionStore";
 import { AcpProxy, type AcpProxyExit } from "./proxy";
 import type { AcpProxyTapStats, ProxyDiagnostic } from "./tap";
 import { AcpProxyTap } from "./tap";
@@ -44,6 +46,12 @@ export interface ProxySessionInfo {
   label: string;
   command: string[];
   cwd: string;
+  /**
+   * The Absence session this proxy persists into, when the observer subsystem
+   * is on. The tap's projected facts land there — SQLite, run index, WS — so
+   * a proxied turn survives the server restarting.
+   */
+  sessionId?: string;
   /** How the upstream client attached: process stdio, or a TCP socket. */
   transport: "stdio" | "tcp";
   status: ProxySessionStatus;
@@ -91,6 +99,7 @@ class ProxySession implements ProxySessionHandle {
   constructor(
     private readonly request: ProxyLaunchRequest,
     private readonly bus: MonitorBus,
+    private readonly store?: SessionStore,
   ) {
     const cwd = path.resolve(request.cwd ?? process.cwd());
     this.state = {
@@ -131,7 +140,7 @@ class ProxySession implements ProxySessionHandle {
     }
     this.client = client;
     this.state.transport = "stdio";
-    this.startAgent(client);
+    void this.startAgent(client);
   }
 
   /** Accept the first socket as the client; later arrivals are refused. */
@@ -155,7 +164,7 @@ class ProxySession implements ProxySessionHandle {
         }
       },
     });
-    this.startAgent(client);
+    void this.startAgent(client);
   }
 
   listen(host: string, port: number): Promise<void> {
@@ -210,12 +219,36 @@ class ProxySession implements ProxySessionHandle {
 
   // --------------------------------------------------------------------------
 
-  private startAgent(client: AcpProxyTransport): void {
+  private async startAgent(client: AcpProxyTransport): Promise<void> {
     const command = this.request.command[0]!;
     const args = this.request.command.slice(1);
+    // The observed session is the proxy's persistence. It exists before the
+    // agent spawns so the marker environment variable can name it: the Windows
+    // Job observer then attributes the agent's whole process tree to this
+    // session exactly, and the tap's facts land in SQLite and on the WS.
+    // Attaching must never stand between the client and its agent — a failed
+    // attach degrades to a transient proxy, diagnosed honestly.
+    let absence: AbsenceSession | undefined;
+    if (this.store) {
+      try {
+        absence = await this.attachAbsence();
+      } catch (error) {
+        this.recordDiagnostic(
+          `observed session unavailable, proxy persists nothing: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    if (this.closed) {
+      absence?.dispose();
+      client.close();
+      return;
+    }
+    const env = absence
+      ? { ...this.request.env, ABSENCE_SESSION_ID: absence.id }
+      : this.request.env;
     let agent: AcpProxyTransport;
     try {
-      agent = createAgentTransport({ command, args }, this.state.cwd, this.request.env ?? {});
+      agent = createAgentTransport({ command, args }, this.state.cwd, env ?? {});
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.state.status = "failed";
@@ -234,6 +267,10 @@ class ProxySession implements ProxySessionHandle {
       cwd: this.state.cwd,
       fallbackSessionId: this.id,
       bus: this.bus,
+      // Command windows ride the observed session's watcher, so eggs and
+      // container attribution work here exactly as for a driven session.
+      ...(absence ? { commandWindow: absence.processWindows() } : {}),
+      ...(absence ? { onEvent: (event: MonitorEvent) => this.feedAbsence(absence, event) } : {}),
       onDiagnostic: (diagnostic) => this.recordDiagnostic(diagnostic.message, diagnostic),
     });
 
@@ -244,9 +281,44 @@ class ProxySession implements ProxySessionHandle {
       onDiagnostic: (message) => this.recordDiagnostic(message),
     });
 
+    // The agent pid completes the attribution pair: from here the kernel
+    // stream accepts marked events as this session's own.
+    absence?.declareRuntimePid(this.proxy.pid);
+
     this.state.status = "running";
     this.state.pid = this.proxy.pid;
     void this.proxy.waitForExit().then((exit) => this.finish(exit));
+  }
+
+  /**
+   * Create (or find) the observed session this proxy persists into. The proxy
+   * session id is the external identity, so identity is idempotent per
+   * (channel, externalId) like every other observed channel.
+   */
+  private async attachAbsence(): Promise<AbsenceSession> {
+    if (!this.store) throw new Error("no session store attached");
+    const kind = this.request.label?.trim() || path.basename(commandExecutable(this.request.command)) || "acp-agent";
+    const session = await this.store.createObserved(this.state.cwd, kind, {
+      channel: "acp-proxy",
+      externalId: this.id,
+      // A proxy pointed at a wholesale scope (the home directory, a drive
+      // root) gets facts only, exactly like a transcript that names one.
+      ...(isNarrowScope(this.state.cwd) ? {} : { watchProject: false }),
+    });
+    this.state.sessionId = session.id;
+    return session;
+  }
+
+  /** One projected fact from the tap, flattened into the session pipeline. */
+  private feedAbsence(absence: AbsenceSession, event: MonitorEvent): void {
+    const bridged: AbsenceEvent = {
+      ...event.event,
+      at: event.at,
+      source: event.source,
+      fidelity: event.fidelity,
+      sessionId: absence.id,
+    };
+    absence.ingestObservation(bridged);
   }
 
   private finish(exit: AcpProxyExit): void {
@@ -279,17 +351,31 @@ class ProxySession implements ProxySessionHandle {
   }
 }
 
+function commandExecutable(command: readonly string[]): string {
+  return path.basename(command[0] ?? "");
+}
+
 export class ProxySessions {
   private readonly sessions = new Map<string, ProxySession>();
+  private store?: SessionStore;
 
   constructor(readonly bus: MonitorBus = createMonitorBus()) {}
+
+  /**
+   * The session store a proxy persists into, wired at server assembly. When
+   * none is attached (checks, `ABSENCE_OBSERVE=0`), a proxy stays what it was
+   * before the observer existed: a byte-forwarder whose facts are transient.
+   */
+  useSessionStore(store: SessionStore | undefined): void {
+    this.store = store;
+  }
 
   /** Start a proxy over the caller's stdio. */
   startStdio(
     request: ProxyLaunchRequest,
     client: AcpProxyTransport = createProcessTransport(),
   ): ProxySessionHandle {
-    const session = new ProxySession(request, this.bus);
+    const session = new ProxySession(request, this.bus, this.store);
     this.sessions.set(session.id, session);
     session.activate(client);
     return session;
@@ -300,7 +386,7 @@ export class ProxySessions {
     request: ProxyLaunchRequest,
     options: { host?: string; port?: number } = {},
   ): Promise<ProxySessionHandle> {
-    const session = new ProxySession(request, this.bus);
+    const session = new ProxySession(request, this.bus, this.store);
     await session.listen(options.host ?? "127.0.0.1", options.port ?? 0);
     this.sessions.set(session.id, session);
     return session;

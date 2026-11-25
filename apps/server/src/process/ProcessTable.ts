@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { JobMonitor } from "./JobMonitor";
 import type { WatchTableRow } from "./observer";
@@ -13,6 +14,12 @@ export interface ProcInfo {
   /** Executable name, e.g. "node", "npm.exe". */
   name: string;
   commandLine: string;
+  /**
+   * The process's working directory, when the table can report it. It is the
+   * evidence that scopes two same-shaped agents to different projects; the
+   * PowerShell fallback and platforms without `/proc` leave it unknown.
+   */
+  cwd?: string;
   /** Epoch ms the OS says it started; 0 when the platform cannot say. */
   startedAt: number;
 }
@@ -47,7 +54,40 @@ export async function snapshotProcesses(): Promise<ProcessTable> {
     return dropSubtree(parseWindows(stdout), pid);
   }
   const { stdout, pid } = await runCapturingPid("ps", ["-eo", "pid=,ppid=,etimes=,args="]);
-  return dropSubtree(parsePosix(stdout), pid);
+  const table = dropSubtree(parsePosix(stdout), pid);
+  if (process.platform === "linux") attachLinuxCwd(table);
+  return table;
+}
+
+/**
+ * `/proc/<pid>/cwd` — the working directory `ps` does not print.
+ *
+ * Cheap (one readlink per row, same user) and the only scope evidence on Linux:
+ * two default `pi` processes in different projects must not be paired with
+ * each other's transcripts. A process we may not inspect keeps `cwd` unknown.
+ */
+function attachLinuxCwd(table: ProcessTable): void {
+  for (const info of table.values()) {
+    try {
+      const cwd = fs.readlinkSync(`/proc/${info.pid}/cwd`);
+      if (cwd.length > 0) info.cwd = trimDir(cwd);
+    } catch {
+      // Exited, or not ours to look at: missing evidence, not a failure.
+    }
+  }
+}
+
+/**
+ * A working directory without its trailing separator.
+ *
+ * Windows reports `CurrentDirectory` as `E:\dir\`; the board, the project
+ * scope and the tree all name the same place as `E:\dir`, and a row that
+ * differs from every other row by one backslash looks like a different project.
+ */
+export function trimDir(value: string): string {
+  const trimmed = value.replace(/[\\/]+$/, "");
+  // A drive root (`E:\`, `/`) keeps its separator: it is the path.
+  return trimmed.length === 0 ? value : trimmed;
 }
 
 /** The helper's rows, in the shape the watcher's adoption logic reads. */
@@ -60,6 +100,7 @@ function tableFromRows(rows: WatchTableRow[]): ProcessTable {
       ppid: Number.isInteger(row.ppid) ? row.ppid : 0,
       name: row.name || "?",
       commandLine: row.commandLine ?? "",
+      ...(row.cwd !== undefined ? { cwd: trimDir(row.cwd) } : {}),
       startedAt: row.startedAt ?? 0,
     });
   }

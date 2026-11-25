@@ -6,6 +6,8 @@ import { VIEW_MODES } from "../../lib/viewMode";
 import { useViewModeStore } from "../../stores/viewModeStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { leaveSession } from "../../stores/reset";
+import { unwatchSession } from "../../lib/api";
+import { closeSession } from "../../lib/api";
 import { WindowControls } from "../common/WindowControls";
 import { SettingsDialog } from "../common/SettingsDialog";
 import { DripBagIcon } from "../common/DripBagIcon";
@@ -42,6 +44,22 @@ export function FaceBar() {
   const toggleDrip = useViewModeStore((s) => s.toggleDrip);
   const desktop = Boolean(window.absenceDesktop);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  /**
+   * The “change” button is the one way out of a session: it stops monitoring
+   * and returns to the board. Stopping means dropping the lease (so the agent
+   * leaves the board's running list) and closing the live session (its watchers
+   * stop; the archive stays readable). The agent itself keeps running in the
+   * user's own terminal — Absence only ends its observation.
+   */
+  const changeSession = async () => {
+    const id = session?.id;
+    if (id !== undefined) {
+      await unwatchSession(id).catch(() => undefined);
+      await closeSession(id).catch(() => undefined);
+    }
+    await leaveSession();
+  };
 
   const used = context?.used ?? null;
   const total = context?.total ?? null;
@@ -163,7 +181,11 @@ export function FaceBar() {
         </span>
       </button>
 
-      <button type="button" className="mon-btn mon-btn--ghost mon-nodrag" onClick={() => void leaveSession()}>
+      <button
+        type="button"
+        className="mon-btn mon-btn--ghost mon-nodrag"
+        onClick={() => void changeSession()}
+      >
         {t("change")}
       </button>
 

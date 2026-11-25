@@ -66,6 +66,13 @@ export interface ToolEndPayload {
   toolCallId: string;
   toolName: string;
   isError: boolean;
+  /**
+   * How long the tool itself ran, when the source reports it (a pi transcript
+   * `toolResult` does). The `tool_start` event of a streamed transcript is
+   * stamped when the assistant message was created — before the tool ran — so
+   * this is what lets the report place a command where it actually executed.
+   */
+  durationMs?: number;
   /** ACP's own `kind`, verbatim, when the agent sent one. */
   kind?: string;
   /** ACP's own `title`, verbatim, when the agent sent one. */
@@ -403,7 +410,7 @@ export const ABSENCE_EVENT_TYPES = [
 ] as const satisfies readonly AbsenceEventType[];
 
 /** Which observer produced an event. */
-export type EventSource = "acp" | "acp-proxy" | "os" | "terminal" | "legacy" | "unknown";
+export type EventSource = "acp" | "acp-proxy" | "transcript" | "os" | "terminal" | "legacy" | "unknown";
 
 /** How sure Absence is about the fact. */
 export type EventFidelity = "exact" | "reported" | "inferred" | "unknown";

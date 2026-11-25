@@ -12,6 +12,15 @@ export interface RunCounts {
 
 export type RunStatus = "running" | "completed" | "interrupted" | "error";
 
+/** What opens a run. */
+export type RunBoundarySource =
+  /** A user message in the conversation: the driven and transcript channels. */
+  | "user-message"
+  /** An activity burst: an OS-only watch has no messages to cut runs on. */
+  | "activity-burst"
+  /** The observer attached mid-run; the run's head is not in the record. */
+  | "attach";
+
 /**
  * One run, stored as a summary rather than as the events themselves.
  *
@@ -37,6 +46,14 @@ export interface RunSummary {
    * can size a run — and decide how to page it — without loading its events.
    */
   eventCount?: number;
+  /** What opened this run (see `RunBoundarySource`). Absent on old rows. */
+  boundarySource?: RunBoundarySource;
+  /**
+   * True when the run's beginning was never observed: the observer attached
+   * mid-run (or the transcript's first record is not a user message), so facts
+   * before `fromSeq` are simply not in the record.
+   */
+  truncatedBefore?: boolean;
 }
 
 /** One event's contribution to a run's counts. */
@@ -81,3 +98,13 @@ export function applyRunCount(
 export function emptyRunCounts(): RunCounts {
   return { read: 0, search: 0, edit: 0, run: 0, created: 0 };
 }
+
+/**
+ * How long an OS-only session may sit silent before its activity burst ends.
+ *
+ * There is no `agent_end` in a channel that observes processes and files rather
+ * than messages, so the end of a burst is the absence of the next fact. Ninety
+ * seconds is long enough to bridge a slow command's compile step and short
+ * enough that two unrelated pieces of work do not merge into one run.
+ */
+export const RUN_BURST_IDLE_MS = 90_000;

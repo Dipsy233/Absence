@@ -13,6 +13,13 @@ export type AgentKind = "pi" | "codex" | "dsh" | "mock" | (string & {});
 export interface AbsenceConfig {
   port: number;
   host: string;
+
+  /**
+   * The access token for a server bound beyond loopback (ABSENCE_TOKEN).
+   * A monitor that can be reached from the network must be able to say who
+   * may read it: without a token, a non-loopback bind is refused.
+   */
+  token?: string;
   /** Directory whose subfolders are offered as projects. */
   projectsRoot: string;
   /** Default agent runtime to use when creating sessions. */
@@ -68,19 +75,49 @@ export interface AbsenceConfig {
    */
   maxArchivedSessions: number;
   /**
+   * How long an observed session may sit silent (no new fact, no open
+   * WebSocket) before its live view is archived. The archive stays readable
+   * in History, and the conversation's identity re-attaches on demand, so
+   * this only retires the watchers and the sampling cadence — it never loses
+   * a fact. 0 (ABSENCE_ARCHIVE_SILENCE_MS=0) disables the sweep.
+   */
+  archiveSilenceMs: number;
+
+  /**
+   * How long a *leased* session (the user explicitly chose to watch it) may sit
+   * silent with nobody viewing before its live view is archived. Longer than
+   * `archiveSilenceMs` on purpose: a lease means “keep watching it” even after
+   * the tab closes, and the archive stays readable either way.
+   * Override with ABSENCE_LEASE_SILENCE_MS; 0 keeps a leased session forever.
+   */
+  leaseSilenceMs: number;
+
+  /**
+   * How often the idle sweep runs. The threshold is minutes by nature; the
+   * sweep is only a janitor. Override with ABSENCE_ARCHIVE_SWEEP_MS (the checks
+   * use this to watch the rules fire in seconds).
+   */
+  archiveSweepMs: number;
+  /**
    * Watch Docker containers through the daemon's own event stream (see
    * process/DockerMonitor.ts). A container's processes live inside the
    * daemon's VM, where neither the Job Object nor eBPF can reach, so its
    * lifecycle and resource usage ride `docker events` and `docker stats`
-   * instead. On by default; ABSENCE_DOCKER=0 turns it off, and a machine with
-   * no docker at all degrades to exactly today's behavior.
+   * instead. Unsupported on Windows (including WSL daemon probing). On other
+   * platforms it defaults on; ABSENCE_DOCKER=0 turns it off.
    */
   dockerEnabled: boolean;
   /**
+   * The observer subsystem: watch the transcripts agent software writes on its
+   * own (`observe/`), build sessions from what they record, and let the OS
+   * watchers attach to the projects they name. Absence starts no agent here —
+   * it only reads. On by default; ABSENCE_OBSERVE=0 turns it off.
+   */
+  observeEnabled: boolean;
+  /**
    * The docker CLI to drive, when the default resolution is not enough
-   * (ABSENCE_DOCKER_BIN). Absence tries `docker` on PATH first, then — on
-   * Windows only — `wsl docker` for a daemon that lives in a WSL distro. The
-   * variable may be a bare binary or a prefix such as `wsl docker`.
+   * (ABSENCE_DOCKER_BIN), on non-Windows platforms only. Defaults to `docker`
+   * on PATH. The variable may be a bare binary or a command prefix.
    */
   dockerBin?: string;
   /** Serve the built web app from this directory when present. */
@@ -106,6 +143,7 @@ function envFlag(value: string | undefined, fallback: boolean): boolean {
 export const config: AbsenceConfig = {
   port: Number(process.env.PORT ?? 8848),
   host: process.env.HOST ?? "127.0.0.1",
+  token: process.env.ABSENCE_TOKEN?.trim() || undefined,
   projectsRoot: process.env.ABSENCE_PROJECTS_ROOT ?? path.join(os.homedir(), "projects"),
   defaultAgent: envAgent(),
   dshBin: process.env.ABSENCE_DSH_BIN,
@@ -125,8 +163,18 @@ export const config: AbsenceConfig = {
   maxArchivedSessions: Number.isFinite(Number(process.env.ABSENCE_MAX_ARCHIVED_SESSIONS))
     ? Math.max(0, Math.floor(Number(process.env.ABSENCE_MAX_ARCHIVED_SESSIONS)))
     : 0,
-  dockerEnabled: envFlag(process.env.ABSENCE_DOCKER, true),
+  archiveSweepMs: Number.isFinite(Number(process.env.ABSENCE_ARCHIVE_SWEEP_MS))
+    ? Math.max(250, Math.floor(Number(process.env.ABSENCE_ARCHIVE_SWEEP_MS)))
+    : 60_000,
+  leaseSilenceMs: Number.isFinite(Number(process.env.ABSENCE_LEASE_SILENCE_MS))
+    ? Math.max(0, Math.floor(Number(process.env.ABSENCE_LEASE_SILENCE_MS)))
+    : 2 * 60 * 60_000,
+  archiveSilenceMs: Number.isFinite(Number(process.env.ABSENCE_ARCHIVE_SILENCE_MS))
+    ? Math.max(0, Math.floor(Number(process.env.ABSENCE_ARCHIVE_SILENCE_MS)))
+    : 30 * 60_000,
+  dockerEnabled: process.platform !== "win32" && envFlag(process.env.ABSENCE_DOCKER, true),
   dockerBin: process.env.ABSENCE_DOCKER_BIN,
+  observeEnabled: envFlag(process.env.ABSENCE_OBSERVE, true),
   // Built UI lives at the repo root under dist/web (see apps/web/vite.config.ts
   // and the desktop staging script). Override with ABSENCE_WEB_DIST if hosting
   // elsewhere.

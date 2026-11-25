@@ -631,6 +631,7 @@ async function main(): Promise<void> {
           PORT: "0",
           HOST: "127.0.0.1",
           ABSENCE_STATE_DIR: path.join(dir, "state"),
+          ABSENCE_OBSERVE: "0",
           ABSENCE_PROJECTS_ROOT: dir,
           ABSENCE_DOCKER: "0",
           ABSENCE_MCP: "0",

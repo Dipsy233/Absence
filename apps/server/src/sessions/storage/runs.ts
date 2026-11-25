@@ -3,10 +3,12 @@ import {
   applyRunCount,
   emptyRunCounts,
   previewText,
+  RUN_BURST_IDLE_MS,
   type AbsenceEvent,
   type RunCounts,
   type RunStatus,
   type RunSummary,
+  type RunBoundarySource,
 } from "@absence/core";
 
 /**
@@ -45,9 +47,16 @@ interface OpenRun {
   toSeq: number;
   counts: RunCounts;
   touched: Set<string>;
+  /** When the newest event in this run happened (burst segmentation). */
+  lastAt?: number;
+  /** What opened this run: a user message, an activity burst, or an attach. */
+  boundarySource: RunBoundarySource;
+  /** True when facts before this run are simply not in the record. */
+  truncatedBefore?: boolean;
 }
 
 interface SessionRuns {
+  sessionId: string;
   closed: RunSummary[];
   open?: OpenRun;
   lastSeq: number;
@@ -57,6 +66,24 @@ type SqlRow = Record<string, unknown>;
 
 export class RunIndex {
   private states = new Map<string, SessionRuns>();
+  /**
+   * Sessions whose runs are activity bursts rather than user turns.
+   *
+   * An OS-only watch (channel "os") records processes, files and metrics but
+   * no messages, so "a user message opens a run" has nothing to hang on.
+   * There, a run is one burst of activity: it opens at the first fact after
+   * silence and closes when the session goes quiet again (see
+   * `closeOpen`), which is the honest shape of what Absence actually saw.
+   */
+  private readonly burstSessions = new Set<string>();
+  /**
+   * Sessions allowed to open a run without a user message.
+   *
+   * Only a transcript observation can legitimately attach mid-run (the file
+   * already holds an assistant turn). A proxy session's projector always
+   * delivers the prompt first, so it must not fabricate a headless run.
+   */
+  private readonly attachSessions = new Set<string>();
   private readonly selectRuns;
   private readonly insertRun;
   private readonly deleteRuns;
@@ -67,8 +94,9 @@ export class RunIndex {
     );
     this.insertRun = db.prepare(`
       INSERT INTO runs
-        (session_id, run_index, from_seq, to_seq, prompt, started_at, ended_at, status, counts_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (session_id, run_index, from_seq, to_seq, prompt, started_at, ended_at, status, counts_json,
+         boundary_source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id, run_index) DO UPDATE SET
         from_seq   = excluded.from_seq,
         to_seq     = excluded.to_seq,
@@ -76,7 +104,8 @@ export class RunIndex {
         started_at = excluded.started_at,
         ended_at   = excluded.ended_at,
         status     = excluded.status,
-        counts_json = excluded.counts_json
+        counts_json = excluded.counts_json,
+        boundary_source = excluded.boundary_source
     `);
     this.deleteRuns = db.prepare("DELETE FROM runs WHERE session_id = ?");
   }
@@ -183,10 +212,13 @@ export class RunIndex {
             toSeq: last.toSeq,
             counts: { ...last.counts },
             touched: new Set<string>(),
+            boundarySource: last.boundarySource ?? "user-message",
+            ...(last.truncatedBefore === true ? { truncatedBefore: true } : {}),
           }
         : undefined;
     const closed = open ? all.slice(0, -1) : all;
     const state: SessionRuns = {
+      sessionId,
       closed,
       open,
       lastSeq: all.reduce((max, run) => Math.max(max, run.toSeq), 0),
@@ -204,6 +236,11 @@ export class RunIndex {
     const previousSeq = state.lastSeq;
     state.lastSeq = seq;
 
+    if (this.burstSessions.has(state.sessionId) && !(event.type === "message" && event.payload.role === "user")) {
+      this.applyBurst(state, closedNow, seq, event);
+      return;
+    }
+
     if (event.type === "message" && event.payload.role === "user") {
       if (state.open) {
         const closed = this.close(state.open, Math.max(state.open.fromSeq, previousSeq), "interrupted");
@@ -218,11 +255,33 @@ export class RunIndex {
         toSeq: seq,
         counts: emptyRunCounts(),
         touched: new Set<string>(),
+        boundarySource: "user-message",
       };
       return;
     }
 
-    if (!state.open) return;
+    if (!state.open) {
+      // No user turn opened this run. For a transcript observation that means
+      // the observer attached mid-run (the file's head is an assistant turn);
+      // the facts before the attach are simply not in the record, so the run
+      // is honestly marked `attach` and flagged as truncated. Any other
+      // channel (a proxy, a fixture) must not invent a headless run.
+      if (!this.attachSessions.has(state.sessionId) || state.closed.length > 0 || event.source !== "transcript") return;
+      if (event.type === "agent_end" || event.type === "usage") return;
+      state.open = {
+        index: state.closed.length + 1,
+        prompt: "",
+        startedAt: event.timestamp,
+        fromSeq: seq,
+        toSeq: seq,
+        counts: emptyRunCounts(),
+        touched: new Set<string>(),
+        boundarySource: "attach",
+        truncatedBefore: true,
+      };
+      applyRunCount(state.open.counts, event, state.open.touched);
+      return;
+    }
 
     if (event.type === "agent_end") {
       const reason = String(event.payload.reason);
@@ -237,6 +296,99 @@ export class RunIndex {
 
     applyRunCount(state.open.counts, event, state.open.touched);
     state.open.toSeq = seq;
+  }
+
+  /** Turns activity-burst mode on for a session (see `burstSessions`). */
+  setBurstMode(sessionId: string): void {
+    this.burstSessions.add(sessionId);
+  }
+
+  /** Allows a session to open a run without a user turn (see `attachSessions`). */
+  setAttachMode(sessionId: string): void {
+    this.attachSessions.add(sessionId);
+  }
+
+  /**
+   * Switch an OS-only session to transcript run boundaries.
+   *
+   * The watch began as a bare process, where silence was the only possible
+   * boundary; once its transcript is folded in, user turns and `agent_end`
+   * are back and they are the truthful shape. The caller rebuilds the rows
+   * (see `markTranscriptSession`), because the burst rows already written
+   * labelled runs by their first event — "usage", "tool_end" — and would
+   * otherwise keep masquerading as turns.
+   */
+  setTranscriptMode(sessionId: string): void {
+    this.burstSessions.delete(sessionId);
+    this.attachSessions.add(sessionId);
+  }
+
+  /**
+   * Close a session's open run because nothing more is coming.
+   *
+   * A burst cannot close itself: the silence *after* the last fact is what
+   * ends it, and no event will arrive to say so. The session calls this on
+   * its own idle timer.
+   */
+  closeOpen(sessionId: string, endedAt?: number): void {
+    const state = this.states.get(sessionId);
+    if (!state?.open) return;
+    const closed = this.close(state.open, state.open.toSeq, "completed", endedAt ?? state.open.lastAt);
+    state.closed.push(closed);
+    state.open = undefined;
+    this.write(sessionId, closed);
+  }
+
+  /**
+   * One fact in an activity-burst session: open at the first, cut on silence.
+   *
+   * The label is the first thing a reader would name the burst after — a
+   * command's text, a path, a process — because there is no prompt to use.
+   */
+  private applyBurst(
+    state: SessionRuns,
+    closedNow: RunSummary[],
+    seq: number,
+    event: AbsenceEvent,
+  ): void {
+    if (event.type === "agent_end") {
+      // An OS-only watch should never see one; if it does, honour it.
+      if (state.open) {
+        const closed = this.close(state.open, seq, "completed", event.timestamp);
+        state.closed.push(closed);
+        closedNow.push(closed);
+        state.open = undefined;
+      }
+      return;
+    }
+
+    const open = state.open;
+    if (open && event.timestamp - (open.lastAt ?? open.startedAt) > RUN_BURST_IDLE_MS) {
+      const closed = this.close(open, Math.max(open.fromSeq, open.toSeq), "completed", open.lastAt);
+      state.closed.push(closed);
+      closedNow.push(closed);
+      state.open = undefined;
+    }
+
+    if (!state.open) {
+      state.open = {
+        index: state.closed.length + 1,
+        prompt: burstLabel(event),
+        startedAt: event.timestamp,
+        fromSeq: seq,
+        toSeq: seq,
+        counts: emptyRunCounts(),
+        touched: new Set<string>(),
+        lastAt: event.timestamp,
+        boundarySource: "activity-burst",
+      };
+      applyRunCount(state.open.counts, event, state.open.touched);
+      return;
+    }
+
+    applyRunCount(state.open.counts, event, state.open.touched);
+    state.open.toSeq = seq;
+    state.open.lastAt = Math.max(state.open.lastAt ?? event.timestamp, event.timestamp);
   }
 
   private close(
@@ -255,6 +407,8 @@ export class RunIndex {
       fromSeq: open.fromSeq,
       toSeq: Math.max(open.fromSeq, toSeq),
       counts: { ...open.counts },
+      boundarySource: open.boundarySource,
+      ...(open.truncatedBefore === true ? { truncatedBefore: true } : {}),
     };
   }
 
@@ -268,6 +422,8 @@ export class RunIndex {
       fromSeq: open.fromSeq,
       toSeq: open.toSeq,
       counts: { ...open.counts },
+      boundarySource: open.boundarySource,
+      ...(open.truncatedBefore === true ? { truncatedBefore: true } : {}),
     };
   }
 
@@ -282,10 +438,31 @@ export class RunIndex {
       run.endedAt ?? null,
       run.status,
       JSON.stringify(run.counts),
+      run.boundarySource ?? "user-message",
     );
   }
 }
 
+/** What to call a burst that had no prompt to name it. */
+function burstLabel(event: AbsenceEvent): string {
+  switch (event.type) {
+    case "command": {
+      const command = String(event.payload.command ?? "").trim().replace(/s+/g, " ");
+      return command.length > 0 ? `$ ${command}` : "command";
+    }
+    case "file_write":
+    case "file_edit":
+    case "file_read":
+    case "file_change":
+      return String(event.payload.path ?? "file");
+    case "process":
+      return String(event.payload.name ?? "process");
+    case "search":
+      return `search ${String(event.payload.query ?? "")}`.trim();
+    default:
+      return event.type;
+  }
+}
 function rowToSummary(row: SqlRow): RunSummary | undefined {
   const index = Number(row.run_index);
   if (!Number.isInteger(index) || index < 1) return undefined;
@@ -311,6 +488,12 @@ function rowToSummary(row: SqlRow): RunSummary | undefined {
     // ignored duplicate write) makes this an upper bound, which is the right
     // bias for something that sizes a run before it is loaded.
     eventCount: Math.max(0, toSeq - fromSeq + 1),
+    ...(typeof row.boundary_source === "string" && row.boundary_source.length > 0
+      ? {
+          boundarySource: row.boundary_source as RunSummary["boundarySource"],
+          ...(row.boundary_source === "attach" ? { truncatedBefore: true } : {}),
+        }
+      : {}),
   };
 }
 

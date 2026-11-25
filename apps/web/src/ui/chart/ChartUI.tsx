@@ -28,7 +28,6 @@ import type {
 
 import { ChartTimeline, type TimelinePick } from "./ChartTimeline";
 import { buildTimelineTracks, timelineTotalMs } from "../../lib/timeline";
-import { ChartChat } from "./ChartChat";
 import { StatsKpiCards } from "./StatsKpiCards";
 import { useAllRunsData } from "../../hooks/useAllRunsData";
 import { buildAllRunsTotals } from "../../lib/allRuns";
@@ -209,7 +208,6 @@ export function ChartUI() {
         <div className="chart-page-empty">
           {t("Nothing to report yet — send the agent a task.")}
         </div>
-        <ChartChat />
       </div>
     );
   }
@@ -221,7 +219,6 @@ export function ChartUI() {
         <div className="chart-page-empty">
           {t("Could not load the runs: {error}", { error: allData.error })}
         </div>
-        <ChartChat />
       </div>
     );
   }
@@ -395,7 +392,10 @@ export function ChartUI() {
                         </span>
                         <span className="chart-runmenu__time chart-mono">{formatClock(entry.startedAt)}</span>
                       </span>
-                      <span className="chart-runmenu__prompt">{entry.prompt}</span>
+                      <span className="chart-runmenu__prompt">
+                        {entry.prompt || (entry.boundarySource === "activity-burst" ? t("activity burst") : t("observed mid-run"))}
+                        {entry.truncatedBefore ? ` · ${t("began before watching")}` : ""}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -836,10 +836,6 @@ export function ChartUI() {
           </div>
         </section>
       </div>
-
-      {/* The report page scrolls; the input does not — one rounded line, always
-          reachable at the bottom, in the same FaceChat skin as every face. */}
-      <ChartChat />
     </div>
   );
 }

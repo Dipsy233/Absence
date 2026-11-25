@@ -13,7 +13,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AbsenceEvent } from "@absence/core";
-import { AbsenceSession } from "../../apps/server/src/sessions/SessionStore";
 import { eventToStageItem } from "../../apps/web/src/lib/events";
 
 
@@ -32,6 +31,13 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), "absence-fsdiff-"));
 // sweep the whole OS temp directory (which is busy and throws EPERM on realpath).
 const dir = path.join(root, "project");
 await fs.mkdir(dir, { recursive: true });
+
+// Isolation FIRST, before any server module loads: this check creates real
+// sessions, and without a private state dir every run archived itself into
+// the user's own ~/.absence history — five junk rows on one machine before
+// this gate existed.
+process.env.ABSENCE_STATE_DIR = path.join(root, "state");
+const { AbsenceSession } = await import("../../apps/server/src/sessions/SessionStore");
 
 // Seed a file so the first change is a modification, not a creation.
 await fs.writeFile(path.join(dir, "notes.txt"), "hello\n", "utf-8");
@@ -110,6 +116,10 @@ await new Promise((r) => setTimeout(r, 400));
 check("an identical rewrite emits no diff", edits().length === settled, `${settled} → ${edits().length}`);
 
 await session.dispose?.();
+// The private archive's SQLite handle must be closed before the temp dir can
+// go on Windows; dispose flushed the session but the DB lives longer.
+const { closeArchive } = await import("../../apps/server/src/sessions/archive");
+await closeArchive();
 await fs.rm(root, { recursive: true, force: true });
 
 finish();

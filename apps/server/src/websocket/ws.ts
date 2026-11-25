@@ -67,6 +67,9 @@ export async function wsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const client = socket as unknown as ClientSocket;
+    // A viewer is attached: the auto-archive sweep must not archive a session
+    // somebody is actively looking at, however quiet its agent has been.
+    session.attachView();
     const since = parsePositiveInt(
       (request.query as { since?: string } | undefined)?.since,
     );
@@ -138,6 +141,7 @@ export async function wsRoutes(app: FastifyInstance): Promise<void> {
       unsubscribeEvents();
       unsubscribeState();
       unsubscribeMetrics();
+      session.detachView();
     });
   });
 }

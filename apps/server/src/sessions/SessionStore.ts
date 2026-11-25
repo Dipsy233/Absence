@@ -5,6 +5,7 @@ import {
   isAgentBusy,
   isStreamingEvent,
   MAX_SESSION_EVENTS,
+  RUN_BURST_IDLE_MS,
   type AbsenceEventOf,
   type AbsenceEventPayloadMap,
   type AbsenceEventType,
@@ -21,12 +22,18 @@ import {
   type SessionRuntimeState,
   type SessionSnapshot,
   type SessionSource,
+  type ObserveChannel,
 } from "@absence/core";
 import { config, type AgentKind } from "../config";
 import {
   appendEvents,
+  closeOpenRun,
   closeStaleOpenRun,
   drainArchive,
+  findArchivedExternal,
+  markAttachSession,
+  markBurstSession,
+  markTranscriptSession,
   readEvents,
   readMeta,
   readProcessEvents,
@@ -42,11 +49,15 @@ import { createAdapter } from "../agents/createAdapter";
 import { formatAgentCommand } from "../agents/slashCommands";
 import { EXTERNAL_WATCH_TTL_MS, FileWatcher, outsideWatchRoot } from "../filesystem/FileWatcher";
 import { buildTree, readFileSafe } from "../filesystem/FileTree";
+import type { ProjectorCommandWindow } from "../monitor/projector";
 import { ProcessWatcher } from "../process/ProcessWatcher";
+import { ExternalScanner } from "../process/ExternalScanner";
 import { ProcessMetricsSampler } from "../process/ProcessMetrics";
 import { JobMonitor } from "../process/JobMonitor";
 import { DockerMonitor } from "../process/DockerMonitor";
 import { DockerEggs } from "../process/DockerEggs";
+import { ObserveAdapter } from "../observe/ObserveAdapter";
+import { isNarrowScope, type ObserveMeta } from "../observe/types";
 import { unifiedDiff } from "../util/diff";
 import { newId } from "../util/ids";
 import { toPosix } from "../util/paths";
@@ -220,6 +231,32 @@ export class AbsenceSession {
   private treeDirty = true;
   private assistantStreamId?: string;
   private lastActiveAt: number;
+  /** Open WebSocket connections (see attachView/detachView). */
+  private viewers = 0;
+  /**
+   * True when this session's history came from its own archive replay
+   * (re-attach). The discovery feed consults it so a re-attach warms the
+   * transcript parser silently instead of backfilling the same facts twice.
+   */
+  private replayedArchive = false;
+  /**
+   * True when that replay actually held transcript facts.
+   *
+   * An OS-only watch writes process events to its archive without ever having
+   * a transcript. A later upgrade of that session must backfill the
+   * conversation, not "warm" it away: any-events was too weak a proof.
+   */
+  private archiveTranscriptFacts = false;
+
+  /** The transcript history is already in place (see `replayedArchive`). */
+  get replayedFromArchive(): boolean {
+    return this.replayedArchive;
+  }
+
+  /** The replay carried facts the transcript produced (see `archiveTranscriptFacts`). */
+  get archiveHasTranscriptFacts(): boolean {
+    return this.archiveTranscriptFacts;
+  }
   /** Dwell time accrued before this visit, in ms. */
   private readonly dwellBase: number;
   /** When this visit opened; the live dwell time is `dwellBase` + now - this. */
@@ -233,14 +270,82 @@ export class AbsenceSession {
   private metaTimer?: NodeJS.Timeout;
   private stateTimer?: NodeJS.Timeout;
   private treeTimer?: NodeJS.Timeout;
+  /** Closes the open activity burst after a full quiet window (OS-only). */
+  private burstTimer?: NodeJS.Timeout;
   private disposed = false;
+
+  /** True once dispose ran — a session the store removed, not to be fed again. */
+  isDisposed(): boolean {
+    return this.disposed;
+  }
+
+  /**
+   * True once `start()` finished. The store registers a session *before* it
+   * starts (so discovery can feed it), and starting builds the project tree
+   * and opens watchers — hundreds of milliseconds on a real project. The idle
+   * sweep must not retire a session that is still being born: its last known
+   * fact can be minutes old (a backfill), so a short threshold would delete it
+   * from under its own start.
+   */
+  private ready = false;
+
+  isReady(): boolean {
+    return this.ready;
+  }
+
+  /**
+   * True while the observation's initial backfill is still streaming in (set
+   * by the discovery feed through `setBackfilling`). The board shows progress
+   * instead of pretending the history is complete.
+   */
+  private backfilling = false;
+
+  setBackfilling(backfilling: boolean): void {
+    this.backfilling = backfilling;
+  }
+
+  isBackfilling(): boolean {
+    return this.backfilling;
+  }
+
+  /**
+   * True when the transcript changed under the saved read position, so the
+   * observer stopped merging instead of guessing. The board must say so: the
+   * facts after that point are missing, not merely late.
+   */
+  private transcriptResumeBlocked = false;
+
+  setTranscriptResumeBlocked(blocked: boolean): void {
+    this.transcriptResumeBlocked = blocked;
+  }
+
+  isTranscriptResumeBlocked(): boolean {
+    return this.transcriptResumeBlocked;
+  }
+
+  /** The first user prompt seen (truncated), for the board's row subtitle. */
+  firstPromptText(): string | undefined {
+    return this.firstPrompt;
+  }
+  /** Set on an observed session: facts arrive, nothing is ever sent back. */
+  readonly observe?: ObserveMeta;
+  /**
+   * True when this session really drives a runtime. After the drive-mode
+   * demolition the only drivable runtime is the mock fixture (development and
+   * checks); everything else — observed transcripts, proxy sessions, reopened
+   * archives — is read-only, and every write-back path refuses.
+   */
+  readonly runtimeDriven: boolean;
 
   constructor(
     projectPath: string,
     kind: AgentKind,
     private readonly resume?: AbsenceResume,
+    options?: { observe?: ObserveMeta },
   ) {
     this.id = resume?.absenceSessionId ?? newId("sess");
+    this.observe = options?.observe;
+    this.runtimeDriven = !this.observe && kind === "mock";
     // Dwell time is accrued across visits: a session reopened later continues
     // the clock instead of restarting it (see `Session.dwellMs`).
     this.dwellBase = Math.max(0, resume?.dwellMs ?? 0);
@@ -267,13 +372,54 @@ export class AbsenceSession {
       // Bound the live egg view: running eggs always stay, only the oldest
       // exits beyond the cap are retired. See ProcessWatcher.retireOverflow.
       maxFinishedEggs: config.maxEggs,
+      externalTranscript: this.observe?.transcriptFile,
+      // The transcript's own project scopes a default `pi` pairing: two agents
+      // running at once are told apart by cwd, not by which started first.
+      ...(this.observe?.transcriptFile !== undefined ? { externalProject: projectPath } : {}),
+      // Only the mock fixture is a runtime Absence drives; its curve may root
+      // at the server. Every observed variant attributes by its own evidence.
+      drivesRuntime: !this.observe && kind === "mock",
+      // Observed sessions share one machine-wide sweep instead of polling the
+      // process table once per session (see ExternalScanner). A transcript
+      // session binds by evidence; an OS-only one was *given* its pid (see
+      // observe/watchOs.ts).
+      externalScanner: this.observe?.transcriptFile ? ExternalScanner.get() : undefined,
+      ...(this.observe?.channel === "os" && this.observe.pid !== undefined
+        ? {
+            externalPid: this.observe.pid,
+            ...(this.observe.pidStartedAt !== undefined
+              ? { externalPidStartedAt: this.observe.pidStartedAt }
+              : {}),
+          }
+        : {}),
+      // The precision is re-reported when the OS channel's kernel observer does
+      // (or does not) attach to the chosen external pid. Without this, an OS
+      // watch that got a Job Object would still claim `sampled`.
+      onPrecision: (exact) => {
+        this.session.processPrecision = exact ? "exact" : "sampled";
+        this.scheduleState();
+      },
     });
     // Say how precise process watching is, so the UI can be honest about it.
-    this.session.processPrecision = JobMonitor.get().available ? "exact" : "sampled";
-    this.adapter = createAdapter(kind, {
-      processWatcher: this.processWatcher,
-      onStateChange: () => this.scheduleState(),
-    });
+    // A proxy session's agent is spawned by Absence itself and carries the
+    // ABSENCE_SESSION_ID marker, so the kernel observer reports it exactly;
+    // an OS-only session may get a dedicated Job Object on its chosen pid
+    // (see ProcessWatcher.attachTargetedObserver) and upgrades itself through
+    // `onPrecision` once that attaches. Everything else is sampled.
+    this.session.processPrecision =
+      JobMonitor.get().available && (!this.observe || this.observe.channel === "acp-proxy")
+        ? "exact"
+        : "sampled";
+    if (this.observe) this.processWatcher.beginSession(this.id);
+    // Only the mock fixture drives. Everything else rides the no-op adapter:
+    // an observed session is fed by the discovery feed or the proxy tap, and a
+    // reopened archive is a view over its own transcript of record.
+    this.adapter = this.runtimeDriven
+      ? createAdapter(kind, {
+          processWatcher: this.processWatcher,
+          onStateChange: () => this.scheduleState(),
+        })
+      : new ObserveAdapter();
     // Baseline now: what is already running before the agent starts. The snapshot
     // costs half a second, so it has to be taken here rather than when the first
     // command begins.
@@ -312,9 +458,80 @@ export class AbsenceSession {
     });
     this.metricsSampler.start();
     this.lastActiveAt = this.session.startedAt;
+    // An OS-only session has no `agent_end` to cut its activity bursts: the
+    // run index segments them on silence, and this timer is what finally closes
+    // the open one when no further fact arrives.
+    if (this.observe?.channel === "os") {
+      markBurstSession(this.id);
+    } else if (this.observe?.channel === "transcript") {
+      markAttachSession(this.id);
+    }
   }
 
   async start(): Promise<void> {
+    // Not drivable: there is no runtime to start. Observed sessions are fed by
+    // the discovery feed or the proxy tap; a reopened archive replays its own
+    // history first — ABSENCE's own record is the fact source, the same way a
+    // transcript is for an observed session. Tree, file watching, process
+    // watching and metrics run as in a driven session — unless the project is
+    // a wholesale scope (the home directory, a drive root), where watching
+    // would be a hazard rather than observation.
+    if (!this.runtimeDriven) {
+      this.unsubAdapter = this.adapter.subscribe((event) => this.handleEvent(event));
+      const archiveId = this.resume?.absenceSessionId;
+      if (archiveId !== undefined) {
+        const events = await readEvents(this.session.projectPath, archiveId);
+        for (const event of events) this.applyToState(event);
+        this.events = events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events;
+        // Reopening is not new activity, but the session's clock belongs to its
+        // last fact, not to when the archive was first created — otherwise a
+        // history row would jump back to its start time after being opened.
+        const lastFact = events[events.length - 1];
+        if (lastFact !== undefined) this.lastActiveAt = Math.max(this.lastActiveAt, lastFact.timestamp);
+        // A reopened session is not mid-run: whatever it was doing is over,
+        // and the Stage rests on its default page. A run the archive still
+        // marks `running` is one whose `agent_end` never arrived — close it as
+        // interrupted rather than following work that already stopped.
+        this.setStatus("listening");
+        this.currentAction = undefined;
+        await closeStaleOpenRun(archiveId);
+        // Containers this session laid may still be running. The archive
+        // already holds their eggs; re-attach before the snapshot is served.
+        await this.dockerEggs?.restore(events);
+        // The transcript's history is only in place when the archive actually
+        // holds transcript facts (or a checkpoint, checked by the feed). An
+        // OS-only watch's process events are not a conversation.
+        this.replayedArchive = events.length > 0;
+        this.archiveTranscriptFacts = events.some((event) => event.source === "transcript");
+        // A session watched as a bare process first wrote burst rows; after a
+        // transcript was folded in, those rows describe events ("usage",
+        // "tool_end") rather than turns. The archive holds the transcript, so
+        // the turns can be re-derived instead of shown as event names.
+        if (this.archiveTranscriptFacts) {
+          const existing = await readRuns(archiveId);
+          if (existing.some((run) => run.boundarySource === "activity-burst")) {
+            markTranscriptSession(this.id);
+          }
+        }
+      }
+      // A reopened archive has no observe meta: fall back to the same scope
+      // rule observation uses, or opening a home-directory archive would walk
+      // the whole home into a tree nobody asked for.
+      if (this.observe?.watchProject ?? isNarrowScope(this.session.projectPath)) {
+        this.tree = await buildTree(this.session.projectPath);
+        this.treeDirty = true;
+        this.watcher = new FileWatcher(
+          this.session.projectPath,
+          (kind, abs) => this.onFsChange(kind, abs),
+          (kind, abs) => this.onOutsideFsChange(kind, abs),
+        );
+        await this.watcher.start();
+      }
+      await this.flushMeta();
+      this.ready = true;
+      this.scheduleState();
+      return;
+    }
     // Bring ABSENCE's own history back first, so the UI already has the Stage,
     // Activity, files and chat from before the restart.
     const archiveId = this.resume?.absenceSessionId;
@@ -322,6 +539,8 @@ export class AbsenceSession {
       const events = await readEvents(this.session.projectPath, archiveId);
       for (const event of events) this.applyToState(event);
       this.events = events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events;
+      const lastFact = events[events.length - 1];
+      if (lastFact !== undefined) this.lastActiveAt = Math.max(this.lastActiveAt, lastFact.timestamp);
       // A resumed session is not mid-run: the agent is idle again, and the
       // Stage rests on its default page — an archive whose tail lacks
       // `agent_end` (a killed server, a replayed resume) must not pin it on
@@ -393,11 +612,17 @@ export class AbsenceSession {
     await this.watcher.start();
 
     await this.flushMeta();
+    this.ready = true;
     this.scheduleState();
   }
 
   /** Fire-and-forget: the run streams over the bus, the HTTP call returns at once. */
   prompt(text: string): void {
+    if (!this.runtimeDriven) {
+      throw new Error(
+        "This session is observed, not driven — Absence only watches it. Send your prompts in the agent's own terminal.",
+      );
+    }
     this.handleEvent(
       createEvent(this.id, "message", { role: "user", content: text, streaming: false }),
     );
@@ -410,7 +635,82 @@ export class AbsenceSession {
     });
   }
 
+  private readonly observedCommands = new Map<string, number>();
+
+  /** One fact from an observation channel (the transcript tail, the proxy tap). */
+  ingestObservation(event: AbsenceEvent): void {
+    // Transcript commands open their command windows here: a backfilled
+    // (historical) command must not credit today's processes, files or
+    // containers, so only a fact younger than a few seconds opens one. The
+    // proxy channel's projector opens its own windows against the same
+    // watcher — with the tool-call ref — so it passes straight through.
+    if (this.observe?.channel === "transcript") {
+      if (event.type === "tool_start" && Math.abs(Date.now() - event.timestamp) < 10_000) {
+        const args = event.payload.args;
+        const command = args && typeof args === "object" && "command" in args ? args.command : undefined;
+        if (typeof command === "string") {
+          const id = this.processWatcher.begin(command, this.session.projectPath, event.payload.toolCallId, event.timestamp);
+          this.observedCommands.set(event.payload.toolCallId, id);
+        }
+      } else if (event.type === "tool_end") {
+        const id = this.observedCommands.get(event.payload.toolCallId);
+        if (id !== undefined) {
+          this.processWatcher.end(id);
+          this.observedCommands.delete(event.payload.toolCallId);
+        }
+      }
+    }
+    this.handleEvent(event);
+  }
+
+  /**
+   * The narrow command-window seam a proxy channel feeds: execute tool calls
+   * open and close windows here, so eggs, metrics and container attribution
+   * work for a proxied agent exactly as for a driven one. Undefined for
+   * sessions that own no watcher role to play in command attribution.
+   */
+  processWindows(): ProjectorCommandWindow {
+    return this.processWatcher;
+  }
+
+  /** Declare the runtime pid an observed proxy spawned (kernel attribution). */
+  declareRuntimePid(pid: number | undefined): void {
+    if (!this.observe) return;
+    this.processWatcher.beginSession(this.id, pid);
+  }
+
+  /**
+   * Add a channel to this session's feeds, keeping one session.
+   *
+   * An OS-only watch can be *upgraded*: when a transcript proves to belong to
+   * the pid the user chose, the same session starts receiving content facts.
+   * Keeping one session (and one archive row) is the point — the user was
+   * already looking at this agent, and switching identity would throw away the
+   * Stage, the files and the run outline they have been reading.
+   */
+  addObservationChannel(channel: ObserveChannel): void {
+    if (!this.observe) return;
+    const channels = this.observe.channels ?? [this.observe.channel];
+    const added = !channels.includes(channel);
+    if (added) channels.push(channel);
+    this.observe.channels = channels;
+    if (added && channel === "transcript" && this.observe.channel === "os") {
+      // The watch began as a bare process, where silence was the only run
+      // boundary. The transcript brings user turns and `agent_end` back; the
+      // burst rows already written described events ("usage", "tool_end") and
+      // must be rebuilt, or the reader keeps seeing event names as turns.
+      if (this.burstTimer !== undefined) {
+        clearTimeout(this.burstTimer);
+        this.burstTimer = undefined;
+      }
+      markTranscriptSession(this.id);
+    }
+    this.scheduleMeta();
+    this.scheduleState();
+  }
+
   async abort(): Promise<void> {
+    if (!this.runtimeDriven) return;
     await this.adapter.abort();
   }
 
@@ -470,6 +770,9 @@ export class AbsenceSession {
     const notice = (content: string): void =>
       this.handleEvent(createEvent(this.id, "message", { role: "system", content, streaming: false }));
 
+    if (!this.runtimeDriven) {
+      return notice("Observed sessions accept no commands — Absence only watches this session.");
+    }
     if (command === "model") {
       // Only intercept when the agent advertises a model selector. An agent
       // that exposes none may still implement `/model` itself, so the line is
@@ -638,6 +941,57 @@ export class AbsenceSession {
     this.metricsSampler.setHotEgg(eggPid);
   }
 
+  /**
+   * True when a monitor lease holds this session (the user chose to watch it).
+   * A leased session outlives the tab and survives a restart; the idle sweep
+   * keeps it far longer than a merely auto-attached transcript.
+   */
+  private leased = false;
+
+  /** A user choice landed (or was withdrawn) — see observe/watch.ts. */
+  setMonitorLease(leased: boolean): void {
+    this.leased = leased;
+  }
+
+  hasMonitorLease(): boolean {
+    return this.leased;
+  }
+
+  /**
+   * Live viewers (open WebSocket connections). The auto-archive sweep reads
+   * this: an observed session nobody is watching and whose transcript has
+   * fallen silent is closed, but one on screen is kept whatever it is doing.
+   */
+  attachView(): void {
+    this.viewers += 1;
+  }
+
+  detachView(): void {
+    this.viewers = Math.max(0, this.viewers - 1);
+  }
+
+  /** Open WebSocket connections (the sweep's "somebody is watching" test). */
+  viewerCount(): number {
+    return this.viewers;
+  }
+
+  /** Epoch ms of the last fact this session recorded. */
+  lastActiveAtMs(): number {
+    return this.lastActiveAt;
+  }
+
+  /**
+   * When the observer began watching. Facts older than this came from a
+   * backfill (the transcript's own history), so the board can say “monitoring
+   * began at …” instead of pretending it saw the whole conversation live.
+   */
+  readonly watchStartedAt: number = Date.now();
+
+  /** Facts recorded so far (the live window's length). */
+  eventCount(): number {
+    return this.events.length;
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true;
     this.releaseAllCommandWatches();
@@ -645,6 +999,13 @@ export class AbsenceSession {
     if (this.stateTimer) clearTimeout(this.stateTimer);
     if (this.treeTimer) clearTimeout(this.treeTimer);
     if (this.metaTimer) clearTimeout(this.metaTimer);
+    if (this.burstTimer) clearTimeout(this.burstTimer);
+    // A burst has no `agent_end`: if the session is retired before the idle
+    // timer fires, its open run would stay `running` in the archive forever.
+    // Retiring the session is the silence that ends the burst.
+    if (this.isBurstSession()) {
+      await closeOpenRun(this.id, this.lastActiveAt).catch(() => undefined);
+    }
     // Absence observes; it does not own. The processes the agent spawned —
     // its commands and any eggs it left behind — are the agent's business:
     // they are reported, watched to their exit, and never terminated here.
@@ -710,6 +1071,26 @@ export class AbsenceSession {
     this.bus.emit(stamped);
     this.persist(stamped);
     this.scheduleState();
+    if (this.isBurstSession()) this.scheduleBurstClose();
+  }
+
+  /** True when this session's runs are activity bursts (OS-only watch). */
+  private isBurstSession(): boolean {
+    if (this.observe?.channel !== "os") return false;
+    // Once a transcript is folded in, runs are user turns again — the burst
+    // timer must not close a turn the agent is still writing.
+    return !(this.observe.channels?.includes("transcript") ?? false);
+  }
+
+  /** Close the open burst once the session has been quiet for a full window. */
+  private scheduleBurstClose(): void {
+    if (this.burstTimer) clearTimeout(this.burstTimer);
+    this.burstTimer = setTimeout(() => {
+      this.burstTimer = undefined;
+      if (this.disposed) return;
+      void closeOpenRun(this.id, this.lastActiveAt).catch(() => undefined);
+    }, RUN_BURST_IDLE_MS);
+    this.burstTimer.unref?.();
   }
 
   /** Used for events Absence itself originates (before the bus exists). */
@@ -761,6 +1142,9 @@ export class AbsenceSession {
       // Persisted while the visit is open so a crash still keeps the clock, not
       // only a clean close.
       dwellMs: this.dwellNow(),
+      // The observation identity: what re-attach looks up after a restart.
+      channel: this.observe?.channel,
+      externalId: this.observe?.externalId,
     });
   }
 
@@ -1556,6 +1940,52 @@ export class SessionStore {
     return session;
   }
 
+  /**
+   * Attach an observation to a session the agent started on its own.
+   *
+   * Idempotent per (channel, externalId): a transcript discovered twice — or
+   * two transcripts of the same agent session — land on one session. Creating
+   * starts no runtime; the caller (the discovery feed) then pushes facts
+   * through `ingestObservation`.
+   */
+  async createObserved(projectPath: string, kind: AgentKind, observe: ObserveMeta): Promise<AbsenceSession> {
+    const existing = this.findObserved(observe);
+    if (existing) return existing;
+    // Re-attach: the conversation may already have an archive from before a
+    // restart. Resuming from it reuses its absence session id (one archive row
+    // per agent-side conversation, not one per server lifetime), and the
+    // replay branch reopens its history as the session's facts.
+    const archived = observe.externalId
+      ? await findArchivedExternal(observe.channel, observe.externalId)
+      : undefined;
+    const resume = archived ? { absenceSessionId: archived } : undefined;
+    const session = new AbsenceSession(projectPath, kind, resume, { observe });
+    // Re-attaching a conversation that was merely reopened for reading (a
+    // history view) must replace that viewing session, not leak its tree and
+    // file watchers beside the live one under the same archive id.
+    const previous = this.sessions.get(session.id);
+    if (previous !== undefined && previous !== session) {
+      await previous.dispose().catch(() => undefined);
+    }
+    this.sessions.set(session.id, session);
+    try {
+      await session.start();
+    } catch (error) {
+      this.sessions.delete(session.id);
+      throw error;
+    }
+    return session;
+  }
+
+  private findObserved(observe: ObserveMeta): AbsenceSession | undefined {
+    for (const session of this.sessions.values()) {
+      if (session.observe?.channel === observe.channel && session.observe?.externalId === observe.externalId) {
+        return session;
+      }
+    }
+    return undefined;
+  }
+
   get(id: string): AbsenceSession | undefined {
     return this.sessions.get(id);
   }
@@ -1569,6 +1999,30 @@ export class SessionStore {
     if (!session) return;
     this.sessions.delete(id);
     await session.dispose();
+  }
+
+  /**
+   * Archive observed sessions whose facts have gone quiet with nobody
+   * watching (see `config.archiveSilenceMs`). Archiving = dispose: the live
+   * watchers stop, the archive and its metrics stay on disk, and the
+   * conversation's (channel, externalId) identity re-attaches whenever the
+   * transcript moves again or the board asks for it. Never touches a session
+   * a viewer has open, or the mock fixture (its lifetime belongs to its
+   * check).
+   */
+  archiveIdle(): void {
+    const now = Date.now();
+    for (const session of [...this.sessions.values()]) {
+      if (session.runtimeDriven) continue;
+      if (!session.isReady() || session.isBackfilling()) continue;
+      if (session.viewerCount() > 0) continue;
+      // A lease is the user's explicit “keep watching it”, so it gets the long
+      // threshold; an auto-attached transcript gets the short one.
+      const threshold = session.hasMonitorLease() ? config.leaseSilenceMs : config.archiveSilenceMs;
+      if (threshold <= 0) continue;
+      if (now - session.lastActiveAtMs() < threshold) continue;
+      void this.remove(session.id).catch(() => undefined);
+    }
   }
 }
 

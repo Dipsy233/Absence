@@ -11,7 +11,7 @@
  */
 
 import type { MonitorBus, MonitorEvent } from "@absence/core";
-import { AcpMonitorProjector } from "../../../monitor/projector";
+import { AcpMonitorProjector, type ProjectorCommandWindow } from "../../../monitor/projector";
 import { isJsonRpcId, type JsonRpcId, type JsonRpcMessage } from "../protocol/jsonrpc";
 
 export type ProxyDirection = "client" | "agent";
@@ -42,6 +42,13 @@ export interface AcpProxyTapOptions {
   /** Session id used when a message carries none (the proxy's own id). */
   fallbackSessionId: string;
   bus?: MonitorBus;
+  /**
+   * The observed session's process watcher, when a session carries this tap:
+   * execute tool calls open their command windows there, so eggs, metrics and
+   * container attribution work for a proxied agent exactly as for a driven
+   * one. Without a session there are no windows — and none are owed.
+   */
+  commandWindow?: ProjectorCommandWindow;
   now?: () => number;
   onEvent?: (event: MonitorEvent) => void;
   onDiagnostic?: (diagnostic: ProxyDiagnostic) => void;
@@ -57,6 +64,8 @@ interface PendingPermission {
 export class AcpProxyTap {
   private readonly projectors = new Map<string, AcpMonitorProjector>();
   private readonly pendingPermissions = new Map<string, PendingPermission>();
+  /** Request id → ACP session: prompts whose answer closes the turn. */
+  private readonly openPrompts = new Map<string, string>();
   private readonly pendingTasks = new Set<Promise<void>>();
   private clientMessages = 0;
   private agentMessages = 0;
@@ -93,6 +102,16 @@ export class AcpProxyTap {
         this.pendingPermissions.delete(key);
         this.permissionAnswers += 1;
       }
+      return;
+    }
+    // The prompt itself is a fact: it names the turn the agent is about to
+    // run. Read-only projection — the request still forwards untouched.
+    if (message.method === "session/prompt") {
+      const sessionId = sessionIdOf(message.params) ?? this.options.fallbackSessionId;
+      if ("id" in message && isJsonRpcId(message.id)) {
+        this.openPrompts.set(idKey(message.id)!, sessionId);
+      }
+      this.project(sessionId, message.method, message.params);
     }
   }
 
@@ -119,6 +138,28 @@ export class AcpProxyTap {
       if (message.method === "session/update") {
         const sessionId = sessionIdOf(message.params) ?? this.options.fallbackSessionId;
         this.project(sessionId, message.method, message.params);
+      }
+      return;
+    }
+
+    // The agent's answer to a prompt closes the turn: the streamed text
+    // becomes durable facts and the run gets its end (see `finalizeTurn`).
+    const key = idKey(message.id);
+    const promptSession = key !== undefined ? this.openPrompts.get(key) : undefined;
+    if (promptSession !== undefined) {
+      this.openPrompts.delete(key!);
+      const projector = this.projectors.get(promptSession);
+      if (projector) {
+        const failure = "error" in message;
+        const stopReason = failure ? undefined : (message as { result?: unknown }).result as
+          | { stopReason?: string }
+          | undefined;
+        for (const event of projector.finalizeTurn(
+          stopReason?.stopReason,
+          failure,
+        )) {
+          this.emit(event);
+        }
       }
     }
   }
@@ -159,6 +200,7 @@ export class AcpProxyTap {
       });
     }
     this.pendingPermissions.clear();
+    this.openPrompts.clear();
     for (const projector of this.projectors.values()) projector.dispose();
     this.projectors.clear();
   }
@@ -204,6 +246,7 @@ export class AcpProxyTap {
       projector = new AcpMonitorProjector({
         sessionId,
         cwd: this.options.cwd,
+        ...(this.options.commandWindow ? { commandWindow: this.options.commandWindow } : {}),
         now: this.options.now,
       });
       this.projectors.set(sessionId, projector);

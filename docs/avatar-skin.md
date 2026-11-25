@@ -45,7 +45,7 @@ apps/server/src/process/avatar-skins/
 
 - A skin name must be non-empty, at most 64 characters, and must not contain `\ / : * ? " < > |`.
 - Accepted file extensions are `png`, `gif`, `jpg`, `jpeg`, `webp`, `svg`, `mp4`, `webm`, and `mov`. The uploaded file is stored as `<status>.<extension>`; its original name is used only for the extension.
-- The skin folder lives inside the server's install directory. In a packaged build that directory is a read-only asar archive, so uploads fail there.
+- The skin folder sits beside the server module in the installation directory. An installation under a protected location such as `Program Files` is not writable by a normal user, so uploads fail there.
 - A video the browser cannot decode shows a decode-error notice in place of the animation. The notice names the required encoding: H.264, `yuv420p`, `faststart`.
 
 ## Implementation

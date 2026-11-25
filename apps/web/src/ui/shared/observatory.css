@@ -1,0 +1,57 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   OBSERVATORY — the board. Two columns: running agents on the left, history
+   on the right. It reuses the picker layout (picker.css); only what the board
+   changes lives here.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Exactly two even columns (the picker's 2fr/3fr asymmetry is gone). */
+.picker-root .picker__body {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* The running list fills its column and scrolls on its own. */
+.picker__running {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* A row's first prompt, dimmer than the meta line, matching the history rows. */
+.picker__hprompt {
+  color: var(--mon-t2);
+  font-style: italic;
+}
+
+.picker__hrowwrap {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.picker__hrowwrap > button:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker__hdel {
+  flex: none;
+  width: 30px;
+  border: 1px solid var(--mon-bd);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--mon-t3);
+  cursor: pointer;
+  font: 11px var(--mon-mono);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.picker__hdel:hover:not(:disabled) {
+  color: var(--mon-err);
+  border-color: var(--mon-err);
+  background: var(--mon-s2);
+}
+
+.picker__hdel:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

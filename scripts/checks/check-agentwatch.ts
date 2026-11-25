@@ -13,6 +13,7 @@
  */
 import { check, finish } from "./harness";
 import { spawn } from "node:child_process";
+import path from "node:path";
 import type { ProcessPayload } from "@absence/core";
 import { JobMonitor } from "../../apps/server/src/process/JobMonitor";
 import { ProcessWatcher } from "../../apps/server/src/process/ProcessWatcher";
@@ -51,6 +52,17 @@ async function main(): Promise<void> {
   check(
     "native table carries this process with its command line",
     table?.some((row) => row.pid === process.pid && (row.commandLine?.length ?? 0) > 0) ?? false,
+  );
+  // The working directory scopes a default `pi` to its own project; without
+  // it two agents running at once cannot be paired honestly.
+  check(
+    "native table carries this process's working directory",
+    table?.some(
+      (row) =>
+        row.pid === process.pid &&
+        row.cwd !== undefined &&
+        path.resolve(row.cwd) === path.resolve(process.cwd()),
+    ) ?? false,
   );
 
   const events: ProcessPayload[] = [];

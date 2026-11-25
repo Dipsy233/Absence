@@ -68,6 +68,13 @@ export interface ArchiveMeta {
    * the hours in between. Absent on archives written before this was tracked.
    */
   dwellMs?: number;
+  /**
+   * The observation channel that produced this session (`transcript`,
+   * `acp-proxy`), empty for driven fixture sessions and old archives.
+   */
+  channel?: string;
+  /** The agent-side conversation id (see `ObserveMeta.externalId`). */
+  externalId?: string;
 }
 
 type SqlRow = Record<string, unknown>;
@@ -102,7 +109,13 @@ const nodeRequire = createRequire(import.meta.url);
 const { DatabaseSync } = nodeRequire("node:sqlite") as typeof import("node:sqlite");
 
 const DB_FILE = "absence.db";
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 7;
+
+export interface TranscriptCheckpoint {
+  offset: number;
+  /** SHA-256 of the raw bytes up to offset, including the final newline. */
+  digest: string;
+}
 const FLUSH_MS = 50;
 
 let database: DatabaseSyncType | undefined;
@@ -110,7 +123,7 @@ let runIndex: RunIndex | undefined;
 let fileIndex: FileIndex | undefined;
 let pending = new Map<
   string,
-  { cwd: string; events: AbsenceEvent[] }
+  { cwd: string; events: AbsenceEvent[]; transcript?: TranscriptCheckpoint }
 >();
 let flushTimer: NodeJS.Timeout | undefined;
 /** Next `seq` per session, cached so a batch does not re-query MAX(seq). */
@@ -159,6 +172,12 @@ function open(): DatabaseSyncType {
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_path, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS transcript_checkpoints (
+      session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+      byte_offset INTEGER NOT NULL,
+      digest TEXT NOT NULL
+    );
 
     CREATE TABLE IF NOT EXISTS events (
       session_id TEXT NOT NULL,
@@ -262,6 +281,26 @@ function open(): DatabaseSyncType {
     CREATE INDEX IF NOT EXISTS idx_host_metric_chunks_ts
       ON host_metric_chunks(session_id, start_ts);
 
+    -- v6: monitor leases. A row exists exactly when the user chose a target on
+    -- the observation board (or a CLI watch). It is what survives a restart:
+    -- the server re-attaches these sessions without waiting for the transcript
+    -- to move, and the idle sweep keeps a leased session longer than a merely
+    -- auto-attached one. Stopping a monitor deletes the row; the archive stays.
+    CREATE TABLE IF NOT EXISTS watch_leases (
+      target_key     TEXT PRIMARY KEY,
+      session_id     TEXT NOT NULL,
+      channel        TEXT NOT NULL,
+      external_id    TEXT NOT NULL,
+      file           TEXT,
+      pid            INTEGER,
+      pid_started_at INTEGER,
+      project_path   TEXT,
+      agent_kind     TEXT,
+      created_at     INTEGER NOT NULL,
+      last_seen_at   INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_watch_leases_session ON watch_leases(session_id);
+
     PRAGMA user_version = ${SCHEMA_VERSION};
   `);
   try {
@@ -274,6 +313,18 @@ function open(): DatabaseSyncType {
     // `unknown` is exactly what Absence can honestly say about them.
     ensureColumn(db, "events", "source", "TEXT NOT NULL DEFAULT 'unknown'");
     ensureColumn(db, "events", "fidelity", "TEXT NOT NULL DEFAULT 'unknown'");
+    // v5: the observation identity. `runtime` is the agent kind; these two say
+    // *how* the facts reach Absence and *which* agent-side conversation they
+    // belong to — the key re-attach looks up after a restart. Empty for the
+    // mock fixture and archives written before the observer existed (they
+    // have no observation identity to recover).
+    ensureColumn(db, "sessions", "channel", "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(db, "sessions", "external_id", "TEXT NOT NULL DEFAULT ''");
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_external ON sessions(channel, external_id)`);
+    // v5: which fact opens a run. Every run opens at a user message today;
+    // the column is the seam a future OS-only channel (activity bursts) fills
+    // without another migration.
+    ensureColumn(db, "runs", "boundary_source", "TEXT NOT NULL DEFAULT 'user-message'");
     importLegacyArchives(db);
     const runs = new RunIndex(db);
     ensureRunsMigrated(db, runs);
@@ -333,8 +384,9 @@ function importLegacyArchives(db: DatabaseSyncType): void {
   const insertSession = db.prepare(`
     INSERT OR IGNORE INTO sessions
       (id, project_path, project_name, started_at, updated_at, runtime, model,
-       pi_session_file, pi_session_id, message_count, first_prompt, meta_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       pi_session_file, pi_session_id, message_count, first_prompt, meta_json,
+       channel, external_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertEvent = db.prepare(`
     INSERT OR IGNORE INTO events (session_id, seq, id, ts, type, payload, source, fidelity)
@@ -448,6 +500,8 @@ function sessionParams(meta: ArchiveMeta): [
   number,
   string | null,
   string,
+  string,
+  string,
 ] {
   const projectPath = toPosix(path.resolve(meta.projectPath));
   return [
@@ -463,6 +517,8 @@ function sessionParams(meta: ArchiveMeta): [
     meta.messageCount ?? 0,
     meta.firstPrompt ?? null,
     JSON.stringify(meta),
+    meta.channel ?? "",
+    meta.externalId ?? "",
   ];
 }
 
@@ -483,6 +539,8 @@ function rowToMeta(row: SqlRow): ArchiveMeta | undefined {
     messageCount: Number(row.message_count ?? 0),
     firstPrompt: typeof row.first_prompt === "string" ? row.first_prompt : undefined,
     dwellMs: readDwell(row),
+    channel: typeof row.channel === "string" && row.channel.length > 0 ? row.channel : undefined,
+    externalId: typeof row.external_id === "string" && row.external_id.length > 0 ? row.external_id : undefined,
   };
 }
 
@@ -520,8 +578,9 @@ export async function writeMeta(cwd: string, meta: ArchiveMeta): Promise<void> {
         `
         INSERT INTO sessions
           (id, project_path, project_name, started_at, updated_at, runtime, model,
-           pi_session_file, pi_session_id, message_count, first_prompt, meta_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           pi_session_file, pi_session_id, message_count, first_prompt, meta_json,
+           channel, external_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           project_path    = excluded.project_path,
           project_name    = excluded.project_name,
@@ -533,7 +592,9 @@ export async function writeMeta(cwd: string, meta: ArchiveMeta): Promise<void> {
           pi_session_id   = excluded.pi_session_id,
           message_count   = excluded.message_count,
           first_prompt    = excluded.first_prompt,
-          meta_json       = excluded.meta_json
+          meta_json       = excluded.meta_json,
+          channel         = excluded.channel,
+          external_id     = excluded.external_id
       `,
       )
       .run(...sessionParams(meta));
@@ -559,6 +620,19 @@ export function appendEvents(
     pending.set(id, { cwd: projectPath, events: durable });
   }
   scheduleFlush();
+}
+
+export function queueTranscriptCheckpoint(cwd: string, id: string, transcript: TranscriptCheckpoint): void {
+  const entry = pending.get(id);
+  if (entry) entry.transcript = transcript;
+  else pending.set(id, { cwd: toPosix(path.resolve(cwd)), events: [], transcript });
+  scheduleFlush();
+}
+
+export function readTranscriptCheckpoint(id: string): TranscriptCheckpoint | undefined {
+  flushPending();
+  return open().prepare("SELECT byte_offset AS offset, digest FROM transcript_checkpoints WHERE session_id = ?")
+    .get(id) as TranscriptCheckpoint | undefined;
 }
 
 function scheduleFlush(): void {
@@ -591,7 +665,6 @@ function flushPending(): void {
   }
   if (pending.size === 0) return;
   const batch = pending;
-  pending = new Map();
 
   let db: DatabaseSyncType;
   try {
@@ -612,8 +685,23 @@ function flushPending(): void {
     );
     const touch = db.prepare("UPDATE sessions SET updated_at = MAX(updated_at, ?) WHERE id = ?");
 
+    const upsertCheckpoint = db.prepare(`
+      INSERT INTO transcript_checkpoints (session_id, byte_offset, digest) VALUES (?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET byte_offset = excluded.byte_offset, digest = excluded.digest
+    `);
+    const sessionExists = db.prepare("SELECT 1 AS ok FROM sessions WHERE id = ?");
     const committed = new Map<string, number>();
     for (const [id, entry] of batch) {
+      if (entry.events.length === 0) {
+        // A checkpoint can be queued before the archive row exists (a warm
+        // re-attach on a fresh archive). The foreign key would abort the whole
+        // batch, so an orphan checkpoint is dropped instead — the next fact
+        // queues a new one once the row is there.
+        if (entry.transcript && sessionExists.get(id)) {
+          upsertCheckpoint.run(id, entry.transcript.offset, entry.transcript.digest);
+        }
+        continue;
+      }
       ensureSessionRow(db, entry.cwd, id, entry.events);
       let seq = nextSeq.get(id);
       if (seq === undefined) {
@@ -639,8 +727,10 @@ function flushPending(): void {
       fileIndex?.ingest(id, entry.events);
       committed.set(id, seq);
       touch.run(entry.events[entry.events.length - 1]!.timestamp, id);
+      if (entry.transcript) upsertCheckpoint.run(id, entry.transcript.offset, entry.transcript.digest);
     }
     db.exec("COMMIT");
+    pending = new Map();
     for (const [id, seq] of committed) nextSeq.set(id, seq);
   } catch (error) {
     try {
@@ -1043,6 +1133,7 @@ export async function deleteArchive(id: string): Promise<boolean> {
       "metric_chunks",
       "egg_metric_summary",
       "host_metric_chunks",
+      "transcript_checkpoints",
     ]) {
       db.prepare(`DELETE FROM ${table} WHERE session_id = ?`).run(id);
     }
@@ -1126,7 +1217,108 @@ export async function closeStaleOpenRun(id: string, endedAt?: number): Promise<v
   }
 }
 
+/**
+ * Close a session's open activity-burst run (see `RunIndex.closeOpen`).
+ *
+ * An OS-only watch has no `agent_end`: the end of a burst is silence, so the
+ * session calls this from its own idle timer. The run is written closed with
+ * the last fact's timestamp as its end.
+ */
+export async function closeOpenRun(id: string, endedAt?: number): Promise<void> {
+  flushPending();
+  try {
+    // `runIndex` is assigned by open(); a burst session may close before any
+    // archive write has opened the DB.
+    open();
+    runIndex?.closeOpen(id, endedAt);
+  } catch (error) {
+    console.error("[absence] sqlite burst close failed:", error);
+  }
+}
+
+/**
+ * Mark a session's runs as activity bursts rather than user turns.
+ *
+ * Called when an OS-only observation opens: there are no messages in that
+ * channel, so the run index segments on silence instead (see
+ * `RunIndex.setBurstMode`).
+ */
+export function markBurstSession(id: string): void {
+  try {
+    open();
+    runIndex?.setBurstMode(id);
+  } catch (error) {
+    console.error("[absence] sqlite burst mode failed:", error);
+  }
+}
+
+/**
+ * Switch an OS-only session's runs to transcript boundaries.
+ *
+ * Watching a bare process first, then folding in the transcript it writes, is
+ * the normal upgrade path. Burst rows written before the fold describe events,
+ * not turns, and their labels are event type names; rebuilding from the stored
+ * events produces the user-turn runs the reader expected all along.
+ */
+export function markTranscriptSession(id: string): void {
+  try {
+    open();
+    // The backfill that triggered the upgrade may still be in the write buffer;
+    // rebuilding before it lands would derive the runs from an incomplete
+    // history and then the flushed events would have no index.
+    flushPending();
+    runIndex?.setTranscriptMode(id);
+    runIndex?.rebuild(id);
+  } catch (error) {
+    console.error("[absence] sqlite transcript run-mode failed:", error);
+  }
+}
+
+/**
+ * Allow a transcript observation to open a run without a user turn.
+ *
+ * The transcript may start mid-conversation (the observer attached late), so
+ * its first facts have no opening prompt. Only the transcript channel opts in;
+ * see `RunIndex.setAttachMode`.
+ */
+export function markAttachSession(id: string): void {
+  try {
+    open();
+    runIndex?.setAttachMode(id);
+  } catch (error) {
+    console.error("[absence] sqlite attach mode failed:", error);
+  }
+}
+
 /** Run summaries for History, oldest first. */
+/**
+ * The archive an observed conversation already has, by its identity.
+ *
+ * A transcript (or a proxy session) survives the server restarting; without
+ * this lookup, the restart would build a brand-new absence session for the
+ * same agent-side conversation and the archive would grow a duplicate row per
+ * restart. The newest row wins (an external id should be unique, but an old
+ * duplicate must not poison the lookup).
+ */
+export async function findArchivedExternal(
+  channel: string,
+  externalId: string,
+): Promise<string | undefined> {
+  if (channel.length === 0 || externalId.length === 0) return undefined;
+  try {
+    const row = open()
+      .prepare(
+        "SELECT id FROM sessions WHERE channel = ? AND external_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1",
+      )
+      .get(channel, externalId) as SqlRow | undefined;
+    const id = row?.id;
+    return typeof id === "string" && id.length > 0 ? id : undefined;
+  } catch (error) {
+    console.error("[absence] sqlite external lookup failed:", error);
+    return undefined;
+  }
+}
+
 export async function readRuns(id: string): Promise<RunSummary[]> {
   flushPending();
   try {

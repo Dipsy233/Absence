@@ -10,12 +10,16 @@ import { metricRoutes } from "./api/metrics";
 import { eggFilterRoutes } from "./api/eggFilter";
 import { avatarSkinRoutes } from "./api/avatarSkins";
 import { soundRoutes } from "./api/sounds";
-import { runtimeRoutes } from "./api/runtimes";
 import { acpProxyRoutes } from "./api/acpProxy";
+import { observeRoutes } from "./api/observe";
 import { proxySessions } from "./agents/acp/proxy";
 import { wsRoutes } from "./websocket/ws";
 import { JobMonitor } from "./process/JobMonitor";
+import { DiscoveryService } from "./observe/Discovery";
+import { restoreLeases } from "./observe/watch";
+import { installOsWatch } from "./observe/watchOs";
 import { closeArchive, expireArchives } from "./sessions/archive";
+import { sessionStore } from "./sessions/SessionStore";
 import { drainMetrics, expireMetrics } from "./sessions/storage/metrics";
 
 export interface StartServerOptions {
@@ -76,6 +80,10 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
     );
   }
 
+  // A monitor reachable from the network must be able to say who may read
+  // it: loopback needs no token, anything wider does (see ABSENCE_TOKEN).
+  if (config.token !== undefined) installTokenGuard(app, config.token);
+
   await app.register(websocket);
   await app.register(projectRoutes);
   await app.register(sessionRoutes);
@@ -83,9 +91,33 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   await app.register(eggFilterRoutes);
   await app.register(avatarSkinRoutes);
   await app.register(soundRoutes);
-  await app.register(runtimeRoutes);
   await app.register(acpProxyRoutes);
   await app.register(wsRoutes);
+
+  // The observer: tail the transcripts agent software writes on its own and
+  // attach each one to a session. This starts no agent and talks to none —
+  // see observe/Discovery.ts. ABSENCE_OBSERVE=0 keeps the server drive-only.
+  let discovery: DiscoveryService | undefined;
+  if (config.observeEnabled) {
+    discovery = new DiscoveryService(sessionStore);
+    discovery.start();
+    await app.register(observeRoutes, { discovery });
+    // ACP proxy sessions persist through the same pipeline: with the store
+    // attached, each proxy spawns its agent into an observed session (marker
+    // env for exact attribution) and the tap's facts land in SQLite and on
+    // the WS. Without the store, proxies stay transient byte-forwarders.
+    proxySessions.useSessionStore(sessionStore);
+    // The leases are the user's choices from before the restart: re-attach
+    // each one now, so a panel that was being watched is still being watched
+    // (and its History row does not need a second click to come back).
+    // The OS-only channel (`proc:` targets) registers its resolver before any
+    // watch can arrive.
+    installOsWatch();
+    void restoreLeases({ discovery }).catch((error) => {
+      app.log.warn(`observation: could not restore every watch lease (${error instanceof Error ? error.message : String(error)})`);
+    });
+    app.log.info("observation: transcript discovery active (ABSENCE_OBSERVE=0 to disable)");
+  }
 
   // Serve the built web app when it exists (production / single-origin).
   if (fs.existsSync(config.webDist)) {
@@ -102,6 +134,12 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 
   const port = options.port ?? config.port;
   const host = options.host ?? config.host;
+  if (!isLoopback(host) && config.token === undefined) {
+    throw new Error(
+      `refusing to listen on ${host} without ABSENCE_TOKEN — a network-reachable monitor must be protected. ` +
+        "Set ABSENCE_TOKEN to a secret and open the board with ?token=<secret>.",
+    );
+  }
   try {
     await app.listen({ port, host });
   } catch (error) {
@@ -148,6 +186,12 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   const expireSessionsTimer = setInterval(expireSessions, 24 * 60 * 60_000);
   expireSessionsTimer.unref?.();
 
+  // The auto-archive sweep: observed sessions whose facts have gone quiet
+  // with nobody watching are archived (dispose, not delete). Every minute —
+  // the threshold is minutes by nature, the sweep is only a janitor.
+  const archiveIdleTimer = setInterval(() => sessionStore.archiveIdle(), config.archiveSweepMs);
+  archiveIdleTimer.unref?.();
+
   app.log.info(`ABSENCE server listening on ${url} (agent=${config.defaultAgent})`);
   app.log.info(`projects root: ${config.projectsRoot}`);
 
@@ -159,15 +203,45 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
       close: async () => {
         clearInterval(expireTimer);
         clearInterval(expireSessionsTimer);
-      // Proxy sessions own child processes; none should outlive the server.
-      proxySessions.closeAll("server closing");
-      await app.close();
-      // Flush metrics before the database handle is closed, then the 50ms
-      // event buffer and WAL checkpoint.
-      await drainMetrics();
-      closeArchive();
-    },
-  };
+        clearInterval(archiveIdleTimer);
+        // Stop the transcript tails before the archive flushes underneath them.
+        await discovery?.stop();
+        // Proxy sessions own child processes; none should outlive the server.
+        proxySessions.closeAll("server closing");
+        await app.close();
+        // Flush metrics before the database handle is closed, then the 50ms
+        // event buffer and WAL checkpoint.
+        await drainMetrics();
+        closeArchive();
+      },
+    };
+}
+
+/** Loopback addresses need no token; anything wider does. */
+function isLoopback(host: string): boolean {
+  const value = host.trim().toLowerCase();
+  return value === "localhost" || value === "127.0.0.1" || value === "::1" || value === "[::1]" || value === "0:0:0:0:0:0:0:1";
+}
+
+/**
+ * Token enforcement on the observation API and the session sockets.
+ *
+ * Static assets are not guarded: the client reads the token from the URL (or
+ * sessionStorage) and attaches it to every API call and socket, so a wrong
+ * token surfaces as a 401 on the first request instead of a blank page. The
+ * token is accepted as `?token=` or an `x-absence-token` header, compared
+ * verbatim.
+ */
+function installTokenGuard(app: FastifyInstance, token: string): void {
+  app.addHook("onRequest", async (request, reply) => {
+    const url = request.raw.url ?? "";
+    if (!url.startsWith("/api") && !url.startsWith("/ws")) return;
+    const header = request.headers["x-absence-token"];
+    const query = (request.query as { token?: unknown } | undefined)?.token;
+    const provided = typeof header === "string" ? header : typeof query === "string" ? query : undefined;
+    if (provided === token) return;
+    reply.code(401).send({ error: "token required (pass ?token=<ABSENCE_TOKEN> or the x-absence-token header)" });
+  });
 }
 
 /**

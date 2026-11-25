@@ -1,12 +1,15 @@
 import type { ProcessPayload } from "@absence/core";
-import { parseCommandIntent, type CommandIntent } from "./CommandIntent";
+import { EMPTY_INTENT, parseCommandIntent, type CommandIntent } from "./CommandIntent";
 import { classifyProcess } from "./classify";
 import { isTransparentLauncher } from "./priors";
 import { JobMonitor } from "./JobMonitor";
+import { TargetedObserver } from "./TargetedObserver";
 import type { MetricsTarget } from "./ProcessMetrics";
 import type { WatchExit, WatchStart } from "./observer";
 import { snapshotProcesses, type ProcessTable, type ProcInfo } from "./ProcessTable";
 import { detectCommand, unwrapCommandText } from "./CommandLine";
+import { attributedTree, findPiSession } from "./ProcessScanner";
+import type { ExternalScanner } from "./ExternalScanner";
 
 /** How long after a command returns we take the final look. */
 const SETTLE_MS = 2500;
@@ -197,6 +200,46 @@ export interface ProcessWatcherOptions {
    */
   onCommandWindow?: (command: string, cwd: string, id: number) => void;
   onCommandEnd?: (id: number) => void;
+  /** External pi transcript; only explicit command-line session evidence binds a pid. */
+  externalTranscript?: string;
+  /**
+   * The transcript's project (its header cwd). Scope evidence: a default `pi`
+   * in another project must never be paired with this transcript by timing.
+   */
+  externalProject?: string;
+  /**
+   * A process root the user chose to watch (the OS-only channel). Absence
+   * follows this pid's subtree by polling the process table: it is not a
+   * descendant of the server, so the Job Object sees nothing of it.
+   */
+  externalPid?: number;
+  /**
+   * The chosen pid's start time, from its process-table row. A pid is reused by
+   * the OS, so a row whose start time differs is a different process and must
+   * not be attributed to this session.
+   */
+  externalPidStartedAt?: number;
+  /**
+   * Called when the precision of process watching changes: true when a kernel
+   * observer is attached to the chosen external pid (exact, event-driven),
+   * false when it fell back to polling the process table. Lets the session
+   * report `processPrecision` honestly.
+   */
+  onPrecision?: (exact: boolean) => void;
+  /**
+   * True when this session drives a runtime Absence spawned (the mock
+   * fixture). Only then does the server's own pid count as "the agent" for
+   * the metrics curve; observed and proxy sessions attribute by their own
+   * evidence instead.
+   */
+  drivesRuntime?: boolean;
+  /**
+   * The shared machine-wide scanner. When given, this watcher no longer runs
+   * its own 4 s poll loop — snapshots arrive from one shared sweep instead of
+   * one per observed session. Omitted (checks, standalone use), the watcher
+   * keeps its private loop so a single instance is self-contained.
+   */
+  externalScanner?: ExternalScanner;
   /** Injectable for tests. */
   snapshot?: () => Promise<ProcessTable>;
   /**
@@ -206,6 +249,11 @@ export interface ProcessWatcherOptions {
    * second agent.
    */
   subscribeKernel?: (listener: (event: WatchStart | WatchExit) => void) => () => void;
+  /**
+   * Force the OS-channel targeted observer's backend (checks). Omitted in
+   * production, where TargetedObserver picks by platform; see its `backend`.
+   */
+  targetedBackend?: "job" | "filter";
   now?: () => number;
   /**
    * How many *finished* eggs to keep. Running eggs are always kept, however
@@ -277,6 +325,11 @@ export class ProcessWatcher {
    * stay unused.
    */
   private jobUnsubscribe?: () => void;
+  /** Kernel-grade observer attached to the chosen external pid (OS channel). */
+  private targetedObserver?: TargetedObserver;
+  private targetedUnsubscribers: Array<() => void> = [];
+  /** True while kernel events (not the table sweep) drive the OS-channel tree. */
+  private kernelActive = false;
   /** Commands whose wall-clock window is still open, keyed by `begin` id. */
   private readonly jobOpen = new Map<
     number,
@@ -323,6 +376,10 @@ export class ProcessWatcher {
   private jobSessionId?: string;
   /** The agent process Absence spawned for this session, once it exists. */
   private agentPid?: number;
+  private externalTimer?: ReturnType<typeof setTimeout>;
+  private externalLive = new Map<number, ProcInfo>();
+  /** The shared scanner this watcher registered with, when there is one. */
+  private readonly externalScanner?: ExternalScanner;
   /**
    * Pids this session owns: the agent itself plus every accepted descendant.
    * Retained after exit so a late child can still prove its ancestry.
@@ -342,7 +399,23 @@ export class ProcessWatcher {
     this.snapshot = options.snapshot ?? snapshotProcesses;
     this.now = options.now ?? Date.now;
     this.maxFinishedEggs = Math.max(0, options.maxFinishedEggs ?? 0);
-    this.attachJobObserver();
+    if (options.externalTranscript && options.externalScanner) {
+      // Shared sweep: register and let the scanner drive; no private loop.
+      this.externalScanner = options.externalScanner;
+      const transcript = options.externalTranscript;
+      this.externalScanner.register(
+        transcript,
+        (root, rows) => this.applyExternalScan(root, rows),
+        options.externalProject,
+      );
+    } else if (!options.externalTranscript && !this.externalPidMode) {
+      this.attachJobObserver();
+    }
+  }
+
+  /** The user chose a pid: poll the table around it, kernel events cannot help. */
+  private get externalPidMode(): boolean {
+    return this.options.externalPid !== undefined;
   }
 
   /**
@@ -370,9 +443,8 @@ export class ProcessWatcher {
 
   /** True while events, rather than snapshots, drive this watcher. */
   private get jobMode(): boolean {
-    return this.jobUnsubscribe !== undefined;
+    return this.options.externalTranscript !== undefined || this.jobUnsubscribe !== undefined;
   }
-
   /**
    * Take the session baseline: what is already running before the agent has done
    * anything. Called when the session opens, so the snapshot (half a second) has
@@ -383,6 +455,16 @@ export class ProcessWatcher {
    * process-table sweep whose result nobody looks at.
    */
   warm(): void {
+    if (this.options.externalTranscript) {
+      // With the shared scanner the sweep is already running; without one,
+      // this watcher is its own 4 s poll loop (checks, standalone use).
+      if (!this.externalScanner) void this.scanExternal();
+      return;
+    }
+    if (this.externalPidMode) {
+      void this.attachTargetedObserver();
+      return;
+    }
     if (this.jobMode) return;
     void this.ensureBaseline();
   }
@@ -423,14 +505,20 @@ export class ProcessWatcher {
    */
   metricsAgentTarget(): MetricsTarget {
     const rootPid = this.agentPid ?? this.rootPid;
-    const pids = new Set<number>([rootPid]);
+    // Without a runtime Absence drives (the mock fixture — see
+    // `drivesRuntime`), the server's own pid is not "the agent" and must not
+    // be sampled into the curve. The kernel checks leave the flag unset and
+    // keep the old server-rooted behaviour.
+    const pids = new Set<number>(this.options.drivesRuntime ? [rootPid] : []);
     for (const pid of this.ownedLive) pids.add(pid);
-    for (const egg of this.eggs.values()) pids.add(egg.info.pid);
+    for (const egg of this.eggs.values()) {
+      if (egg.status === "running") pids.add(egg.info.pid);
+    }
     return {
       rootPid,
       name: "Agent",
       kind: "agent",
-      status: "running",
+      status: !this.options.drivesRuntime && this.ownedLive.size === 0 ? "exited" : "running",
       startedAt: 0,
       pids: [...pids],
     };
@@ -495,7 +583,7 @@ export class ProcessWatcher {
    * the observer is machine-wide (Linux) or server-wide (Windows), so "no
    * marker" must not mean "ours".
    */
-  private reachesOwned(ppid: number): boolean {
+  private reachesAttributed(ppid: number): boolean {
     const visited = new Set<number>();
     let current = ppid;
     while (current > 0 && !visited.has(current)) {
@@ -581,6 +669,10 @@ export class ProcessWatcher {
   /** Stop watching. Never touches the processes themselves. */
   stop(): void {
     this.disposed = true;
+    if (this.externalScanner !== undefined && this.options.externalTranscript) {
+      this.externalScanner.unregister(this.options.externalTranscript);
+    }
+    if (this.externalTimer !== undefined) clearTimeout(this.externalTimer);
     if (this.tickTimer !== undefined) clearTimeout(this.tickTimer);
     if (this.aliveTimer !== undefined) clearTimeout(this.aliveTimer);
     this.tickTimer = undefined;
@@ -593,6 +685,148 @@ export class ProcessWatcher {
     this.ownedLive.clear();
     this.jobUnsubscribe?.();
     this.jobUnsubscribe = undefined;
+    this.releaseTargetedObserver();
+    this.kernelActive = false;
+  }
+
+  /**
+   * True while a kernel observer (not the table sweep) drives this session's
+   * process tree. The session reports its precision from this.
+   */
+  usesKernelEvents(): boolean {
+    return this.kernelActive;
+  }
+
+  /** Snapshot external trees: Windows Job events cover server children only. */
+  private async scanExternal(): Promise<void> {
+    try {
+      const table = await this.snapshot();
+      if (this.disposed) return;
+      const root = findPiSession(table, this.options.externalTranscript!);
+      const rows = root ? [root, ...attributedTree(table, root.pid)] : [];
+      this.applyExternalScan(root, rows);
+    } catch {
+      // A failed table read is missing evidence, not evidence of process exit.
+    } finally {
+      if (!this.disposed) this.externalTimer = setTimeout(() => void this.scanExternal(), TICK_SLOW_MS);
+    }
+  }
+
+  /**
+   * Attach a kernel observer to the user-chosen pid (the OS-only channel).
+   *
+   * Absence never becomes the agent's parent, so the server-wide Job Object
+   * cannot see it. Windows gives us the same power another way: a dedicated
+   * `agentwatch --target-pid <pid>` adopts that process into its own Job
+   * Object, and the kernel then reports its subtree's creations and exits.
+   * The events are scoped to the chosen tree by construction, so every one is
+   * this session's. Linux reuses the machine-wide eBPF stream and filters it
+   * by ancestry (`TargetedObserver`).
+   *
+   * When the observer cannot attach (no rights, a non-nestable job, no helper)
+   * the watcher falls back to the 4 s table sweep — degraded, never silent.
+   */
+  private async attachTargetedObserver(): Promise<void> {
+    const pid = this.options.externalPid;
+    if (pid === undefined || this.disposed) return;
+    // The chosen process is the agent: its pid is the metrics curve's root and
+    // the ancestry anchor, even though it is never itself an egg.
+    this.agentPid = pid;
+    this.markOwned(pid);
+    const observer = new TargetedObserver({
+      pid,
+      startedAt: this.options.externalPidStartedAt ?? 0,
+      ...(this.options.snapshot ? { snapshot: this.options.snapshot } : {}),
+      ...(this.options.subscribeKernel ? { subscribeKernel: this.options.subscribeKernel } : {}),
+      ...(this.options.targetedBackend ? { backend: this.options.targetedBackend } : {}),
+    });
+    this.targetedObserver = observer;
+    // Subscribe before start(): the seed pass emits starts synchronously.
+    this.targetedUnsubscribers = [
+      observer.on("start", (event) => this.onJobEvent(event)),
+      observer.on("exit", (event) => this.onJobEvent(event)),
+      observer.on("status", (status) => {
+        const exact = status === "watching";
+        this.kernelActive = exact;
+        this.options.onPrecision?.(exact);
+      }),
+    ];
+    try {
+      await observer.start();
+      if (this.disposed) return;
+      this.kernelActive = true;
+      this.options.onPrecision?.(true);
+      // Seeded eggs were already alive when the job was formed, so their exits
+      // are not job events; the cheap liveness probe closes that gap.
+      this.startAliveTick();
+    } catch {
+      // No kernel path for this process: keep the honest table sweep.
+      this.releaseTargetedObserver();
+      this.kernelActive = false;
+      this.options.onPrecision?.(false);
+      if (!this.disposed) void this.scanExternalPid();
+    }
+  }
+
+  private releaseTargetedObserver(): void {
+    for (const off of this.targetedUnsubscribers) off();
+    this.targetedUnsubscribers = [];
+    this.targetedObserver?.dispose();
+    this.targetedObserver = undefined;
+  }
+
+  /**
+   * Poll the table around a user-chosen pid (the OS-only channel).
+   *
+   * The chosen process is not a descendant of the server, so kernel events can
+   * never attribute it. The claim is the pid *and* its start time: a table row
+   * with the same pid but a different start is a recycled pid, not this agent.
+   */
+  private async scanExternalPid(): Promise<void> {
+    try {
+      const table = await this.snapshot();
+      if (this.disposed) return;
+      const pid = this.options.externalPid!;
+      const root = table.get(pid);
+      const sameProcess =
+        root !== undefined &&
+        this.options.externalPidStartedAt !== undefined &&
+        Math.abs(root.startedAt - this.options.externalPidStartedAt) <= WINDOW_SLACK_MS;
+      const rows = sameProcess ? [root!, ...attributedTree(table, pid)] : [];
+      this.applyExternalScan(sameProcess ? root : undefined, rows);
+    } catch {
+      // A failed table read is missing evidence, not evidence of process exit.
+    } finally {
+      if (!this.disposed) this.externalTimer = setTimeout(() => void this.scanExternalPid(), TICK_SLOW_MS);
+    }
+  }
+
+  /**
+   * One external snapshot, bound and fed. The private poll loop (above) and
+   * the shared ExternalScanner both land here, so attribution — exits, the
+   * agent pid, the subtree — is identical whichever way the table arrived.
+   */
+  applyExternalScan(root: ProcInfo | undefined, rows: ProcInfo[]): void {
+    if (this.disposed) return;
+    const live = new Map(rows.map((info) => [info.pid, info]));
+    for (const [pid, previous] of this.externalLive) {
+      const current = live.get(pid);
+      if (!current || Math.abs(current.startedAt - previous.startedAt) > WINDOW_SLACK_MS) {
+        this.onJobExit({ pid, exitedAt: this.now() });
+        this.ownedPids.delete(pid);
+        this.jobPpid.delete(pid);
+      }
+    }
+    this.agentPid = root?.pid;
+    if (root) this.markOwned(root.pid);
+    for (const info of rows) {
+      this.onJobStart({
+        pid: info.pid, ppid: info.ppid,
+        comm: info.name, commandLine: info.commandLine,
+        createdAt: info.startedAt || this.now(),
+      });
+    }
+    this.externalLive = live;
   }
 
   /** Look while a command is still running. */
@@ -728,6 +962,14 @@ export class ProcessWatcher {
       process.stderr.write(`[watcher] start pid=${event.pid} ppid=${event.ppid} name=${nameOf(event)} cmd=${(event.commandLine ?? "").slice(0, 80)}\n`);
     }
     const pid = event.pid;
+    // OS-only mode: the chosen process and its subtree are the facts. There
+    // is no command window (no transcript to name a command) and no ancestry
+    // back to the server, so neither the window rule nor the marker rule
+    // applies (see `onOsStart`).
+    if (this.externalPidMode) {
+      this.onOsStart(event);
+      return;
+    }
     if (pid === this.rootPid) return;
     this.rememberPpid(pid, event.ppid);
     // The runtime itself is the tree's root, never an egg. It was marked owned
@@ -784,7 +1026,7 @@ export class ProcessWatcher {
         this.jobSeen.add(pid);
         return;
       }
-      if (this.agentPid === undefined || !this.reachesOwned(event.ppid)) {
+      if (this.agentPid === undefined || !this.reachesAttributed(event.ppid)) {
         this.jobSeen.add(pid);
         return;
       }
@@ -896,6 +1138,61 @@ export class ProcessWatcher {
       ...(window.toolCallId ? { toolCallId: window.toolCallId } : {}),
     };
     this.eggs.set(pid, egg);
+    this.emit(egg);
+  }
+
+  /**
+   * One process of a user-chosen pid's subtree.
+   *
+   * `applyExternalScan` only hands over pids that are the chosen root or its
+   * descendants, so acceptance needs no ancestry proof here — the subtree is
+   * the claim. Every member is its own egg: with no command text to credit,
+   * folding a child into a parent would silently hide the work the user asked
+   * to watch. `classifyProcess` still folds short-lived helpers into the tool
+   * bucket the Eggs panel counts rather than lists.
+   */
+  private onOsStart(event: WatchStart): void {
+    const pid = event.pid;
+    if (pid === this.rootPid) return;
+    const name = nameOf(event);
+    if (isConsoleHost(name)) return;
+    const line = event.commandLine ?? event.exePath ?? "";
+    const existing = this.eggs.get(pid);
+    if (existing !== undefined && existing.info.commandLine === line && existing.status === "running") return;
+    this.jobSeen.add(pid);
+    this.jobExec.set(pid, line);
+    this.jobParent.set(pid, pid);
+    const startedAt = event.createdAt ?? this.now();
+    const verdict = classifyProcess({
+      name,
+      commandLine: line,
+      ...(event.exePath !== undefined ? { exePath: event.exePath } : {}),
+      cwd: this.jobCwd,
+      intent: EMPTY_INTENT,
+      // Nothing here was laid by a command, so nothing outlived one; age is
+      // the only lifetime evidence available.
+      survivedCommand: false,
+      ageMs: Math.max(0, this.now() - startedAt),
+      children: 0,
+      ppid: event.ppid,
+    });
+    const egg: Egg = {
+      info: { pid, ppid: event.ppid, name, commandLine: line, startedAt },
+      command: "",
+      startedAt,
+      children: 0,
+      status: "running",
+      kind: verdict.kind,
+      kindReason: verdict.reason,
+      cwd: this.jobCwd,
+      ...(event.exePath !== undefined ? { exePath: event.exePath } : {}),
+      intent: EMPTY_INTENT,
+      reclassifyOnSurvive: verdict.kind === "tool",
+      survivedCommand: false,
+      namedSubject: false,
+    };
+    this.eggs.set(pid, egg);
+    this.markOwned(pid);
     this.emit(egg);
   }
 

@@ -1,5 +1,6 @@
 import type {
   AbsenceEvent,
+  AcpProxySessionsResponse,
   AvatarSkinMeta,
   AvatarSkinState,
   EggFilterProfileMeta,
@@ -8,6 +9,12 @@ import type {
   FileContent,
   FileVersionInfo,
   MetricsResponse,
+  ObserveDiscoveryResponse,
+  ObserveLiveResponse,
+  ObserveSessionRow,
+  ObserveTargetsResponse,
+  ObserveTargetRow,
+  ObserveWatchResponse,
   Project,
   ResumeTarget,
   RunSummary,
@@ -19,6 +26,7 @@ import type {
   SoundSetMeta,
   SoundSetState,
 } from "@absence/core";
+import { authUrl } from "./auth";
 
 /* The wire shapes are the shared contracts (packages/core/api) — the same
    declarations the server's routes are annotated against, not hand-kept
@@ -37,6 +45,11 @@ export type {
   SoundSetMeta,
   SoundSetState,
 } from "@absence/core";
+
+/** fetch with the access token appended, when the server requires one. */
+function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(authUrl(url), init);
+}
 
 async function json<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -57,13 +70,13 @@ async function json<T>(response: Response): Promise<T> {
 }
 
 export async function fetchRuntimes(): Promise<RuntimeStatus[]> {
-  const { runtimes } = await json<{ runtimes: RuntimeStatus[] }>(await fetch("/api/runtimes"));
+  const { runtimes } = await json<{ runtimes: RuntimeStatus[] }>(await apiFetch("/api/runtimes"));
   return runtimes;
 }
 
 export async function fetchProjects(root?: string): Promise<Project[]> {
   const query = root ? `?root=${encodeURIComponent(root)}` : "";
-  return json<Project[]>(await fetch(`/api/projects${query}`));
+  return json<Project[]>(await apiFetch(`/api/projects${query}`));
 }
 
 export async function createSession(
@@ -72,7 +85,7 @@ export async function createSession(
   resume?: ResumeTarget,
 ): Promise<SessionSnapshot> {
   return json<SessionSnapshot>(
-    await fetch("/api/sessions", {
+    await apiFetch("/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectPath, agent, resume }),
@@ -83,7 +96,7 @@ export async function createSession(
 /** The persisted history (Absence's own archives), newest first. */
 export async function fetchSessionHistory(path?: string): Promise<SessionHistoryEntry[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
-  return json<SessionHistoryEntry[]>(await fetch(`/api/sessions/history${query}`));
+  return json<SessionHistoryEntry[]>(await apiFetch(`/api/sessions/history${query}`));
 }
 
 /** Persisted metric series for a range. Live recent frames come from the socket. */
@@ -98,18 +111,18 @@ export async function fetchMetrics(
   });
   if (options.eggPid !== undefined) query.set("egg", String(options.eggPid));
   return json<MetricsResponse>(
-    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/metrics?${query.toString()}`),
+    await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/metrics?${query.toString()}`),
   );
 }
 
 /** Every recorded file version for a session, independent of the event window. */
 export async function fetchFileVersions(sessionId: string): Promise<FileVersionInfo[]> {
-  return json<FileVersionInfo[]>(await fetch(`/api/sessions/${sessionId}/file-versions`));
+  return json<FileVersionInfo[]>(await apiFetch(`/api/sessions/${sessionId}/file-versions`));
 }
 
 /** Run summaries for History (no event payloads). */
 export async function fetchRuns(sessionId: string): Promise<RunSummary[]> {
-  return json<RunSummary[]>(await fetch(`/api/sessions/${sessionId}/runs`));
+  return json<RunSummary[]>(await apiFetch(`/api/sessions/${sessionId}/runs`));
 }
 
 /** The events belonging to one run, fetched only when it is selected. */
@@ -118,7 +131,7 @@ export async function fetchRunEvents(
   index: number,
 ): Promise<{ run: RunSummary; events: AbsenceEvent[] }> {
   return json<{ run: RunSummary; events: AbsenceEvent[] }>(
-    await fetch(`/api/sessions/${sessionId}/runs/${index}/events`),
+    await apiFetch(`/api/sessions/${sessionId}/runs/${index}/events`),
   );
 }
 
@@ -132,7 +145,7 @@ export async function fetchSessionEventsPage(
   if (options.limit !== undefined) params.set("limit", String(options.limit));
   const qs = params.toString();
   return json<SessionEventForwardPage>(
-    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/events${qs ? `?${qs}` : ""}`),
+    await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/events${qs ? `?${qs}` : ""}`),
   );
 }
 
@@ -153,62 +166,89 @@ export async function fetchAllSessionEvents(sessionId: string): Promise<AbsenceE
   }
 }
 
-export async function sendPrompt(id: string, prompt: string): Promise<void> {
-  await json(
-    await fetch(`/api/sessions/${id}/prompt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    }),
-  );
-}
-
-export async function abortSession(id: string): Promise<void> {
-  await json(await fetch(`/api/sessions/${id}/abort`, { method: "POST" }));
-}
-
 /**
  * Leave a session: stop its watchers and metrics sampling, keep its archive.
  * Best effort — the UI leaves either way, but a failure is worth a console line
  * because it means the server will keep sampling in the background.
  */
 export async function closeSession(id: string): Promise<void> {
-  await fetch(`/api/sessions/${encodeURIComponent(id)}/close`, { method: "POST" });
+  await apiFetch(`/api/sessions/${encodeURIComponent(id)}/close`, { method: "POST" });
+}
+
+/** Delete one archived session's rows entirely. The server refuses live ones. */
+export async function deleteSessionArchive(id: string): Promise<void> {
+  await json(await apiFetch(`/api/sessions/${encodeURIComponent(id)}/archive`, { method: "DELETE" }));
 }
 
 /** Read a project file from disk (the user's view of the project). */
 export async function readFile(sessionId: string, path: string): Promise<FileContent> {
   return json<FileContent>(
-    await fetch(`/api/sessions/${sessionId}/file?path=${encodeURIComponent(path)}`),
+    await apiFetch(`/api/sessions/${sessionId}/file?path=${encodeURIComponent(path)}`),
   );
 }
 
-/** Forward a chat command; its output arrives over the socket as run events. */
-export async function runCommand(sessionId: string, name: string, args: string): Promise<void> {
-  await json(
-    await fetch(`/api/sessions/${sessionId}/command`, {
+/** A session snapshot for a session that already exists (the board's entry). */
+export async function fetchSession(id: string): Promise<SessionSnapshot> {
+  return json<SessionSnapshot>(await apiFetch(`/api/sessions/${encodeURIComponent(id)}`));
+}
+
+/* ── Observation board ────────────────────────────────────────────────────── */
+
+/** What the tails found: transcripts, their state, and the sources watched. */
+export async function fetchObserveBoard(): Promise<ObserveDiscoveryResponse> {
+  return json<ObserveDiscoveryResponse>(await apiFetch("/api/observe/sessions"));
+}
+
+/** What Absence is watching right now (the board’s “正在监控”). */
+export async function fetchObserveLive(): Promise<ObserveLiveResponse> {
+  return json<ObserveLiveResponse>(await apiFetch("/api/observe/live"));
+}
+
+/** Everything the board may offer to monitor (nothing is created by listing). */
+export async function fetchObserveTargets(): Promise<ObserveTargetsResponse> {
+  return json<ObserveTargetsResponse>(await apiFetch("/api/observe/targets"));
+}
+
+/** Choose a target to monitor: attach it and record a lease. */
+export async function watchTarget(key: string): Promise<ObserveWatchResponse> {
+  return json<ObserveWatchResponse>(
+    await apiFetch("/api/observe/watch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, args }),
+      body: JSON.stringify({ key }),
     }),
   );
 }
 
-/** Answer an approval prompt the agent raised; unblocks the runtime request. */
-export async function respondApproval(sessionId: string, id: string, value: string): Promise<void> {
-  await json(
-    await fetch(`/api/sessions/${sessionId}/approval`, {
+/** Stop monitoring a session. The archive stays. */
+export async function unwatchSession(sessionId: string): Promise<void> {
+  await apiFetch("/api/observe/unwatch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId }),
+  });
+}
+
+/** Attach one transcript (full backfill) and get its row with the session id. */
+export async function attachTranscript(file: string): Promise<ObserveSessionRow> {
+  return json<ObserveSessionRow>(
+    await apiFetch("/api/observe/attach", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, value }),
+      body: JSON.stringify({ file }),
     }),
   );
+}
+
+/** ACP proxy sessions on this host (the board's proxy section). */
+export async function fetchProxySessions(): Promise<AcpProxySessionsResponse> {
+  return json<AcpProxySessionsResponse>(await apiFetch("/api/acp-proxy/sessions"));
 }
 
 /* ── Agent Eggs filter profiles (server-side named files) ───────────────── */
 
 export async function fetchEggFilter(): Promise<EggFilterState> {
-  return json<EggFilterState>(await fetch("/api/egg-filter"));
+  return json<EggFilterState>(await apiFetch("/api/egg-filter"));
 }
 
 /** Save a profile: same name overwrites, a new name creates. Activates it. */
@@ -218,7 +258,7 @@ export async function saveEggFilter(
   force: boolean,
 ): Promise<EggFilterSaveResponse> {
   return json<EggFilterSaveResponse>(
-    await fetch(`/api/egg-filter/${encodeURIComponent(name)}`, {
+    await apiFetch(`/api/egg-filter/${encodeURIComponent(name)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ names, force }),
@@ -228,22 +268,22 @@ export async function saveEggFilter(
 
 export async function activateEggFilter(name: string): Promise<{ active: string; current: string[] }> {
   return json(
-    await fetch(`/api/egg-filter/${encodeURIComponent(name)}/activate`, { method: "POST" }),
+    await apiFetch(`/api/egg-filter/${encodeURIComponent(name)}/activate`, { method: "POST" }),
   );
 }
 
 export async function deleteEggFilter(name: string): Promise<void> {
-  await json(await fetch(`/api/egg-filter/${encodeURIComponent(name)}`, { method: "DELETE" }));
+  await json(await apiFetch(`/api/egg-filter/${encodeURIComponent(name)}`, { method: "DELETE" }));
 }
 
 /* ── Avatar skins (user-uploaded animation files) ─────────────────────────── */
 
 export async function fetchAvatarSkins(): Promise<AvatarSkinState> {
-  return json<AvatarSkinState>(await fetch("/api/avatar-skins"));
+  return json<AvatarSkinState>(await apiFetch("/api/avatar-skins"));
 }
 
 export async function createAvatarSkin(name: string): Promise<void> {
-  await json(await fetch(`/api/avatar-skins/${encodeURIComponent(name)}`, { method: "POST" }));
+  await json(await apiFetch(`/api/avatar-skins/${encodeURIComponent(name)}`, { method: "POST" }));
 }
 
 export async function uploadAvatarSkinFile(
@@ -253,7 +293,7 @@ export async function uploadAvatarSkinFile(
 ): Promise<void> {
   const query = `status=${encodeURIComponent(status)}&filename=${encodeURIComponent(file.name)}`;
   await json(
-    await fetch(`/api/avatar-skins/${encodeURIComponent(name)}/files?${query}`, {
+    await apiFetch(`/api/avatar-skins/${encodeURIComponent(name)}/files?${query}`, {
       method: "PUT",
       headers: { "Content-Type": "application/octet-stream" },
       body: file,
@@ -263,36 +303,36 @@ export async function uploadAvatarSkinFile(
 
 export async function deleteAvatarSkinFile(name: string, status: string): Promise<void> {
   await json(
-    await fetch(`/api/avatar-skins/${encodeURIComponent(name)}/files/${encodeURIComponent(status)}`, {
+    await apiFetch(`/api/avatar-skins/${encodeURIComponent(name)}/files/${encodeURIComponent(status)}`, {
       method: "DELETE",
     }),
   );
 }
 
 export async function deleteAvatarSkin(name: string): Promise<void> {
-  await json(await fetch(`/api/avatar-skins/${encodeURIComponent(name)}`, { method: "DELETE" }));
+  await json(await apiFetch(`/api/avatar-skins/${encodeURIComponent(name)}`, { method: "DELETE" }));
 }
 
 export async function activateAvatarSkin(name: string): Promise<{ active: string }> {
   return json(
-    await fetch(`/api/avatar-skins/${encodeURIComponent(name)}/activate`, { method: "POST" }),
+    await apiFetch(`/api/avatar-skins/${encodeURIComponent(name)}/activate`, { method: "POST" }),
   );
 }
 
 /* ── Sound sets (user-uploaded chimes) ────────────────────────────────────── */
 
 export async function fetchSounds(): Promise<SoundSetState> {
-  return json<SoundSetState>(await fetch("/api/sounds"));
+  return json<SoundSetState>(await apiFetch("/api/sounds"));
 }
 
 export async function createSoundSet(name: string): Promise<void> {
-  await json(await fetch(`/api/sounds/${encodeURIComponent(name)}`, { method: "POST" }));
+  await json(await apiFetch(`/api/sounds/${encodeURIComponent(name)}`, { method: "POST" }));
 }
 
 export async function uploadSoundFile(name: string, event: string, file: File): Promise<void> {
   const query = `event=${encodeURIComponent(event)}&filename=${encodeURIComponent(file.name)}`;
   await json(
-    await fetch(`/api/sounds/${encodeURIComponent(name)}/files?${query}`, {
+    await apiFetch(`/api/sounds/${encodeURIComponent(name)}/files?${query}`, {
       method: "PUT",
       headers: { "Content-Type": "application/octet-stream" },
       body: file,
@@ -302,16 +342,16 @@ export async function uploadSoundFile(name: string, event: string, file: File): 
 
 export async function deleteSoundFile(name: string, event: string): Promise<void> {
   await json(
-    await fetch(`/api/sounds/${encodeURIComponent(name)}/files/${encodeURIComponent(event)}`, {
+    await apiFetch(`/api/sounds/${encodeURIComponent(name)}/files/${encodeURIComponent(event)}`, {
       method: "DELETE",
     }),
   );
 }
 
 export async function deleteSoundSet(name: string): Promise<void> {
-  await json(await fetch(`/api/sounds/${encodeURIComponent(name)}`, { method: "DELETE" }));
+  await json(await apiFetch(`/api/sounds/${encodeURIComponent(name)}`, { method: "DELETE" }));
 }
 
 export async function activateSoundSet(name: string): Promise<{ active: string }> {
-  return json(await fetch(`/api/sounds/${encodeURIComponent(name)}/activate`, { method: "POST" }));
+  return json(await apiFetch(`/api/sounds/${encodeURIComponent(name)}/activate`, { method: "POST" }));
 }

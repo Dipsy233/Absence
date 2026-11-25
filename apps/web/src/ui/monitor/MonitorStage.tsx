@@ -6,7 +6,6 @@ import { useUiStore } from "../../stores/uiStore";
 import { useT } from "../../lib/i18n";
 import { formatClock, formatOffset } from "../../lib/format";
 import { runEvents } from "../../lib/history";
-import { MonitorChat } from "./MonitorChat";
 import { ChatThread } from "../../components/chat/ChatThread";
 import { StageItemView } from "../../components/stage/StageItemView";
 import { MetricsDashboard } from "../../components/metrics/MetricsDashboard";
@@ -327,7 +326,6 @@ export function MonitorStage({ data }: { data: MonitorData }) {
       </div>
 
       <Timeline data={data} />
-      <MonitorChat />
     </div>
   );
 }

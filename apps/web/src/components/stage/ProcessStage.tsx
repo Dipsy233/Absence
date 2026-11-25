@@ -1,7 +1,5 @@
 import type { AbsenceEvent } from "@absence/core";
-import { eventContext } from "../../lib/context";
 import { formatOffset } from "../../lib/format";
-import { useChatStore } from "../../stores/chatStore";
 import { useT } from "../../lib/i18n";
 
 interface ProcessStageProps {
@@ -37,7 +35,6 @@ export function ProcessStage({
   event,
 }: ProcessStageProps) {
   const t = useT();
-  const addContext = useChatStore((s) => s.addContext);
   const lived = (exitedAt ?? Date.now()) - startedAt;
   const alive = status === "running";
 
@@ -58,16 +55,6 @@ export function ProcessStage({
           <span className="text-desk-dim">
             {alive ? t("running for") : t("lived")} {formatOffset(lived)}
           </span>
-          {event ? (
-            <button
-              type="button"
-              onClick={() => addContext(eventContext(event))}
-              className="rounded border border-desk-line px-1.5 py-0.5 text-[10px] text-desk-dim hover:border-desk-amber/60 hover:text-desk-amber"
-              title={t("Add this process to Chat")}
-            >
-              {t("+ Chat")}
-            </button>
-          ) : null}
         </span>
       </div>
 

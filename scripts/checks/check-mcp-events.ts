@@ -18,7 +18,6 @@ import {
   statusFromEvent,
   statusForTool,
 } from "../../apps/web/src/lib/events";
-import { summarizeEvent } from "../../apps/web/src/lib/context";
 import { check, finish, section } from "./harness";
 
 const session = "sess_mcp";
@@ -135,15 +134,6 @@ section("status and chat context");
   check(
     "an mcp tool name reads as running before its result arrives",
     statusForTool("mcp__filesystem__read_file") === "running",
-  );
-  check(
-    "chat context names the server and tool",
-    summarizeEvent(mcpEvent()) === "MCP call filesystem › list_directory",
-    summarizeEvent(mcpEvent()),
-  );
-  check(
-    "failed call context says so",
-    summarizeEvent(mcpEvent({ isError: true })).startsWith("failed MCP call"),
   );
 }
 

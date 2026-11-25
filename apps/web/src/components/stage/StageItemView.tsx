@@ -82,7 +82,6 @@ export function StageItemView({ item, showToolbar = true }: { item: StageItem; s
           reason={payload.reason}
           cwd={payload.cwd}
           options={payload.options}
-          event={item.event}
         />
       );
     default:
