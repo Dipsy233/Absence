@@ -32,11 +32,11 @@ capability was removed later, the note names the release that removed it.
 
 ### 1. Manual, from the Actions tab
 
-1. Write the two notes files, `docs/releases/v0.5.0.md` and
-   `docs/releases/v0.5.0.zh-CN.md`.
+1. Write the two notes files, `docs/releases/v0.6.0.md` and
+   `docs/releases/v0.6.0.zh-CN.md`.
 2. Commit and push to `main`.
 3. GitHub ▸ **Actions** ▸ **Release** ▸ **Run workflow**:
-   - `version`: `0.5.0` (no leading `v`)
+   - `version`: `0.6.0` (no leading `v`)
    - `prerelease`: tick for `-beta` / `-rc` style releases
    - `draft`: leave ticked for a draft release to review and publish
      manually; untick to publish immediately
@@ -44,22 +44,22 @@ capability was removed later, the note names the release that removed it.
    then publish the draft:
 
    ```bash
-   gh release edit v0.5.0 --draft=false
+   gh release edit v0.6.0 --draft=false
    ```
 
 The workflow stamps the version into the workspace `package.json` files for the
-build only, so the installer is named `Absence.Setup-0.5.0.exe` and the Linux
-package `Absence-0.5.0.AppImage` even if the committed versions lag behind.
+build only, so the installer is named `Absence.Setup-0.6.0.exe` and the Linux
+package `Absence-0.6.0.AppImage` even if the committed versions lag behind.
 
 ### 2. Automatic, by pushing a tag
 
 ```bash
-git tag v0.5.0
-git push origin v0.5.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
 A tag push runs the same workflow with `draft: false` and detects `prerelease`
-from the tag name (`v0.5.0-beta.1` → pre-release). Build, notes and publish
+from the tag name (`v0.6.0-beta.1` → pre-release). Build, notes and publish
 happen in one run.
 
 ## What the workflow does
@@ -75,17 +75,17 @@ The release body comes from `docs/releases/<tag>.md`; when the English file is
 absent, the workflow falls back to `docs/releases/<tag>.zh-CN.md`. If neither
 exists, it is generated from the commit subjects between the previous tag and
 this one, grouped by conventional-commit type (`scripts/release/notes.mjs`,
-also available as `npm run release:notes -- v0.5.0`). GitHub's auto-generated
+also available as `npm run release:notes -- v0.6.0`). GitHub's auto-generated
 notes are not used because they group pull requests, and this repository mostly
 pushes to `main` directly; `.github/release.yml` is kept only for the "Generate
 release notes" button in the Releases UI.
 
 Assets attached to the release:
 
-- `Absence.Setup-0.5.0.exe` — Windows installer (NSIS)
-- `Absence-0.5.0.zip` — Windows portable: unzip it anywhere and run
+- `Absence.Setup-0.6.0.exe` — Windows installer (NSIS)
+- `Absence-0.6.0.zip` — Windows portable: unzip it anywhere and run
   `Absence.exe`, with no installation or registry entries
-- `Absence-0.5.0.AppImage`, `Absence-0.5.0.tar.gz` — Linux
+- `Absence-0.6.0.AppImage`, `Absence-0.6.0.tar.gz` — Linux
 - `SHA256SUMS.txt` — checksums for everything above
 
 Artifact names are pinned in `apps/desktop/package.json` (`win.artifactName`
@@ -120,10 +120,10 @@ the `version` input or the tag, so a release does not require a version-bump
 commit. If the repository should carry the version, bump it before tagging:
 
 ```bash
-npm version 0.5.0 --no-git-tag-version --workspaces --include-workspace-root
-npm --prefix apps/desktop version 0.5.0 --no-git-tag-version
-git commit -am "chore: release v0.5.0"
-git tag v0.5.0 && git push origin main --tags
+npm version 0.6.0 --no-git-tag-version --workspaces --include-workspace-root
+npm --prefix apps/desktop version 0.6.0 --no-git-tag-version
+git commit -am "chore: release v0.6.0"
+git tag v0.6.0 && git push origin main --tags
 ```
 
 ## Running the packaging step directly

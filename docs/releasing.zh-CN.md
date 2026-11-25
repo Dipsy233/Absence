@@ -28,32 +28,32 @@ Windows 与 Linux，并把安装包附加到 GitHub Release，发布不依赖预
 
 ### 1. 手动触发
 
-1. 写两份发布说明：`docs/releases/v0.5.0.md` 与
-   `docs/releases/v0.5.0.zh-CN.md`。
+1. 写两份发布说明：`docs/releases/v0.6.0.md` 与
+   `docs/releases/v0.6.0.zh-CN.md`。
 2. 提交并推送到 `main`。
 3. GitHub ▸ **Actions** ▸ **Release** ▸ **Run workflow**：
-   - `version`：`0.5.0`（不要带 `v`）
+   - `version`：`0.6.0`（不要带 `v`）
    - `prerelease`：`-beta` / `-rc` 之类的版本勾选
    - `draft`：默认勾选，先生成草稿 Release，检查无误后自行发布；取消勾选则直接发布
 4. 运行结束后打开 **Releases**，确认说明和产物，再发布草稿：
 
    ```bash
-   gh release edit v0.5.0 --draft=false
+   gh release edit v0.6.0 --draft=false
    ```
 
 工作流只在构建期间把版本号写进各个 `package.json`，不会提交，因此即使仓库里的
-版本号落后，安装包也会按本次发布版本命名（`Absence.Setup-0.5.0.exe`、
-`Absence-0.5.0.AppImage`）。
+版本号落后，安装包也会按本次发布版本命名（`Absence.Setup-0.6.0.exe`、
+`Absence-0.6.0.AppImage`）。
 
 ### 2. 推 tag 自动发布
 
 ```bash
-git tag v0.5.0
-git push origin v0.5.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
 推 tag 会以 `draft: false` 运行同一个工作流，并根据 tag 名判断是否为预发布
-（`v0.5.0-beta.1` → 预发布）。构建、说明、发布在一次运行内完成。
+（`v0.6.0-beta.1` → 预发布）。构建、说明、发布在一次运行内完成。
 
 ## 工作流做了什么
 
@@ -67,16 +67,16 @@ git push origin v0.5.0
 发布正文取自 `docs/releases/<tag>.md`；英文文件缺失时回退到
 `docs/releases/<tag>.zh-CN.md`。两者都不存在时，从上一个 tag 到本次 tag 之间的
 提交信息自动生成，按 conventional-commit 类型分组（`scripts/release/notes.mjs`，
-也可以通过 `npm run release:notes -- v0.5.0` 运行）。不使用 GitHub 自带的自动
+也可以通过 `npm run release:notes -- v0.6.0` 运行）。不使用 GitHub 自带的自动
 说明，因为它按 PR 分组，而项目大多直接推送到 `main`；`.github/release.yml`
 只保留给 Releases 页面里的 "Generate release notes" 按钮使用。
 
 Release 上附加的文件：
 
-- `Absence.Setup-0.5.0.exe` —— Windows 安装器（NSIS）
-- `Absence-0.5.0.zip` —— Windows 免安装版：解压到任意目录后直接运行
+- `Absence.Setup-0.6.0.exe` —— Windows 安装器（NSIS）
+- `Absence-0.6.0.zip` —— Windows 免安装版：解压到任意目录后直接运行
   `Absence.exe`，不写注册表、不需要安装
-- `Absence-0.5.0.AppImage`、`Absence-0.5.0.tar.gz` —— Linux
+- `Absence-0.6.0.AppImage`、`Absence-0.6.0.tar.gz` —— Linux
 - `SHA256SUMS.txt` —— 以上文件的校验和
 
 产物名在 `apps/desktop/package.json` 里固定（ZIP 与 Linux 包用
@@ -106,10 +106,10 @@ Release 上附加的文件：
 版本号也能发布。如果希望仓库本身就带版本号，在打 tag 前先 bump：
 
 ```bash
-npm version 0.5.0 --no-git-tag-version --workspaces --include-workspace-root
-npm --prefix apps/desktop version 0.5.0 --no-git-tag-version
-git commit -am "chore: release v0.5.0"
-git tag v0.5.0 && git push origin main --tags
+npm version 0.6.0 --no-git-tag-version --workspaces --include-workspace-root
+npm --prefix apps/desktop version 0.6.0 --no-git-tag-version
+git commit -am "chore: release v0.6.0"
+git tag v0.6.0 && git push origin main --tags
 ```
 
 ## 直接运行打包步骤
