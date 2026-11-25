@@ -31,6 +31,7 @@ import {
   closeStaleOpenRun,
   drainArchive,
   findArchivedExternal,
+  findArchivedOsProcess,
   markAttachSession,
   markBurstSession,
   markTranscriptSession,
@@ -57,7 +58,7 @@ import { JobMonitor } from "../process/JobMonitor";
 import { DockerMonitor } from "../process/DockerMonitor";
 import { DockerEggs } from "../process/DockerEggs";
 import { ObserveAdapter } from "../observe/ObserveAdapter";
-import { isNarrowScope, type ObserveMeta } from "../observe/types";
+import { isNarrowScope, samePidIdentity, type ObserveMeta } from "../observe/types";
 import { unifiedDiff } from "../util/diff";
 import { newId } from "../util/ids";
 import { toPosix } from "../util/paths";
@@ -1956,7 +1957,15 @@ export class SessionStore {
     // per agent-side conversation, not one per server lifetime), and the
     // replay branch reopens its history as the session's facts.
     const archived = observe.externalId
-      ? await findArchivedExternal(observe.channel, observe.externalId)
+      ? (await findArchivedExternal(observe.channel, observe.externalId)) ??
+        // The OS channel's identity is a pid plus a start time read from the
+        // process table, and the POSIX table derives that time from `etimes`
+        // (whole seconds): two sweeps of the same process disagree by up to a
+        // second. An exact-id miss must not open a second archive row for one
+        // agent, so the same pid within the table's slack is the same row.
+        (observe.channel === "os" && observe.pid !== undefined
+          ? await findArchivedOsProcess(observe.pid, observe.pidStartedAt ?? 0)
+          : undefined)
       : undefined;
     const resume = archived ? { absenceSessionId: archived } : undefined;
     const session = new AbsenceSession(projectPath, kind, resume, { observe });
@@ -1979,7 +1988,15 @@ export class SessionStore {
 
   private findObserved(observe: ObserveMeta): AbsenceSession | undefined {
     for (const session of this.sessions.values()) {
-      if (session.observe?.channel === observe.channel && session.observe?.externalId === observe.externalId) {
+      if (session.observe?.channel !== observe.channel) continue;
+      if (session.observe?.externalId === observe.externalId) return session;
+      // Same pid, start time read again from a drifting table: one process,
+      // one session (see the tolerance note in `createObserved`).
+      if (
+        observe.channel === "os" &&
+        observe.pid !== undefined &&
+        samePidIdentity(session.observe?.externalId, observe.pid, observe.pidStartedAt ?? 0)
+      ) {
         return session;
       }
     }

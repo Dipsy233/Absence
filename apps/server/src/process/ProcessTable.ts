@@ -205,7 +205,12 @@ function parsePosix(stdout: string): ProcessTable {
       name: executable ? path.basename(executable) : "?",
       commandLine,
       // `etimes` is elapsed seconds — a clock, not a date, so no parsing.
-      startedAt: Number.isFinite(elapsed) ? now - elapsed * 1000 : 0,
+      // The derived instant carries the sweep's own milliseconds, so a second
+      // later it lands on a different value for the same process; round it to
+      // the second, which is the resolution `etimes` actually has. Callers
+      // still compare with PID_START_SLACK_MS, because a second boundary can
+      // be straddled.
+      startedAt: Number.isFinite(elapsed) ? Math.round((now - elapsed * 1000) / 1000) * 1000 : 0,
     });
   }
   return table;

@@ -26,9 +26,12 @@ import {
   readEventsPage,
   readFileVersions,
   readRunEvents,
+  findArchivedExternal,
+  findArchivedOsProcess,
   readRuns,
   writeMeta,
 } from "../../apps/server/src/sessions/archive";
+import { parsePidIdentity, pidIdentity, samePidIdentity } from "../../apps/server/src/observe/types";
 import { check, finish, section } from "./harness";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "absence-storage-"));
@@ -358,6 +361,41 @@ section("reopen and re-import");
   const events = await readEvents(project, legacyId);
   check("re-import does not duplicate events", events.length === 4, `${events.length} events`);
   check("re-import rebuilds the run index", (await readRuns(legacyId)).length === 1);
+}
+
+section("os identity tolerance");
+{
+  // An OS-observed session is identified by `pid:<pid>@<startedAtMs>`, and the
+  // POSIX process table derives that millisecond from `ps`'s whole-second
+  // `etimes`: the same process reads back up to a second later on the next
+  // sweep. Restoring a watch must find the row it wrote, not open a second one.
+  const pid = 4242;
+  const start = 1_700_000_100_000;
+  await writeMeta(project, {
+    version: 1,
+    absenceSessionId: "sess_os",
+    projectPath: project,
+    projectName: "project",
+    startedAt: start,
+    updatedAt: start + 10,
+    runtime: "pi",
+    messageCount: 0,
+    channel: "os",
+    externalId: pidIdentity(pid, start),
+  });
+
+  check("an exact identity still finds the row", (await findArchivedExternal("os", pidIdentity(pid, start))) === "sess_os");
+  check("the identity parses back", JSON.stringify(parsePidIdentity(pidIdentity(pid, start))) === JSON.stringify({ pid, startedAt: start }));
+  check("a second of table drift is the same process", samePidIdentity(pidIdentity(pid, start), pid, start + 1_000));
+  check("a different pid is a different process", !samePidIdentity(pidIdentity(pid, start), pid + 1, start));
+  check(
+    "a recycled pid's start time is a different process",
+    !samePidIdentity(pidIdentity(pid, start), pid, start + 60_000),
+  );
+  check("an unknown start matches only an unknown start", samePidIdentity(pidIdentity(pid, 0), pid, 0) && !samePidIdentity(pidIdentity(pid, 0), pid, start));
+  check("the drifted lookup lands on the same row", (await findArchivedOsProcess(pid, start + 900)) === "sess_os");
+  check("an unrelated process finds no row", (await findArchivedOsProcess(pid + 1, start)) === undefined);
+  check("a drifted-but-unrelated process finds no row", (await findArchivedOsProcess(pid, start + 60_000)) === undefined);
 }
 
 closeArchive();

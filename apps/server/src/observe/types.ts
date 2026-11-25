@@ -77,3 +77,47 @@ export function isNarrowScope(projectPath: string): boolean {
 export function pidIdentity(pid: number, startedAt: number): string {
   return `pid:${pid}@${Math.max(0, Math.trunc(startedAt))}`;
 }
+
+/**
+ * How far two readings of one process's start time may disagree before they
+ * name different processes.
+ *
+ * The identity is read from the process table, and not every table reports a
+ * start time the same way: Windows and the native helper hand over an exact
+ * epoch millisecond, while the POSIX `ps` fallback derives one from `etimes`
+ * (whole elapsed seconds, so the answer moves by up to a second between two
+ * sweeps). Two seconds is wide enough to cover that derivation and far too
+ * narrow to confuse a pid the OS recycled — a recycled pid's start time is at
+ * least one process lifetime away.
+ */
+export const PID_START_SLACK_MS = 2_000;
+
+/** Parse `pid:<pid>@<startedAt>` back into its two halves. */
+export function parsePidIdentity(identity: string): { pid: number; startedAt: number } | undefined {
+  const match = /^pid:(\d+)@(\d+)$/.exec(identity);
+  if (!match) return undefined;
+  const pid = Number(match[1]);
+  const startedAt = Number(match[2]);
+  if (!Number.isSafeInteger(pid) || pid <= 0 || !Number.isSafeInteger(startedAt)) return undefined;
+  return { pid, startedAt };
+}
+
+/**
+ * True when two pid identities name the same process.
+ *
+ * Same pid, start times within {@link PID_START_SLACK_MS}. A missing start time
+ * (0) is only compared to another missing one: an unknown start must not match
+ * a known one, or a recycled pid could inherit an old session.
+ */
+export function samePidStart(a: number, b: number): boolean {
+  if (a <= 0 || b <= 0) return a === b;
+  return Math.abs(a - b) <= PID_START_SLACK_MS;
+}
+
+/** True when an `os` session's identity is this pid, allowing table drift. */
+export function samePidIdentity(identity: string | undefined, pid: number, startedAt: number): boolean {
+  if (identity === undefined) return false;
+  const parsed = parsePidIdentity(identity);
+  if (parsed === undefined || parsed.pid !== pid) return false;
+  return samePidStart(parsed.startedAt, startedAt);
+}

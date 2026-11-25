@@ -5,7 +5,7 @@ import type { ProxySessionInfo } from "../agents/acp/proxy";
 import { findPiSession, pairDefaultSessions, piSessionRef, unboundPiCandidates } from "../process/ProcessScanner";
 import { type ProcessTable } from "../process/ProcessTable";
 import { processSnapshot } from "./processSource";
-import { pidIdentity } from "./types";
+import { pidIdentity, samePidStart } from "./types";
 
 /**
  * The board's target list — “what can I monitor here?”.
@@ -24,9 +24,6 @@ import { pidIdentity } from "./types";
 
 /** A transcript touched this recently is plausibly still being written. */
 const ACTIVE_WINDOW_MS = 10 * 60_000;
-
-/** A pid's start time within this of the chosen one is the same process. */
-const PID_START_SLACK_MS = 2_000;
 
 /** The pid a transcript's agent is, when the evidence proves it. */
 export interface TranscriptBinding {
@@ -291,5 +288,5 @@ export function sameProcess(
 ): boolean {
   if (info === undefined || info.pid !== pid) return false;
   if (startedAt <= 0) return true;
-  return Math.abs(info.startedAt - startedAt) <= PID_START_SLACK_MS;
+  return samePidStart(info.startedAt, startedAt);
 }

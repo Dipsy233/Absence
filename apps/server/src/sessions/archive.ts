@@ -43,6 +43,7 @@ export {
   readRunEventsPage,
   readRuns,
   findArchivedExternal,
+  findArchivedOsProcess,
   readMeta,
   writeMeta,
 } from "./storage/db";

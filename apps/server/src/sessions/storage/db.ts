@@ -17,6 +17,7 @@ import {
   type SessionHistoryQuery,
 } from "@absence/core";
 import { toPosix } from "../../util/paths";
+import { pidIdentity, samePidIdentity } from "../../observe/types";
 import { eventsFile, sessionsRoot, stateRoot } from "./legacyPaths";
 import { ensureFileVersionsMigrated, FileIndex } from "./files";
 import { ensureRunsMigrated, RunIndex, type RunEvent } from "./runs";
@@ -1315,6 +1316,40 @@ export async function findArchivedExternal(
     return typeof id === "string" && id.length > 0 ? id : undefined;
   } catch (error) {
     console.error("[absence] sqlite external lookup failed:", error);
+    return undefined;
+  }
+}
+
+/**
+ * The archive row for an OS-observed process, matched by pid and a start time
+ * that the process table reported with some slack.
+ *
+ * `pid:<pid>@<ms>` is the identity, but the millisecond is not always exact:
+ * the POSIX fallback derives it from `ps`'s whole-second `etimes`, so two
+ * sweeps of the same process can disagree by up to a second. Restoring a watch
+ * lease after a restart must land on the row it wrote before, not on a fresh
+ * duplicate, so the pid is matched exactly and the start time within
+ * {@link PID_START_SLACK_MS}.
+ */
+export async function findArchivedOsProcess(pid: number, startedAt: number): Promise<string | undefined> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return undefined;
+  const prefix = pidIdentity(pid, 0).slice(0, -1);
+  try {
+    const rows = open()
+      .prepare(
+        "SELECT id, external_id FROM sessions WHERE channel = 'os' AND external_id LIKE ? ORDER BY updated_at DESC, id DESC",
+      )
+      .all(`${prefix}%`) as Array<{ id?: unknown; external_id?: unknown }>;
+    for (const row of rows) {
+      const id = row.id;
+      const externalId = row.external_id;
+      if (typeof id !== "string" || id.length === 0) continue;
+      if (typeof externalId !== "string") continue;
+      if (samePidIdentity(externalId, pid, startedAt)) return id;
+    }
+    return undefined;
+  } catch (error) {
+    console.error("[absence] sqlite os process lookup failed:", error);
     return undefined;
   }
 }
