@@ -37,6 +37,12 @@ write-back path is refused.
   its archive read-only instead of 404ing, and an OS-only watch that gains a
   transcript backfills the conversation — its archive's process facts are not
   mistaken for transcript history and warmed away.
+- One `edit` tool call is one `file_edit` fact: pi sends a list of
+  replacements for a single file, and emitting one event per replacement put
+  five identically stamped rows in the feed whose timeline marks overlapped —
+  only the last was reachable. A recent call is reconstructed into the whole
+  file before/after from disk (one event, `fullContent: true`); an older one
+  stays one event with the reported snippets and their combined diff.
 - Timeline lanes carry their own duration again: a transcript assistant record's
   `durationMs` closes the thought/reply at the generation end, and a
   `toolResult`'s `durationMs` places its command where it actually ran, so the

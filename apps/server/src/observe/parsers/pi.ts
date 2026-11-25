@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
   createEvent,
   type AbsenceEvent,
@@ -8,6 +9,7 @@ import {
 } from "@absence/core";
 import { AcpToolMapper } from "../../agents/acp/AcpToolMapper";
 import type { AcpToolFacts } from "../../agents/acp/ToolRules";
+import { readFileSafe } from "../../filesystem/FileTree";
 import { unifiedDiff } from "../../util/diff";
 
 /**
@@ -39,6 +41,14 @@ const SOURCE = "transcript" as const;
 
 /** Placeholder until the discovery layer attaches this parser to a session. */
 const UNATTACHED = "observe-unattached";
+
+/**
+ * How recent an edit must be for its whole-file before/after to be
+ * reconstructable from disk. A live tail reads the file seconds after the tool
+ * wrote it; a backfill of an old transcript must not pretend today's file is
+ * what the edit produced back then.
+ */
+const EDIT_RECONSTRUCT_WINDOW_MS = 5 * 60_000;
 
 /** A `toolCall` block whose result has not arrived yet. */
 interface PendingToolCall {
@@ -264,21 +274,7 @@ export class PiTranscriptParser {
       return;
     }
     if (toolName === "edit" && typeof input.path === "string" && Array.isArray(input.edits)) {
-      for (const edit of input.edits.filter(isRecord)) {
-        if (typeof edit.oldText !== "string" || typeof edit.newText !== "string") continue;
-        this.emit(
-          "file_edit",
-          {
-            path: input.path,
-            before: edit.oldText,
-            after: edit.newText,
-            diff: unifiedDiff(edit.oldText, edit.newText),
-            fullContent: false,
-          },
-          at,
-          "reported",
-        );
-      }
+      await this.emitEdit(input.path, input.edits.filter(isRecord), at);
       return;
     }
 
@@ -306,6 +302,101 @@ export class PiTranscriptParser {
         item.fidelity,
       );
     }
+  }
+
+  /**
+   * One `edit` tool call → one `file_edit` fact.
+   *
+   * pi's edit tool takes a *list* of replacements for a single file. Emitting
+   * one event per replacement put five identical rows in the feed for one
+   * action — all stamped at the result's time, so they could not be told apart
+   * or reached — and each row showed a snippet as if it were the file.
+   *
+   * The call is one activity, so it becomes one event: the whole file before
+   * and after, reconstructed from disk by replaying every replacement (in
+   * reverse when the tool already wrote the result, forward when it did not).
+   * When the file cannot be read or a replacement no longer matches, the event
+   * still describes the call once, with the reported snippets and their
+   * combined diff, marked `fullContent: false` — never five fragments.
+   */
+  private async emitEdit(filePath: string, edits: AnyRecord[], at: number): Promise<void> {
+    const pairs: { oldText: string; newText: string }[] = [];
+    for (const edit of edits) {
+      if (typeof edit.oldText !== "string" || typeof edit.newText !== "string") continue;
+      pairs.push({ oldText: edit.oldText, newText: edit.newText });
+    }
+    if (pairs.length === 0) return;
+
+    // The path stays exactly as the agent reported it — the same rule the
+    // `write` branch above follows, so one file has one identity in the file
+    // store, the project tree and the Activity feed.
+    const display = filePath;
+    // Reconstructing means reading the file as it is *now*. That is only the
+    // state right after this call while the call is recent (a live tail); a
+    // backfill of hours-old records would read a file that has changed many
+    // times since, and invent a before/after that never existed at that moment.
+    const recent = Math.abs(Date.now() - at) <= EDIT_RECONSTRUCT_WINDOW_MS;
+    const disk = recent ? await readFileSafe(this.resolvePath(filePath)) : null;
+    let before: string | undefined;
+    let after: string | undefined;
+    if (disk !== null) {
+      // The result arrived, so the file on disk is normally the post-state:
+      // undoing the replacements gives the before. A failed call leaves the
+      // pre-state, which the forward direction recognises instead.
+      const undone = replayEdits(disk, pairs, false);
+      if (undone !== undefined) {
+        after = disk;
+        before = undone;
+      } else {
+        const redone = replayEdits(disk, pairs, true);
+        if (redone !== undefined) {
+          before = disk;
+          after = redone;
+        }
+      }
+    }
+
+    if (before !== undefined && after !== undefined) {
+      this.emit(
+        "file_edit",
+        {
+          path: display,
+          before,
+          after,
+          diff: unifiedDiff(before, after, display, display),
+          fullContent: true,
+        },
+        at,
+        "exact",
+      );
+      return;
+    }
+
+    // Not reconstructable: one fact for the call, carrying what was reported.
+    const reportedBefore = pairs.map((pair) => pair.oldText).join(String.fromCharCode(10));
+    const reportedAfter = pairs.map((pair) => pair.newText).join(String.fromCharCode(10));
+    this.emit(
+      "file_edit",
+      {
+        path: display,
+        before: reportedBefore,
+        after: reportedAfter,
+        diff: pairs
+          .map((pair) => unifiedDiff(pair.oldText, pair.newText, display, display))
+          .join(String.fromCharCode(10)),
+        fullContent: false,
+      },
+      at,
+      "reported",
+    );
+  }
+
+  /** The edit's path, resolved against the transcript's own cwd. */
+  private resolvePath(value: string): string {
+    const clean = value.replace(/^@/, "");
+    const cwd = this.cwd;
+    if (cwd === undefined) return clean;
+    return path.isAbsolute(clean) ? clean : path.join(cwd, clean);
   }
 
   /** Entries that are not messages. Everything unknown falls through silently. */
@@ -415,6 +506,29 @@ function declaredKind(name: string): string | undefined {
     default:
       return undefined;
   }
+}
+
+/**
+ * Replay every replacement over `text`, first occurrence each, like the tool.
+ * `forward` applies old → new; otherwise new → old. Undefined when one of the
+ * texts is no longer present, which is how a caller learns the direction was
+ * wrong.
+ */
+function replayEdits(
+  text: string,
+  pairs: readonly { oldText: string; newText: string }[],
+  forward: boolean,
+): string | undefined {
+  let out = text;
+  for (const pair of pairs) {
+    const find = forward ? pair.oldText : pair.newText;
+    const replace = forward ? pair.newText : pair.oldText;
+    if (find.length === 0) continue;
+    const at = out.indexOf(find);
+    if (at < 0) return undefined;
+    out = out.slice(0, at) + replace + out.slice(at + find.length);
+  }
+  return out;
 }
 
 function timestampOf(value: unknown): number {

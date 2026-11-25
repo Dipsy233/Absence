@@ -31,6 +31,9 @@ import path from "node:path";
 import { readMeta, readRuns, readFileVersions } from "../../apps/server/src/sessions/archive";
 import { check, finish, section, waitFor } from "./harness";
 
+/** Newline as a constant, so fixtures read the same on every platform. */
+const NL = String.fromCharCode(10);
+
 /** waitFor for async predicates — the shared harness one takes sync predicates only. */
 const waitForAsync = async (predicate: () => Promise<boolean>, timeoutMs = 8_000): Promise<boolean> => {
   const deadline = Date.now() + timeoutMs;
@@ -235,6 +238,67 @@ const commandEvent = session.history().find((event) => event.type === "command")
 check("the bash call became a command fact", commandEvent !== undefined && (commandEvent.payload as any).command === "exit 7", JSON.stringify(commandEvent?.payload));
 check("the exit code is honestly unknown (the transcript carries none)", commandEvent !== undefined && (commandEvent.payload as any).exitCodeKnown === false && (commandEvent.payload as any).exitCode === 1, JSON.stringify(commandEvent?.payload));
 check("the second run closed", (await readRuns(sessionId!)).every((run) => run.status !== "running"), JSON.stringify((await readRuns(sessionId!)).map((run) => run.status)));
+
+section("a multi-edit call is one fact");
+
+// pi's edit tool takes a list of replacements for one file. Five replacements
+// must not become five rows all stamped at the result's time — they could not
+// be told apart, and each showed a snippet as if it were the file. The file on
+// disk holds the post-state (the tool already wrote it), so the parser undoes
+// the replacements to recover the before and emits one whole-file edit.
+const edited = path.join(project, "styles.css");
+const beforeCss = [".a { color: red; }", ".b { margin: 0; }", ".c { padding: 0; }", ""].join(NL);
+const afterCss = [".a { color: blue; }", ".b { margin: 4px; }", ".c { padding: 0; }", ""].join(NL);
+fs.writeFileSync(edited, afterCss, "utf8");
+const turn3 = [
+  userMessage("tidy the stylesheet"),
+  assistantMessage(
+    [
+      {
+        type: "toolCall",
+        id: "tc_3",
+        name: "edit",
+        arguments: {
+          path: edited,
+          edits: [
+            { oldText: "color: red;", newText: "color: blue;" },
+            { oldText: "margin: 0;", newText: "margin: 4px;" },
+          ],
+        },
+      },
+    ],
+    "toolUse",
+    { input: 90, output: 3 },
+  ),
+  toolResultMessage("tc_3", "edit", false, "ok"),
+  assistantMessage([{ type: "text", text: "Tidied." }], "stop", { input: 120, output: 2 }),
+];
+fs.appendFileSync(transcriptFile, turn3.join(NL) + NL, "utf8");
+const thirdRun = await waitForAsync(async () => (await readRuns(sessionId!)).length >= 3, 10_000);
+check("the multi-edit turn was tailed", thirdRun);
+const editEvents = session.history().filter(
+  (event) => event.type === "file_edit" && (event.payload as any).path === edited,
+);
+check("two replacements in one call are one file_edit fact", editEvents.length === 1, `count=${editEvents.length}`);
+{
+  const payload = (editEvents[0]?.payload ?? {}) as any;
+  check(
+    "the edit carries the whole file before the call",
+    payload.before === beforeCss,
+    JSON.stringify(payload.before),
+  );
+  check(
+    "the edit carries the whole file after the call",
+    payload.after === afterCss,
+    JSON.stringify(payload.after),
+  );
+  check("the reconstructed edit says its content is the whole file", payload.fullContent === true, JSON.stringify(payload));
+  check(
+    "the combined diff names both replacements",
+    typeof payload.diff === "string" && payload.diff.includes("color: blue;") && payload.diff.includes("margin: 4px;"),
+    String(payload.diff).slice(0, 120),
+  );
+}
 
 section("the observer refuses to drive");
 

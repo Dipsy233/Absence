@@ -142,6 +142,12 @@ A call that changes a file is never dropped. When the protocol says `edit` but n
 
 Only `session/request_permission` becomes an `approval` event. The event carries the options the agent offered. The answer is produced wherever the agent really runs — the editor client for a proxied session, the agent's own terminal otherwise — and the resulting events record what was answered. The web client renders the card read-only.
 
+### 3.6.1 Edits
+
+An `edit` tool call carries a *list* of replacements for one file. It is one activity, so it becomes one `file_edit` event: while the call is recent (a live tail), the whole file before and after is reconstructed from disk by replaying every replacement — in reverse when the tool already wrote the result, forward when it did not — and the event says `fullContent: true`. Replaying a call five times would put five identical rows in the feed, all stamped at the result's time and each showing a snippet as if it were the file.
+
+An older record (a backfill) is not reconstructed: today's file is not the file that edit produced. It is still one event, carrying the reported snippets and their combined diff, with `fullContent: false`, and the file state is left untouched.
+
 ### 3.7 Command windows
 
 An `execute` tool call opens a `ProcessWatcher` command window and the terminal update closes it. Processes reported inside the window are attributed to that command, which produces command-level Agent Eggs. The window carries the tool call id, and both the `command` event and every observed `process` event carry the same `toolCallId`, so the feed merges one command with its own processes into a single row.
