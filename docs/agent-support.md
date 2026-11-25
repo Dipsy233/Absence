@@ -42,7 +42,7 @@ The parser is `apps/server/src/observe/parsers/pi.ts`. The format is pi's own pe
 | `message` with `role: "user"` | `message` (`role: user`) | `reported` |
 | `message` with `role: "assistant"`, `text` block | `message` (`role: assistant`) | `reported` |
 | `message` with `role: "assistant"`, `thinking` block | `thinking` | `reported` |
-| `message` with `role: "assistant"`, `toolCall` block | `tool_start` | `reported` |
+| `message` with `role: "assistant"`, `toolCall` block | `tool_start`, stamped at the end of generation | `reported` |
 | `message` with `role: "toolResult"` | `tool_end` plus the mapped fact | `reported` |
 | `message` with `role: "assistant"`, `stopReason` ≠ `toolUse` | `agent_end`, then `usage` when tokens were reported | `inferred` / `reported` |
 | `message` with `role: "assistant"`, first record of a turn | `agent_start` | `inferred` |
@@ -50,23 +50,42 @@ The parser is `apps/server/src/observe/parsers/pi.ts`. The format is pi's own pe
 | `compaction`, `branch_summary`, `custom_message` | `message` (`role: system`) with the summary text | `reported` |
 | `system` message, `usage`, `context_edit`, `label`, `custom`, `session_info`, `thinking_level_change` | None | — |
 
-Tool results are mapped through the shared `AcpToolMapper`, so a transcript produces the same fact shapes an ACP session does. `write` and `edit` are mapped directly from their arguments, because the mapper's write path would otherwise report the same write twice.
+Tool results are mapped through the shared `AcpToolMapper`, so a transcript produces the same fact shapes an ACP session does. `write` and `edit` are mapped directly from their arguments, because the mapper's write path would otherwise report the same write twice; `edit` is described in section 2.4.
+
+The transcript's own clocks are carried through, because they are the only record of when an activity really stopped:
+
+| Record field | What it times | Where it lands |
+|---|---|---|
+| `assistant.timestamp` | the *start* of generation | the record's events start here |
+| `assistant.durationMs` | how long generation took | `endedAt` on the `thinking` / `message` events, the stamp of each `tool_start`, and the `agent_end` / `usage` stamp |
+| `toolResult.timestamp` | when the tool returned | the `tool_end` stamp |
+| `toolResult.durationMs` | how long the tool itself ran | `tool_end.durationMs`; the report places the command at `timestamp - durationMs` |
+
+An assistant record stamps one thought, one reply and its tool calls as a single generation, so without the duration the shell would appear to run while the model was still thinking.
 
 ### 2.3 Turn boundaries
 
-`stopReason` values are `stop`, `toolUse`, `error`, `aborted` and `length`. `toolUse` keeps the turn open; every other value closes it with `agent_end`. The reason becomes the run status: `aborted` is `interrupted`, `error` is `error`, everything else is `completed`.
+`stopReason` values are `stop`, `toolUse`, `error`, `aborted` and `length`. `toolUse` keeps the turn open; every other value closes it with `agent_end`, stamped when that record finished generating rather than when it began. The reason becomes the run status: `aborted` is `interrupted`, `error` is `error`, everything else is `completed`.
 
 A run opens on a user message. A transcript whose file begins inside a turn opens its first run with `boundarySource: "attach"` and `truncatedBefore: true`, an empty prompt and no invented content.
 
-### 2.4 Usage
+### 2.4 Edits
+
+pi's edit tool carries a *list* of replacements for one file. That call is one activity, so it becomes one `file_edit` event, never one per replacement: replaying the call five times would put five identical rows in the feed, all stamped at the result's time and each showing a snippet as if it were the file.
+
+While the call is recent (a live tail), the whole file before and after is reconstructed from disk by replaying every replacement — in reverse when the tool already wrote the result, forward when it did not — and the event carries `fullContent: true`, so the session's file state advances to the real content.
+
+An older record (a backfill) is not reconstructed: today's file is not the file that edit produced. It is still exactly one event, carrying the reported snippets and their combined diff, with `fullContent: false`, and the file state is left untouched.
+
+### 2.5 Usage
 
 Each assistant record carries `input`, `output`, `cacheRead`, `cacheWrite` and `reasoning`. At the end of a turn the parser emits one `usage` event with the summed output, the maximum context occupancy (`input + cacheRead + cacheWrite`) and the model. Values come from the transcript and the payload is marked `estimated: true`.
 
-### 2.5 Tree semantics
+### 2.6 Tree semantics
 
 pi records form a tree through `id`/`parentId`. The parser processes records in file order, which is the order the user experienced; branches are not replayed. `context_edit` rewrites the model's view and is not applied.
 
-### 2.6 Degradation
+### 2.7 Degradation
 
 | Condition | Behaviour |
 |---|---|
@@ -141,12 +160,6 @@ A call that changes a file is never dropped. When the protocol says `edit` but n
 ### 3.6 Approvals
 
 Only `session/request_permission` becomes an `approval` event. The event carries the options the agent offered. The answer is produced wherever the agent really runs — the editor client for a proxied session, the agent's own terminal otherwise — and the resulting events record what was answered. The web client renders the card read-only.
-
-### 3.6.1 Edits
-
-An `edit` tool call carries a *list* of replacements for one file. It is one activity, so it becomes one `file_edit` event: while the call is recent (a live tail), the whole file before and after is reconstructed from disk by replaying every replacement — in reverse when the tool already wrote the result, forward when it did not — and the event says `fullContent: true`. Replaying a call five times would put five identical rows in the feed, all stamped at the result's time and each showing a snippet as if it were the file.
-
-An older record (a backfill) is not reconstructed: today's file is not the file that edit produced. It is still one event, carrying the reported snippets and their combined diff, with `fullContent: false`, and the file state is left untouched.
 
 ### 3.7 Command windows
 

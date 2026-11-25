@@ -138,6 +138,8 @@ Every event carries `source` and `fidelity`:
 
 Model, context usage, advertised commands and authentication methods travel in `session_state` messages, not in the event stream. Metrics use their own channel.
 
+Time is part of the contract. `timestamp` is when the fact happened, and a fact that spans time also carries its end: `endedAt` on `thinking` / `message` (when the agent stopped producing that text) and `durationMs` on `tool_end` (how long the tool ran). Timeline marks and durations read those fields, so a lane is as long as its own activity and never covers another lane's work.
+
 `usage` is emitted once per run by the transcript channel when a turn closes, and only when the transcript reported token counts. It carries `outputEst` (the summed `output` of the turn's assistant records), `contextUsed` (the largest `input + cacheRead + cacheWrite` seen in the turn), the model name and `estimated: true`. The ACP proxy channel emits no `usage` event, because the proxy protocol carries no token accounting. The event feeds run-scoped token totals and is not part of the activity feed. Heuristic estimators in `packages/core/src/tokens.ts` are used by the client where no reported figure exists.
 
 Observation layers:

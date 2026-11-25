@@ -25,16 +25,16 @@ SQLite 访问分布在 `apps/server/src/sessions/storage/` 下的四个文件：
 
 ## 3. 分层
 
-35 个离线脚本分为四层，5 个手动脚本构成最后一层。两个离线脚本同时登记在两个组，因此登记表包含 37 次离线登记，覆盖 35 个脚本。
+36 个离线脚本分为四层，5 个手动脚本构成最后一层。两个离线脚本同时登记在两个组，因此登记表包含 38 次离线登记，覆盖 36 个脚本。
 
 | 层 | 所需环境 | 检查 | 能确立的结论 |
 |---|---|---|---|
-| 1. 纯函数 | 伪造的进程表、事件数组与转录行；不启动进程、不写文件 | 13 条：`eggs`、`classify`、`outside-attr`、`report`、`chart-allrun`、`markdown`、`format`、`views`、`chimes`、`settings`、`mcp-events`、`acp-mapping`、`metrics-ranges` | 归因、分类、报告归约、视图模型、工具映射与策略分支，仅靠数据驱动 |
+| 1. 纯函数 | 伪造的进程表、事件数组与转录行；不启动进程、不写文件 | 14 条：`eggs`、`classify`、`outside-attr`、`report`、`chart-allrun`、`markdown`、`format`、`views`、`chimes`、`settings`、`mcp-events`、`acp-mapping`、`metrics-ranges`、`observe-os-kernel` | 归因、分类、报告归约、视图模型、工具映射与策略分支，仅靠数据驱动 |
 | 2. 隔离 I/O | 临时目录与 `ABSENCE_STATE_DIR`；在进程内引用生产存储、观察、watcher 与 diff 模块 | 10 条：`storage`、`metrics`、`metrics-persist`、`fsdiff`、`outside-scope`、`incremental`、`agentwatch-external`、`observe-midway`、`observe-transcript`、`observe-proxy` | 对真实 SQLite 文件与真实文件观察的归档与指标往返、转录回填与续采、代理持久化、外部进程配对 |
 | 3. 自起 server | 临时端口与隔离 state 目录；检查启动并结束真 server | 12 条：`history`、`lifecycle`、`metrics-restart`、`observed-lifetime`、`session-close`、`session-dwell`、`session-isolation`、`observe-board`、`observe-watch`、`observe-os`、`cli-observe`、`acp-proxy` | server 生命周期、会话关闭、dwell 计时、经 HTTP 读取历史、重启后的指标、目标选择、租约、重启恢复、仅 OS 监控、令牌处理 |
 | 4. 手动 | 内核观察助手、docker daemon，或真 server 加 mock 会话 | 5 条：`agentwatch`、`ebpf`、`docker`、`docker-eggs`、`e2e` | 内核级进程捕获、容器蛋，以及一次运行内的全链路 |
 
-13 + 10 + 12 = 35 个离线脚本。加上 5 个手动脚本，登记表覆盖 40 个不同脚本、共 42 次登记。
+14 + 10 + 12 = 36 个离线脚本。加上 5 个手动脚本，登记表覆盖 41 个不同脚本、共 43 次登记。
 
 第 1 层把系统调用推到边界之外，使中间逻辑成为可传入数据的函数。`check-eggs` 把伪造进程表喂给真实的归因代码：
 
@@ -79,10 +79,10 @@ const { appendMetricsFrame } = await import("../../apps/server/src/sessions/stor
 
 | 项目 | 值 | 来源 |
 |---|---|---|
-| 登记条目 | 42 | `scripts/checks/groups.ts` |
-| 不同登记脚本 | 40 | `scripts/checks/groups.ts` |
-| 离线登记 | 37 | `groups.ts` 中的 `checks` 条目 |
-| 不同离线脚本 | 35 | `groups.ts` 中的 `checks` 条目 |
+| 登记条目 | 43 | `scripts/checks/groups.ts` |
+| 不同登记脚本 | 41 | `scripts/checks/groups.ts` |
+| 离线登记 | 38 | `groups.ts` 中的 `checks` 条目 |
+| 不同离线脚本 | 36 | `groups.ts` 中的 `checks` 条目 |
 | 手动检查 | 5 | `groups.ts` 中的 `platform` 条目 |
 | 组 | 13 | `groups.ts` 的 `GROUPS` |
 | CI | typecheck + `check:offline` | `.github/workflows/ci.yml` |

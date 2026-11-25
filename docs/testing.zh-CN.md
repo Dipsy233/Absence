@@ -26,7 +26,7 @@ npm run check:e2e       # 真 server 加 mock 会话（手动平台检查）
 
 ## 2. 登记
 
-`scripts/checks/groups.ts` 是检查登记位置，定义 13 个组、35 个脚本上的 37 次离线登记，以及 5 条手动平台登记。两个脚本同时登记在 `eggs` 与 `session` 组。`run-offline.ts` 与 `run-group.ts` 都读取该文件；`package.json` 只保留逐脚本别名。
+`scripts/checks/groups.ts` 是检查登记位置，定义 13 个组、36 个脚本上的 38 次离线登记，以及 5 条手动平台登记。两个脚本同时登记在 `eggs` 与 `session` 组。`run-offline.ts` 与 `run-group.ts` 都读取该文件；`package.json` 只保留逐脚本别名。
 
 | 组 | 覆盖范围 | 离线检查 |
 |---|---|---|
@@ -35,7 +35,7 @@ npm run check:e2e       # 真 server 加 mock 会话（手动平台检查）
 | `history` | 历史重建、run 分组、滑动窗口、事件缓存 | 2 条：`check-history`、`check-incremental` |
 | `settings` | 阈值归一化、i18n 表完整性 | 1 条：`check-settings` |
 | `chimes` | 提示音策略分支 | 1 条：`check-chimes` |
-| `eggs` | 进程识别、分类、过滤器、项目外改动归属、会话隔离 | 6 条：`check-eggs`、`check-agentwatch-external`、`check-classify`、`check-outside-attr`、`check-outside-scope`、`check-session-isolation` |
+| `eggs` | 进程识别、分类、过滤器、项目外改动归属、内核级外部观察、会话隔离 | 7 条：`check-eggs`、`check-agentwatch-external`、`check-observe-os-kernel`、`check-classify`、`check-outside-attr`、`check-outside-scope`、`check-session-isolation` |
 | `metrics` | 采样、ring、重启存活、区间、进程蛋寿命 | 5 条：`check-metrics`、`check-metrics-persist`、`check-metrics-ranges`、`check-metrics-restart`、`check-observed-lifetime` |
 | `agent` | 工具映射、MCP 事件、代理 | 3 条：`check-mcp-events`、`check-acp-mapping`、`check-acp-proxy` |
 | `session` | 归档存储、dwell 时钟、关闭、生命周期、会话隔离 | 6 条：`check-storage`、`check-session-dwell`、`check-session-close`、`check-lifecycle`、`check-outside-scope`、`check-session-isolation` |
@@ -71,7 +71,7 @@ npm run check:process                           # eggs + agent + io，含手动�
 |---|---|---|
 | 报告与视图模型 | `check-report`、`check-chart-allrun`、`check-markdown`、`check-format`、`check-views`、`check-history`、`check-incremental` | run 事实、全 run 汇总、时间线、注意力规则、Markdown 渲染、格式化、回放行、feed 折叠、历史重建与增量 memo |
 | 设置与声音 | `check-settings`、`check-chimes` | 阈值归一化、i18n 完整性、提示音策略分支 |
-| 进程蛋 | `check-eggs`、`check-classify`、`check-outside-attr`、`check-outside-scope`、`check-session-isolation`、`check-agentwatch-external` | 伪造进程表上的归因、分类顺序、项目外改动归属、会话隔离、egg 折叠与退役、外部扫描配对 |
+| 进程蛋 | `check-eggs`、`check-classify`、`check-outside-attr`、`check-outside-scope`、`check-session-isolation`、`check-agentwatch-external`、`check-observe-os-kernel` | 伪造进程表上的归因、分类顺序、项目外改动归属、会话隔离、egg 折叠与退役、外部扫描配对，以及通过注入事件流对所选 pid 的内核级观察 |
 | 指标 | `check-metrics`、`check-metrics-persist`、`check-metrics-ranges`、`check-metrics-restart`、`check-observed-lifetime` | 采样输出、ring 行为、持久化、区间选择、server 重启后的存活、进程蛋寿命 |
 | agent 层 | `check-mcp-events`、`check-acp-mapping`、`check-acp-proxy` | 按 kind 与形状的工具映射、MCP 事件、代理转发、tap 投影、诊断、代理 CLI 退出 |
 | 会话与存储 | `check-storage`、`check-session-dwell`、`check-session-close`、`check-lifecycle` | 旧归档导入、事件往返、缓冲 drain、归档列表、dwell 时钟、关闭与生命周期 |

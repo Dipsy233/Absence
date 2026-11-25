@@ -138,6 +138,8 @@ type AbsenceEventType =
 
 模型、上下文用量、agent 广告的命令与认证方法通过 `session_state` 消息传输,不进入事件流。指标走独立通道。
 
+时间是契约的一部分。`timestamp` 是事实发生的时刻,跨时间的事实还带上它的结束:`thinking` / `message` 的 `endedAt`(agent 停止产出该文本的时刻)与 `tool_end` 的 `durationMs`(工具运行了多久)。时间线标记与时长都读这两个字段,因此每条泳道只有它自己那段活动那么长,不会盖住别的泳道。
+
 `usage` 由转录通道在回合关闭时发出,每个 run 至多一条,且只在转录上报了 token 数时发出。它携带 `outputEst`(该回合 assistant 记录 `output` 之和)、`contextUsed`(该回合出现过的最大 `input + cacheRead + cacheWrite`)、模型名与 `estimated: true`。ACP 代理通道不发出 `usage` 事件,因为代理协议不携带 token 记账。该事件为 run 范围的 token 合计提供数据,不属于展示活动,因此不进入 Activity 流。`packages/core/src/tokens.ts` 的启发式估算供客户端在没有上报数值时使用。
 
 观察层次:

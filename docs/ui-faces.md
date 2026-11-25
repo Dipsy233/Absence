@@ -20,7 +20,7 @@ The board polls every four seconds while visible. It has two columns:
 | Column | Content | Action |
 |---|---|---|
 | Running | Running agents: watched sessions and running targets, with channel, last activity, fact count and first prompt | Click a row to start monitoring and open its panel |
-| History | Archived sessions and exited transcripts, with runtime, message count and first prompt | Reopen, or delete an archive |
+| History | Archived sessions and exited transcripts, with runtime, message count and first prompt | Open the archive as a read-only replay, or delete it |
 
 A running row shows `backfilling…` while a backfill runs and `transcript diverged; re-watch to continue` when the stored checkpoint no longer matches the transcript. There is no per-row stop control: monitoring ends from the panel, whose `change` button drops the lease and closes the live session; the target then returns to the Running column as watchable and the archive remains.
 

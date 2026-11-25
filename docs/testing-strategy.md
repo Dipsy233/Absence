@@ -25,16 +25,16 @@ A storage change can touch any of the four. `check-storage` exercises the archiv
 
 ## 3. Layers
 
-The 35 offline scripts fall into four layers. The 5 manual scripts form the last layer. Two offline scripts are registered in two groups, so the registry holds 37 offline registrations over 35 scripts.
+The 36 offline scripts fall into four layers. The 5 manual scripts form the last layer. Two offline scripts are registered in two groups, so the registry holds 38 offline registrations over 36 scripts.
 
 | Layer | What it needs | Checks | What it establishes |
 |---|---|---|---|
-| 1. Pure | Fabricated process tables, event arrays and transcript lines; no process spawned, no file written | 13: `eggs`, `classify`, `outside-attr`, `report`, `chart-allrun`, `markdown`, `format`, `views`, `chimes`, `settings`, `mcp-events`, `acp-mapping`, `metrics-ranges` | Attribution, classification, report reduction, view models, tool mapping and policy branches, driven by data alone |
+| 1. Pure | Fabricated process tables, event arrays and transcript lines; no process spawned, no file written | 14: `eggs`, `classify`, `outside-attr`, `report`, `chart-allrun`, `markdown`, `format`, `views`, `chimes`, `settings`, `mcp-events`, `acp-mapping`, `metrics-ranges`, `observe-os-kernel` | Attribution, classification, report reduction, view models, tool mapping and policy branches, driven by data alone |
 | 2. Isolated I/O | A temporary directory and `ABSENCE_STATE_DIR`; production storage, observation, watcher and diff modules imported in-process | 10: `storage`, `metrics`, `metrics-persist`, `fsdiff`, `outside-scope`, `incremental`, `agentwatch-external`, `observe-midway`, `observe-transcript`, `observe-proxy` | Archive and metrics round-trips against real SQLite files, real file watching, transcript backfill and resume, proxy persistence, external process pairing |
 | 3. Self-hosting | An ephemeral port and an isolated state directory; the check starts and kills the real server | 12: `history`, `lifecycle`, `metrics-restart`, `observed-lifetime`, `session-close`, `session-dwell`, `session-isolation`, `observe-board`, `observe-watch`, `observe-os`, `cli-observe`, `acp-proxy` | Server lifecycle, session close, dwell accounting, history over HTTP, metrics after restart, target selection, leases, restart recovery, OS-only watch, token handling |
 | 4. Manual | A kernel observer helper, a docker daemon, or a full server plus mock session | 5: `agentwatch`, `ebpf`, `docker`, `docker-eggs`, `e2e` | Kernel-level process capture, container eggs, and the full pipeline in one run |
 
-13 + 10 + 12 = 35 offline scripts. With the 5 manual scripts the registry covers 40 distinct scripts and 42 registrations.
+14 + 10 + 12 = 36 offline scripts. With the 5 manual scripts the registry covers 41 distinct scripts and 43 registrations.
 
 Layer 1 pushes the system call to the boundary so the middle of the code becomes a pure function. `check-eggs` feeds a fabricated process table into the real attribution code:
 
@@ -79,10 +79,10 @@ Layer 3 checks act as clients of a server they started themselves. They need not
 
 | Item | Value | Source |
 |---|---|---|
-| Registered entries | 42 | `scripts/checks/groups.ts` |
-| Distinct registered scripts | 40 | `scripts/checks/groups.ts` |
-| Offline registrations | 37 | `checks` entries in `groups.ts` |
-| Distinct offline scripts | 35 | `checks` entries in `groups.ts` |
+| Registered entries | 43 | `scripts/checks/groups.ts` |
+| Distinct registered scripts | 41 | `scripts/checks/groups.ts` |
+| Offline registrations | 38 | `checks` entries in `groups.ts` |
+| Distinct offline scripts | 36 | `checks` entries in `groups.ts` |
 | Manual checks | 5 | `platform` entries in `groups.ts` |
 | Groups | 13 | `GROUPS` in `groups.ts` |
 | CI | typecheck + `check:offline` | `.github/workflows/ci.yml` |

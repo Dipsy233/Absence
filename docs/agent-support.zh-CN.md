@@ -42,7 +42,7 @@
 | `message` 且 `role: "user"` | `message`（`role: user`） | `reported` |
 | `message` 且 `role: "assistant"`，`text` 块 | `message`（`role: assistant`） | `reported` |
 | `message` 且 `role: "assistant"`，`thinking` 块 | `thinking` | `reported` |
-| `message` 且 `role: "assistant"`，`toolCall` 块 | `tool_start` | `reported` |
+| `message` 且 `role: "assistant"`，`toolCall` 块 | `tool_start`，打点在生成结束时 | `reported` |
 | `message` 且 `role: "toolResult"` | `tool_end` 与映射后的事实 | `reported` |
 | `message` 且 `role: "assistant"`，`stopReason` ≠ `toolUse` | `agent_end`，有 token 数据时随后 `usage` | `inferred` / `reported` |
 | `message` 且 `role: "assistant"`，回合首条记录 | `agent_start` | `inferred` |
@@ -50,23 +50,42 @@
 | `compaction`、`branch_summary`、`custom_message` | `message`（`role: system`），内容为摘要文本 | `reported` |
 | `system` 消息、`usage`、`context_edit`、`label`、`custom`、`session_info`、`thinking_level_change` | 无 | — |
 
-工具结果经共享的 `AcpToolMapper` 映射，因此转录产出的事实形状与 ACP 会话一致。`write` 与 `edit` 直接由参数映射，避免 mapper 的写入路径重复报告同一次写入。
+工具结果经共享的 `AcpToolMapper` 映射，因此转录产出的事实形状与 ACP 会话一致。`write` 与 `edit` 直接由参数映射，避免 mapper 的写入路径重复报告同一次写入；`edit` 见 2.4 节。
+
+转录自己的时钟被如实带出，因为它们是“这次活动何时真正结束”的唯一记录：
+
+| 记录字段 | 计时对象 | 落点 |
+|---|---|---|
+| `assistant.timestamp` | 生成**开始** | 该记录的事件起点 |
+| `assistant.durationMs` | 生成耗时 | `thinking` / `message` 事件的 `endedAt`、每条 `tool_start` 的时间戳，以及 `agent_end` / `usage` 的时间戳 |
+| `toolResult.timestamp` | 工具返回的时刻 | `tool_end` 的时间戳 |
+| `toolResult.durationMs` | 工具自身的执行时长 | `tool_end.durationMs`；报告把命令放在 `timestamp - durationMs` |
+
+一条 assistant 记录把一次思考、一次回复和它的工具调用标成同一次生成，因此没有时长的话，模型还在思考时 Shell 就已经在跑了。
 
 ### 2.3 回合边界
 
-`stopReason` 取值为 `stop`、`toolUse`、`error`、`aborted`、`length`。`toolUse` 保持回合打开，其他值以 `agent_end` 关闭回合。原因映射为 run 状态：`aborted` 为 `interrupted`，`error` 为 `error`，其余为 `completed`。
+`stopReason` 取值为 `stop`、`toolUse`、`error`、`aborted`、`length`。`toolUse` 保持回合打开，其他值以 `agent_end` 关闭回合，时间戳取该记录**生成结束**的时刻而不是开始时刻。原因映射为 run 状态：`aborted` 为 `interrupted`，`error` 为 `error`，其余为 `completed`。
 
 run 由用户消息打开。文件在回合中间开始时，首个 run 标记 `boundarySource: "attach"` 与 `truncatedBefore: true`，prompt 为空，不编造内容。
 
-### 2.4 用量
+### 2.4 编辑
+
+pi 的 edit 工具携带的是针对同一个文件的一组替换。这次调用是一次活动，因此只产生一条 `file_edit` 事件，绝不按替换逐条产出：逐条产出会让 feed 出现五行相同的记录，时间戳全部相同、且每行都把片段当成整文件。
+
+调用仍然新鲜（实时尾随）时，会从磁盘按顺序重放每个替换来还原整文件的前后状态——工具已经写入结果时反向重放，尚未写入时正向重放——并携带 `fullContent: true`，会话的文件状态因此推进到真实内容。
+
+较早的记录（回填）不做还原：今天的文件已不是那次编辑产出的文件。它同样只产出一条事件，携带上报的片段与合并后的 diff，标记 `fullContent: false`，不改动文件状态。
+
+### 2.5 用量
 
 每条 assistant 记录携带 `input`、`output`、`cacheRead`、`cacheWrite` 与 `reasoning`。回合结束时解析器发出一条 `usage` 事件，包含输出合计、context 占用最大值（`input + cacheRead + cacheWrite`）与模型名。数值来自转录，payload 标记 `estimated: true`。
 
-### 2.5 树语义
+### 2.6 树语义
 
 pi 记录通过 `id`/`parentId` 构成树。解析器按文件顺序处理，即用户实际经历的次序；不回放分支。`context_edit` 改写模型视角，不应用。
 
-### 2.6 降级
+### 2.7 降级
 
 | 情况 | 行为 |
 |---|---|
@@ -141,12 +160,6 @@ POST /api/acp-proxy/sessions
 ### 3.6 审批
 
 只有 `session/request_permission` 转为 `approval` 事件。事件携带 agent 提供的选项。应答发生在 agent 真正运行的地方——代理会话是编辑器客户端，其他情况是 agent 自己的终端界面——由后续事件记录应答结果。Web 客户端只读渲染该卡片。
-
-### 3.6.1 编辑
-
-一次 `edit` 工具调用携带的是针对同一个文件的一组替换。它是一次活动，因此只产生一条 `file_edit` 事件：调用仍然新鲜（实时尾随）时，从磁盘按顺序重放每个替换来还原整文件的前后状态——工具已经写入结果时反向重放，尚未写入时正向重放——并标记 `fullContent: true`。按替换逐条产出会把一次调用变成五行相同的记录，时间戳全部相同、且每行都把片段当成整文件。
-
-较早的记录（回填）不做还原：今天的文件已不是那次编辑产出的文件。它同样只产出一条事件，携带上报的片段与合并后的 diff，标记 `fullContent: false`，不改动文件状态。
 
 ### 3.7 命令窗口
 

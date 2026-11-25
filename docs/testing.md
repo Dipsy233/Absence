@@ -26,7 +26,7 @@ npm run check:e2e       # a real server with a mock session (manual platform che
 
 ## 2. Registration
 
-`scripts/checks/groups.ts` is the single registration point. It defines 13 groups, 37 offline registrations over 35 scripts, and 5 manual platform registrations. Two scripts are registered in both the `eggs` and `session` groups. `run-offline.ts` and `run-group.ts` both read that file; `package.json` holds per-script aliases only.
+`scripts/checks/groups.ts` is the single registration point. It defines 13 groups, 38 offline registrations over 36 scripts, and 5 manual platform registrations. Two scripts are registered in both the `eggs` and `session` groups. `run-offline.ts` and `run-group.ts` both read that file; `package.json` holds per-script aliases only.
 
 | Group | Scope | Offline checks |
 |---|---|---|
@@ -35,7 +35,7 @@ npm run check:e2e       # a real server with a mock session (manual platform che
 | `history` | history rebuild, run grouping, sliding window, event cache | 2: `check-history`, `check-incremental` |
 | `settings` | threshold normalization, i18n table completeness | 1: `check-settings` |
 | `chimes` | chime policy branches | 1: `check-chimes` |
-| `eggs` | process recognition, classification, filters, outside-change attribution, session isolation | 6: `check-eggs`, `check-agentwatch-external`, `check-classify`, `check-outside-attr`, `check-outside-scope`, `check-session-isolation` |
+| `eggs` | process recognition, classification, filters, outside-change attribution, kernel-grade external observation, session isolation | 7: `check-eggs`, `check-agentwatch-external`, `check-observe-os-kernel`, `check-classify`, `check-outside-attr`, `check-outside-scope`, `check-session-isolation` |
 | `metrics` | sampling, ring, restart survival, ranges, egg lifetime | 5: `check-metrics`, `check-metrics-persist`, `check-metrics-ranges`, `check-metrics-restart`, `check-observed-lifetime` |
 | `agent` | tool mapping, MCP events, proxy | 3: `check-mcp-events`, `check-acp-mapping`, `check-acp-proxy` |
 | `session` | archive storage, dwell clock, close, lifecycle, session isolation | 6: `check-storage`, `check-session-dwell`, `check-session-close`, `check-lifecycle`, `check-outside-scope`, `check-session-isolation` |
@@ -71,7 +71,7 @@ Coverage by area:
 |---|---|---|
 | Report and view models | `check-report`, `check-chart-allrun`, `check-markdown`, `check-format`, `check-views`, `check-history`, `check-incremental` | Run facts, all-runs totals, timeline, attention rules, Markdown rendering, formatting, replay row, feed folding, history rebuild and incremental memoization |
 | Settings and sound | `check-settings`, `check-chimes` | Threshold normalization, i18n completeness, chime policy branches |
-| Process eggs | `check-eggs`, `check-classify`, `check-outside-attr`, `check-outside-scope`, `check-session-isolation`, `check-agentwatch-external` | Attribution from a synthetic process table, classification order, outside-change attribution, session isolation, egg folding and retirement, external scanner pairing |
+| Process eggs | `check-eggs`, `check-classify`, `check-outside-attr`, `check-outside-scope`, `check-session-isolation`, `check-agentwatch-external`, `check-observe-os-kernel` | Attribution from a synthetic process table, classification order, outside-change attribution, session isolation, egg folding and retirement, external scanner pairing, and the kernel-grade observer attached to a chosen pid, exercised through injected event streams |
 | Metrics | `check-metrics`, `check-metrics-persist`, `check-metrics-ranges`, `check-metrics-restart`, `check-observed-lifetime` | Sampling output, ring behaviour, persistence, range selection, survival across a server restart, egg lifetime |
 | Agent layer | `check-mcp-events`, `check-acp-mapping`, `check-acp-proxy` | Tool mapping by kind and shape, MCP events, proxy forwarding, tap projection, diagnostics, proxy CLI exit |
 | Sessions and storage | `check-storage`, `check-session-dwell`, `check-session-close`, `check-lifecycle` | Legacy archive import, event round-trip, buffer drain, archive listing, dwell clock, close and lifecycle |
